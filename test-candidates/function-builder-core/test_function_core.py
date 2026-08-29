@@ -21,8 +21,8 @@ class FakeEngine:
     def swipe_points(self, points, duration):
         self.actions.append(("swipe", points, duration))
 
-    def find_image(self, asset, confidence):
-        self.actions.append(("find", asset.name, confidence))
+    def find_image(self, asset, confidence, region=None):
+        self.actions.append(("find", asset.name, confidence, region))
         return self.image_result
 
 
