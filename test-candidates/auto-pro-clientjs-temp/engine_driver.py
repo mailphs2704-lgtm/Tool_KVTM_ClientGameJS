@@ -169,7 +169,8 @@ class EngineDriver(PCDriver):
                 if running_game == wanted_game and args[2:] == wanted_secret:
                     return int(row["ProcessId"])
         except Exception as exc:
-            self._trace("profile_pid_lookup_error", error=str(exc))
+            if hasattr(self, "_trace_count"):
+                self._trace("profile_pid_lookup_error", error=str(exc))
         return None
 
     def _refresh_profile_pid(self) -> bool:
