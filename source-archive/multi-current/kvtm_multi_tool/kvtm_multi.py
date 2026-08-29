@@ -1117,17 +1117,11 @@ class MultiApp(tk.Tk):
             profile = next(p for p in self.profiles if p["id"] == profile_id)
             preview = PreviewWindow(self, profile_id, profile.get("name", "KVTM"), hwnd)
             self.previews[profile_id] = preview
-            # Keep a thin strip intersecting the virtual desktop. Cocos/DWM can
-            # stop producing frames when a source window is entirely off-screen.
-            virtual_right = (
-                ctypes.windll.user32.GetSystemMetrics(76)
-                + ctypes.windll.user32.GetSystemMetrics(78)
+            # Do not move/minimize/hide the source window. GameClientJS must stay
+            # fully inside the active virtual monitor or Cocos may stop rendering.
+            self.note.set(
+                "Live View đang xem client tại vị trí hiện tại; cửa sổ game không bị di chuyển"
             )
-            ctypes.windll.user32.SetWindowPos(
-                hwnd, 1, virtual_right - 32, 0, 0, 0,
-                0x0001 | 0x0010 | 0x0040,  # NOSIZE | NOACTIVATE | SHOWWINDOW
-            )
-            self.note.set("Preview đang thu nhỏ; client thật vẫn render 1000x1000 cho AUTO")
         except Exception as exc:
             messagebox.showerror(APP_NAME, f"Không tạo được Preview:\n{exc}")
 
