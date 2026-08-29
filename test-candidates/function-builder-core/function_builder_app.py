@@ -167,7 +167,7 @@ class GameEngineAdapter:
     def capture(self):
         return capture_bgra(self.hwnd)
 
-    def find_image(self, asset: Path, confidence: float):
+    def find_image(self, asset: Path, confidence: float, region=None):
         try:
             import cv2
             import numpy as np
@@ -184,13 +184,20 @@ class GameEngineAdapter:
             raise RuntimeError(f"Khong doc duoc anh {asset.name}")
         if template.shape[0] > screen.shape[0] or template.shape[1] > screen.shape[1]:
             return None
-        result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
+        offset_x = offset_y = 0
+        search = screen
+        if region is not None:
+            offset_x, offset_y, width, height = region
+            search = screen[offset_y:offset_y + height, offset_x:offset_x + width]
+        if template.shape[0] > search.shape[0] or template.shape[1] > search.shape[1]:
+            return None
+        result = cv2.matchTemplate(search, template, cv2.TM_CCOEFF_NORMED)
         _minimum, maximum, _min_location, location = cv2.minMaxLoc(result)
         if maximum < confidence:
             return None
         return (
-            location[0] + template.shape[1] / 2,
-            location[1] + template.shape[0] / 2,
+            offset_x + location[0] + template.shape[1] / 2,
+            offset_y + location[1] + template.shape[0] / 2,
         )
 
 
