@@ -25,6 +25,7 @@ APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi"
 PROFILE_FILE = APP_DIR / "profiles.json"
 SETTINGS_FILE = APP_DIR / "settings.json"
 RUNNING_MAP_FILE = APP_DIR / "running_clients.json"
+PROFILE_BACKUP_DIR = APP_DIR / "profile-backups"
 DEFAULT_CLIENT = Path(r"C:\Program Files\ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")
 DEFAULT_GAME = Path(os.environ.get("APPDATA", Path.home())) / "VNG Corporation" / "ZingPlay" / "zpp" / GAME_ID / "game"
 DEFAULT_DISPLAY = {"width": 1000, "height": 1000, "dpi": 240}
@@ -252,9 +253,31 @@ def _read_profile_list(path: Path) -> list[dict] | None:
         return None
 
 
+def _snapshot_profile_file(source: Path) -> None:
+    """Keep timestamped recovery points outside the active profile file."""
+    if not source.is_file() or _read_profile_list(source) is None:
+        return
+    try:
+        PROFILE_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        destination = PROFILE_BACKUP_DIR / f"profiles-{stamp}.json"
+        if not destination.exists():
+            shutil.copy2(source, destination)
+        snapshots = sorted(
+            PROFILE_BACKUP_DIR.glob("profiles-*.json"),
+            key=lambda item: item.stat().st_mtime,
+            reverse=True,
+        )
+        for expired in snapshots[30:]:
+            expired.unlink()
+    except OSError:
+        pass
+
+
 def load_profiles() -> list[dict]:
     primary = _read_profile_list(PROFILE_FILE)
     if primary is not None:
+        _snapshot_profile_file(PROFILE_FILE)
         return primary
     # Recover automatically from the newest valid rotating backup.
     for index in range(1, 6):
@@ -272,6 +295,7 @@ def load_profiles() -> list[dict]:
 def _backup_profiles() -> None:
     if not PROFILE_FILE.is_file():
         return
+    _snapshot_profile_file(PROFILE_FILE)
     # Keep five generations; bak1 is always the newest pre-write state.
     oldest = APP_DIR / "profiles.bak5"
     try:
@@ -286,12 +310,25 @@ def _backup_profiles() -> None:
         pass
 
 
-def save_profiles(profiles: list[dict]) -> None:
+def save_profiles(profiles: list[dict], *, allow_shrink: bool = False) -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
+    on_disk = _read_profile_list(PROFILE_FILE)
+    if (
+        not allow_shrink
+        and on_disk is not None
+        and len(on_disk) > len(profiles)
+    ):
+        raise RuntimeError(
+            f"Đã chặn ghi đè: ổ đĩa có {len(on_disk)} hồ sơ nhưng bộ nhớ chỉ còn {len(profiles)}."
+        )
     _backup_profiles()
     temp = PROFILE_FILE.with_suffix(".tmp")
     temp.write_text(json.dumps(profiles, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Validate the complete temporary JSON before atomically replacing the active file.
+    if _read_profile_list(temp) is None:
+        raise RuntimeError("File hồ sơ tạm không hợp lệ; đã giữ nguyên dữ liệu cũ.")
     os.replace(temp, PROFILE_FILE)
+    _snapshot_profile_file(PROFILE_FILE)
 
 
 def load_settings() -> dict:
@@ -740,7 +777,13 @@ class MultiApp(tk.Tk):
             self.profiles[self.profiles.index(existing)] = record
         else:
             self.profiles.append(record)
-        save_profiles(self.profiles)
+        try:
+            save_profiles(self.profiles)
+        except RuntimeError as exc:
+            self.profiles = load_profiles()
+            messagebox.showerror(APP_NAME, str(exc))
+            self.refresh()
+            return
         self.note.set(f"Đã lưu hồ sơ {record['name']} an toàn trên máy này")
         self.refresh()
 
@@ -807,7 +850,8 @@ class MultiApp(tk.Tk):
         if not ids or not messagebox.askyesno(APP_NAME, "Xóa các hồ sơ đã chọn? Client game không bị xóa."):
             return
         self.profiles = [p for p in self.profiles if p["id"] not in ids]
-        save_profiles(self.profiles)
+        save_profiles(self.profiles, allow_shrink=True)
+        self._checked_profiles.difference_update(ids)
         self.refresh()
 
     def _window_for_pid(self, pid: int) -> int | None:
