@@ -228,10 +228,10 @@ class BridgeClient:
         duration = max(0.20, float(duration))
         sample_count = max(
             len(logical) - 1,
-            int(math.ceil(total_length / 12.0)),
+            int(math.ceil(total_length / 8.0)),
             int(math.ceil(duration * 45.0)),
         )
-        sample_count = min(sample_count, 400)
+        sample_count = min(sample_count, 600)
         samples = [logical[0]]
         for index in range(1, sample_count + 1):
             target = total_length * index / sample_count
