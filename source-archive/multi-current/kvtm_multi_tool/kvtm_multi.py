@@ -16,7 +16,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 import uuid
 
-from pc_driver import capture_bgra, save_diagnostic, save_four_floor_swipe_preview
+from pc_driver import (
+    BITMAPINFO, capture_bgra, capture_shared_bgra,
+    save_diagnostic, save_four_floor_swipe_preview,
+)
 
 
 APP_NAME = "KVTM Multi"
@@ -83,42 +86,34 @@ class RunningProcessRef:
 
 
 class PreviewWindow(tk.Toplevel):
-    """DWM-scaled view of a full-resolution off-screen game window."""
+    """Low-latency OpenGL preview backed by the bridge KCAP mapping."""
 
     def __init__(self, owner, profile_id: str, title: str, source_hwnd: int):
         super().__init__(owner)
         self.owner = owner
         self.profile_id = profile_id
         self.source_hwnd = source_hwnd
-        self.thumbnail = ctypes.c_void_p()
         self._closing = False
         self._square_job = None
-        self.original_rect = wintypes.RECT()
-        ctypes.windll.user32.GetWindowRect(source_hwnd, ctypes.byref(self.original_rect))
-        self.title(f"{title} - Preview")
+        self._stop = threading.Event()
+        self._frames: queue.Queue = queue.Queue(maxsize=1)
+        self._latest = None
+        pid = wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(source_hwnd, ctypes.byref(pid))
+        self.pid = int(pid.value)
+        self.title(f"{title} - Live View")
         self.configure(background="black")
-        self.geometry("520x520")
-        self.minsize(240, 240)
-        self.update_idletasks()
-        dwm = ctypes.windll.dwmapi
-        dwm.DwmRegisterThumbnail.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.POINTER(ctypes.c_void_p)]
-        dwm.DwmRegisterThumbnail.restype = ctypes.c_long
-        dwm.DwmUpdateThumbnailProperties.argtypes = [ctypes.c_void_p, ctypes.POINTER(DWM_THUMBNAIL_PROPERTIES)]
-        dwm.DwmUpdateThumbnailProperties.restype = ctypes.c_long
-        dwm.DwmUnregisterThumbnail.argtypes = [ctypes.c_void_p]
-        dwm.DwmUnregisterThumbnail.restype = ctypes.c_long
-        user32 = ctypes.windll.user32
-        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
-        user32.GetAncestor.restype = wintypes.HWND
-        destination = user32.GetAncestor(self.winfo_id(), 2) or self.winfo_id()
-        hr = dwm.DwmRegisterThumbnail(
-            destination, source_hwnd, ctypes.byref(self.thumbnail)
-        )
-        if hr < 0:
-            raise OSError(f"DwmRegisterThumbnail lỗi 0x{hr & 0xffffffff:08X}")
+        self.geometry("540x540")
+        self.minsize(260, 260)
+        self.canvas = tk.Canvas(self, background="black", highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.status = tk.StringVar(value="Đang kết nối OpenGL capture...")
+        ttk.Label(self, textvariable=self.status, anchor="center").pack(fill="x")
         self.bind("<Configure>", self._on_configure)
+        self.canvas.bind("<Expose>", lambda _event: self._paint_latest())
         self.protocol("WM_DELETE_WINDOW", self.close)
-        self.after_idle(self._update_thumbnail)
+        threading.Thread(target=self._capture_loop, daemon=True).start()
+        self.after(20, self._poll_frame)
 
     def _on_configure(self, _event=None):
         if self._closing:
@@ -127,38 +122,93 @@ class PreviewWindow(tk.Toplevel):
         side = min(width, height)
         if abs(width - height) > 2 and not self._square_job:
             self._square_job = self.after_idle(lambda s=side: self._force_square(s))
-        self._update_thumbnail()
 
     def _force_square(self, side: int):
         self._square_job = None
         if not self._closing:
-            self.geometry(f"{max(240, side)}x{max(240, side)}")
+            self.geometry(f"{max(260, side)}x{max(260, side)}")
 
-    def _update_thumbnail(self):
-        if self._closing or not self.thumbnail.value:
+    def _capture_loop(self):
+        fallback_count = 0
+        while not self._stop.is_set():
+            started = time.monotonic()
+            try:
+                raw, width, height = capture_shared_bgra(self.pid, timeout_ms=2000)
+                source = "OpenGL shared memory"
+                fallback_count = 0
+            except Exception:
+                fallback_count += 1
+                try:
+                    raw, width, height = capture_bgra(self.source_hwnd)
+                    source = "Windows fallback"
+                except Exception:
+                    self._stop.wait(0.15)
+                    continue
+            item = (raw, width, height, source)
+            try:
+                self._frames.put_nowait(item)
+            except queue.Full:
+                try:
+                    self._frames.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    self._frames.put_nowait(item)
+                except queue.Full:
+                    pass
+            # About 15 FPS while the preview is open; no capture when closed.
+            elapsed = time.monotonic() - started
+            self._stop.wait(max(0.0, (1.0 / 15.0) - elapsed))
+
+    def _poll_frame(self):
+        if self._closing:
             return
-        rect = wintypes.RECT(0, 0, max(1, self.winfo_width()), max(1, self.winfo_height()))
-        props = DWM_THUMBNAIL_PROPERTIES()
-        props.dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_VISIBLE | DWM_TNP_SOURCECLIENTAREAONLY
-        props.rcDestination = rect
-        props.fVisible = True
-        props.fSourceClientAreaOnly = True
-        ctypes.windll.dwmapi.DwmUpdateThumbnailProperties(self.thumbnail, ctypes.byref(props))
+        try:
+            while True:
+                self._latest = self._frames.get_nowait()
+        except queue.Empty:
+            pass
+        if self._latest:
+            self._paint_latest()
+        self.after(33, self._poll_frame)
+
+    def _paint_latest(self):
+        if self._closing or not self._latest or not self.canvas.winfo_exists():
+            return
+        raw, width, height, source = self._latest
+        target_w = max(1, self.canvas.winfo_width())
+        target_h = max(1, self.canvas.winfo_height())
+        side = min(target_w, target_h)
+        left = (target_w - side) // 2
+        top = (target_h - side) // 2
+        info = BITMAPINFO()
+        info.bmiHeader.biSize = ctypes.sizeof(info.bmiHeader)
+        info.bmiHeader.biWidth = width
+        # OpenGL gives bottom-up BGRA, which matches a positive-height DIB.
+        info.bmiHeader.biHeight = height
+        info.bmiHeader.biPlanes = 1
+        info.bmiHeader.biBitCount = 32
+        info.bmiHeader.biCompression = 0
+        pixels = ctypes.create_string_buffer(raw)
+        canvas_hwnd = self.canvas.winfo_id()
+        dc = ctypes.windll.user32.GetDC(canvas_hwnd)
+        if dc:
+            try:
+                ctypes.windll.gdi32.SetStretchBltMode(dc, 4)  # HALFTONE
+                ctypes.windll.gdi32.StretchDIBits(
+                    dc, left, top, side, side,
+                    0, 0, width, height,
+                    pixels, ctypes.byref(info), 0, 0x00CC0020,
+                )
+            finally:
+                ctypes.windll.user32.ReleaseDC(canvas_hwnd, dc)
+        self.status.set(f"{source} • {width}×{height} • 15 FPS")
 
     def close(self, restore=True):
         if self._closing:
             return
         self._closing = True
-        if self.thumbnail.value:
-            ctypes.windll.dwmapi.DwmUnregisterThumbnail(self.thumbnail)
-            self.thumbnail = ctypes.c_void_p()
-        if restore and ctypes.windll.user32.IsWindow(self.source_hwnd):
-            width = self.original_rect.right - self.original_rect.left
-            height = self.original_rect.bottom - self.original_rect.top
-            ctypes.windll.user32.SetWindowPos(
-                self.source_hwnd, 0, self.original_rect.left, self.original_rect.top,
-                width, height, 0x0004 | 0x0040,
-            )
+        self._stop.set()
         self.owner.previews.pop(self.profile_id, None)
         self.destroy()
 
