@@ -27,6 +27,7 @@ from pc_driver import PCDriver  # noqa: E402
 
 
 PC_PREFIX = "PC:"
+PROFILE_PREFIX = "PCID:"
 
 
 def _running_pc_clients() -> list[dict]:
@@ -47,14 +48,14 @@ def _running_pc_clients() -> list[dict]:
     return [r for r in rows if r.get("ProcessId")]
 
 
-def _running_profile_names() -> dict[int, str]:
-    """Read the PID mapping published by Multi; never infer by list order."""
+def _running_profile_map() -> dict[int, dict]:
+    """Read Multi's authoritative stable profile ID -> current PID publication."""
     path = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi" / "running_clients.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         clients = payload.get("clients", []) if isinstance(payload, dict) else []
         return {
-            int(item["pid"]): str(item.get("name") or f"PID {item['pid']}")
+            int(item["pid"]): item
             for item in clients
             if isinstance(item, dict) and item.get("pid")
         }
@@ -62,22 +63,36 @@ def _running_profile_names() -> dict[int, str]:
         return {}
 
 
-def _pc_entries() -> list[tuple[str, int]]:
+def _pc_entries() -> list[tuple[str, str, int]]:
     rows = _running_pc_clients()
-    names_by_pid = _running_profile_names()
+    published = _running_profile_map()
     result = []
     for row in rows:
         pid = int(row["ProcessId"])
-        label = names_by_pid.get(pid, f"PID {pid}")
-        result.append((f"PC - {label} [{pid}]", pid))
+        item = published.get(pid, {})
+        label = str(item.get("name") or f"PID {pid}")
+        profile_id = str(item.get("profile_id") or "")
+        device_id = f"{PROFILE_PREFIX}{profile_id}" if profile_id else f"{PC_PREFIX}{pid}"
+        result.append((f"PC - {label} [{pid}]", device_id, pid))
     return result
 
+
+def _pid_for_profile_id(profile_id: str) -> int | None:
+    for _display_name, device_id, pid in _pc_entries():
+        if device_id == f"{PROFILE_PREFIX}{profile_id}":
+            return pid
+    return None
 
 _original_connect = u2.connect
 
 
 def pc_connect(device_id=None, *args, **kwargs):
     text = str(device_id or "")
+    if text.startswith(PROFILE_PREFIX):
+        pid = _pid_for_profile_id(text[len(PROFILE_PREFIX):])
+        if not pid:
+            raise RuntimeError("Tài khoản ClientJS đang offline")
+        return PCDriver(pid, reference_size=(1000, 1000))
     if text.startswith(PC_PREFIX):
         return PCDriver(int(text[len(PC_PREFIX):]), reference_size=(1000, 1000))
     return _original_connect(device_id, *args, **kwargs)
@@ -102,8 +117,7 @@ def fetch_with_pc(self):
             "display_devices": [], "device_mapping": {}, "offline_tabs": [],
             "adb_id_pairs": {}, "all_tab_info": {},
         }
-    for display_name, pid in _pc_entries():
-        device_id = f"{PC_PREFIX}{pid}"
+    for display_name, device_id, pid in _pc_entries():
         if device_id not in data["adb_id_list"]:
             data["adb_id_list"].append(device_id)
         data["adb_id_to_name"][device_id] = display_name
@@ -120,9 +134,16 @@ def fetch_with_pc(self):
 
 
 def online_with_pc(self, device_id):
-    if str(device_id).startswith(PC_PREFIX):
+    value = str(device_id)
+    if value.startswith(PROFILE_PREFIX) or value.startswith(PC_PREFIX):
         try:
-            PCDriver(int(str(device_id)[len(PC_PREFIX):])).hwnd
+            if value.startswith(PROFILE_PREFIX):
+                pid = _pid_for_profile_id(value[len(PROFILE_PREFIX):])
+                if not pid:
+                    return False
+            else:
+                pid = int(value[len(PC_PREFIX):])
+            PCDriver(pid).hwnd
             return True
         except Exception:
             return False
@@ -130,13 +151,13 @@ def online_with_pc(self, device_id):
 
 
 def install_float_with_pc(self, device_id):
-    if str(device_id).startswith(PC_PREFIX):
+    if str(device_id).startswith((PC_PREFIX, PROFILE_PREFIX)):
         return None
     return _original_install_float(self, device_id)
 
 
 def logcat_with_pc(self, device_id):
-    if str(device_id).startswith(PC_PREFIX):
+    if str(device_id).startswith((PC_PREFIX, PROFILE_PREFIX)):
         return None
     return _original_logcat(self, device_id)
 
