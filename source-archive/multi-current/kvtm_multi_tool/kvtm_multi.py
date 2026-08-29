@@ -210,8 +210,8 @@ class PreviewWindow(tk.Toplevel):
         info = BITMAPINFO()
         info.bmiHeader.biSize = ctypes.sizeof(info.bmiHeader)
         info.bmiHeader.biWidth = width
-        # GameClientJS exposes the captured BGRA rows top-down.
-        info.bmiHeader.biHeight = height
+        # Bridge v2 normalizes ClientJS capture to top-down BGRA.
+        info.bmiHeader.biHeight = -height
         info.bmiHeader.biPlanes = 1
         info.bmiHeader.biBitCount = 32
         info.bmiHeader.biCompression = 0
