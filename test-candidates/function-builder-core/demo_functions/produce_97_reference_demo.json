@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "name": "DEMO 97 - 8 Tao say + 6 Vai vang + 6 Tinh dau HH",
+  "description": "Demo tham khao chuyen tu produceItems_97 cua AUTO PRO cu. Dung toa do logic 1000x1000; co check anh, click anh, click toa do, swipe nhieu diem, repeat, retry va nhanh dieu kien. Can tinh chinh asset/toa do tren tai khoan test truoc khi chay that.",
+  "logical_size": [1000, 1000],
+  "steps": [
+    {
+      "type": "log",
+      "message": "Bat dau demo produceItems_97"
+    },
+    {
+      "type": "retry",
+      "attempts": 3,
+      "delay_seconds": 2,
+      "steps": [
+        {
+          "type": "wait_image",
+          "asset": "check_log_game.png",
+          "confidence": 0.78,
+          "timeout": 8
+        }
+      ],
+      "on_exhausted": [
+        {
+          "type": "log",
+          "message": "Khong nhan ra man hinh game; dung de tranh click sai"
+        }
+      ]
+    },
+    {
+      "type": "if_image",
+      "asset": "x.png",
+      "confidence": 0.88,
+      "timeout": 0.5,
+      "then_steps": [
+        {
+          "type": "click_image",
+          "asset": "x.png",
+          "confidence": 0.88,
+          "timeout": 1
+        },
+        {
+          "type": "wait",
+          "seconds": 0.8
+        }
+      ],
+      "else_steps": []
+    },
+    {
+      "type": "log",
+      "message": "Thu hoach/bu nguyen lieu bang mot cu giu-keo lien tuc"
+    },
+    {
+      "type": "swipe_path",
+      "points": [
+        [218, 816],
+        [335, 940],
+        [835, 940],
+        [835, 725],
+        [335, 725],
+        [335, 505],
+        [835, 505],
+        [835, 280],
+        [335, 280],
+        [335, 40],
+        [578, 40]
+      ],
+      "duration": 4.9
+    },
+    {
+      "type": "wait",
+      "seconds": 1.2
+    },
+    {
+      "type": "log",
+      "message": "San xuat 8 Tao say - ma goc dung makeItems(1,1,tao_say,...,8)"
+    },
+    {
+      "type": "retry",
+      "attempts": 5,
+      "delay_seconds": 1.5,
+      "steps": [
+        {
+          "type": "click_image",
+          "asset": "tao_say.png",
+          "confidence": 0.82,
+          "timeout": 5
+        },
+        {
+          "type": "repeat",
+          "count": 8,
+          "steps": [
+            {
+              "type": "click",
+              "point": [790, 835]
+            },
+            {
+              "type": "wait",
+              "seconds": 0.18
+            }
+          ]
+        },
+        {
+          "type": "if_image",
+          "asset": "kho_tao_say.png",
+          "confidence": 0.8,
+          "timeout": 0.5,
+          "then_steps": [],
+          "else_steps": [
+            {
+              "type": "wait_image",
+              "asset": "kho_tao_say.png",
+              "confidence": 0.8,
+              "timeout": 0
+            }
+          ]
+        }
+      ],
+      "on_exhausted": [
+        {
+          "type": "log",
+          "message": "Tao say thieu nguyen lieu sau 5 lan; AUTO PRO cu se thu hoach/bu va reset game"
+        }
+      ]
+    },
+    {
+      "type": "log",
+      "message": "San xuat 6 Vai vang"
+    },
+    {
+      "type": "retry",
+      "attempts": 5,
+      "delay_seconds": 1.5,
+      "steps": [
+        {
+          "type": "click_image",
+          "asset": "vai_vang.png",
+          "confidence": 0.82,
+          "timeout": 5
+        },
+        {
+          "type": "repeat",
+          "count": 6,
+          "steps": [
+            {
+              "type": "click",
+              "point": [790, 835]
+            },
+            {
+              "type": "wait",
+              "seconds": 0.18
+            }
+          ]
+        },
+        {
+          "type": "wait_image",
+          "asset": "kho_vai_vang.png",
+          "confidence": 0.8,
+          "timeout": 2
+        }
+      ],
+      "on_exhausted": [
+        {
+          "type": "log",
+          "message": "Vai vang thieu nguyen lieu sau 5 lan"
+        }
+      ]
+    },
+    {
+      "type": "log",
+      "message": "San xuat 6 Tinh dau hoa hong"
+    },
+    {
+      "type": "retry",
+      "attempts": 5,
+      "delay_seconds": 1.5,
+      "steps": [
+        {
+          "type": "click_image",
+          "asset": "tinh_dau_hh.png",
+          "confidence": 0.82,
+          "timeout": 5
+        },
+        {
+          "type": "repeat",
+          "count": 6,
+          "steps": [
+            {
+              "type": "click",
+              "point": [790, 835]
+            },
+            {
+              "type": "wait",
+              "seconds": 0.18
+            }
+          ]
+        },
+        {
+          "type": "wait_image",
+          "asset": "kho_tinh_dau_hh.png",
+          "confidence": 0.8,
+          "timeout": 2
+        }
+      ],
+      "on_exhausted": [
+        {
+          "type": "log",
+          "message": "Tinh dau HH thieu nguyen lieu sau 5 lan"
+        }
+      ]
+    },
+    {
+      "type": "if_image",
+      "asset": "dong_y.png",
+      "confidence": 0.86,
+      "timeout": 0.5,
+      "then_steps": [
+        {
+          "type": "click_image",
+          "asset": "dong_y.png",
+          "confidence": 0.86,
+          "timeout": 1
+        }
+      ],
+      "else_steps": []
+    },
+    {
+      "type": "log",
+      "message": "Hoan thanh demo 8 Tao say + 6 Vai vang + 6 Tinh dau HH"
+    }
+  ]
+}
