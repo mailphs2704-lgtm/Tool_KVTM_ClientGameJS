@@ -79,6 +79,28 @@ class CoreTests(unittest.TestCase):
             with self.assertRaises(FunctionValidationError):
                 FunctionRuntime(FakeEngine(), root, sleep=lambda _seconds: None).run(function)
 
+    def test_condition_repeat_and_retry(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "ready.png").write_bytes(b"test")
+            engine = FakeEngine()
+            function = AutoFunction.from_dict({
+                "name": "Control flow",
+                "steps": [
+                    {"type": "if_image", "asset": "ready.png", "timeout": 0,
+                     "then_steps": [{"type": "repeat", "count": 3, "steps": [
+                         {"type": "click", "point": [100, 200]}
+                     ]}], "else_steps": []},
+                    {"type": "retry", "attempts": 2, "delay_seconds": 0,
+                     "steps": [{"type": "wait_image", "asset": "ready.png", "timeout": 0}],
+                     "on_exhausted": []},
+                ],
+            })
+            events = FunctionRuntime(engine, root, sleep=lambda _seconds: None).run(function)
+            clicks = [action for action in engine.actions if action[0] == "click"]
+            self.assertEqual(len(clicks), 3)
+            self.assertTrue(all(event.status == "ok" for event in events))
+
 
 if __name__ == "__main__":
     unittest.main()
