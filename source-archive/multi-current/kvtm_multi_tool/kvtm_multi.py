@@ -390,26 +390,30 @@ class MultiApp(tk.Tk):
         self.tree.bind("<Double-1>", lambda _e: self.launch_selected())
         self.tree.bind("<Button-1>", self._on_tree_click, add="+")
 
-        actions = ttk.Frame(self, padding=(12, 12, 12, 4))
-        actions.pack(fill="x")
-        ttk.Button(actions, text="+ Lưu client đang chạy", command=self.capture).pack(side="left", padx=(0, 6))
-        ttk.Button(actions, text="Mở đã chọn", command=self.launch_selected).pack(side="left", padx=6)
-        ttk.Button(actions, text="Mở tất cả", command=self.launch_all).pack(side="left", padx=6)
-        ttk.Button(actions, text="Xếp cửa sổ", command=self.tile).pack(side="left", padx=6)
-        ttk.Button(actions, text="Độ phân giải", command=self.configure_display).pack(side="left", padx=6)
-        ttk.Button(actions, text="Dừng đã chọn", command=self.stop_selected).pack(side="left", padx=6)
-        ttk.Button(actions, text="Xóa hồ sơ", command=self.delete_selected).pack(side="right")
+        controls = ttk.LabelFrame(self, text="Bảng điều khiển", padding=(8, 6))
+        controls.pack(fill="x", padx=12, pady=(8, 8))
+        for column in range(6):
+            controls.columnconfigure(column, weight=1, uniform="control")
 
-        tools = ttk.Frame(self, padding=(12, 0, 12, 8))
-        tools.pack(fill="x")
-        ttk.Button(tools, text="Bridge DLL", command=self.configure_bridge).pack(side="left", padx=(0, 6))
-        ttk.Button(tools, text="Sang màn hình ảo", command=self.move_selected_to_virtual).pack(side="left", padx=6)
-        ttk.Button(tools, text="Về màn hình chính", command=self.move_selected_to_primary).pack(side="left", padx=6)
-        ttk.Button(tools, text="Chụp kiểm tra", command=self.capture_diagnostic).pack(side="left", padx=6)
-        ttk.Button(tools, text="Xem swipe 4 tầng", command=self.preview_four_floor_swipe).pack(side="left", padx=6)
-        ttk.Button(tools, text="Thử swipe thật", command=self.test_four_floor_swipe).pack(side="left", padx=6)
+        buttons = (
+            (0, 0, "Lưu client", self.capture),
+            (0, 1, "Mở chọn", self.launch_selected),
+            (0, 2, "Mở tất cả", self.launch_all),
+            (0, 3, "Dừng chọn", self.stop_selected),
+            (0, 4, "Xóa hồ sơ", self.delete_selected),
+            (0, 5, "Bridge DLL", self.configure_bridge),
+            (1, 0, "Xếp cửa sổ", self.tile),
+            (1, 1, "Sang màn ảo", self.move_selected_to_virtual),
+            (1, 2, "Về màn chính", self.move_selected_to_primary),
+            (1, 3, "Độ phân giải", self.configure_display),
+            (1, 4, "Chụp ảnh", self.capture_diagnostic),
+        )
+        for row, column, label, command in buttons:
+            ttk.Button(controls, text=label, command=command).grid(
+                row=row, column=column, sticky="ew", padx=3, pady=3, ipady=2
+            )
 
-        # Pack the expanding list after both toolbars. If Windows restores a
+        # Pack the expanding list after the control panel. If Windows restores a
         # short window on another-DPI monitor, controls remain visible first.
         self.tree.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
