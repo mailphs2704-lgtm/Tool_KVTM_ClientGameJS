@@ -1,232 +1,130 @@
 {
   "schema_version": 1,
-  "name": "DEMO 97 - 8 Tao say + 6 Vai vang + 6 Tinh dau HH",
-  "description": "Demo tham khao chuyen tu produceItems_97 cua AUTO PRO cu. Dung toa do logic 1000x1000; co check anh, click anh, click toa do, swipe nhieu diem, repeat, retry va nhanh dieu kien. Can tinh chinh asset/toa do tren tai khoan test truoc khi chay that.",
-  "logical_size": [1000, 1000],
+  "name": "DEMO HOAN CHINH 97 - Start man hinh chinh",
+  "description": "Doi chieu produceItems_97 AUTO PRO. Moi procedure gom click, swipe va check anh logic 1000x1000.",
+  "logical_size": [1000,1000],
   "steps": [
-    {
-      "type": "log",
-      "message": "Bat dau demo produceItems_97"
-    },
-    {
-      "type": "retry",
-      "attempts": 3,
-      "delay_seconds": 2,
-      "steps": [
-        {
-          "type": "wait_image",
-          "asset": "check_log_game.png",
-          "confidence": 0.78,
-          "timeout": 8
-        }
-      ],
-      "on_exhausted": [
-        {
-          "type": "log",
-          "message": "Khong nhan ra man hinh game; dung de tranh click sai"
-        }
-      ]
-    },
-    {
-      "type": "if_image",
-      "asset": "x.png",
-      "confidence": 0.88,
-      "timeout": 0.5,
-      "then_steps": [
-        {
-          "type": "click_image",
-          "asset": "x.png",
-          "confidence": 0.88,
-          "timeout": 1
-        },
-        {
-          "type": "wait",
-          "seconds": 0.8
-        }
-      ],
-      "else_steps": []
-    },
-    {
-      "type": "log",
-      "message": "Thu hoach/bu nguyen lieu bang mot cu giu-keo lien tuc"
-    },
-    {
-      "type": "swipe_path",
-      "points": [
-        [218, 816],
-        [335, 940],
-        [835, 940],
-        [835, 725],
-        [335, 725],
-        [335, 505],
-        [835, 505],
-        [835, 280],
-        [335, 280],
-        [335, 40],
-        [578, 40]
-      ],
-      "duration": 0.49
-    },
-    {
-      "type": "wait",
-      "seconds": 1.2
-    },
-    {
-      "type": "log",
-      "message": "San xuat 8 Tao say - ma goc dung makeItems(1,1,tao_say,...,8)"
-    },
-    {
-      "type": "retry",
-      "attempts": 5,
-      "delay_seconds": 1.5,
-      "steps": [
-        {
-          "type": "click_image",
-          "asset": "tao_say.png",
-          "confidence": 0.82,
-          "timeout": 5
-        },
-        {
-          "type": "repeat",
-          "count": 8,
-          "steps": [
-            {
-              "type": "click",
-              "point": [790, 835]
-            },
-            {
-              "type": "wait",
-              "seconds": 0.18
-            }
-          ]
-        },
-        {
-          "type": "if_image",
-          "asset": "kho_tao_say.png",
-          "confidence": 0.8,
-          "timeout": 0.5,
-          "then_steps": [],
-          "else_steps": [
-            {
-              "type": "wait_image",
-              "asset": "kho_tao_say.png",
-              "confidence": 0.8,
-              "timeout": 0
-            }
-          ]
-        }
-      ],
-      "on_exhausted": [
-        {
-          "type": "log",
-          "message": "Tao say thieu nguyen lieu sau 5 lan; AUTO PRO cu se thu hoach/bu va reset game"
-        }
-      ]
-    },
-    {
-      "type": "log",
-      "message": "San xuat 6 Vai vang"
-    },
-    {
-      "type": "retry",
-      "attempts": 5,
-      "delay_seconds": 1.5,
-      "steps": [
-        {
-          "type": "click_image",
-          "asset": "vai_vang.png",
-          "confidence": 0.82,
-          "timeout": 5
-        },
-        {
-          "type": "repeat",
-          "count": 6,
-          "steps": [
-            {
-              "type": "click",
-              "point": [790, 835]
-            },
-            {
-              "type": "wait",
-              "seconds": 0.18
-            }
-          ]
-        },
-        {
-          "type": "wait_image",
-          "asset": "kho_vai_vang.png",
-          "confidence": 0.8,
-          "timeout": 2
-        }
-      ],
-      "on_exhausted": [
-        {
-          "type": "log",
-          "message": "Vai vang thieu nguyen lieu sau 5 lan"
-        }
-      ]
-    },
-    {
-      "type": "log",
-      "message": "San xuat 6 Tinh dau hoa hong"
-    },
-    {
-      "type": "retry",
-      "attempts": 5,
-      "delay_seconds": 1.5,
-      "steps": [
-        {
-          "type": "click_image",
-          "asset": "tinh_dau_hh.png",
-          "confidence": 0.82,
-          "timeout": 5
-        },
-        {
-          "type": "repeat",
-          "count": 6,
-          "steps": [
-            {
-              "type": "click",
-              "point": [790, 835]
-            },
-            {
-              "type": "wait",
-              "seconds": 0.18
-            }
-          ]
-        },
-        {
-          "type": "wait_image",
-          "asset": "kho_tinh_dau_hh.png",
-          "confidence": 0.8,
-          "timeout": 2
-        }
-      ],
-      "on_exhausted": [
-        {
-          "type": "log",
-          "message": "Tinh dau HH thieu nguyen lieu sau 5 lan"
-        }
-      ]
-    },
-    {
-      "type": "if_image",
-      "asset": "dong_y.png",
-      "confidence": 0.86,
-      "timeout": 0.5,
-      "then_steps": [
-        {
-          "type": "click_image",
-          "asset": "dong_y.png",
-          "confidence": 0.86,
-          "timeout": 1
-        }
-      ],
-      "else_steps": []
-    },
-    {
-      "type": "log",
-      "message": "Hoan thanh demo 8 Tao say + 6 Vai vang + 6 Tinh dau HH"
-    }
-  ]
+    {"type":"log","message":"START produceItems_97"},
+    {"type":"call","procedure":"ensure_home"},
+    {"type":"call","procedure":"go_up_1"},
+    {"type":"call","procedure":"plant_rose_4"},
+    {"type":"call","procedure":"produce_dried_apple_8"},
+    {"type":"call","procedure":"harvest_4"},
+    {"type":"call","procedure":"plant_rose_4"},
+    {"type":"call","procedure":"produce_apple_juice_6"},
+    {"type":"call","procedure":"harvest_4"},
+    {"type":"call","procedure":"plant_snow_4"},
+    {"type":"call","procedure":"produce_golden_fabric_6"},
+    {"type":"call","procedure":"go_up_1"},
+    {"type":"call","procedure":"produce_rose_oil_6"},
+    {"type":"call","procedure":"ensure_home"},
+    {"type":"call","procedure":"go_up_1"},
+    {"type":"call","procedure":"harvest_4"},
+    {"type":"call","procedure":"plant_apple_4"},
+    {"type":"call","procedure":"go_up_4"},
+    {"type":"call","procedure":"plant_apple_4"},
+    {"type":"call","procedure":"ensure_home"},
+    {"type":"call","procedure":"go_up_1"},
+    {"type":"call","procedure":"harvest_4"},
+    {"type":"call","procedure":"plant_cotton_3"},
+    {"type":"call","procedure":"go_up_4"},
+    {"type":"call","procedure":"harvest_4"},
+    {"type":"call","procedure":"plant_rose_1"},
+    {"type":"call","procedure":"ensure_home"},
+    {"type":"log","message":"DONE produceItems_97"}
+  ],
+  "procedures": {
+    "ensure_home": [
+      {"type":"if_image","asset":"x.png","confidence":0.80,"timeout":0,"then_steps":[{"type":"click_image","asset":"x.png","confidence":0.80,"timeout":1}],"else_steps":[]},
+      {"type":"if_image","asset":"close_game.png","confidence":0.80,"timeout":0,"then_steps":[{"type":"click_image","asset":"close_game.png","confidence":0.80,"timeout":1}],"else_steps":[]},
+      {"type":"click","point":[965,198]},
+      {"type":"until_image","asset":"quay_hang.png","confidence":0.84,"timeout":0,"attempts":20,
+       "steps":[
+         {"type":"swipe_path","points":[[480,170],[480,50]],"duration":0.49},
+         {"type":"if_image","asset":"check_xuong.png","confidence":0.80,"timeout":0,"then_steps":[{"type":"click","point":[497,978]}],"else_steps":[]},
+         {"type":"wait","seconds":0.35}
+       ],"on_exhausted":[{"type":"log","message":"Khong ve duoc man hinh chinh"}]},
+      {"type":"log","message":"Da o man hinh chinh"}
+    ],
+    "go_up_1": [
+      {"type":"click","point":[975,316]},
+      {"type":"swipe_path","points":[[514,214],[514,314]],"duration":0.49},
+      {"type":"wait","seconds":0.5}
+    ],
+    "go_up_4": [
+      {"type":"click","point":[975,316]},
+      {"type":"swipe_path","points":[[387,69],[387,918]],"duration":0.49},
+      {"type":"wait","seconds":0.5}
+    ],
+    "harvest_4": [
+      {"type":"click","point":[388,946]},
+      {"type":"wait_image","asset":"harvestBasket.png","confidence":0.80,"timeout":5},
+      {"type":"swipe_path","points":[[325,799],[335,940],[835,940],[835,725],[335,725],[335,505],[835,505],[835,280],[335,280]],"duration":0.49},
+      {"type":"wait","seconds":0.3}
+    ],
+    "plant_rose_4": [
+      {"type":"click","point":[388,946]},
+      {"type":"wait_image","asset":"next_gieo.png","confidence":0.70,"timeout":5},
+      {"type":"swipe_from_image","asset":"cay_hong.png","confidence":0.87,"timeout":5,"points":[[335,940],[835,940],[835,725],[335,725],[335,505],[835,505],[835,280],[335,280]],"duration":0.49},
+      {"type":"click","point":[965,198]}
+    ],
+    "plant_snow_4": [
+      {"type":"click","point":[388,946]},
+      {"type":"wait_image","asset":"next_gieo.png","confidence":0.70,"timeout":5},
+      {"type":"swipe_from_image","asset":"cay_tuyet.png","confidence":0.87,"timeout":5,"points":[[335,940],[835,940],[835,725],[335,725],[335,505],[835,505],[835,280],[335,280]],"duration":0.49},
+      {"type":"click","point":[965,198]}
+    ],
+    "plant_apple_4": [
+      {"type":"click","point":[388,946]},
+      {"type":"wait_image","asset":"next_gieo.png","confidence":0.70,"timeout":5},
+      {"type":"swipe_from_image","asset":"cay_tao.png","confidence":0.87,"timeout":5,"points":[[335,940],[835,940],[835,725],[335,725],[335,505],[835,505],[835,280],[335,280]],"duration":0.49},
+      {"type":"click","point":[965,198]}
+    ],
+    "plant_cotton_3": [
+      {"type":"click","point":[388,946]},
+      {"type":"wait_image","asset":"next_gieo.png","confidence":0.70,"timeout":5},
+      {"type":"swipe_from_image","asset":"cay_bong.png","confidence":0.87,"timeout":5,"points":[[335,940],[835,940],[835,725],[335,725],[335,505],[835,505]],"duration":0.49},
+      {"type":"click","point":[965,198]}
+    ],
+    "plant_rose_1": [
+      {"type":"click","point":[388,946]},
+      {"type":"wait_image","asset":"next_gieo.png","confidence":0.70,"timeout":5},
+      {"type":"swipe_from_image","asset":"cay_hong.png","confidence":0.87,"timeout":5,"points":[[335,940],[835,940]],"duration":0.49},
+      {"type":"click","point":[965,198]}
+    ],
+    "produce_dried_apple_8": [
+      {"type":"retry","attempts":5,"delay_seconds":1,"steps":[
+        {"type":"click","point":[262,917]},
+        {"type":"wait_image","asset":"o_trong.png","confidence":0.70,"timeout":5},
+        {"type":"wait_image","asset":"tao_say.png","confidence":0.82,"timeout":5},
+        {"type":"repeat","count":8,"steps":[{"type":"swipe_path","points":[[525,606],[400,719]],"duration":0.49},{"type":"wait","seconds":0.2}]},
+        {"type":"if_image","asset":"x.png","confidence":0.80,"timeout":0.3,"then_steps":[{"type":"click_image","asset":"x.png","confidence":0.80,"timeout":1},{"type":"fail","message":"Tao say thieu nguyen lieu"}],"else_steps":[]}
+      ],"on_exhausted":[{"type":"log","message":"Tao say that bai sau 5 lan"}]}
+    ],
+    "produce_apple_juice_6": [
+      {"type":"retry","attempts":5,"delay_seconds":1,"steps":[
+        {"type":"click","point":[254,693]},
+        {"type":"wait_image","asset":"o_trong.png","confidence":0.70,"timeout":5},
+        {"type":"wait_image","asset":"nuoc_tao.png","confidence":0.82,"timeout":5},
+        {"type":"repeat","count":6,"steps":[{"type":"swipe_path","points":[[460,601],[400,719]],"duration":0.49},{"type":"wait","seconds":0.2}]}
+      ],"on_exhausted":[{"type":"log","message":"Nuoc tao that bai sau 5 lan"}]}
+    ],
+    "produce_golden_fabric_6": [
+      {"type":"retry","attempts":5,"delay_seconds":1,"steps":[
+        {"type":"click","point":[260,395]},
+        {"type":"wait_image","asset":"o_trong.png","confidence":0.70,"timeout":5},
+        {"type":"wait_image","asset":"vai_vang.png","confidence":0.82,"timeout":5},
+        {"type":"repeat","count":6,"steps":[{"type":"swipe_path","points":[[525,606],[400,719]],"duration":0.49},{"type":"wait","seconds":0.2}]}
+      ],"on_exhausted":[{"type":"log","message":"Vai vang that bai sau 5 lan"}]}
+    ],
+    "produce_rose_oil_6": [
+      {"type":"retry","attempts":5,"delay_seconds":1,"steps":[
+        {"type":"click","point":[256,173]},
+        {"type":"wait_image","asset":"o_trong.png","confidence":0.70,"timeout":5},
+        {"type":"wait_image","asset":"tinh_dau_hh.png","confidence":0.82,"timeout":5},
+        {"type":"repeat","count":6,"steps":[{"type":"swipe_path","points":[[460,601],[400,719]],"duration":0.49},{"type":"wait","seconds":0.2}]},
+        {"type":"if_image","asset":"x.png","confidence":0.80,"timeout":0.3,"then_steps":[{"type":"click_image","asset":"x.png","confidence":0.80,"timeout":1},{"type":"fail","message":"Tinh dau HH thieu nguyen lieu"}],"else_steps":[]}
+      ],"on_exhausted":[{"type":"log","message":"Tinh dau HH that bai sau 5 lan"}]}
+    ]
+  }
 }
