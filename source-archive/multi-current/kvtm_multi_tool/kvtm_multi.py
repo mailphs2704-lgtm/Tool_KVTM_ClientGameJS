@@ -174,9 +174,9 @@ class PreviewWindow(tk.Toplevel):
                     self._frames.put_nowait(item)
                 except queue.Full:
                     pass
-            # About 15 FPS while the preview is open; no capture when closed.
+            # Target 30 FPS while the preview is open; no capture when closed.
             elapsed = time.monotonic() - started
-            self._stop.wait(max(0.0, (1.0 / 15.0) - elapsed))
+            self._stop.wait(max(0.0, (1.0 / 30.0) - elapsed))
 
     def _poll_frame(self):
         if self._closing:
@@ -196,7 +196,7 @@ class PreviewWindow(tk.Toplevel):
             ctypes.memmove(self._dib_pixels, raw, size)
             self._latest = (self._dib_pixels, width, height, source)
             self._paint_latest()
-        self.after(33, self._poll_frame)
+        self.after(16, self._poll_frame)
 
     def _paint_latest(self):
         if self._closing or not self._latest or not self.canvas.winfo_exists():
@@ -210,8 +210,8 @@ class PreviewWindow(tk.Toplevel):
         info = BITMAPINFO()
         info.bmiHeader.biSize = ctypes.sizeof(info.bmiHeader)
         info.bmiHeader.biWidth = width
-        # OpenGL gives bottom-up BGRA, which matches a positive-height DIB.
-        info.bmiHeader.biHeight = height
+        # GameClientJS exposes the captured BGRA rows top-down.
+        info.bmiHeader.biHeight = -height
         info.bmiHeader.biPlanes = 1
         info.bmiHeader.biBitCount = 32
         info.bmiHeader.biCompression = 0
@@ -227,7 +227,7 @@ class PreviewWindow(tk.Toplevel):
                 )
             finally:
                 ctypes.windll.user32.ReleaseDC(canvas_hwnd, dc)
-        self.status.set(f"{source} • {width}×{height} • 15 FPS")
+        self.status.set(f"{source} • {width}×{height} • mục tiêu 30 FPS")
 
     def close(self, restore=True):
         if self._closing:
