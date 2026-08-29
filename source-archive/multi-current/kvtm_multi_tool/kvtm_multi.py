@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -243,16 +244,51 @@ def running_clients() -> list[dict]:
     return [row for row in data if row.get("CommandLine")]
 
 
-def load_profiles() -> list[dict]:
+def _read_profile_list(path: Path) -> list[dict] | None:
     try:
-        data = json.loads(PROFILE_FILE.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else None
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def load_profiles() -> list[dict]:
+    primary = _read_profile_list(PROFILE_FILE)
+    if primary is not None:
+        return primary
+    # Recover automatically from the newest valid rotating backup.
+    for index in range(1, 6):
+        backup = APP_DIR / f"profiles.bak{index}"
+        recovered = _read_profile_list(backup)
+        if recovered is not None:
+            try:
+                shutil.copy2(backup, PROFILE_FILE)
+            except OSError:
+                pass
+            return recovered
+    return []
+
+
+def _backup_profiles() -> None:
+    if not PROFILE_FILE.is_file():
+        return
+    # Keep five generations; bak1 is always the newest pre-write state.
+    oldest = APP_DIR / "profiles.bak5"
+    try:
+        if oldest.exists():
+            oldest.unlink()
+        for index in range(4, 0, -1):
+            source = APP_DIR / f"profiles.bak{index}"
+            if source.exists():
+                os.replace(source, APP_DIR / f"profiles.bak{index + 1}")
+        shutil.copy2(PROFILE_FILE, APP_DIR / "profiles.bak1")
+    except OSError:
+        pass
 
 
 def save_profiles(profiles: list[dict]) -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
+    _backup_profiles()
     temp = PROFILE_FILE.with_suffix(".tmp")
     temp.write_text(json.dumps(profiles, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temp, PROFILE_FILE)
