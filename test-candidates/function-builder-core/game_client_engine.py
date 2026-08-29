@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import struct
 import time
+import math
 
 
 LOGICAL_WIDTH = 1000
@@ -213,17 +214,53 @@ class BridgeClient:
     def swipe_points(self, points: list[tuple[float, float]], duration: float) -> None:
         if len(points) < 2:
             raise ValueError("Swipe can it nhat hai diem")
-        duration = max(0.10, float(duration))
-        interval = duration / max(1, len(points) - 1)
-        self.touch("DOWN", *points[0])
+        logical = [(float(x), float(y)) for x, y in points]
+        lengths = [
+            math.hypot(b[0] - a[0], b[1] - a[1])
+            for a, b in zip(logical, logical[1:])
+        ]
+        total_length = sum(lengths)
+        if total_length < 1.0:
+            raise ValueError("Duong swipe qua ngan")
+
+        # GameClientJS bo qua MOVE neu hai moc cach nhau qua xa. Noi suy theo
+        # khoang cach, nhung van giu nguyen moi waypoint nguoi dung da ve.
+        duration = max(0.20, float(duration))
+        sample_count = max(
+            len(logical) - 1,
+            int(math.ceil(total_length / 12.0)),
+            int(math.ceil(duration * 45.0)),
+        )
+        sample_count = min(sample_count, 400)
+        samples = [logical[0]]
+        for index in range(1, sample_count + 1):
+            target = total_length * index / sample_count
+            travelled = 0.0
+            for segment, length in enumerate(lengths):
+                if target <= travelled + length or segment == len(lengths) - 1:
+                    ratio = 1.0 if length == 0 else (target - travelled) / length
+                    ratio = max(0.0, min(1.0, ratio))
+                    start, end = logical[segment], logical[segment + 1]
+                    samples.append((
+                        start[0] + (end[0] - start[0]) * ratio,
+                        start[1] + (end[1] - start[1]) * ratio,
+                    ))
+                    break
+                travelled += length
+
+        started = time.monotonic()
+        self.touch("DOWN", *samples[0])
         try:
-            for point in points[1:]:
-                time.sleep(interval)
+            for index, point in enumerate(samples[1:], 1):
+                deadline = started + duration * index / (len(samples) - 1)
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    time.sleep(remaining)
                 self.touch("MOVE", *point)
-            self.touch("UP", *points[-1])
+            self.touch("UP", *samples[-1])
         except Exception:
             try:
-                self.touch("UP", *points[-1])
+                self.touch("UP", *samples[-1])
             except Exception:
                 pass
             raise
