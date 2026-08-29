@@ -14,7 +14,7 @@ if not exist "%SOURCE%" (
   exit /b 3
 )
 if not exist "%DEST%" mkdir "%DEST%"
-for %%F in (check_log_game.png x.png dong_y.png tao_say.png kho_tao_say.png vai_vang.png kho_vai_vang.png tinh_dau_hh.png kho_tinh_dau_hh.png thu_hoach.png) do (
+for %%F in (x.png close_game.png icon_home.png quay_hang.png check_xuong.png harvestBasket.png next_gieo.png next_gieo_trai.png o_trong.png o_sx.png fullkho.png cay_hong.png cay_tuyet.png cay_tao.png cay_bong.png tao_say.png nuoc_tao.png vai_vang.png tinh_dau_hh.png kho_tao_say.png kho_nuoc_tao.png kho_vai_vang.png kho_tinh_dau_hh.png) do (
   if exist "%SOURCE%\%%F" copy /Y "%SOURCE%\%%F" "%DEST%\%%F" >nul
 )
 echo Da dua asset demo vao: %DEST%
