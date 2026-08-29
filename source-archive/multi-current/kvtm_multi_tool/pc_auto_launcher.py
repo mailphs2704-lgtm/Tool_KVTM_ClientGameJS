@@ -47,22 +47,28 @@ def _running_pc_clients() -> list[dict]:
     return [r for r in rows if r.get("ProcessId")]
 
 
-def _profile_names() -> list[str]:
-    path = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi" / "profiles.json"
+def _running_profile_names() -> dict[int, str]:
+    """Read the PID mapping published by Multi; never infer by list order."""
+    path = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi" / "running_clients.json"
     try:
-        profiles = json.loads(path.read_text(encoding="utf-8"))
-        return [str(p.get("name") or "") for p in profiles if p.get("name")]
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        clients = payload.get("clients", []) if isinstance(payload, dict) else []
+        return {
+            int(item["pid"]): str(item.get("name") or f"PID {item['pid']}")
+            for item in clients
+            if isinstance(item, dict) and item.get("pid")
+        }
     except Exception:
-        return []
+        return {}
 
 
 def _pc_entries() -> list[tuple[str, int]]:
     rows = _running_pc_clients()
-    names = _profile_names()
+    names_by_pid = _running_profile_names()
     result = []
-    for index, row in enumerate(rows):
+    for row in rows:
         pid = int(row["ProcessId"])
-        label = names[index] if index < len(names) else f"PID {pid}"
+        label = names_by_pid.get(pid, f"PID {pid}")
         result.append((f"PC - {label} [{pid}]", pid))
     return result
 
