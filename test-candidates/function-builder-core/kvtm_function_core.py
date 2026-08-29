@@ -11,7 +11,8 @@ SCHEMA_VERSION = 1
 LOGICAL_SIZE = (1000, 1000)
 STEP_TYPES = {
     "click", "swipe_path", "wait", "wait_image", "click_image",
-    "log", "if_image", "repeat", "retry",
+    "swipe_from_image", "log", "if_image", "repeat", "retry",
+    "until_image", "call", "fail",
 }
 
 
@@ -60,6 +61,16 @@ class Step:
             duration = float(self.data.get("duration", 0))
             if not 0.05 <= duration <= 60:
                 raise FunctionValidationError("duration phai tu 0.05 den 60 giay")
+        elif self.type == "swipe_from_image":
+            self._validate_image_condition()
+            points = self.data.get("points")
+            if not isinstance(points, list) or not points:
+                raise FunctionValidationError("swipe_from_image thieu diem dich")
+            for index, point in enumerate(points):
+                _point(point, f"points[{index}]")
+            duration = float(self.data.get("duration", 0))
+            if not 0.05 <= duration <= 60:
+                raise FunctionValidationError("duration phai tu 0.05 den 60 giay")
         elif self.type == "wait":
             seconds = float(self.data.get("seconds", 0))
             if not 0 <= seconds <= 3600:
@@ -95,6 +106,20 @@ class Step:
                 raise FunctionValidationError("retry delay_seconds khong hop le")
             self._validate_nested("steps", required=True)
             self._validate_nested("on_exhausted")
+        elif self.type == "until_image":
+            self._validate_image_condition()
+            attempts = int(self.data.get("attempts", 0))
+            if not 1 <= attempts <= 100:
+                raise FunctionValidationError("until_image attempts phai tu 1 den 100")
+            self._validate_nested("steps", required=True)
+            self._validate_nested("on_exhausted")
+        elif self.type == "call":
+            name = self.data.get("procedure")
+            if not isinstance(name, str) or not name.strip():
+                raise FunctionValidationError("call thieu procedure")
+        elif self.type == "fail":
+            if not isinstance(self.data.get("message"), str):
+                raise FunctionValidationError("fail thieu message")
 
     def _validate_image_condition(self) -> None:
         asset = self.data.get("asset")
@@ -124,6 +149,7 @@ class AutoFunction:
     description: str = ""
     schema_version: int = SCHEMA_VERSION
     logical_size: tuple[int, int] = LOGICAL_SIZE
+    procedures: dict[str, list[Step]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "AutoFunction":
@@ -141,12 +167,35 @@ class AutoFunction:
         raw_steps = value.get("steps")
         if not isinstance(raw_steps, list):
             raise FunctionValidationError("steps phai la danh sach")
-        return cls(
+        raw_procedures = value.get("procedures", {})
+        if not isinstance(raw_procedures, dict):
+            raise FunctionValidationError("procedures phai la object")
+        procedures = {}
+        for procedure_name, procedure_steps in raw_procedures.items():
+            if not isinstance(procedure_name, str) or not isinstance(procedure_steps, list):
+                raise FunctionValidationError("procedure khong hop le")
+            procedures[procedure_name] = [Step.from_dict(item) for item in procedure_steps]
+        function = cls(
             name=name.strip(),
             description=str(value.get("description", "")),
             steps=[Step.from_dict(item) for item in raw_steps],
             schema_version=version,
+            procedures=procedures,
         )
+        function._validate_calls()
+        return function
+
+    def _validate_calls(self) -> None:
+        def walk(steps):
+            for step in steps:
+                if step.type == "call" and step.data["procedure"] not in self.procedures:
+                    raise FunctionValidationError(f"Khong co procedure: {step.data['procedure']}")
+                for key in ("steps", "then_steps", "else_steps", "on_exhausted"):
+                    if key in step.data:
+                        walk([Step.from_dict(item) for item in step.data[key]])
+        walk(self.steps)
+        for procedure_steps in self.procedures.values():
+            walk(procedure_steps)
 
     @classmethod
     def load(cls, path: Path) -> "AutoFunction":
@@ -159,6 +208,10 @@ class AutoFunction:
             "description": self.description,
             "logical_size": list(self.logical_size),
             "steps": [step.to_dict() for step in self.steps],
+            "procedures": {
+                name: [step.to_dict() for step in steps]
+                for name, steps in self.procedures.items()
+            },
         }
 
     def save(self, path: Path) -> None:
@@ -206,6 +259,8 @@ class FunctionRuntime:
     def run(self, function: AutoFunction) -> list[ExecutionEvent]:
         self._stopped = False
         self._event_index = 0
+        self._procedures = function.procedures
+        self._call_stack: list[str] = []
         events: list[ExecutionEvent] = []
         self._execute_steps(function.steps, events)
         return events
@@ -245,6 +300,15 @@ class FunctionRuntime:
             self.engine.click(*_point(data["point"]))
         elif step.type == "swipe_path":
             points = [_point(item) for item in data["points"]]
+            self.engine.swipe_points(points, float(data["duration"]))
+        elif step.type == "swipe_from_image":
+            found = self._find_image(
+                data["asset"], float(data.get("confidence", 0.85)),
+                float(data.get("timeout", 10)),
+            )
+            if found is None:
+                raise TimeoutError(f"Khong tim thay anh: {data['asset']}")
+            points = [found] + [_point(item) for item in data["points"]]
             self.engine.swipe_points(points, float(data["duration"]))
         elif step.type == "wait":
             self.sleep(float(data["seconds"]))
@@ -288,6 +352,37 @@ class FunctionRuntime:
             if bool(data.get("continue_after_exhausted", False)):
                 return f"that bai sau {attempts} lan: {last_error}"
             raise RuntimeError(f"Retry that bai sau {attempts} lan: {last_error}")
+        elif step.type == "until_image":
+            attempts = int(data["attempts"])
+            for current in range(1, attempts + 1):
+                found = self._find_image(
+                    data["asset"], float(data.get("confidence", 0.85)),
+                    float(data.get("timeout", 0)),
+                )
+                if found is not None:
+                    return f"found lan {current}/{attempts}"
+                self._execute_steps(self._nested(data["steps"]), events)
+            found = self._find_image(
+                data["asset"], float(data.get("confidence", 0.85)), 0,
+            )
+            if found is not None:
+                return f"found sau {attempts} lan"
+            self._execute_steps(self._nested(data.get("on_exhausted", [])), events)
+            raise TimeoutError(f"Khong dat trang thai anh: {data['asset']}")
+        elif step.type == "call":
+            name = data["procedure"]
+            if name in self._call_stack:
+                raise RuntimeError(f"Procedure goi de quy: {name}")
+            if name not in self._procedures:
+                raise FunctionValidationError(f"Khong co procedure: {name}")
+            self._call_stack.append(name)
+            try:
+                self._execute_steps(self._procedures[name], events)
+            finally:
+                self._call_stack.pop()
+            return name
+        elif step.type == "fail":
+            raise RuntimeError(str(data["message"]))
         return ""
 
 
