@@ -481,8 +481,10 @@ class MultiApp(tk.Tk):
         workspace.add(account_panel, weight=3)
         workspace.add(detail_panel, weight=2)
 
-        self.online_tree = self._create_account_tree(account_panel, "Tài khoản Online", True)
-        self.offline_tree = self._create_account_tree(account_panel, "Tài khoản Offline", False)
+        account_split = ttk.Panedwindow(account_panel, orient="vertical")
+        account_split.pack(fill="both", expand=True)
+        self.online_tree = self._create_account_tree(account_split, "Tài khoản Online")
+        self.offline_tree = self._create_account_tree(account_split, "Tài khoản Offline")
         # Compatibility for the old optional inline-thumbnail worker. The new UI
         # opens Live View in a dedicated window instead of embedding it in a row.
         self.tree = self.online_tree
@@ -517,9 +519,9 @@ class MultiApp(tk.Tk):
         self.note = tk.StringVar(value="Sẵn sàng")
         ttk.Label(self, textvariable=self.note, padding=(12, 0, 12, 10), foreground="#444").pack(fill="x")
 
-    def _create_account_tree(self, parent, title: str, online: bool):
+    def _create_account_tree(self, parent, title: str):
         box = ttk.LabelFrame(parent, text=title, padding=4)
-        box.pack(fill="both", expand=True, pady=(0, 5) if online else (5, 0))
+        parent.add(box, weight=1)
         tree = ttk.Treeview(
             box, columns=("name", "pid"), show=("tree", "headings"),
             selectmode="browse", style="Account.Treeview",
