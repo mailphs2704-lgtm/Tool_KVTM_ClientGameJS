@@ -294,6 +294,9 @@ class MultiApp(tk.Tk):
         self._live_enabled: set[str] = set()
         self._live_thumbnails: dict[str, ctypes.c_void_p] = {}
         self._live_queue: queue.Queue = queue.Queue(maxsize=64)
+        self._checked_profiles: set[str] = set()
+        self._active_profile_id: str | None = None
+        self._game_data: dict[str, dict] = {}
         self._build_ui()
         self.after_idle(self._keep_control_on_primary)
         self.refresh()
@@ -370,25 +373,8 @@ class MultiApp(tk.Tk):
         ttk.Label(header, text="KVTM MULTI", font=("Segoe UI", 18, "bold")).pack(side="left")
         ttk.Label(header, text="Lưu tài khoản một lần, mở lại không cần launcher", foreground="#555").pack(side="left", padx=14)
 
-        columns = ("name", "status", "pid", "saved")
         style = ttk.Style(self)
-        style.configure("Live.Treeview", rowheight=120)
-        self.tree = ttk.Treeview(
-            self, columns=columns, show=("tree", "headings"),
-            selectmode="extended", style="Live.Treeview",
-        )
-        self.tree.heading("#0", text="Live View")
-        self.tree.column("#0", width=130, minwidth=130, stretch=False, anchor="center")
-        self.tree.heading("name", text="Hồ sơ")
-        self.tree.heading("status", text="Trạng thái")
-        self.tree.heading("pid", text="PID")
-        self.tree.heading("saved", text="Cập nhật")
-        self.tree.column("name", width=260)
-        self.tree.column("status", width=140, anchor="center")
-        self.tree.column("pid", width=90, anchor="center")
-        self.tree.column("saved", width=170, anchor="center")
-        self.tree.bind("<Double-1>", lambda _e: self.launch_selected())
-        self.tree.bind("<Button-1>", self._on_tree_click, add="+")
+        style.configure("Account.Treeview", rowheight=30)
 
         controls = ttk.LabelFrame(self, text="Bảng điều khiển", padding=(8, 6))
         controls.pack(fill="x", padx=12, pady=(8, 8))
@@ -413,15 +399,107 @@ class MultiApp(tk.Tk):
                 row=row, column=column, sticky="ew", padx=3, pady=3, ipady=2
             )
 
-        # Pack the expanding list after the control panel. If Windows restores a
-        # short window on another-DPI monitor, controls remain visible first.
-        self.tree.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        # Main workspace: account status on the left, selected account data on the right.
+        workspace = ttk.Panedwindow(self, orient="horizontal")
+        workspace.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+
+        account_panel = ttk.Frame(workspace)
+        detail_panel = ttk.LabelFrame(workspace, text="Thông tin trong game", padding=10)
+        workspace.add(account_panel, weight=3)
+        workspace.add(detail_panel, weight=2)
+
+        self.online_tree = self._create_account_tree(account_panel, "Tài khoản Online", True)
+        self.offline_tree = self._create_account_tree(account_panel, "Tài khoản Offline", False)
+        # Compatibility for the old optional inline-thumbnail worker. The new UI
+        # opens Live View in a dedicated window instead of embedding it in a row.
+        self.tree = self.online_tree
+
+        title_row = ttk.Frame(detail_panel)
+        title_row.pack(fill="x", pady=(0, 8))
+        self.detail_title = tk.StringVar(value="Chưa chọn tài khoản")
+        ttk.Label(title_row, textvariable=self.detail_title, font=("Segoe UI", 12, "bold")).pack(side="left")
+        ttk.Button(title_row, text="Live View", width=10, command=self.preview_selected).pack(side="right")
+
+        fields = (
+            ("Tên", "name"), ("Level", "level"), ("Gold", "gold"),
+            ("Kim cương", "diamond"), ("Kho 1", "storage_1"),
+            ("Kho 2", "storage_2"), ("Kho 3", "storage_3"),
+            ("Kho 4", "storage_4"), ("VPSK nâng được", "vpsk"),
+            ("Thời gian chạy", "runtime"), ("Lượt bán AUTO", "sales"),
+        )
+        self.detail_vars = {}
+        for row, (label, key) in enumerate(fields):
+            ttk.Label(detail_panel, text=label + ":").grid(
+                row=row + 1, column=0, sticky="w", padx=(2, 12), pady=4
+            )
+            value = tk.StringVar(value="—")
+            self.detail_vars[key] = value
+            ttk.Label(detail_panel, textvariable=value).grid(
+                row=row + 1, column=1, sticky="w", pady=4
+            )
+        detail_panel.columnconfigure(1, weight=1)
 
         self.note = tk.StringVar(value="Sẵn sàng")
         ttk.Label(self, textvariable=self.note, padding=(12, 0, 12, 10), foreground="#444").pack(fill="x")
 
+    def _create_account_tree(self, parent, title: str, online: bool):
+        box = ttk.LabelFrame(parent, text=title, padding=4)
+        box.pack(fill="both", expand=True, pady=(0, 5) if online else (5, 0))
+        tree = ttk.Treeview(
+            box, columns=("name", "pid"), show=("tree", "headings"),
+            selectmode="browse", style="Account.Treeview",
+        )
+        tree.heading("#0", text="Chọn")
+        tree.column("#0", width=54, minwidth=54, stretch=False, anchor="center")
+        tree.heading("name", text="Tên client")
+        tree.column("name", width=230, anchor="w")
+        tree.heading("pid", text="PID")
+        tree.column("pid", width=90, minwidth=70, stretch=False, anchor="center")
+        tree.pack(fill="both", expand=True)
+        tree.bind("<Button-1>", lambda event, source=tree: self._on_account_click(source, event), add="+")
+        tree.bind("<Double-1>", lambda _event: self.launch_selected())
+        return tree
+
     def selected_ids(self) -> list[str]:
-        return list(self.tree.selection())
+        if self._checked_profiles:
+            return [p["id"] for p in self.profiles if p["id"] in self._checked_profiles]
+        return [self._active_profile_id] if self._active_profile_id else []
+
+    def _on_account_click(self, tree, event) -> None:
+        profile_id = tree.identify_row(event.y)
+        if not profile_id:
+            return
+        self._active_profile_id = profile_id
+        other = self.offline_tree if tree is self.online_tree else self.online_tree
+        other.selection_remove(*other.selection())
+        tree.selection_set(profile_id)
+        if tree.identify_column(event.x) == "#0":
+            if profile_id in self._checked_profiles:
+                self._checked_profiles.discard(profile_id)
+            else:
+                self._checked_profiles.add(profile_id)
+            tree.item(profile_id, text="☑" if profile_id in self._checked_profiles else "☐")
+        self._show_account_details(profile_id)
+
+    def _show_account_details(self, profile_id: str | None) -> None:
+        profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
+        if not profile:
+            self.detail_title.set("Chưa chọn tài khoản")
+            for value in self.detail_vars.values():
+                value.set("—")
+            return
+        self.detail_title.set(str(profile.get("name") or "Chưa đặt tên"))
+        data = self._game_data.get(profile_id, {})
+        defaults = {"name": profile.get("name", "—")}
+        for key, value in self.detail_vars.items():
+            value.set(str(data.get(key, defaults.get(key, "—"))))
+
+    def update_game_data(self, profile_id: str, data: dict) -> None:
+        """Public ingestion point for the upcoming in-game data reader."""
+        current = self._game_data.setdefault(profile_id, {})
+        current.update(data or {})
+        if self._active_profile_id == profile_id:
+            self._show_account_details(profile_id)
 
     def _publish_running_map(self) -> None:
         """Publish the authoritative profile name for each live PID.
@@ -452,50 +530,25 @@ class MultiApp(tk.Tk):
 
     def refresh(self) -> None:
         self._publish_running_map()
-        selected = set(self.selected_ids())
-        self.tree.delete(*self.tree.get_children())
+        valid_ids = {p.get("id") for p in self.profiles}
+        self._checked_profiles.intersection_update(valid_ids)
+        for tree in (self.online_tree, self.offline_tree):
+            tree.delete(*tree.get_children())
         for profile in self.profiles:
             profile_id = profile["id"]
             proc = self.processes.get(profile_id)
             alive = bool(proc and proc.poll() is None)
-            self.tree.insert(
+            target = self.online_tree if alive else self.offline_tree
+            target.insert(
                 "", "end", iid=profile_id,
-                text="Đang xem" if profile_id in self._live_enabled else "Bấm để xem",
-                image=self._live_images.get(profile_id, ""), values=(
-                profile.get("name", "Chưa đặt tên"),
-                "Đang chạy" if alive else "Đã lưu",
-                proc.pid if alive else "-",
-                profile.get("updated_at", "-"),
-            ))
-            if profile_id in selected:
-                self.tree.selection_add(profile_id)
-
-    def _on_tree_click(self, event) -> None:
-        if self.tree.identify_column(event.x) != "#0":
-            return
-        profile_id = self.tree.identify_row(event.y)
-        if not profile_id:
-            return
-        if profile_id in self._live_enabled:
-            self._live_enabled.discard(profile_id)
-            self._unregister_live_thumbnail(profile_id)
-            self._live_images.pop(profile_id, None)
-            self.tree.item(profile_id, text="Bấm để xem", image="")
-        else:
-            proc = self.processes.get(profile_id)
-            if not proc or proc.poll() is not None:
-                self.note.set("Hồ sơ phải đang chạy mới bật được Live View")
-                return
-            hwnd = self._window_for_pid(proc.pid)
-            if not hwnd:
-                self.note.set("Không tìm thấy cửa sổ client để mở Live View")
-                return
-            try:
-                self._register_live_thumbnail(profile_id, hwnd)
-                self._live_enabled.add(profile_id)
-                self.tree.item(profile_id, text="")
-            except Exception as exc:
-                messagebox.showerror(APP_NAME, f"Không bật được Live View DWM:\n{exc}")
+                text="☑" if profile_id in self._checked_profiles else "☐",
+                values=(profile.get("name", "Chưa đặt tên"), proc.pid if alive else "—"),
+            )
+            if profile_id == self._active_profile_id:
+                target.selection_set(profile_id)
+        if self._active_profile_id not in valid_ids:
+            self._active_profile_id = None
+        self._show_account_details(self._active_profile_id)
 
     def _prepare_dwm(self):
         dwm = ctypes.windll.dwmapi
@@ -866,11 +919,10 @@ class MultiApp(tk.Tk):
         self._move_selected_to_monitor(monitor)
 
     def preview_selected(self) -> None:
-        ids = self.selected_ids()
-        if len(ids) != 1:
-            messagebox.showinfo(APP_NAME, "Hãy chọn đúng một hồ sơ đang chạy.")
+        profile_id = self._active_profile_id
+        if not profile_id:
+            messagebox.showinfo(APP_NAME, "Hãy bấm chọn một tài khoản đang chạy.")
             return
-        profile_id = ids[0]
         existing = self.previews.get(profile_id)
         if existing and existing.winfo_exists():
             existing.lift()
