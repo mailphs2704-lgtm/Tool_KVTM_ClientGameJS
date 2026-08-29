@@ -23,3 +23,12 @@ bridge_token.txt
 *session*
 *cookie*
 *credential*
+
+# AUTO PRO authoritative runtime is intentionally versioned through Git LFS.
+!source-archive/auto-pro-reference/runtime/
+!source-archive/auto-pro-reference/runtime/pyc/
+!source-archive/auto-pro-reference/runtime/pyc/**
+!source-archive/auto-pro-reference/_internal/
+!source-archive/auto-pro-reference/_internal/**
+!source-archive/auto-pro-reference/platform-tools/
+!source-archive/auto-pro-reference/platform-tools/**
