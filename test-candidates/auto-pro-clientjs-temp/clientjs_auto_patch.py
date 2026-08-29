@@ -214,7 +214,7 @@ def _install_controller_patch(adb_controller_module) -> None:
     original_open_game = cls.openGame
 
     def open_game(self, stop_event=None):
-        if str(getattr(self, "device_id", "")).startswith("PC:"):
+        if str(getattr(self, "device_id", "")).startswith(("PC:", "PCID:")):
             return _pc_open_game(self, stop_event)
         return original_open_game(self, stop_event)
 
