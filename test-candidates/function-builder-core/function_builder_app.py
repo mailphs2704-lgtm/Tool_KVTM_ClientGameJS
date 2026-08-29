@@ -72,9 +72,6 @@ class DwmRecorderWindow(tk.Toplevel):
             raise OSError(f"DwmRegisterThumbnail loi 0x{result & 0xffffffff:08X}")
 
         self.bind("<Configure>", self._update_thumbnail)
-        self.bind("<ButtonPress-1>", self._press)
-        self.bind("<B1-Motion>", self._drag)
-        self.bind("<ButtonRelease-1>", self._release)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.after_idle(self._update_thumbnail)
 
@@ -257,6 +254,9 @@ class FunctionBuilderApp(tk.Tk):
         self.drag_points = []
         self.drag_start_time = 0
         self.live_window = None
+        self.edit_mode = None
+        self.edit_points = []
+        self.drag_handle = None
         self.title(f"KVTM Function Builder - PID {pid}")
         self.geometry("1240x760")
         self.minsize(980, 620)
@@ -297,7 +297,20 @@ class FunctionBuilderApp(tk.Tk):
         ttk.Button(asset_buttons, text="Click anh", command=self.add_click_image).pack(side="left")
         body.add(asset_frame, weight=1)
 
-        preview_frame = ttk.LabelFrame(body, text="Live View - click hoac keo de ghi thao tac", padding=4)
+        preview_frame = ttk.LabelFrame(body, text="Trinh chinh toa do - anh tinh khong giat", padding=4)
+        editor_bar = ttk.Frame(preview_frame)
+        editor_bar.pack(fill="x", pady=(0, 4))
+        ttk.Button(editor_bar, text="Tao Click", command=self.start_click_editor).pack(side="left")
+        ttk.Button(editor_bar, text="Tao Swipe", command=self.start_swipe_editor).pack(side="left", padx=3)
+        ttk.Label(editor_bar, text="Swipe giay:").pack(side="left", padx=(8, 2))
+        self.swipe_duration_var = tk.DoubleVar(value=1.0)
+        ttk.Spinbox(
+            editor_bar, from_=0.05, to=60.0, increment=0.1,
+            textvariable=self.swipe_duration_var, width=6,
+        ).pack(side="left")
+        ttk.Button(editor_bar, text="Hoan tac diem", command=self.undo_editor_point).pack(side="left", padx=(8, 3))
+        ttk.Button(editor_bar, text="Xac nhan", command=self.confirm_editor).pack(side="left")
+        ttk.Button(editor_bar, text="Huy", command=self.cancel_editor).pack(side="left", padx=3)
         self.canvas = tk.Canvas(preview_frame, background="black", width=640, height=640)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<ButtonPress-1>", self.on_press)
@@ -348,6 +361,7 @@ class FunctionBuilderApp(tk.Tk):
             self.canvas.delete("all")
             width, height = self._display_size()
             self.canvas.create_image(width / 2, height / 2, image=self.preview, anchor="center")
+            self.redraw_editor()
             self.status_var.set(f"Capture {geometry.width}x{geometry.height}")
         except Exception as exc:
             messagebox.showerror("Capture loi", str(exc))
@@ -375,37 +389,129 @@ class FunctionBuilderApp(tk.Tk):
         y = max(0, min(1000, (event.y - top) * 1000 / self.preview_height))
         return x, y
 
-    def on_press(self, event):
-        import time
-        point = self._logical(event)
-        self.drag_points = [point]
-        self.drag_start_time = time.monotonic()
-        self.recorder.swipe_start(*point, now=self.drag_start_time)
-
-    def on_drag(self, event):
-        point = self._logical(event)
-        self.drag_points.append(point)
-        self.recorder.swipe_move(*point)
-
-    def on_release(self, event):
-        import time
-        point = self._logical(event)
-        moved = len(self.drag_points) > 1 and any(
-            abs(x - self.drag_points[0][0]) + abs(y - self.drag_points[0][1]) > 5
-            for x, y in self.drag_points[1:]
+    def _canvas_xy(self, point):
+        width, height = self._display_size()
+        left = (width - self.preview_width) / 2
+        top = (height - self.preview_height) / 2
+        return (
+            left + float(point[0]) * self.preview_width / 1000.0,
+            top + float(point[1]) * self.preview_height / 1000.0,
         )
-        if moved:
-            self.recorder.swipe_end(*point, now=time.monotonic())
-            step = self.recorder.function.steps[-1]
-            self.engine.swipe_points(
-                [tuple(item) for item in step.data["points"]], step.data["duration"]
+
+    def start_click_editor(self):
+        self.edit_mode = "click"
+        self.edit_points = [[500.0, 500.0]]
+        self.drag_handle = None
+        self.capture_preview()
+        self.status_var.set("Keo diem CLICK, sau do bam Xac nhan")
+
+    def start_swipe_editor(self):
+        self.edit_mode = "swipe_path"
+        self.edit_points = []
+        self.drag_handle = None
+        self.capture_preview()
+        self.status_var.set("Bam de them diem SWIPE; keo diem de chinh")
+
+    def cancel_editor(self):
+        self.edit_mode = None
+        self.edit_points = []
+        self.drag_handle = None
+        self.canvas.delete("editor")
+        self.status_var.set("Da huy thao tac dang chinh")
+
+    def undo_editor_point(self):
+        if self.edit_points:
+            self.edit_points.pop()
+            self.redraw_editor()
+
+    def confirm_editor(self):
+        if self.edit_mode == "click":
+            if len(self.edit_points) != 1:
+                messagebox.showwarning("Chua co diem", "Hay dat mot diem click")
+                return
+            self.recorder.function.steps.append(
+                Step("click", {"point": [round(value, 2) for value in self.edit_points[0]]})
+            )
+        elif self.edit_mode == "swipe_path":
+            if len(self.edit_points) < 2:
+                messagebox.showwarning("Thieu diem", "Swipe can it nhat hai diem")
+                return
+            duration = max(0.05, min(60.0, float(self.swipe_duration_var.get())))
+            self.recorder.function.steps.append(
+                Step("swipe_path", {
+                    "points": [[round(value, 2) for value in point] for point in self.edit_points],
+                    "duration": duration,
+                })
             )
         else:
-            self.recorder._swipe = None
-            self.recorder.click(*point)
-            self.engine.click(*point)
+            messagebox.showwarning("Chua chon thao tac", "Bam Tao Click hoac Tao Swipe")
+            return
+        self.edit_mode = None
+        self.edit_points = []
+        self.drag_handle = None
+        self.canvas.delete("editor")
         self.refresh_steps()
-        self.status_var.set("Da ghi thao tac")
+        self.status_var.set("Da luu thao tac vao bang")
+
+    def redraw_editor(self):
+        self.canvas.delete("editor")
+        if not self.edit_mode:
+            return
+        canvas_points = [self._canvas_xy(point) for point in self.edit_points]
+        if self.edit_mode == "swipe_path" and len(canvas_points) >= 2:
+            flattened = [coordinate for point in canvas_points for coordinate in point]
+            self.canvas.create_line(
+                *flattened, fill="#00ff66", width=3, arrow="last",
+                smooth=False, tags="editor",
+            )
+        for index, (x, y) in enumerate(canvas_points):
+            color = "#ff3b30" if self.edit_mode == "click" else "#ffd60a"
+            radius = 9
+            self.canvas.create_oval(
+                x - radius, y - radius, x + radius, y + radius,
+                fill=color, outline="white", width=2, tags="editor",
+            )
+            self.canvas.create_text(
+                x, y - 17, text=str(index + 1), fill="white",
+                font=("Segoe UI", 9, "bold"), tags="editor",
+            )
+
+    def _nearest_handle(self, event, radius=18):
+        best = None
+        best_distance = radius * radius
+        for index, point in enumerate(self.edit_points):
+            x, y = self._canvas_xy(point)
+            distance = (event.x - x) ** 2 + (event.y - y) ** 2
+            if distance <= best_distance:
+                best, best_distance = index, distance
+        return best
+
+    def on_press(self, event):
+        if not self.edit_mode:
+            self.status_var.set("Hay bam Tao Click hoac Tao Swipe")
+            return
+        handle = self._nearest_handle(event)
+        point = list(self._logical(event))
+        if handle is not None:
+            self.drag_handle = handle
+        elif self.edit_mode == "click":
+            self.edit_points = [point]
+            self.drag_handle = 0
+        else:
+            self.edit_points.append(point)
+            self.drag_handle = len(self.edit_points) - 1
+        self.redraw_editor()
+
+    def on_drag(self, event):
+        if self.edit_mode and self.drag_handle is not None:
+            self.edit_points[self.drag_handle] = list(self._logical(event))
+            self.redraw_editor()
+
+    def on_release(self, event):
+        if self.edit_mode and self.drag_handle is not None:
+            self.edit_points[self.drag_handle] = list(self._logical(event))
+            self.drag_handle = None
+            self.redraw_editor()
 
     def refresh_assets(self):
         self.asset_list.delete(0, "end")
