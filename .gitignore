@@ -1,0 +1,25 @@
+﻿__pycache__/
+*.py[cod]
+*.log
+*.tmp
+trace/
+logs/
+screenshots/
+_internal/
+platform-tools/
+*.zip
+.env
+config/accounts.json
+config/session*
+local_data/kvtm_vm/
+VDD Control.exe
+*.iso
+*.img
+*.qcow2
+*.vdi
+*.vmdk
+dist/
+bridge_token.txt
+*session*
+*cookie*
+*credential*

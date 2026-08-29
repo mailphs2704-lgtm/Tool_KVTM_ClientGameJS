@@ -1,0 +1,23 @@
+adb_controller.py
+automation.py
+automation_desc.py
+constants.py
+data_manager.py
+gui.py
+gui_base.py
+gui_device.py
+gui_popups.py
+gui_tab_add.py
+gui_tab_mgmt.py
+gui_tab_settings.py
+gui_tasks.py
+image_processor.py
+refund_tracker.py
+task_manager.py
+
+Server/license layer originally observed in gui_base.py:
+- API_BASE = https://apikvtm.giaiphapmxh.com
+- X-API-KEY header
+- api_auth_login / wallet / payment / app update / feature / order / device reset / license functions
+
+Local replacement is implemented in local_api.py and installed before GUI import.

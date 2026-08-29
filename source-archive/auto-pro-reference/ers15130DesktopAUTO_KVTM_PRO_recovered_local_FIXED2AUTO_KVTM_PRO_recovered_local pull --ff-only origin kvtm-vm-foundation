@@ -1,0 +1,30 @@
+> [33m4f76428[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Add C003 network diagnostic bundle collector
+< [33md8741a4[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mkvtm-vm-foundation[m[33m, [m[1;31morigin/kvtm-vm-foundation[m[33m)[m Use corrected C003 KVTM compatibility probe
+< [33m374340e[m Relax C003 native bridge readiness to JNI translation
+< [33m722fd0e[m Add launcher for C003 KVTM compatibility probe
+< [33m563b3ed[m Add guarded C003 KVTM compatibility probe
+< [33m8079649[m Keep latest successful checkpoints during cleanup
+< [33m57116b9[m Add one-click local cleanup launcher
+< [33m2337933[m Add guarded local artifact cleanup
+< [33m2b5e4ef[m Record C003 console runtime checkpoint before cleanup
+< [33m21b96af[m Record C003 Live CD userspace boot evidence
+< [33m07cb862[m Record C003 Live CD userspace boot success
+< [33m84347bd[m Add launcher for C003 console runtime probe
+< [33mba5fe01[m Add guarded C003 console runtime probe
+< [33mc46e855[m Record C003 first boot menu pass
+< [33m842bc42[m Add one-click C003 Live CD probe
+< [33me996d75[m Add guarded C003 Live CD boot probe
+< [33m859dda7[m Mark C003 guard pass and first boot gate
+< [33m161c6a2[m Add C003 first boot probe launcher
+< [33m8cd8453[m Add guarded C003 first boot probe
+< [33m1081cb1[m Add C003 shared registry guard launcher
+< [33mc8c8f9d[m Add C003 shared registry integrity guard
+< [33mc4d9a1e[m Record C003 shared LDPlayer VirtualBox registry mode
+< [33mbb92174[m Add C003 isolated VM stage launcher
+< [33mb336bf1[m Add isolated C003 VirtualBox VM staging
+< [33m45f5487[m Isolate C003 VirtualBox registry and stage layout
+< [33mfbc065d[m Record C003 VirtualBox sidecar preflight
+< [33m18449a4[m Add C003 ISO staging launcher
+< [33md451182[m Add verified C003 Android-x86 ISO staging
+< [33m0d1f6d9[m Add verified Android-x86 C003 download source
+< [33mfbe4fc1[m Add one-click C003 preflight

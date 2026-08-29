@@ -1,0 +1,969 @@
+from __future__ import annotations
+
+import base64
+import ctypes
+from ctypes import wintypes
+import json
+import os
+from pathlib import Path
+import queue
+import subprocess
+import sys
+import threading
+import time
+import tkinter as tk
+from tkinter import filedialog, messagebox, simpledialog, ttk
+import uuid
+
+from pc_driver import capture_bgra, save_diagnostic, save_four_floor_swipe_preview
+
+
+APP_NAME = "KVTM Multi"
+GAME_ID = "24"
+APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi"
+PROFILE_FILE = APP_DIR / "profiles.json"
+SETTINGS_FILE = APP_DIR / "settings.json"
+DEFAULT_CLIENT = Path(r"C:\Program Files\ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")
+DEFAULT_GAME = Path(os.environ.get("APPDATA", Path.home())) / "VNG Corporation" / "ZingPlay" / "zpp" / GAME_ID / "game"
+DEFAULT_DISPLAY = {"width": 1000, "height": 1000, "dpi": 240}
+TOOL_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+
+DWM_TNP_RECTDESTINATION = 0x00000001
+DWM_TNP_VISIBLE = 0x00000008
+DWM_TNP_SOURCECLIENTAREAONLY = 0x00000010
+
+
+class DWM_THUMBNAIL_PROPERTIES(ctypes.Structure):
+    _fields_ = [
+        ("dwFlags", wintypes.DWORD),
+        ("rcDestination", wintypes.RECT),
+        ("rcSource", wintypes.RECT),
+        ("opacity", ctypes.c_ubyte),
+        ("fVisible", wintypes.BOOL),
+        ("fSourceClientAreaOnly", wintypes.BOOL),
+    ]
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", wintypes.RECT),
+        ("rcWork", wintypes.RECT),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
+class PreviewWindow(tk.Toplevel):
+    """DWM-scaled view of a full-resolution off-screen game window."""
+
+    def __init__(self, owner, profile_id: str, title: str, source_hwnd: int):
+        super().__init__(owner)
+        self.owner = owner
+        self.profile_id = profile_id
+        self.source_hwnd = source_hwnd
+        self.thumbnail = ctypes.c_void_p()
+        self._closing = False
+        self._square_job = None
+        self.original_rect = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(source_hwnd, ctypes.byref(self.original_rect))
+        self.title(f"{title} - Preview")
+        self.configure(background="black")
+        self.geometry("520x520")
+        self.minsize(240, 240)
+        self.update_idletasks()
+        dwm = ctypes.windll.dwmapi
+        dwm.DwmRegisterThumbnail.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.POINTER(ctypes.c_void_p)]
+        dwm.DwmRegisterThumbnail.restype = ctypes.c_long
+        dwm.DwmUpdateThumbnailProperties.argtypes = [ctypes.c_void_p, ctypes.POINTER(DWM_THUMBNAIL_PROPERTIES)]
+        dwm.DwmUpdateThumbnailProperties.restype = ctypes.c_long
+        dwm.DwmUnregisterThumbnail.argtypes = [ctypes.c_void_p]
+        dwm.DwmUnregisterThumbnail.restype = ctypes.c_long
+        user32 = ctypes.windll.user32
+        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        user32.GetAncestor.restype = wintypes.HWND
+        destination = user32.GetAncestor(self.winfo_id(), 2) or self.winfo_id()
+        hr = dwm.DwmRegisterThumbnail(
+            destination, source_hwnd, ctypes.byref(self.thumbnail)
+        )
+        if hr < 0:
+            raise OSError(f"DwmRegisterThumbnail lỗi 0x{hr & 0xffffffff:08X}")
+        self.bind("<Configure>", self._on_configure)
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.after_idle(self._update_thumbnail)
+
+    def _on_configure(self, _event=None):
+        if self._closing:
+            return
+        width, height = self.winfo_width(), self.winfo_height()
+        side = min(width, height)
+        if abs(width - height) > 2 and not self._square_job:
+            self._square_job = self.after_idle(lambda s=side: self._force_square(s))
+        self._update_thumbnail()
+
+    def _force_square(self, side: int):
+        self._square_job = None
+        if not self._closing:
+            self.geometry(f"{max(240, side)}x{max(240, side)}")
+
+    def _update_thumbnail(self):
+        if self._closing or not self.thumbnail.value:
+            return
+        rect = wintypes.RECT(0, 0, max(1, self.winfo_width()), max(1, self.winfo_height()))
+        props = DWM_THUMBNAIL_PROPERTIES()
+        props.dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_VISIBLE | DWM_TNP_SOURCECLIENTAREAONLY
+        props.rcDestination = rect
+        props.fVisible = True
+        props.fSourceClientAreaOnly = True
+        ctypes.windll.dwmapi.DwmUpdateThumbnailProperties(self.thumbnail, ctypes.byref(props))
+
+    def close(self, restore=True):
+        if self._closing:
+            return
+        self._closing = True
+        if self.thumbnail.value:
+            ctypes.windll.dwmapi.DwmUnregisterThumbnail(self.thumbnail)
+            self.thumbnail = ctypes.c_void_p()
+        if restore and ctypes.windll.user32.IsWindow(self.source_hwnd):
+            width = self.original_rect.right - self.original_rect.left
+            height = self.original_rect.bottom - self.original_rect.top
+            ctypes.windll.user32.SetWindowPos(
+                self.source_hwnd, 0, self.original_rect.left, self.original_rect.top,
+                width, height, 0x0004 | 0x0040,
+            )
+        self.owner.previews.pop(self.profile_id, None)
+        self.destroy()
+
+
+class DATA_BLOB(ctypes.Structure):
+    _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+
+def _blob(data: bytes) -> tuple[DATA_BLOB, object]:
+    buf = ctypes.create_string_buffer(data)
+    return DATA_BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_byte))), buf
+
+
+def protect(data: bytes) -> str:
+    """Encrypt profile secrets for the current Windows user with DPAPI."""
+    if os.name != "nt":
+        raise RuntimeError("DPAPI is only available on Windows")
+    source, keepalive = _blob(data)
+    result = DATA_BLOB()
+    entropy, entropy_keepalive = _blob(b"KVTM-MULTI-v1")
+    ok = ctypes.windll.crypt32.CryptProtectData(
+        ctypes.byref(source), APP_NAME, ctypes.byref(entropy), None, None,
+        0x01, ctypes.byref(result),
+    )
+    if not ok:
+        raise ctypes.WinError()
+    try:
+        raw = ctypes.string_at(result.pbData, result.cbData)
+        return base64.b64encode(raw).decode("ascii")
+    finally:
+        ctypes.windll.kernel32.LocalFree(result.pbData)
+        del keepalive, entropy_keepalive
+
+
+def unprotect(value: str) -> bytes:
+    """Decrypt a DPAPI value created by the current Windows user."""
+    raw = base64.b64decode(value)
+    source, keepalive = _blob(raw)
+    result = DATA_BLOB()
+    entropy, entropy_keepalive = _blob(b"KVTM-MULTI-v1")
+    ok = ctypes.windll.crypt32.CryptUnprotectData(
+        ctypes.byref(source), None, ctypes.byref(entropy), None, None,
+        0x01, ctypes.byref(result),
+    )
+    if not ok:
+        raise ctypes.WinError()
+    try:
+        return ctypes.string_at(result.pbData, result.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(result.pbData)
+        del keepalive, entropy_keepalive
+
+
+def split_windows_command_line(command_line: str) -> list[str]:
+    argc = ctypes.c_int()
+    parser = ctypes.windll.shell32.CommandLineToArgvW
+    parser.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    parser.restype = ctypes.POINTER(wintypes.LPWSTR)
+    argv = parser(command_line, ctypes.byref(argc))
+    if not argv:
+        raise ctypes.WinError()
+    try:
+        return [argv[i] for i in range(argc.value)]
+    finally:
+        ctypes.windll.kernel32.LocalFree(argv)
+
+
+def running_clients() -> list[dict]:
+    """Read running GameClientJS command lines without writing secrets to disk."""
+    script = (
+        "$p=Get-CimInstance Win32_Process -Filter \"Name='GameClientJS.exe'\" | "
+        "Select-Object ProcessId,ExecutablePath,CommandLine;"
+        "@($p)|ConvertTo-Json -Compress"
+    )
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    run = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, encoding="utf-8-sig", errors="replace",
+        creationflags=flags, timeout=15, check=True,
+    )
+    data = json.loads(run.stdout or "[]")
+    if isinstance(data, dict):
+        data = [data]
+    return [row for row in data if row.get("CommandLine")]
+
+
+def load_profiles() -> list[dict]:
+    try:
+        data = json.loads(PROFILE_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def save_profiles(profiles: list[dict]) -> None:
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    temp = PROFILE_FILE.with_suffix(".tmp")
+    temp.write_text(json.dumps(profiles, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temp, PROFILE_FILE)
+
+
+def load_settings() -> dict:
+    try:
+        saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        saved = {}
+    display = saved.get("display", {}) if isinstance(saved, dict) else {}
+    return {"display": {
+        "width": int(display.get("width", DEFAULT_DISPLAY["width"])),
+        "height": int(display.get("height", DEFAULT_DISPLAY["height"])),
+        "dpi": int(display.get("dpi", DEFAULT_DISPLAY["dpi"])),
+    }, "bridge_bin": str(saved.get("bridge_bin", "")) if isinstance(saved, dict) else ""}
+
+
+def save_settings(settings: dict) -> None:
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+class MultiApp(tk.Tk):
+    def __init__(self) -> None:
+        super().__init__()
+        self.title(APP_NAME)
+        self.geometry("980x650")
+        self.minsize(720, 400)
+        self.profiles = load_profiles()
+        self.settings = load_settings()
+        self.processes: dict[str, subprocess.Popen] = {}
+        self.previews: dict[str, PreviewWindow] = {}
+        self._bridged_pids: set[int] = set()
+        self._bridge_lock = threading.Lock()
+        self._bridge_stop = threading.Event()
+        self._bridge_error = ""
+        self._live_images: dict[str, tk.PhotoImage] = {}
+        self._live_enabled: set[str] = set()
+        self._live_thumbnails: dict[str, ctypes.c_void_p] = {}
+        self._live_queue: queue.Queue = queue.Queue(maxsize=64)
+        self._build_ui()
+        self.refresh()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        threading.Thread(target=self._bridge_monitor, daemon=True).start()
+        self.after(100, self._update_live_dwm)
+        self.after(1500, self._poll)
+
+    def _build_ui(self) -> None:
+        header = ttk.Frame(self, padding=12)
+        header.pack(fill="x")
+        ttk.Label(header, text="KVTM MULTI", font=("Segoe UI", 18, "bold")).pack(side="left")
+        ttk.Label(header, text="Lưu tài khoản một lần, mở lại không cần launcher", foreground="#555").pack(side="left", padx=14)
+
+        columns = ("name", "status", "pid", "saved")
+        style = ttk.Style(self)
+        style.configure("Live.Treeview", rowheight=120)
+        self.tree = ttk.Treeview(
+            self, columns=columns, show=("tree", "headings"),
+            selectmode="extended", style="Live.Treeview",
+        )
+        self.tree.heading("#0", text="Live View")
+        self.tree.column("#0", width=130, minwidth=130, stretch=False, anchor="center")
+        self.tree.heading("name", text="Hồ sơ")
+        self.tree.heading("status", text="Trạng thái")
+        self.tree.heading("pid", text="PID")
+        self.tree.heading("saved", text="Cập nhật")
+        self.tree.column("name", width=260)
+        self.tree.column("status", width=140, anchor="center")
+        self.tree.column("pid", width=90, anchor="center")
+        self.tree.column("saved", width=170, anchor="center")
+        self.tree.bind("<Double-1>", lambda _e: self.launch_selected())
+        self.tree.bind("<Button-1>", self._on_tree_click, add="+")
+
+        actions = ttk.Frame(self, padding=(12, 12, 12, 4))
+        actions.pack(fill="x")
+        ttk.Button(actions, text="+ Lưu client đang chạy", command=self.capture).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Mở đã chọn", command=self.launch_selected).pack(side="left", padx=6)
+        ttk.Button(actions, text="Mở tất cả", command=self.launch_all).pack(side="left", padx=6)
+        ttk.Button(actions, text="Xếp cửa sổ", command=self.tile).pack(side="left", padx=6)
+        ttk.Button(actions, text="Độ phân giải", command=self.configure_display).pack(side="left", padx=6)
+        ttk.Button(actions, text="Dừng đã chọn", command=self.stop_selected).pack(side="left", padx=6)
+        ttk.Button(actions, text="Xóa hồ sơ", command=self.delete_selected).pack(side="right")
+
+        tools = ttk.Frame(self, padding=(12, 0, 12, 8))
+        tools.pack(fill="x")
+        ttk.Button(tools, text="Bridge DLL", command=self.configure_bridge).pack(side="left", padx=(0, 6))
+        ttk.Button(tools, text="Sang màn hình ảo", command=self.move_selected_to_virtual).pack(side="left", padx=6)
+        ttk.Button(tools, text="Về màn hình chính", command=self.move_selected_to_primary).pack(side="left", padx=6)
+        ttk.Button(tools, text="Chụp kiểm tra", command=self.capture_diagnostic).pack(side="left", padx=6)
+        ttk.Button(tools, text="Xem swipe 4 tầng", command=self.preview_four_floor_swipe).pack(side="left", padx=6)
+        ttk.Button(tools, text="Thử swipe thật", command=self.test_four_floor_swipe).pack(side="left", padx=6)
+
+        # Pack the expanding list after both toolbars. If Windows restores a
+        # short window on another-DPI monitor, controls remain visible first.
+        self.tree.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+
+        self.note = tk.StringVar(value="Sẵn sàng")
+        ttk.Label(self, textvariable=self.note, padding=(12, 0, 12, 10), foreground="#444").pack(fill="x")
+
+    def selected_ids(self) -> list[str]:
+        return list(self.tree.selection())
+
+    def refresh(self) -> None:
+        selected = set(self.selected_ids())
+        self.tree.delete(*self.tree.get_children())
+        for profile in self.profiles:
+            profile_id = profile["id"]
+            proc = self.processes.get(profile_id)
+            alive = bool(proc and proc.poll() is None)
+            self.tree.insert(
+                "", "end", iid=profile_id,
+                text="Đang xem" if profile_id in self._live_enabled else "Bấm để xem",
+                image=self._live_images.get(profile_id, ""), values=(
+                profile.get("name", "Chưa đặt tên"),
+                "Đang chạy" if alive else "Đã lưu",
+                proc.pid if alive else "-",
+                profile.get("updated_at", "-"),
+            ))
+            if profile_id in selected:
+                self.tree.selection_add(profile_id)
+
+    def _on_tree_click(self, event) -> None:
+        if self.tree.identify_column(event.x) != "#0":
+            return
+        profile_id = self.tree.identify_row(event.y)
+        if not profile_id:
+            return
+        if profile_id in self._live_enabled:
+            self._live_enabled.discard(profile_id)
+            self._unregister_live_thumbnail(profile_id)
+            self._live_images.pop(profile_id, None)
+            self.tree.item(profile_id, text="Bấm để xem", image="")
+        else:
+            proc = self.processes.get(profile_id)
+            if not proc or proc.poll() is not None:
+                self.note.set("Hồ sơ phải đang chạy mới bật được Live View")
+                return
+            hwnd = self._window_for_pid(proc.pid)
+            if not hwnd:
+                self.note.set("Không tìm thấy cửa sổ client để mở Live View")
+                return
+            try:
+                self._register_live_thumbnail(profile_id, hwnd)
+                self._live_enabled.add(profile_id)
+                self.tree.item(profile_id, text="")
+            except Exception as exc:
+                messagebox.showerror(APP_NAME, f"Không bật được Live View DWM:\n{exc}")
+
+    def _prepare_dwm(self):
+        dwm = ctypes.windll.dwmapi
+        dwm.DwmRegisterThumbnail.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.POINTER(ctypes.c_void_p)]
+        dwm.DwmRegisterThumbnail.restype = ctypes.c_long
+        dwm.DwmUpdateThumbnailProperties.argtypes = [ctypes.c_void_p, ctypes.POINTER(DWM_THUMBNAIL_PROPERTIES)]
+        dwm.DwmUpdateThumbnailProperties.restype = ctypes.c_long
+        dwm.DwmUnregisterThumbnail.argtypes = [ctypes.c_void_p]
+        dwm.DwmUnregisterThumbnail.restype = ctypes.c_long
+        return dwm
+
+    def _register_live_thumbnail(self, profile_id: str, source_hwnd: int) -> None:
+        self.update_idletasks()
+        user32 = ctypes.windll.user32
+        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        user32.GetAncestor.restype = wintypes.HWND
+        destination = user32.GetAncestor(self.winfo_id(), 2) or self.winfo_id()
+        thumbnail = ctypes.c_void_p()
+        hr = self._prepare_dwm().DwmRegisterThumbnail(destination, source_hwnd, ctypes.byref(thumbnail))
+        if hr < 0:
+            raise OSError(f"DwmRegisterThumbnail lỗi 0x{hr & 0xffffffff:08X}")
+        self._live_thumbnails[profile_id] = thumbnail
+
+    def _unregister_live_thumbnail(self, profile_id: str) -> None:
+        thumbnail = self._live_thumbnails.pop(profile_id, None)
+        if thumbnail and thumbnail.value:
+            self._prepare_dwm().DwmUnregisterThumbnail(thumbnail)
+
+    def _update_live_dwm(self) -> None:
+        if self._bridge_stop.is_set():
+            return
+        dwm = self._prepare_dwm()
+        tree_x = self.tree.winfo_rootx() - self.winfo_rootx()
+        tree_y = self.tree.winfo_rooty() - self.winfo_rooty()
+        for profile_id, thumbnail in list(self._live_thumbnails.items()):
+            props = DWM_THUMBNAIL_PROPERTIES()
+            bbox = self.tree.bbox(profile_id, "#0") if self.tree.exists(profile_id) else ""
+            if bbox:
+                bx, by, bw, bh = map(int, bbox)
+                side = max(1, min(bw - 8, bh - 8))
+                left = tree_x + bx + (bw - side) // 2
+                top = tree_y + by + (bh - side) // 2
+                props.dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_VISIBLE | DWM_TNP_SOURCECLIENTAREAONLY
+                props.rcDestination = wintypes.RECT(left, top, left + side, top + side)
+                props.fVisible = True
+                props.fSourceClientAreaOnly = True
+            else:
+                props.dwFlags = DWM_TNP_VISIBLE
+                props.fVisible = False
+            hr = dwm.DwmUpdateThumbnailProperties(thumbnail, ctypes.byref(props))
+            if hr < 0:
+                self._live_enabled.discard(profile_id)
+                self._unregister_live_thumbnail(profile_id)
+        self.after(100, self._update_live_dwm)
+
+    @staticmethod
+    def _thumbnail_ppm(raw: bytes, width: int, height: int, side: int = 112) -> bytes:
+        """Nearest-neighbour BGRA thumbnail encoded for Tk PhotoImage."""
+        rgb = bytearray(side * side * 3)
+        target = 0
+        for y in range(side):
+            source_y = min(height - 1, y * height // side)
+            row = source_y * width * 4
+            for x in range(side):
+                source_x = min(width - 1, x * width // side)
+                index = row + source_x * 4
+                rgb[target] = raw[index + 2]
+                rgb[target + 1] = raw[index + 1]
+                rgb[target + 2] = raw[index]
+                target += 3
+        return f"P6\n{side} {side}\n255\n".encode("ascii") + bytes(rgb)
+
+    def _live_worker(self) -> None:
+        while not self._bridge_stop.is_set():
+            enabled = set(self._live_enabled)
+            snapshot = [item for item in list(self.processes.items()) if item[0] in enabled]
+            for profile_id, proc in snapshot:
+                if self._bridge_stop.is_set():
+                    return
+                if proc.poll() is not None:
+                    continue
+                try:
+                    hwnd = self._window_for_pid(proc.pid)
+                    if not hwnd:
+                        continue
+                    raw, width, height = capture_bgra(hwnd)
+                    item = (profile_id, self._thumbnail_ppm(raw, width, height))
+                    try:
+                        self._live_queue.put_nowait(item)
+                    except queue.Full:
+                        pass
+                except Exception:
+                    continue
+            self._bridge_stop.wait(1.0)
+
+    def _poll_live_results(self) -> None:
+        if self._bridge_stop.is_set():
+            return
+        try:
+            while True:
+                profile_id, ppm = self._live_queue.get_nowait()
+                if self.tree.exists(profile_id):
+                    image = tk.PhotoImage(data=ppm, format="PPM")
+                    self._live_images[profile_id] = image
+                    self.tree.item(profile_id, text="Đang xem", image=image)
+        except queue.Empty:
+            pass
+        self.after(200, self._poll_live_results)
+
+    def capture(self) -> None:
+        try:
+            clients = running_clients()
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Không đọc được client đang chạy:\n{exc}")
+            return
+        candidates = []
+        for row in clients:
+            try:
+                args = split_windows_command_line(row["CommandLine"])
+            except Exception:
+                continue
+            if len(args) >= 4 and Path(args[1]).name.lower() in {"game", "24"}:
+                candidates.append((row, args))
+            elif len(args) >= 4:
+                candidates.append((row, args))
+        if not candidates:
+            messagebox.showinfo(APP_NAME, "Chưa thấy KVTM đang chạy. Hãy mở tài khoản bằng ZingPlay rồi bấm lại.")
+            return
+        if len(candidates) > 1:
+            pids = ", ".join(str(row.get("ProcessId")) for row, _ in candidates)
+            messagebox.showinfo(APP_NAME, f"Có nhiều client đang chạy (PID {pids}).\nHãy chỉ để client cần lưu chạy rồi thử lại.")
+            return
+        row, args = candidates[0]
+        name = simpledialog.askstring(APP_NAME, "Đặt tên hồ sơ/tài khoản:", parent=self)
+        if not name:
+            return
+        secret = protect(json.dumps(args[2:], ensure_ascii=False).encode("utf-8"))
+        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        existing = next((p for p in self.profiles if p.get("name", "").casefold() == name.casefold()), None)
+        record = {
+            "id": existing["id"] if existing else uuid.uuid4().hex,
+            "name": name.strip(),
+            "client": row.get("ExecutablePath") or args[0],
+            "game_dir": args[1],
+            "secret": secret,
+            "updated_at": now,
+        }
+        if existing:
+            self.profiles[self.profiles.index(existing)] = record
+        else:
+            self.profiles.append(record)
+        save_profiles(self.profiles)
+        self.note.set(f"Đã lưu hồ sơ {record['name']} an toàn trên máy này")
+        self.refresh()
+
+    def _launch(self, profile: dict) -> None:
+        old = self.processes.get(profile["id"])
+        if old and old.poll() is None:
+            return
+        client = Path(profile.get("client") or DEFAULT_CLIENT)
+        game_dir = Path(profile.get("game_dir") or DEFAULT_GAME)
+        if not client.is_file():
+            raise FileNotFoundError(f"Không thấy GameClientJS.exe:\n{client}")
+        if not game_dir.is_dir():
+            raise FileNotFoundError(f"Không thấy dữ liệu KVTM:\n{game_dir}")
+        secret_args = json.loads(unprotect(profile["secret"]).decode("utf-8"))
+        proc = subprocess.Popen([str(client), str(game_dir), *secret_args], cwd=str(game_dir))
+        self.processes[profile["id"]] = proc
+        self.after(1200, lambda p=proc: self._apply_display_to_process(p))
+
+    def _profiles_for(self, ids: list[str]) -> list[dict]:
+        wanted = set(ids)
+        return [p for p in self.profiles if p["id"] in wanted]
+
+    def launch_selected(self) -> None:
+        ids = self.selected_ids()
+        if not ids:
+            messagebox.showinfo(APP_NAME, "Hãy chọn ít nhất một hồ sơ.")
+            return
+        self._launch_many(self._profiles_for(ids))
+
+    def launch_all(self) -> None:
+        self._launch_many(self.profiles)
+
+    def _launch_many(self, profiles: list[dict]) -> None:
+        if profiles and not self._bridge_files() and not self.configure_bridge():
+            messagebox.showwarning(APP_NAME, "Chưa có Bridge DLL nên Multi chưa thể khóa khung game vuông.")
+            return
+        errors = []
+        for profile in profiles:
+            try:
+                self._launch(profile)
+                time.sleep(0.35)
+            except Exception as exc:
+                errors.append(f"{profile.get('name')}: {exc}")
+        self.refresh()
+        if errors:
+            messagebox.showerror(APP_NAME, "Không mở được:\n\n" + "\n".join(errors))
+        else:
+            self.note.set(f"Đã gửi lệnh mở {len(profiles)} hồ sơ")
+
+    def stop_selected(self) -> None:
+        for profile_id in self.selected_ids():
+            self._live_enabled.discard(profile_id)
+            self._unregister_live_thumbnail(profile_id)
+            preview = self.previews.get(profile_id)
+            if preview:
+                preview.close(restore=False)
+            proc = self.processes.get(profile_id)
+            if proc and proc.poll() is None:
+                proc.terminate()
+        self.after(500, self.refresh)
+
+    def delete_selected(self) -> None:
+        ids = set(self.selected_ids())
+        if not ids or not messagebox.askyesno(APP_NAME, "Xóa các hồ sơ đã chọn? Client game không bị xóa."):
+            return
+        self.profiles = [p for p in self.profiles if p["id"] not in ids]
+        save_profiles(self.profiles)
+        self.refresh()
+
+    def _window_for_pid(self, pid: int) -> int | None:
+        found = []
+        enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def callback(hwnd, _lparam):
+            window_pid = wintypes.DWORD()
+            ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+            if window_pid.value == pid and ctypes.windll.user32.IsWindowVisible(hwnd):
+                found.append(hwnd)
+                return False
+            return True
+        ctypes.windll.user32.EnumWindows(enum_proc(callback), 0)
+        return found[0] if found else None
+
+    def tile(self) -> None:
+        live = [p for p in self.processes.values() if p.poll() is None]
+        if not live:
+            return
+        screen_w = ctypes.windll.user32.GetSystemMetrics(0)
+        screen_h = ctypes.windll.user32.GetSystemMetrics(1) - 48
+        cols = max(1, int(len(live) ** 0.5 + 0.999))
+        rows = (len(live) + cols - 1) // cols
+        width, height = screen_w // cols, screen_h // rows
+        for index, proc in enumerate(live):
+            hwnd = self._window_for_pid(proc.pid)
+            if hwnd:
+                x, y = (index % cols) * width, (index // cols) * height
+                ctypes.windll.user32.ShowWindow(hwnd, 9)
+                ctypes.windll.user32.SetWindowPos(hwnd, 0, x, y, width, height, 0x0040)
+
+    def _resize_client(self, hwnd: int, width: int, height: int) -> None:
+        """Resize the drawable client area, excluding title bar and borders."""
+        rect = wintypes.RECT(0, 0, int(width), int(height))
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, -16)
+        ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+        adjusted = False
+        adjust_for_dpi = getattr(ctypes.windll.user32, "AdjustWindowRectExForDpi", None)
+        if adjust_for_dpi:
+            dpi = ctypes.windll.user32.GetDpiForWindow(hwnd)
+            adjusted = bool(adjust_for_dpi(ctypes.byref(rect), style, False, ex_style, dpi))
+        if not adjusted:
+            ctypes.windll.user32.AdjustWindowRectEx(ctypes.byref(rect), style, False, ex_style)
+        outer_w, outer_h = rect.right - rect.left, rect.bottom - rect.top
+        ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, outer_w, outer_h, 0x0002 | 0x0004 | 0x0040)
+
+    def _monitors(self) -> list[dict]:
+        monitors = []
+        callback_type = ctypes.WINFUNCTYPE(
+            wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC,
+            ctypes.POINTER(wintypes.RECT), wintypes.LPARAM,
+        )
+
+        def callback(handle, _hdc, _rect, _data):
+            info = MONITORINFO()
+            info.cbSize = ctypes.sizeof(info)
+            if ctypes.windll.user32.GetMonitorInfoW(handle, ctypes.byref(info)):
+                monitors.append({
+                    "handle": handle,
+                    "primary": bool(info.dwFlags & 1),
+                    "left": info.rcWork.left,
+                    "top": info.rcWork.top,
+                    "right": info.rcWork.right,
+                    "bottom": info.rcWork.bottom,
+                })
+            return True
+
+        ctypes.windll.user32.EnumDisplayMonitors(0, None, callback_type(callback), 0)
+        return monitors
+
+    def _move_selected_to_monitor(self, monitor: dict) -> None:
+        ids = self.selected_ids()
+        if not ids:
+            messagebox.showinfo(APP_NAME, "Hãy chọn ít nhất một hồ sơ đang chạy.")
+            return
+        windows = []
+        for profile_id in ids:
+            proc = self.processes.get(profile_id)
+            if proc and proc.poll() is None:
+                hwnd = self._window_for_pid(proc.pid)
+                if hwnd:
+                    ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                    # Move first so WM_DPICHANGED completes on the destination
+                    # monitor. The exact 1000x1000 resize happens afterwards.
+                    ctypes.windll.user32.SetWindowPos(
+                        hwnd, 0, monitor["left"], monitor["top"], 0, 0,
+                        0x0001 | 0x0004 | 0x0010 | 0x0040,
+                    )
+                    windows.append(hwnd)
+        if not windows:
+            messagebox.showinfo(APP_NAME, "Không tìm thấy client được mở bằng Multi.")
+            return
+        self.note.set("Đang chờ Windows đổi DPI rồi đặt chính xác 1000x1000...")
+        self.after(400, lambda ws=windows, m=dict(monitor): self._finalize_monitor_move(ws, m))
+
+    def _finalize_monitor_move(self, windows: list[int], monitor: dict) -> None:
+        measured = []
+        for hwnd in windows:
+            if not ctypes.windll.user32.IsWindow(hwnd):
+                continue
+            self._resize_client(hwnd, 1000, 1000)
+            rect = wintypes.RECT()
+            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            measured.append((hwnd, rect.right - rect.left, rect.bottom - rect.top))
+        if not measured:
+            return
+        work_w = monitor["right"] - monitor["left"]
+        work_h = monitor["bottom"] - monitor["top"]
+        cell_w = max(item[1] for item in measured)
+        cell_h = max(item[2] for item in measured)
+        columns = max(1, work_w // cell_w)
+        rows = max(1, work_h // cell_h)
+        if columns * rows < len(measured):
+            messagebox.showwarning(
+                APP_NAME,
+                f"Màn hình chỉ đủ chỗ cho {columns * rows} client 1000x1000; "
+                f"{len(measured)} client sẽ xếp chồng một phần.",
+            )
+        for index, (hwnd, outer_w, outer_h) in enumerate(measured):
+            column = index % columns
+            row = (index // columns) % rows
+            x = monitor["left"] + column * cell_w
+            y = monitor["top"] + row * cell_h
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, 0, x, y, outer_w, outer_h, 0x0004 | 0x0010 | 0x0040,
+            )
+        kind = "màn hình chính" if monitor["primary"] else "màn hình phụ/ảo"
+        self.note.set(f"Đã chuyển {len(measured)} client, vùng game đúng 1000x1000 trên {kind}")
+
+    def move_selected_to_virtual(self) -> None:
+        monitors = [item for item in self._monitors() if not item["primary"]]
+        if not monitors:
+            messagebox.showerror(
+                APP_NAME,
+                "Windows chưa có màn hình phụ/ảo ở chế độ Extend. Hãy bật màn hình ảo rồi thử lại.",
+            )
+            return
+        monitor = max(
+            monitors,
+            key=lambda item: (item["right"] - item["left"]) * (item["bottom"] - item["top"]),
+        )
+        self._move_selected_to_monitor(monitor)
+
+    def move_selected_to_primary(self) -> None:
+        monitor = next((item for item in self._monitors() if item["primary"]), None)
+        if not monitor:
+            messagebox.showerror(APP_NAME, "Không xác định được màn hình chính.")
+            return
+        self._move_selected_to_monitor(monitor)
+
+    def preview_selected(self) -> None:
+        ids = self.selected_ids()
+        if len(ids) != 1:
+            messagebox.showinfo(APP_NAME, "Hãy chọn đúng một hồ sơ đang chạy.")
+            return
+        profile_id = ids[0]
+        existing = self.previews.get(profile_id)
+        if existing and existing.winfo_exists():
+            existing.lift()
+            return
+        proc = self.processes.get(profile_id)
+        if not proc or proc.poll() is not None:
+            messagebox.showinfo(APP_NAME, "Hồ sơ phải được mở bằng Multi trước.")
+            return
+        hwnd = self._window_for_pid(proc.pid)
+        if not hwnd:
+            messagebox.showerror(APP_NAME, "Không tìm thấy cửa sổ client.")
+            return
+        try:
+            self._resize_client(hwnd, 1000, 1000)
+            profile = next(p for p in self.profiles if p["id"] == profile_id)
+            preview = PreviewWindow(self, profile_id, profile.get("name", "KVTM"), hwnd)
+            self.previews[profile_id] = preview
+            # Keep a thin strip intersecting the virtual desktop. Cocos/DWM can
+            # stop producing frames when a source window is entirely off-screen.
+            virtual_right = (
+                ctypes.windll.user32.GetSystemMetrics(76)
+                + ctypes.windll.user32.GetSystemMetrics(78)
+            )
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, 1, virtual_right - 32, 0, 0, 0,
+                0x0001 | 0x0010 | 0x0040,  # NOSIZE | NOACTIVATE | SHOWWINDOW
+            )
+            self.note.set("Preview đang thu nhỏ; client thật vẫn render 1000x1000 cho AUTO")
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Không tạo được Preview:\n{exc}")
+
+    def _apply_display_to_process(self, proc: subprocess.Popen) -> None:
+        if proc.poll() is not None:
+            return
+        hwnd = self._window_for_pid(proc.pid)
+        if not hwnd:
+            self.after(800, lambda p=proc: self._apply_display_to_process(p))
+            return
+        display = self.settings["display"]
+        self._resize_client(hwnd, display["width"], display["height"])
+        self._inject_bridge(proc.pid)
+        self.note.set(
+            f"Đã đặt client {display['width']}x{display['height']} px; mốc quy đổi auto {display['dpi']} DPI"
+        )
+
+    def configure_display(self) -> None:
+        display = self.settings["display"]
+        width = simpledialog.askinteger(APP_NAME, "Chiều rộng vùng game (px):", initialvalue=display["width"], minvalue=400, maxvalue=4000, parent=self)
+        if width is None:
+            return
+        height = simpledialog.askinteger(APP_NAME, "Chiều cao vùng game (px):", initialvalue=display["height"], minvalue=400, maxvalue=4000, parent=self)
+        if height is None:
+            return
+        dpi = simpledialog.askinteger(APP_NAME, "Mốc DPI dùng cho quy đổi auto:", initialvalue=display["dpi"], minvalue=96, maxvalue=600, parent=self)
+        if dpi is None:
+            return
+        self.settings["display"] = {"width": width, "height": height, "dpi": dpi}
+        save_settings(self.settings)
+        for proc in self.processes.values():
+            self._apply_display_to_process(proc)
+        self.note.set(f"Đã lưu độ phân giải {width}x{height}, mốc {dpi} DPI")
+
+    def _bridge_files(self) -> tuple[Path, Path] | None:
+        candidates = []
+        saved = str(self.settings.get("bridge_bin", "")).strip()
+        if saved:
+            candidates.append(Path(saved))
+        candidates.extend((TOOL_DIR / "bin", TOOL_DIR))
+        for folder in candidates:
+            loader = folder / "kvtm_loader.exe"
+            bridge = folder / "kvtm_bridge.dll"
+            if loader.is_file() and bridge.is_file():
+                return loader, bridge
+        return None
+
+    def configure_bridge(self) -> bool:
+        current = str(self.settings.get("bridge_bin", "")) or str(TOOL_DIR / "bin")
+        selected = filedialog.askdirectory(
+            title="Chọn thư mục bin có kvtm_loader.exe và kvtm_bridge.dll",
+            initialdir=current if Path(current).is_dir() else str(TOOL_DIR),
+            parent=self,
+        )
+        if not selected:
+            return False
+        folder = Path(selected)
+        if not (folder / "kvtm_loader.exe").is_file() or not (folder / "kvtm_bridge.dll").is_file():
+            messagebox.showerror(APP_NAME, "Thư mục đã chọn thiếu kvtm_loader.exe hoặc kvtm_bridge.dll.")
+            return False
+        self.settings["bridge_bin"] = str(folder)
+        save_settings(self.settings)
+        with self._bridge_lock:
+            self._bridged_pids.clear()
+        self.note.set(f"Đã lưu Bridge DLL: {folder}")
+        return True
+
+    def _inject_bridge(self, pid: int) -> bool:
+        files = self._bridge_files()
+        if not files or pid <= 0:
+            return False
+        with self._bridge_lock:
+            if pid in self._bridged_pids:
+                return True
+        loader, bridge = files
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            result = subprocess.run(
+                [str(loader), str(pid), str(bridge)], capture_output=True, text=True,
+                creationflags=flags, timeout=15,
+            )
+            if result.returncode != 0:
+                self._bridge_error = (result.stderr or result.stdout or f"mã {result.returncode}").strip()
+                return False
+            with self._bridge_lock:
+                self._bridged_pids.add(pid)
+            self._bridge_error = ""
+            return True
+        except Exception as exc:
+            self._bridge_error = str(exc)
+            return False
+
+    def _bridge_monitor(self) -> None:
+        while not self._bridge_stop.wait(2.0):
+            if not self._bridge_files():
+                continue
+            try:
+                rows = running_clients()
+                live = {int(row.get("ProcessId", 0)) for row in rows if int(row.get("ProcessId", 0)) > 0}
+                with self._bridge_lock:
+                    self._bridged_pids.intersection_update(live)
+                    pending = live - self._bridged_pids
+                for pid in pending:
+                    self._inject_bridge(pid)
+            except Exception as exc:
+                self._bridge_error = str(exc)
+
+    def _on_close(self) -> None:
+        self._bridge_stop.set()
+        for profile_id in list(self._live_thumbnails):
+            self._unregister_live_thumbnail(profile_id)
+        for preview in list(self.previews.values()):
+            preview.close()
+        self.destroy()
+
+    def capture_diagnostic(self) -> None:
+        ids = self.selected_ids()
+        if len(ids) != 1:
+            messagebox.showinfo(APP_NAME, "Hãy chọn đúng một hồ sơ đang chạy.")
+            return
+        proc = self.processes.get(ids[0])
+        if not proc or proc.poll() is not None:
+            messagebox.showinfo(APP_NAME, "Hồ sơ đã chọn chưa được mở bằng tool.")
+            return
+        try:
+            destination = APP_DIR / "diagnostics" / f"client-{proc.pid}.bmp"
+            info = save_diagnostic(proc.pid, destination)
+            self.note.set(f"Đã chụp {info['displayWidth']}x{info['displayHeight']}: {destination}")
+            os.startfile(destination)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Không chụp được cửa sổ:\n{exc}")
+
+    def preview_four_floor_swipe(self) -> None:
+        ids = self.selected_ids()
+        if len(ids) != 1:
+            messagebox.showinfo(APP_NAME, "Hãy chọn đúng một hồ sơ đang chạy.")
+            return
+        proc = self.processes.get(ids[0])
+        if not proc or proc.poll() is not None:
+            messagebox.showinfo(APP_NAME, "Hồ sơ đã chọn chưa được mở bằng tool.")
+            return
+        try:
+            destination = APP_DIR / "diagnostics" / f"swipe-4-tang-{proc.pid}.bmp"
+            info = save_four_floor_swipe_preview(proc.pid, destination)
+            self.note.set(f"Swipe LD: {info['reference_start']} -> {info['reference_end']}; PC: {info['start']} -> {info['end']}")
+            os.startfile(destination)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Không tạo được ảnh swipe:\n{exc}")
+
+    def test_four_floor_swipe(self) -> None:
+        ids = self.selected_ids()
+        if len(ids) != 1:
+            messagebox.showinfo(APP_NAME, "Hãy chọn đúng một hồ sơ đang chạy.")
+            return
+        proc = self.processes.get(ids[0])
+        if not proc or proc.poll() is not None:
+            messagebox.showinfo(APP_NAME, "Hồ sơ đã chọn chưa được mở bằng tool.")
+            return
+        if not messagebox.askyesno(APP_NAME, "Gửi swipe thật (387,918) → (387,69) vào client đã chọn?"):
+            return
+        try:
+            from pc_driver import PCDriver
+            PCDriver(proc.pid, reference_size=(1000, 1000)).swipe_four_floors(duration=1.0)
+            self.note.set("Đã gửi swipe thật START (387,918) → END (387,69)")
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Swipe thất bại:\n{exc}")
+
+    def _poll(self) -> None:
+        self.refresh()
+        self.after(1500, self._poll)
+
+
+def main() -> int:
+    if os.name != "nt":
+        print("KVTM Multi chỉ chạy trên Windows.")
+        return 1
+    try:
+        # Prevent Windows display scaling from changing requested client pixels.
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+    except Exception:
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            pass
+    MultiApp().mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

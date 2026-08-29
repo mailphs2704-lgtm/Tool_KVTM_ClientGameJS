@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>AUTO KVTM</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/v07.css">
+  <link rel="stylesheet" href="/v08.css">
+  <link rel="stylesheet" href="/v09.css?v=0105">
+  <link rel="stylesheet" href="/v10.css">
+</head>
+<body>
+<div id="login" class="center">
+  <form id="loginForm" class="panel login">
+    <h1>AUTO KVTM</h1>
+    <p>Điều khiển AUTO theo tài khoản</p>
+    <input id="user" autocomplete="username" placeholder="Tài khoản" required>
+    <input id="pass" type="password" autocomplete="current-password" placeholder="Mật khẩu" required>
+    <button>Đăng nhập</button><div id="loginErr" class="err"></div>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <div>
+      <b>AUTO KVTM <span class="version">v0.10.5</span></b>
+      <small id="who"></small>
+    </div>
+    <div class="engineLine"><span id="engineDot" class="dot"></span><span id="engineText">0 DEVICE • 0 ĐANG CHẠY</span></div>
+    <div class="headerBtns">
+      <button id="reloadFuncs" class="secondary">Tải lại ID AUTO</button>
+      <button id="adminBtn" class="secondary hidden">Quản lý user</button>
+      <button id="pwdBtn" class="secondary">Đổi mật khẩu</button>
+      <button id="logoutBtn" class="secondary">Thoát</button>
+    </div>
+  </header>
+  <main>
+    <div id="tabs" class="tabs"></div>
+    <div id="deviceNav" class="deviceNav"></div>
+    <div id="devices" class="grid"></div>
+  </main>
+</div>
+
+<dialog id="userDlg"><form method="dialog" class="panel dialog">
+  <div class="row between"><h2>Quản lý tài khoản</h2><button value="cancel" class="secondary">Đóng</button></div>
+  <div class="create"><input id="newUser" placeholder="user01"><input id="newPass" type="password" placeholder="Mật khẩu >= 8"><button type="button" id="createUser">Tạo user</button></div>
+  <div id="userList"></div>
+</form></dialog>
+
+<dialog id="pwdDlg"><form method="dialog" class="panel dialog small">
+  <h2>Đổi mật khẩu</h2><input id="newPwd" type="password" placeholder="Mật khẩu mới >= 8">
+  <div class="row"><button type="button" id="savePwd">Lưu</button><button value="cancel" class="secondary">Hủy</button></div>
+</form></dialog>
+
+<script src="/app.js"></script>
+<script src="/v07.js"></script>
+<script src="/v08.js"></script>
+<script src="/v081.js"></script>
+<script src="/v09.js?v=0105"></script>
+<script src="/v11.js"></script>
+<script src="/v102.js"></script>
+<script src="/v103.js"></script>
+</body></html>

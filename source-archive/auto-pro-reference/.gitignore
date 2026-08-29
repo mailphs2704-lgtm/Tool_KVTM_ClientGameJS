@@ -1,0 +1,26 @@
+# User/web secrets and local state
+web_control/data/
+local_data/bridge_token.txt
+local_data/*.db
+
+# Runtime-generated files
+__pycache__/
+*.log
+error_log.txt
+*.tmp
+*.bak
+
+# Node cache if dependencies are added later
+node_modules/
+
+# Packaging/build output
+AUTO_KVTM_PRO_CLEAN/
+build/
+dist/
+installer/output/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
