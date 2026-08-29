@@ -98,6 +98,24 @@ class PreviewWindow(tk.Toplevel):
         self._stop = threading.Event()
         self._frames: queue.Queue = queue.Queue(maxsize=1)
         self._latest = None
+        self._dib_pixels = None
+        self._dib_size = 0
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+        user32.GetDC.argtypes = [wintypes.HWND]
+        user32.GetDC.restype = wintypes.HANDLE
+        user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HANDLE]
+        user32.ReleaseDC.restype = ctypes.c_int
+        gdi32.SetStretchBltMode.argtypes = [wintypes.HANDLE, ctypes.c_int]
+        gdi32.SetStretchBltMode.restype = ctypes.c_int
+        gdi32.StretchDIBits.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wintypes.LPVOID, ctypes.POINTER(BITMAPINFO),
+            wintypes.UINT, wintypes.DWORD,
+        ]
+        gdi32.StretchDIBits.restype = ctypes.c_int
         pid = wintypes.DWORD()
         ctypes.windll.user32.GetWindowThreadProcessId(source_hwnd, ctypes.byref(pid))
         self.pid = int(pid.value)
@@ -163,19 +181,27 @@ class PreviewWindow(tk.Toplevel):
     def _poll_frame(self):
         if self._closing:
             return
+        newest = None
         try:
             while True:
-                self._latest = self._frames.get_nowait()
+                newest = self._frames.get_nowait()
         except queue.Empty:
             pass
-        if self._latest:
+        if newest:
+            raw, width, height, source = newest
+            size = len(raw)
+            if self._dib_pixels is None or self._dib_size != size:
+                self._dib_pixels = ctypes.create_string_buffer(size)
+                self._dib_size = size
+            ctypes.memmove(self._dib_pixels, raw, size)
+            self._latest = (self._dib_pixels, width, height, source)
             self._paint_latest()
         self.after(33, self._poll_frame)
 
     def _paint_latest(self):
         if self._closing or not self._latest or not self.canvas.winfo_exists():
             return
-        raw, width, height, source = self._latest
+        pixels, width, height, source = self._latest
         target_w = max(1, self.canvas.winfo_width())
         target_h = max(1, self.canvas.winfo_height())
         side = min(target_w, target_h)
@@ -189,7 +215,6 @@ class PreviewWindow(tk.Toplevel):
         info.bmiHeader.biPlanes = 1
         info.bmiHeader.biBitCount = 32
         info.bmiHeader.biCompression = 0
-        pixels = ctypes.create_string_buffer(raw)
         canvas_hwnd = self.canvas.winfo_id()
         dc = ctypes.windll.user32.GetDC(canvas_hwnd)
         if dc:
