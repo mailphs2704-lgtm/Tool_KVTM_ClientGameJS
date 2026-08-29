@@ -261,7 +261,7 @@ class EngineDriver(PCDriver):
     def _capture_shared_bgra(self) -> tuple[bytes, int, int]:
         response = self._pipe("CAPTURE\n", 3000)
         parts = response.split()
-        if len(parts) != 7 or parts[:2] != ["OK", "FRAME"]:
+        if len(parts) != 6 or parts[:2] != ["OK", "FRAME"]:
             raise RuntimeError(f"Phản hồi capture không hợp lệ: {response}")
         expected_frame, expected_width, expected_height, expected_stride = map(int, parts[2:])
         handle = kernel32.OpenFileMappingW(0x0004, False, self.capture_mapping_name)  # FILE_MAP_READ
