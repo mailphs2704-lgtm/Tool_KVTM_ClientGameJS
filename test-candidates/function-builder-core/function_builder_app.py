@@ -18,6 +18,140 @@ from game_client_engine import BridgeClient, capture_bgra, find_game_window
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
 
+DWM_TNP_RECTDESTINATION = 0x00000001
+DWM_TNP_VISIBLE = 0x00000008
+DWM_TNP_SOURCECLIENTAREAONLY = 0x00000010
+
+
+class DWM_THUMBNAIL_PROPERTIES(ctypes.Structure):
+    _fields_ = [
+        ("dwFlags", wintypes.DWORD),
+        ("rcDestination", wintypes.RECT),
+        ("rcSource", wintypes.RECT),
+        ("opacity", ctypes.c_ubyte),
+        ("fVisible", wintypes.BOOL),
+        ("fSourceClientAreaOnly", wintypes.BOOL),
+    ]
+
+
+class DwmRecorderWindow(tk.Toplevel):
+    """Smooth DWM view; only mouse coordinates pass through Python."""
+
+    def __init__(self, owner):
+        super().__init__(owner)
+        self.owner = owner
+        self.source_hwnd = owner.engine.hwnd
+        self.thumbnail = ctypes.c_void_p()
+        self._closing = False
+        self._drag_points = []
+        self._drag_started = 0.0
+        self.title(f"Live Recorder - PID {owner.pid}")
+        self.configure(background="black")
+        self.geometry("700x700")
+        self.minsize(300, 300)
+        self.update_idletasks()
+
+        dwm = ctypes.windll.dwmapi
+        dwm.DwmRegisterThumbnail.argtypes = [
+            wintypes.HWND, wintypes.HWND, ctypes.POINTER(ctypes.c_void_p)
+        ]
+        dwm.DwmRegisterThumbnail.restype = ctypes.c_long
+        dwm.DwmUpdateThumbnailProperties.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(DWM_THUMBNAIL_PROPERTIES)
+        ]
+        dwm.DwmUpdateThumbnailProperties.restype = ctypes.c_long
+        dwm.DwmUnregisterThumbnail.argtypes = [ctypes.c_void_p]
+        dwm.DwmUnregisterThumbnail.restype = ctypes.c_long
+
+        user32 = ctypes.windll.user32
+        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        user32.GetAncestor.restype = wintypes.HWND
+        destination = user32.GetAncestor(self.winfo_id(), 2) or self.winfo_id()
+        result = dwm.DwmRegisterThumbnail(destination, self.source_hwnd, ctypes.byref(self.thumbnail))
+        if result < 0:
+            raise OSError(f"DwmRegisterThumbnail loi 0x{result & 0xffffffff:08X}")
+
+        self.bind("<Configure>", self._update_thumbnail)
+        self.bind("<ButtonPress-1>", self._press)
+        self.bind("<B1-Motion>", self._drag)
+        self.bind("<ButtonRelease-1>", self._release)
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.after_idle(self._update_thumbnail)
+
+    def _content_rect(self):
+        width, height = max(1, self.winfo_width()), max(1, self.winfo_height())
+        side = min(width, height)
+        left, top = (width - side) // 2, (height - side) // 2
+        return left, top, side
+
+    def _logical(self, event):
+        left, top, side = self._content_rect()
+        return (
+            max(0.0, min(1000.0, (event.x - left) * 1000.0 / side)),
+            max(0.0, min(1000.0, (event.y - top) * 1000.0 / side)),
+        )
+
+    def _update_thumbnail(self, _event=None):
+        if self._closing or not self.thumbnail.value:
+            return
+        left, top, side = self._content_rect()
+        props = DWM_THUMBNAIL_PROPERTIES()
+        props.dwFlags = (
+            DWM_TNP_RECTDESTINATION | DWM_TNP_VISIBLE |
+            DWM_TNP_SOURCECLIENTAREAONLY
+        )
+        props.rcDestination = wintypes.RECT(left, top, left + side, top + side)
+        props.fVisible = True
+        props.fSourceClientAreaOnly = True
+        ctypes.windll.dwmapi.DwmUpdateThumbnailProperties(self.thumbnail, ctypes.byref(props))
+
+    def _press(self, event):
+        import time
+        point = self._logical(event)
+        self._drag_points = [point]
+        self._drag_started = time.monotonic()
+        self.owner.recorder.swipe_start(*point, now=self._drag_started)
+
+    def _drag(self, event):
+        point = self._logical(event)
+        self._drag_points.append(point)
+        self.owner.recorder.swipe_move(*point)
+
+    def _release(self, event):
+        import time
+        point = self._logical(event)
+        start = self._drag_points[0]
+        moved = any(
+            abs(x - start[0]) + abs(y - start[1]) > 5
+            for x, y in self._drag_points[1:]
+        )
+        try:
+            if moved:
+                self.owner.recorder.swipe_end(*point, now=time.monotonic())
+                step = self.owner.recorder.function.steps[-1]
+                self.owner.engine.swipe_points(
+                    [tuple(item) for item in step.data["points"]],
+                    step.data["duration"],
+                )
+            else:
+                self.owner.recorder._swipe = None
+                self.owner.recorder.click(*point)
+                self.owner.engine.click(*point)
+            self.owner.refresh_steps()
+            self.owner.status_var.set("Da ghi thao tac tu DWM Live")
+        except Exception as exc:
+            messagebox.showerror("Ghi thao tac loi", str(exc), parent=self)
+
+    def close(self):
+        if self._closing:
+            return
+        self._closing = True
+        if self.thumbnail.value:
+            ctypes.windll.dwmapi.DwmUnregisterThumbnail(self.thumbnail)
+            self.thumbnail = ctypes.c_void_p()
+        self.owner.live_window = None
+        self.destroy()
+
 
 class GameEngineAdapter:
     def __init__(self, pid: int):
@@ -122,6 +256,7 @@ class FunctionBuilderApp(tk.Tk):
         self.preview_height = 1
         self.drag_points = []
         self.drag_start_time = 0
+        self.live_window = None
         self.title(f"KVTM Function Builder - PID {pid}")
         self.geometry("1240x760")
         self.minsize(980, 620)
@@ -133,7 +268,7 @@ class FunctionBuilderApp(tk.Tk):
             self.status_var.set("Keo-tha khong san sang; dung nut Them anh")
         self.refresh_assets()
         self.refresh_steps()
-        self.after(100, self.capture_preview)
+        self.after(150, self.open_live_recorder)
 
     def _build_ui(self):
         toolbar = ttk.Frame(self, padding=6)
@@ -142,6 +277,7 @@ class FunctionBuilderApp(tk.Tk):
         self.name_var = tk.StringVar(value="Chuc nang moi")
         ttk.Entry(toolbar, textvariable=self.name_var, width=30).pack(side="left", padx=5)
         ttk.Button(toolbar, text="Chup lai", command=self.capture_preview).pack(side="left", padx=3)
+        ttk.Button(toolbar, text="Mo Live DWM", command=self.open_live_recorder).pack(side="left", padx=3)
         ttk.Button(toolbar, text="Chay thu", command=self.run_function).pack(side="left", padx=3)
         ttk.Button(toolbar, text="Luu JSON", command=self.save_function).pack(side="left", padx=3)
         ttk.Button(toolbar, text="Mo JSON", command=self.load_function).pack(side="left", padx=3)
@@ -216,6 +352,18 @@ class FunctionBuilderApp(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Capture loi", str(exc))
 
+    def open_live_recorder(self):
+        try:
+            if self.live_window and self.live_window.winfo_exists():
+                self.live_window.lift()
+                self.live_window.focus_force()
+                return
+            self.live_window = DwmRecorderWindow(self)
+            self.status_var.set("DWM Live Recorder dang mo")
+        except Exception as exc:
+            self.live_window = None
+            messagebox.showerror("DWM Live loi", str(exc))
+
     def _display_size(self):
         return max(1, self.canvas.winfo_width()), max(1, self.canvas.winfo_height())
 
@@ -257,7 +405,7 @@ class FunctionBuilderApp(tk.Tk):
             self.recorder.click(*point)
             self.engine.click(*point)
         self.refresh_steps()
-        self.after(120, self.capture_preview)
+        self.status_var.set("Da ghi thao tac")
 
     def refresh_assets(self):
         self.asset_list.delete(0, "end")
