@@ -101,6 +101,25 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(len(clicks), 3)
             self.assertTrue(all(event.status == "ok" for event in events))
 
+    def test_procedure_and_swipe_from_image(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "seed.png").write_bytes(b"test")
+            function = AutoFunction.from_dict({
+                "name": "Procedure",
+                "procedures": {"plant": [{
+                    "type": "swipe_from_image", "asset": "seed.png",
+                    "confidence": 0.8, "timeout": 0,
+                    "points": [[100, 100], [200, 100]], "duration": 0.5
+                }]},
+                "steps": [{"type": "call", "procedure": "plant"}],
+            })
+            engine = FakeEngine()
+            FunctionRuntime(engine, root, sleep=lambda _seconds: None).run(function)
+            swipe = [action for action in engine.actions if action[0] == "swipe"][0]
+            self.assertEqual(swipe[1][0], (400.0, 500.0))
+            self.assertEqual(swipe[1][-1], (200.0, 100.0))
+
 
 if __name__ == "__main__":
     unittest.main()
