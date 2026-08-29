@@ -309,7 +309,7 @@ class EngineDriver(PCDriver):
                 import cv2
                 frame = np.frombuffer(raw, dtype=np.uint8).reshape(
                     (height, width, 4)
-                )[::-1, :, :3].copy()
+                )[:, :, :3].copy()
                 if (width, height) != self.reference_size:
                     frame = cv2.resize(
                         frame, self.reference_size, interpolation=cv2.INTER_AREA
@@ -317,7 +317,7 @@ class EngineDriver(PCDriver):
                 return frame
             from PIL import Image
             image = Image.frombuffer(
-                "RGBA", (width, height), raw, "raw", "BGRA", 0, -1
+                "RGBA", (width, height), raw, "raw", "BGRA", 0, 1
             ).convert("RGB")
             if image.size != self.reference_size:
                 image = image.resize(self.reference_size, Image.Resampling.LANCZOS)
