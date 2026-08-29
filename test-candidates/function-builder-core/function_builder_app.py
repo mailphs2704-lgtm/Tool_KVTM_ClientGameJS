@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import ctypes
 from ctypes import wintypes
 import json
@@ -201,7 +200,9 @@ class FunctionBuilderApp(tk.Tk):
                     rgb[target:target + 3] = (raw[source + 2], raw[source + 1], raw[source])
                 rgb = bytes(rgb)
             ppm = f"P6\n{geometry.width} {geometry.height}\n255\n".encode() + rgb
-            self.preview_source = tk.PhotoImage(data=base64.b64encode(ppm), format="PPM")
+            preview_file = self.workspace / ".live-preview.ppm"
+            preview_file.write_bytes(ppm)
+            self.preview_source = tk.PhotoImage(file=str(preview_file), format="PPM")
             canvas_width, canvas_height = self._display_size()
             available = max(1, min(canvas_width, canvas_height))
             factor = max(1, math.ceil(max(geometry.width, geometry.height) / available))
