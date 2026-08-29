@@ -105,9 +105,26 @@ if hasattr(ctypes, "windll"):
 class EngineDriver(PCDriver):
     """PCDriver whose coordinates are delivered inside the Cocos engine."""
 
-    def __init__(self, pid: int, reference_size=(1000, 1000)) -> None:
+    def __init__(self, device_key: int | str, reference_size=(1000, 1000)) -> None:
+        self.profile_id = None
+        self._restart_profile = None
+        if isinstance(device_key, str) and not device_key.isdigit():
+            self.profile_id = device_key
+            self._restart_profile = self._profile_by_id(device_key)
+            if not self._restart_profile:
+                raise RuntimeError(f"Không tìm thấy hồ sơ cố định {device_key}")
+            pid = self._find_profile_pid(self._restart_profile)
+            if not pid:
+                raise RuntimeError(
+                    f"Hồ sơ {self._restart_profile.get('name', device_key)} đang offline"
+                )
+        else:
+            pid = int(device_key)
         super().__init__(pid, reference_size=reference_size)
-        self._restart_profile = self._resolve_restart_profile(pid)
+        if self._restart_profile is None:
+            self._restart_profile = self._resolve_restart_profile(pid)
+            if self._restart_profile:
+                self.profile_id = str(self._restart_profile.get("id") or "") or None
         self._restart_pending = False
         self._restart_window_rect = None
         self._ensure_bridge()
@@ -115,6 +132,65 @@ class EngineDriver(PCDriver):
             "engine_bridge_connected", pipe=self.pipe_name,
             restart_profile=bool(self._restart_profile),
         )
+
+    def _profile_by_id(self, profile_id: str):
+        try:
+            profiles = json.loads(PROFILE_FILE.read_text(encoding="utf-8"))
+            return next(
+                (item for item in profiles if str(item.get("id") or "") == str(profile_id)),
+                None,
+            )
+        except Exception:
+            return None
+
+    def _find_profile_pid(self, profile: dict) -> int | None:
+        """Resolve the current runtime PID from the profile's immutable account ID."""
+        try:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            script = (
+                "$p=Get-CimInstance Win32_Process -Filter \"Name='GameClientJS.exe'\" | "
+                "Select-Object ProcessId,CommandLine;@($p)|ConvertTo-Json -Compress"
+            )
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True, text=True, encoding="utf-8-sig", errors="replace",
+                creationflags=flags, timeout=15, check=True,
+            )
+            rows = json.loads(result.stdout or "[]")
+            if isinstance(rows, dict):
+                rows = [rows]
+            wanted_game = os.path.normcase(os.path.abspath(profile.get("game_dir") or ""))
+            wanted_secret = json.loads(_unprotect(profile["secret"]).decode("utf-8"))
+            for row in rows:
+                args = _split_command_line(row.get("CommandLine") or "")
+                if len(args) < 2:
+                    continue
+                running_game = os.path.normcase(os.path.abspath(args[1]))
+                if running_game == wanted_game and args[2:] == wanted_secret:
+                    return int(row["ProcessId"])
+        except Exception as exc:
+            self._trace("profile_pid_lookup_error", error=str(exc))
+        return None
+
+    def _refresh_profile_pid(self) -> bool:
+        """Adopt a replacement PID after ClientGameJS resets without changing device ID."""
+        if self._is_process_alive(self.pid):
+            return False
+        if not self._restart_profile:
+            raise RuntimeError(f"ClientGameJS PID {self.pid} đã dừng")
+        replacement = self._find_profile_pid(self._restart_profile)
+        if not replacement:
+            raise RuntimeError(
+                f"Tài khoản {self._restart_profile.get('name', self.profile_id)} chưa khởi động lại"
+            )
+        old_pid = self.pid
+        self.pid = int(replacement)
+        self._ensure_bridge()
+        self._trace(
+            "profile_pid_rebound", profile_id=self.profile_id,
+            old_pid=old_pid, new_pid=self.pid,
+        )
+        return True
 
     def _resolve_restart_profile(self, pid: int):
         """Match the running PID to one DPAPI-protected KVTM Multi profile."""
@@ -244,6 +320,8 @@ class EngineDriver(PCDriver):
         raise RuntimeError(f"DLL đã nạp nhưng named pipe chưa sẵn sàng: {last_error}")
 
     def _touch_event(self, phase: str, x: float, y: float) -> None:
+        if phase == "down":
+            self._refresh_profile_pid()
         name = {"down": "DOWN", "move": "MOVE", "up": "UP"}[phase]
         try:
             self._pipe(f"{name} {float(x):.3f} {float(y):.3f}\n")
@@ -297,6 +375,7 @@ class EngineDriver(PCDriver):
             kernel32.CloseHandle(handle)
 
     def screenshot(self, format: str | None = None):
+        self._refresh_profile_pid()
         try:
             raw, width, height = self._capture_shared_bgra()
             set_capture_scale(min(
@@ -309,7 +388,7 @@ class EngineDriver(PCDriver):
                 import cv2
                 frame = np.frombuffer(raw, dtype=np.uint8).reshape(
                     (height, width, 4)
-                )[:, :, :3].copy()
+                )[::-1, :, :3].copy()
                 if (width, height) != self.reference_size:
                     frame = cv2.resize(
                         frame, self.reference_size, interpolation=cv2.INTER_AREA
@@ -317,7 +396,7 @@ class EngineDriver(PCDriver):
                 return frame
             from PIL import Image
             image = Image.frombuffer(
-                "RGBA", (width, height), raw, "raw", "BGRA", 0, 1
+                "RGBA", (width, height), raw, "raw", "BGRA", 0, -1
             ).convert("RGB")
             if image.size != self.reference_size:
                 image = image.resize(self.reference_size, Image.Resampling.LANCZOS)
