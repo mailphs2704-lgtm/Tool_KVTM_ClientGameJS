@@ -255,19 +255,6 @@ class EngineDriver(PCDriver):
         set_capture_scale(scale)
         return super().screenshot(format=format)
 
-    def click(self, x: float, y: float) -> None:
-        """Send click inside Cocos; AUTO PRO controls surrounding click delays."""
-        with _GESTURE_LOCK:
-            self._trace("click", logical=[float(x), float(y)], mode="engine_bridge")
-            self._touch_event("down", float(x), float(y))
-            time.sleep(0.015)
-            self._touch_event("up", float(x), float(y))
-
-    def swipe(self, x1: float, y1: float, x2: float, y2: float,
-              duration: float = 0.3) -> None:
-        """Route AUTO PRO two-point swipes through the same Cocos bridge."""
-        self.swipe_points([(x1, y1), (x2, y2)], duration=float(duration))
-
     def swipe_points(self, points, duration: float = 0.5) -> None:
         """uiautomator2-compatible continuous gesture through every point."""
         path = [(float(point[0]), float(point[1])) for point in points]
@@ -287,12 +274,12 @@ class EngineDriver(PCDriver):
                 ratio = step / steps
                 replay_path.append((start[0] + dx * ratio, start[1] + dy * ratio))
 
-        # AUTO PRO exposes speed as seconds for each logical segment.
-        # Do not apply engine_bridge.json multipliers/minimums: every change in
-        # the AUTO PRO settings must affect the gesture immediately.
-        requested_duration = max(0.001, float(duration))
-        logical_segments = max(1, len(path) - 1)
-        total_duration = requested_duration * logical_segments
+        requested_duration = max(0.0, float(duration))
+        # AUTO PRO is authoritative for gesture timing. For swipe_points its
+        # duration is the requested time of each logical segment, matching the
+        # old Android implementation. Shop drags use PCDriver.swipe directly.
+        speed = {"source": "auto_pro", "requested_seconds": requested_duration}
+        total_duration = max(0.02, requested_duration * (len(path) - 1))
         interval = total_duration / max(1, len(replay_path) - 1)
         with _GESTURE_LOCK:
             self._trace(
@@ -300,8 +287,7 @@ class EngineDriver(PCDriver):
                 point_count=len(path), requested_duration=requested_duration,
                 duration=total_duration, interval=interval,
                 replay_point_count=len(replay_path), interpolation_px=8,
-                timing_source="auto_pro", logical_segments=logical_segments,
-                mode="engine_bridge",
+                speed_settings=speed, mode="engine_bridge",
             )
             self._touch_event("down", *replay_path[0])
             try:
