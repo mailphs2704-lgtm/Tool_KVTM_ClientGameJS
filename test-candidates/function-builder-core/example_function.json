@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "name": "Vi du an toan",
+  "description": "Khong co thao tac, chi kiem tra dinh dang",
+  "logical_size": [1000, 1000],
+  "steps": [
+    {
+      "type": "wait",
+      "seconds": 0.2
+    }
+  ]
+}
