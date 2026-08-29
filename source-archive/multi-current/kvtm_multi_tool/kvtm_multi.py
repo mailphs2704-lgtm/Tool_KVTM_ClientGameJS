@@ -353,8 +353,10 @@ class MultiApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("980x650")
-        self.minsize(720, 400)
+        self.geometry("1180x760")
+        self.minsize(940, 620)
+        self.configure(background="#f3f6fa")
+        self.option_add("*Font", ("Segoe UI", 10))
         self.profiles = load_profiles()
         self.settings = load_settings()
         self.processes: dict[str, subprocess.Popen] = {}
@@ -441,15 +443,90 @@ class MultiApp(tk.Tk):
             self.refresh()
 
     def _build_ui(self) -> None:
-        header = ttk.Frame(self, padding=12)
-        header.pack(fill="x")
-        ttk.Label(header, text="KVTM MULTI", font=("Segoe UI", 18, "bold")).pack(side="left")
-        ttk.Label(header, text="Lưu tài khoản một lần, mở lại không cần launcher", foreground="#555").pack(side="left", padx=14)
-
         style = ttk.Style(self)
-        style.configure("Account.Treeview", rowheight=30)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure(".", font=("Segoe UI", 10))
+        style.configure("App.TFrame", background="#f3f6fa")
+        style.configure("Header.TFrame", background="#17233b")
+        style.configure(
+            "Title.TLabel", background="#17233b", foreground="#ffffff",
+            font=("Segoe UI Semibold", 19),
+        )
+        style.configure(
+            "Subtitle.TLabel", background="#17233b", foreground="#aebbd0",
+            font=("Segoe UI", 10),
+        )
+        style.configure(
+            "Panel.TLabelframe", background="#ffffff", bordercolor="#dbe3ef",
+            relief="solid", borderwidth=1,
+        )
+        style.configure(
+            "Panel.TLabelframe.Label", background="#f3f6fa",
+            foreground="#263653", font=("Segoe UI Semibold", 10),
+        )
+        style.configure(
+            "Action.TButton", background="#e8eef7", foreground="#17233b",
+            bordercolor="#cbd6e6", padding=(11, 7), relief="flat",
+            font=("Segoe UI Semibold", 9),
+        )
+        style.map(
+            "Action.TButton",
+            background=[("pressed", "#c9d8ec"), ("active", "#d9e5f5")],
+            foreground=[("disabled", "#98a3b5"), ("active", "#0b57a4")],
+            bordercolor=[("focus", "#3b82f6"), ("active", "#9eb9dc")],
+        )
+        style.configure(
+            "Account.Treeview", background="#ffffff", fieldbackground="#ffffff",
+            foreground="#24324a", rowheight=34, borderwidth=0,
+            font=("Segoe UI", 10),
+        )
+        style.configure(
+            "Account.Treeview.Heading", background="#eaf0f8", foreground="#34445f",
+            relief="flat", borderwidth=0, padding=(7, 7),
+            font=("Segoe UI Semibold", 9),
+        )
+        style.map(
+            "Account.Treeview",
+            background=[("selected", "#d9eaff")],
+            foreground=[("selected", "#0b4d91")],
+        )
+        style.map(
+            "Account.Treeview.Heading",
+            background=[("active", "#dbe6f4")],
+        )
+        style.configure("Detail.TFrame", background="#ffffff")
+        style.configure(
+            "DetailTitle.TLabel", background="#ffffff", foreground="#17233b",
+            font=("Segoe UI Semibold", 13),
+        )
+        style.configure(
+            "Key.TLabel", background="#ffffff", foreground="#66738a",
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "Value.TLabel", background="#ffffff", foreground="#1d2b43",
+            font=("Segoe UI Semibold", 10),
+        )
+        style.configure(
+            "Status.TLabel", background="#e8eef7", foreground="#4d5d75",
+            padding=(12, 7), font=("Segoe UI", 9),
+        )
+        style.configure("Sash", sashthickness=6, background="#dbe3ef")
 
-        controls = ttk.LabelFrame(self, text="Bảng điều khiển", padding=(8, 6))
+        header = ttk.Frame(self, padding=(18, 13), style="Header.TFrame")
+        header.pack(fill="x")
+        ttk.Label(header, text="KVTM MULTI", style="Title.TLabel").pack(side="left")
+        ttk.Label(
+            header, text="Quản lý ClientJS và AUTO tập trung",
+            style="Subtitle.TLabel",
+        ).pack(side="left", padx=(18, 0), pady=(5, 0))
+
+        controls = ttk.LabelFrame(
+            self, text="BẢNG ĐIỀU KHIỂN", padding=(10, 8), style="Panel.TLabelframe"
+        )
         controls.pack(fill="x", padx=12, pady=(8, 8))
         for column in range(6):
             controls.columnconfigure(column, weight=1, uniform="control")
@@ -468,16 +545,19 @@ class MultiApp(tk.Tk):
             (1, 4, "Chụp ảnh", self.capture_diagnostic),
         )
         for row, column, label, command in buttons:
-            ttk.Button(controls, text=label, command=command).grid(
-                row=row, column=column, sticky="ew", padx=3, pady=3, ipady=2
-            )
+            ttk.Button(
+                controls, text=label, command=command, style="Action.TButton"
+            ).grid(row=row, column=column, sticky="ew", padx=4, pady=4)
 
         # Main workspace: account status on the left, selected account data on the right.
         workspace = ttk.Panedwindow(self, orient="horizontal")
         workspace.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
-        account_panel = ttk.Frame(workspace)
-        detail_panel = ttk.LabelFrame(workspace, text="Thông tin trong game", padding=10)
+        account_panel = ttk.Frame(workspace, style="App.TFrame")
+        detail_panel = ttk.LabelFrame(
+            workspace, text="THÔNG TIN TRONG GAME", padding=14,
+            style="Panel.TLabelframe",
+        )
         workspace.add(account_panel, weight=3)
         workspace.add(detail_panel, weight=2)
 
@@ -489,11 +569,16 @@ class MultiApp(tk.Tk):
         # opens Live View in a dedicated window instead of embedding it in a row.
         self.tree = self.online_tree
 
-        title_row = ttk.Frame(detail_panel)
-        title_row.pack(fill="x", pady=(0, 8))
+        title_row = ttk.Frame(detail_panel, style="Detail.TFrame")
+        title_row.pack(fill="x", pady=(0, 12))
         self.detail_title = tk.StringVar(value="Chưa chọn tài khoản")
-        ttk.Label(title_row, textvariable=self.detail_title, font=("Segoe UI", 12, "bold")).pack(side="left")
-        ttk.Button(title_row, text="Live View", width=10, command=self.preview_selected).pack(side="right")
+        ttk.Label(
+            title_row, textvariable=self.detail_title, style="DetailTitle.TLabel"
+        ).pack(side="left")
+        ttk.Button(
+            title_row, text="Live View", width=11, command=self.preview_selected,
+            style="Action.TButton",
+        ).pack(side="right")
 
         fields = (
             ("Tên", "name"), ("Level", "level"), ("Gold", "gold"),
@@ -502,25 +587,28 @@ class MultiApp(tk.Tk):
             ("Kho 4", "storage_4"), ("VPSK nâng được", "vpsk"),
             ("Thời gian chạy", "runtime"), ("Lượt bán AUTO", "sales"),
         )
-        fields_frame = ttk.Frame(detail_panel)
+        ttk.Separator(detail_panel, orient="horizontal").pack(fill="x", pady=(0, 8))
+        fields_frame = ttk.Frame(detail_panel, style="Detail.TFrame")
         fields_frame.pack(fill="both", expand=True)
         self.detail_vars = {}
         for row, (label, key) in enumerate(fields):
-            ttk.Label(fields_frame, text=label + ":").grid(
-                row=row, column=0, sticky="w", padx=(2, 12), pady=4
+            ttk.Label(fields_frame, text=label.upper(), style="Key.TLabel").grid(
+                row=row, column=0, sticky="w", padx=(2, 18), pady=6
             )
             value = tk.StringVar(value="—")
             self.detail_vars[key] = value
-            ttk.Label(fields_frame, textvariable=value).grid(
-                row=row, column=1, sticky="w", pady=4
-            )
+            ttk.Label(
+                fields_frame, textvariable=value, style="Value.TLabel"
+            ).grid(row=row, column=1, sticky="w", pady=6)
         fields_frame.columnconfigure(1, weight=1)
 
         self.note = tk.StringVar(value="Sẵn sàng")
-        ttk.Label(self, textvariable=self.note, padding=(12, 0, 12, 10), foreground="#444").pack(fill="x")
+        ttk.Label(self, textvariable=self.note, style="Status.TLabel").pack(fill="x")
 
     def _create_account_tree(self, parent, title: str):
-        box = ttk.LabelFrame(parent, text=title, padding=4)
+        box = ttk.LabelFrame(
+            parent, text=title.upper(), padding=7, style="Panel.TLabelframe"
+        )
         parent.add(box, weight=1)
         tree = ttk.Treeview(
             box, columns=("name", "pid"), show=("tree", "headings"),
@@ -532,6 +620,8 @@ class MultiApp(tk.Tk):
         tree.column("name", width=230, anchor="w")
         tree.heading("pid", text="PID")
         tree.column("pid", width=90, minwidth=70, stretch=False, anchor="center")
+        tree.tag_configure("online", foreground="#147d52")
+        tree.tag_configure("offline", foreground="#78859a")
         tree.pack(fill="both", expand=True)
         tree.bind("<Button-1>", lambda event, source=tree: self._on_account_click(source, event), add="+")
         tree.bind("<Double-1>", lambda _event: self.launch_selected())
@@ -622,6 +712,7 @@ class MultiApp(tk.Tk):
                 "", "end", iid=profile_id,
                 text="☑" if profile_id in self._checked_profiles else "☐",
                 values=(profile.get("name", "Chưa đặt tên"), proc.pid if alive else "—"),
+                tags=("online" if alive else "offline",),
             )
             if profile_id == self._active_profile_id:
                 target.selection_set(profile_id)
