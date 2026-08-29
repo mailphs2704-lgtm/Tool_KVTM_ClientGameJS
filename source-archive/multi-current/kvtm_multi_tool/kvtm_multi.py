@@ -53,6 +53,32 @@ class MONITORINFO(ctypes.Structure):
     ]
 
 
+class RunningProcessRef:
+    """Small Popen-compatible reference for a client adopted after Multi restarts."""
+
+    def __init__(self, pid: int):
+        self.pid = int(pid)
+
+    def poll(self):
+        handle = ctypes.windll.kernel32.OpenProcess(0x00100000, False, self.pid)
+        if not handle:
+            return 1
+        try:
+            return None if ctypes.windll.kernel32.WaitForSingleObject(handle, 0) == 0x102 else 0
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+
+    def terminate(self):
+        handle = ctypes.windll.kernel32.OpenProcess(0x0001 | 0x00100000, False, self.pid)
+        if not handle:
+            return
+        try:
+            ctypes.windll.kernel32.TerminateProcess(handle, 0)
+            ctypes.windll.kernel32.WaitForSingleObject(handle, 3000)
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+
+
 class PreviewWindow(tk.Toplevel):
     """DWM-scaled view of a full-resolution off-screen game window."""
 
@@ -268,11 +294,74 @@ class MultiApp(tk.Tk):
         self._live_thumbnails: dict[str, ctypes.c_void_p] = {}
         self._live_queue: queue.Queue = queue.Queue(maxsize=64)
         self._build_ui()
+        self.after_idle(self._keep_control_on_primary)
         self.refresh()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         threading.Thread(target=self._bridge_monitor, daemon=True).start()
         self.after(100, self._update_live_dwm)
         self.after(1500, self._poll)
+
+    def _keep_control_on_primary(self) -> None:
+        """Keep the Multi control panel visible when clients move off-screen."""
+        primary = next((item for item in self._monitors() if item["primary"]), None)
+        if not primary:
+            return
+        self.update_idletasks()
+        work_w = primary["right"] - primary["left"]
+        work_h = primary["bottom"] - primary["top"]
+        width = min(max(760, self.winfo_width()), work_w)
+        height = min(max(480, self.winfo_height()), work_h)
+        x = primary["left"] + max(0, (work_w - width) // 2)
+        y = primary["top"] + max(0, (work_h - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.deiconify()
+        self.lift()
+        self.attributes("-topmost", True)
+        self.after(600, lambda: self.attributes("-topmost", False))
+
+    @staticmethod
+    def _profile_signature(profile: dict):
+        try:
+            game_dir = os.path.normcase(os.path.abspath(profile.get("game_dir") or ""))
+            secret = json.loads(unprotect(profile["secret"]).decode("utf-8"))
+            return game_dir, secret
+        except Exception:
+            return None
+
+    def _adopt_running_clients(self, rows: list[dict]) -> None:
+        """Reconnect saved profiles to PIDs opened by an older Multi/AUTO run."""
+        signatures = {
+            profile["id"]: self._profile_signature(profile) for profile in self.profiles
+        }
+        adopted = 0
+        live_pids = set()
+        for row in rows:
+            try:
+                pid = int(row.get("ProcessId", 0))
+                args = split_windows_command_line(row.get("CommandLine") or "")
+                if pid <= 0 or len(args) < 2:
+                    continue
+                live_pids.add(pid)
+                running_game = os.path.normcase(os.path.abspath(args[1]))
+                running_secret = args[2:]
+                for profile in self.profiles:
+                    signature = signatures.get(profile["id"])
+                    if not signature or signature != (running_game, running_secret):
+                        continue
+                    current = self.processes.get(profile["id"])
+                    if not current or current.pid != pid or current.poll() is not None:
+                        self.processes[profile["id"]] = RunningProcessRef(pid)
+                        adopted += 1
+                    break
+            except Exception:
+                continue
+
+        for profile_id, process in list(self.processes.items()):
+            if isinstance(process, RunningProcessRef) and process.pid not in live_pids:
+                self.processes.pop(profile_id, None)
+        if adopted:
+            self.note.set(f"Đã nhận lại {adopted} client đang chạy; có thể chuyển màn hình")
+            self.refresh()
 
     def _build_ui(self) -> None:
         header = ttk.Frame(self, padding=12)
@@ -817,6 +906,9 @@ class MultiApp(tk.Tk):
         if saved:
             candidates.append(Path(saved))
         candidates.extend((TOOL_DIR / "bin", TOOL_DIR))
+        # Portable Suite layout: <root>\Multi and <root>\AUTO_PRO\bin.
+        for parent in (TOOL_DIR, *list(TOOL_DIR.parents)[:3]):
+            candidates.append(parent / "AUTO_PRO" / "bin")
         for folder in candidates:
             loader = folder / "kvtm_loader.exe"
             bridge = folder / "kvtm_bridge.dll"
@@ -871,11 +963,12 @@ class MultiApp(tk.Tk):
 
     def _bridge_monitor(self) -> None:
         while not self._bridge_stop.wait(2.0):
-            if not self._bridge_files():
-                continue
             try:
                 rows = running_clients()
+                self.after(0, lambda snapshot=rows: self._adopt_running_clients(snapshot))
                 live = {int(row.get("ProcessId", 0)) for row in rows if int(row.get("ProcessId", 0)) > 0}
+                if not self._bridge_files():
+                    continue
                 with self._bridge_lock:
                     self._bridged_pids.intersection_update(live)
                     pending = live - self._bridged_pids
