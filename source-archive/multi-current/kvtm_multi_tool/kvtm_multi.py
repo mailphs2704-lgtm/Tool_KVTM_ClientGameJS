@@ -427,17 +427,19 @@ class MultiApp(tk.Tk):
             ("Kho 4", "storage_4"), ("VPSK nâng được", "vpsk"),
             ("Thời gian chạy", "runtime"), ("Lượt bán AUTO", "sales"),
         )
+        fields_frame = ttk.Frame(detail_panel)
+        fields_frame.pack(fill="both", expand=True)
         self.detail_vars = {}
         for row, (label, key) in enumerate(fields):
-            ttk.Label(detail_panel, text=label + ":").grid(
-                row=row + 1, column=0, sticky="w", padx=(2, 12), pady=4
+            ttk.Label(fields_frame, text=label + ":").grid(
+                row=row, column=0, sticky="w", padx=(2, 12), pady=4
             )
             value = tk.StringVar(value="—")
             self.detail_vars[key] = value
-            ttk.Label(detail_panel, textvariable=value).grid(
-                row=row + 1, column=1, sticky="w", pady=4
+            ttk.Label(fields_frame, textvariable=value).grid(
+                row=row, column=1, sticky="w", pady=4
             )
-        detail_panel.columnconfigure(1, weight=1)
+        fields_frame.columnconfigure(1, weight=1)
 
         self.note = tk.StringVar(value="Sẵn sàng")
         ttk.Label(self, textvariable=self.note, padding=(12, 0, 12, 10), foreground="#444").pack(fill="x")
@@ -471,7 +473,9 @@ class MultiApp(tk.Tk):
             return
         self._active_profile_id = profile_id
         other = self.offline_tree if tree is self.online_tree else self.online_tree
-        other.selection_remove(*other.selection())
+        other_selected = other.selection()
+        if other_selected:
+            other.selection_remove(*other_selected)
         tree.selection_set(profile_id)
         if tree.identify_column(event.x) == "#0":
             if profile_id in self._checked_profiles:
