@@ -260,9 +260,9 @@ def _snapshot_profile_file(source: Path) -> None:
     try:
         PROFILE_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
-        destination = PROFILE_BACKUP_DIR / f"profiles-{stamp}.json"
-        if not destination.exists():
-            shutil.copy2(source, destination)
+        unique = f"{time.time_ns() % 1_000_000_000:09d}"
+        destination = PROFILE_BACKUP_DIR / f"profiles-{stamp}-{unique}.json"
+        shutil.copy2(source, destination)
         snapshots = sorted(
             PROFILE_BACKUP_DIR.glob("profiles-*.json"),
             key=lambda item: item.stat().st_mtime,
