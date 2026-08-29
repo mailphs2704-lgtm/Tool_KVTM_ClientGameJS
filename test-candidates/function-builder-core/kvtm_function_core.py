@@ -32,6 +32,17 @@ def _point(value: Any, label: str = "point") -> tuple[float, float]:
     return x, y
 
 
+def _region(value: Any) -> tuple[int, int, int, int] | None:
+    if value is None:
+        return None
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        raise FunctionValidationError("region phai gom [x, y, width, height]")
+    x, y, width, height = (int(item) for item in value)
+    if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > 1000 or y + height > 1000:
+        raise FunctionValidationError(f"region ngoai vung 1000x1000: {value}")
+    return x, y, width, height
+
+
 @dataclass
 class Step:
     type: str
@@ -131,6 +142,7 @@ class Step:
         timeout = float(self.data.get("timeout", 0))
         if not 0 <= timeout <= 3600:
             raise FunctionValidationError("timeout khong hop le")
+        _region(self.data.get("region"))
 
     def _validate_nested(self, key: str, required: bool = False) -> None:
         raw = self.data.get(key, [])
@@ -225,7 +237,7 @@ class AutoFunction:
 class Engine(Protocol):
     def click(self, x: float, y: float) -> None: ...
     def swipe_points(self, points: list[tuple[float, float]], duration: float) -> None: ...
-    def find_image(self, asset: Path, confidence: float) -> tuple[float, float] | None: ...
+    def find_image(self, asset: Path, confidence: float, region=None) -> tuple[float, float] | None: ...
 
 
 @dataclass
@@ -281,11 +293,11 @@ class FunctionRuntime:
                 events.append(ExecutionEvent(index, step.type, "error", str(exc)))
                 raise
 
-    def _find_image(self, relative: str, confidence: float, timeout: float):
+    def _find_image(self, relative: str, confidence: float, timeout: float, region=None):
         asset = self._asset(relative)
         deadline = time.monotonic() + timeout
         while not self._stopped:
-            found = self.engine.find_image(asset, confidence)
+            found = self.engine.find_image(asset, confidence, _region(region))
             if found is not None or time.monotonic() >= deadline:
                 return found
             self.sleep(0.10)
@@ -304,7 +316,7 @@ class FunctionRuntime:
         elif step.type == "swipe_from_image":
             found = self._find_image(
                 data["asset"], float(data.get("confidence", 0.85)),
-                float(data.get("timeout", 10)),
+                float(data.get("timeout", 10)), data.get("region"),
             )
             if found is None:
                 raise TimeoutError(f"Khong tim thay anh: {data['asset']}")
@@ -315,7 +327,7 @@ class FunctionRuntime:
         elif step.type in {"wait_image", "click_image"}:
             confidence = float(data.get("confidence", 0.85))
             timeout = float(data.get("timeout", 10))
-            found = self._find_image(data["asset"], confidence, timeout)
+            found = self._find_image(data["asset"], confidence, timeout, data.get("region"))
             if found is None:
                 raise TimeoutError(f"Khong tim thay anh: {data['asset']}")
             if step.type == "click_image":
@@ -325,7 +337,7 @@ class FunctionRuntime:
         elif step.type == "if_image":
             found = self._find_image(
                 data["asset"], float(data.get("confidence", 0.85)),
-                float(data.get("timeout", 0)),
+                float(data.get("timeout", 0)), data.get("region"),
             )
             branch = "then_steps" if found is not None else "else_steps"
             self._execute_steps(self._nested(data.get(branch, [])), events)
@@ -357,13 +369,14 @@ class FunctionRuntime:
             for current in range(1, attempts + 1):
                 found = self._find_image(
                     data["asset"], float(data.get("confidence", 0.85)),
-                    float(data.get("timeout", 0)),
+                    float(data.get("timeout", 0)), data.get("region"),
                 )
                 if found is not None:
                     return f"found lan {current}/{attempts}"
                 self._execute_steps(self._nested(data["steps"]), events)
             found = self._find_image(
                 data["asset"], float(data.get("confidence", 0.85)), 0,
+                data.get("region"),
             )
             if found is not None:
                 return f"found sau {attempts} lan"
