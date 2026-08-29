@@ -92,6 +92,91 @@ def capture_bgra(hwnd: int) -> tuple[bytes, int, int]:
         user32.ReleaseDC(hwnd, window_dc)
 
 
+_CAPTURE_HEADER = struct.Struct("<4s9IQ")
+
+
+def capture_shared_bgra(pid: int, timeout_ms: int = 2500) -> tuple[bytes, int, int]:
+    """Request one OpenGL frame and copy a stable KCAP shared-memory snapshot."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CallNamedPipeW.argtypes = [
+        wintypes.LPCWSTR, wintypes.LPVOID, wintypes.DWORD,
+        wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+        wintypes.DWORD,
+    ]
+    kernel32.CallNamedPipeW.restype = wintypes.BOOL
+    kernel32.OpenFileMappingW.argtypes = [
+        wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR,
+    ]
+    kernel32.OpenFileMappingW.restype = wintypes.HANDLE
+    kernel32.MapViewOfFile.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+        wintypes.DWORD, ctypes.c_size_t,
+    ]
+    kernel32.MapViewOfFile.restype = wintypes.LPVOID
+    kernel32.UnmapViewOfFile.argtypes = [wintypes.LPCVOID]
+    kernel32.UnmapViewOfFile.restype = wintypes.BOOL
+
+    pipe_name = rf"\\.\pipe\KVTM-Cocos-{int(pid)}"
+    payload = b"CAPTURE\n"
+    output = ctypes.create_string_buffer(128)
+    read = wintypes.DWORD()
+    if not kernel32.CallNamedPipeW(
+        pipe_name, ctypes.c_char_p(payload), len(payload), output,
+        len(output), ctypes.byref(read), int(timeout_ms),
+    ):
+        raise ctypes.WinError()
+    response = output.raw[:read.value].decode("ascii", "replace").strip()
+    parts = response.split()
+    if len(parts) != 6 or parts[:2] != ["OK", "FRAME"]:
+        raise RuntimeError(f"Bridge capture trả về: {response}")
+    expected_width, expected_height, expected_stride = map(int, parts[3:])
+
+    mapping_name = rf"Local\KVTM-Capture-{int(pid)}"
+    handle = kernel32.OpenFileMappingW(0x0004, False, mapping_name)  # FILE_MAP_READ
+    if not handle:
+        raise ctypes.WinError()
+    view = None
+    try:
+        view = kernel32.MapViewOfFile(handle, 0x0004, 0, 0, 0)
+        if not view:
+            raise ctypes.WinError()
+        for _attempt in range(4):
+            before = _CAPTURE_HEADER.unpack(
+                ctypes.string_at(view, _CAPTURE_HEADER.size)
+            )
+            (
+                magic, version, header_size, width, height, stride,
+                pixel_format, buffer_size, frame_id, status, _timestamp,
+            ) = before
+            if magic != b"KCAP" or version != 1 or header_size < _CAPTURE_HEADER.size:
+                raise RuntimeError("Header KCAP không hợp lệ")
+            if status != 2:
+                time.sleep(0.002)
+                continue
+            if (width, height, stride) != (
+                expected_width, expected_height, expected_stride
+            ):
+                raise RuntimeError("Kích thước KCAP không khớp")
+            if (
+                pixel_format != 1 or stride != width * 4
+                or buffer_size != stride * height
+                or buffer_size > 64 * 1024 * 1024
+            ):
+                raise RuntimeError("Định dạng KCAP không hợp lệ")
+            raw = ctypes.string_at(int(view) + header_size, buffer_size)
+            after = _CAPTURE_HEADER.unpack(
+                ctypes.string_at(view, _CAPTURE_HEADER.size)
+            )
+            if after[8] == frame_id and after[9] == 2:
+                return raw, width, height
+            time.sleep(0.002)
+        raise RuntimeError("KCAP thay đổi trong lúc đọc")
+    finally:
+        if view:
+            kernel32.UnmapViewOfFile(view)
+        kernel32.CloseHandle(handle)
+
+
 def save_bgra_bmp(raw: bytes, width: int, height: int, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     pixels = b"".join(
