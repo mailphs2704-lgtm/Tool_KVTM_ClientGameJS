@@ -23,6 +23,7 @@ GAME_ID = "24"
 APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi"
 PROFILE_FILE = APP_DIR / "profiles.json"
 SETTINGS_FILE = APP_DIR / "settings.json"
+RUNNING_MAP_FILE = APP_DIR / "running_clients.json"
 DEFAULT_CLIENT = Path(r"C:\Program Files\ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")
 DEFAULT_GAME = Path(os.environ.get("APPDATA", Path.home())) / "VNG Corporation" / "ZingPlay" / "zpp" / GAME_ID / "game"
 DEFAULT_DISPLAY = {"width": 1000, "height": 1000, "dpi": 240}
@@ -418,7 +419,35 @@ class MultiApp(tk.Tk):
     def selected_ids(self) -> list[str]:
         return list(self.tree.selection())
 
+    def _publish_running_map(self) -> None:
+        """Publish the authoritative profile name for each live PID.
+
+        AUTO reads this file instead of guessing names from process/profile order.
+        No launcher arguments or account secrets are written here.
+        """
+        entries = []
+        for profile in self.profiles:
+            proc = self.processes.get(profile.get("id"))
+            if not proc or proc.poll() is not None:
+                continue
+            entries.append({
+                "pid": int(proc.pid),
+                "profile_id": str(profile.get("id") or ""),
+                "name": str(profile.get("name") or f"PID {proc.pid}"),
+            })
+        try:
+            APP_DIR.mkdir(parents=True, exist_ok=True)
+            temp = RUNNING_MAP_FILE.with_suffix(".tmp")
+            temp.write_text(
+                json.dumps({"version": 1, "clients": entries}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            os.replace(temp, RUNNING_MAP_FILE)
+        except OSError:
+            pass
+
     def refresh(self) -> None:
+        self._publish_running_map()
         selected = set(self.selected_ids())
         self.tree.delete(*self.tree.get_children())
         for profile in self.profiles:
