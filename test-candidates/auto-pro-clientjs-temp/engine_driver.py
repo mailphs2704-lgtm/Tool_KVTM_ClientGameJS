@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import subprocess
+import struct
 import threading
 import time
 
@@ -91,6 +92,14 @@ if hasattr(ctypes, "windll"):
     kernel32.CloseHandle.restype = wintypes.BOOL
     kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
     kernel32.TerminateProcess.restype = wintypes.BOOL
+    kernel32.OpenFileMappingW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.OpenFileMappingW.restype = wintypes.HANDLE
+    kernel32.MapViewOfFile.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD, ctypes.c_size_t,
+    ]
+    kernel32.MapViewOfFile.restype = wintypes.LPVOID
+    kernel32.UnmapViewOfFile.argtypes = [wintypes.LPCVOID]
+    kernel32.UnmapViewOfFile.restype = wintypes.BOOL
 
 
 class EngineDriver(PCDriver):
@@ -245,15 +254,88 @@ class EngineDriver(PCDriver):
             )
             raise RuntimeError(f"Cocos touch {phase} thất bại: {exc}") from exc
 
+    @property
+    def capture_mapping_name(self) -> str:
+        return rf"Local\KVTM-Capture-{self.pid}"
+
+    def _capture_shared_bgra(self) -> tuple[bytes, int, int]:
+        response = self._pipe("CAPTURE\n", 3000)
+        parts = response.split()
+        if len(parts) != 7 or parts[:2] != ["OK", "FRAME"]:
+            raise RuntimeError(f"Phản hồi capture không hợp lệ: {response}")
+        expected_frame, expected_width, expected_height, expected_stride = map(int, parts[2:])
+        handle = kernel32.OpenFileMappingW(0x0004, False, self.capture_mapping_name)  # FILE_MAP_READ
+        if not handle:
+            raise ctypes.WinError()
+        view = None
+        try:
+            view = kernel32.MapViewOfFile(handle, 0x0004, 0, 0, 0)
+            if not view:
+                raise ctypes.WinError()
+            header_format = "<4s9IQ"
+            header_size = struct.calcsize(header_format)
+            values = struct.unpack(header_format, ctypes.string_at(view, header_size))
+            (
+                magic, version, mapped_header_size, width, height, stride,
+                pixel_format, buffer_size, frame_id, status, _timestamp_ms,
+            ) = values
+            if magic != b"KCAP" or version != 1 or mapped_header_size < header_size:
+                raise RuntimeError("Shared capture header không hợp lệ")
+            if status != 2 or frame_id != expected_frame:
+                raise RuntimeError("Shared capture frame chưa hoàn tất hoặc đã thay đổi")
+            if (width, height, stride) != (
+                expected_width, expected_height, expected_stride
+            ):
+                raise RuntimeError("Kích thước shared capture không khớp phản hồi")
+            if pixel_format != 1 or stride != width * 4 or buffer_size != stride * height:
+                raise RuntimeError("Định dạng shared capture không được hỗ trợ")
+            raw = ctypes.string_at(int(view) + mapped_header_size, buffer_size)
+            return raw, width, height
+        finally:
+            if view:
+                kernel32.UnmapViewOfFile(view)
+            kernel32.CloseHandle(handle)
+
     def screenshot(self, format: str | None = None):
-        hwnd = find_window(self.pid)
-        rect = wintypes.RECT()
-        scale = 1.0
-        if hwnd and ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rect)):
-            width, height = rect.right - rect.left, rect.bottom - rect.top
-            scale = min(width / self.reference_size[0], height / self.reference_size[1], 1.0)
-        set_capture_scale(scale)
-        return super().screenshot(format=format)
+        try:
+            raw, width, height = self._capture_shared_bgra()
+            set_capture_scale(min(
+                width / self.reference_size[0],
+                height / self.reference_size[1],
+                1.0,
+            ))
+            if format == "opencv":
+                import numpy as np
+                import cv2
+                frame = np.frombuffer(raw, dtype=np.uint8).reshape(
+                    (height, width, 4)
+                )[::-1, :, :3].copy()
+                if (width, height) != self.reference_size:
+                    frame = cv2.resize(
+                        frame, self.reference_size, interpolation=cv2.INTER_AREA
+                    )
+                return frame
+            from PIL import Image
+            image = Image.frombuffer(
+                "RGBA", (width, height), raw, "raw", "BGRA", 0, -1
+            ).convert("RGB")
+            if image.size != self.reference_size:
+                image = image.resize(self.reference_size, Image.Resampling.LANCZOS)
+            return image
+        except Exception as exc:
+            self._trace("shared_capture_fallback", error=str(exc))
+            hwnd = find_window(self.pid)
+            rect = wintypes.RECT()
+            scale = 1.0
+            if hwnd and ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rect)):
+                width, height = rect.right - rect.left, rect.bottom - rect.top
+                scale = min(
+                    width / self.reference_size[0],
+                    height / self.reference_size[1],
+                    1.0,
+                )
+            set_capture_scale(scale)
+            return super().screenshot(format=format)
 
     def swipe_points(self, points, duration: float = 0.5) -> None:
         """uiautomator2-compatible continuous gesture through every point."""
