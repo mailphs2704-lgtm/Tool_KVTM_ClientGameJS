@@ -9,7 +9,10 @@ from typing import Any, Protocol
 
 SCHEMA_VERSION = 1
 LOGICAL_SIZE = (1000, 1000)
-STEP_TYPES = {"click", "swipe_path", "wait", "wait_image", "click_image"}
+STEP_TYPES = {
+    "click", "swipe_path", "wait", "wait_image", "click_image",
+    "log", "if_image", "repeat", "retry",
+}
 
 
 class FunctionValidationError(ValueError):
@@ -71,6 +74,44 @@ class Step:
             timeout = float(self.data.get("timeout", 10))
             if not 0 <= timeout <= 3600:
                 raise FunctionValidationError("timeout khong hop le")
+        elif self.type == "log":
+            if not isinstance(self.data.get("message"), str):
+                raise FunctionValidationError("log thieu message")
+        elif self.type == "if_image":
+            self._validate_image_condition()
+            self._validate_nested("then_steps")
+            self._validate_nested("else_steps")
+        elif self.type == "repeat":
+            count = int(self.data.get("count", 0))
+            if not 1 <= count <= 10000:
+                raise FunctionValidationError("repeat count phai tu 1 den 10000")
+            self._validate_nested("steps", required=True)
+        elif self.type == "retry":
+            attempts = int(self.data.get("attempts", 0))
+            if not 1 <= attempts <= 100:
+                raise FunctionValidationError("retry attempts phai tu 1 den 100")
+            delay = float(self.data.get("delay_seconds", 0))
+            if not 0 <= delay <= 3600:
+                raise FunctionValidationError("retry delay_seconds khong hop le")
+            self._validate_nested("steps", required=True)
+            self._validate_nested("on_exhausted")
+
+    def _validate_image_condition(self) -> None:
+        asset = self.data.get("asset")
+        if not isinstance(asset, str) or not asset.strip():
+            raise FunctionValidationError("if_image thieu asset")
+        confidence = float(self.data.get("confidence", 0.85))
+        if not 0 < confidence <= 1:
+            raise FunctionValidationError("confidence phai nam trong (0, 1]")
+        timeout = float(self.data.get("timeout", 0))
+        if not 0 <= timeout <= 3600:
+            raise FunctionValidationError("timeout khong hop le")
+
+    def _validate_nested(self, key: str, required: bool = False) -> None:
+        raw = self.data.get(key, [])
+        if not isinstance(raw, list) or (required and not raw):
+            raise FunctionValidationError(f"{key} phai la danh sach step")
+        self.data[key] = [Step.from_dict(item).to_dict() for item in raw]
 
     def to_dict(self) -> dict[str, Any]:
         return {"type": self.type, **self.data}
@@ -164,20 +205,41 @@ class FunctionRuntime:
 
     def run(self, function: AutoFunction) -> list[ExecutionEvent]:
         self._stopped = False
+        self._event_index = 0
         events: list[ExecutionEvent] = []
-        for index, step in enumerate(function.steps):
+        self._execute_steps(function.steps, events)
+        return events
+
+    def _execute_steps(self, steps: list[Step], events: list[ExecutionEvent]) -> None:
+        for step in steps:
+            index = self._event_index
+            self._event_index += 1
             if self._stopped:
                 events.append(ExecutionEvent(index, step.type, "stopped"))
-                break
+                return
             try:
-                self._execute(step)
+                detail = self._execute(step, events)
                 events.append(ExecutionEvent(index, step.type, "ok"))
+                if detail:
+                    events[-1].detail = detail
             except Exception as exc:
                 events.append(ExecutionEvent(index, step.type, "error", str(exc)))
                 raise
-        return events
 
-    def _execute(self, step: Step) -> None:
+    def _find_image(self, relative: str, confidence: float, timeout: float):
+        asset = self._asset(relative)
+        deadline = time.monotonic() + timeout
+        while not self._stopped:
+            found = self.engine.find_image(asset, confidence)
+            if found is not None or time.monotonic() >= deadline:
+                return found
+            self.sleep(0.10)
+        return None
+
+    def _nested(self, raw: list[dict[str, Any]]) -> list[Step]:
+        return [Step.from_dict(item) for item in raw]
+
+    def _execute(self, step: Step, events: list[ExecutionEvent]) -> str:
         data = step.data
         if step.type == "click":
             self.engine.click(*_point(data["point"]))
@@ -187,20 +249,46 @@ class FunctionRuntime:
         elif step.type == "wait":
             self.sleep(float(data["seconds"]))
         elif step.type in {"wait_image", "click_image"}:
-            asset = self._asset(data["asset"])
             confidence = float(data.get("confidence", 0.85))
             timeout = float(data.get("timeout", 10))
-            deadline = time.monotonic() + timeout
-            found = None
-            while not self._stopped:
-                found = self.engine.find_image(asset, confidence)
-                if found is not None or time.monotonic() >= deadline:
-                    break
-                self.sleep(0.10)
+            found = self._find_image(data["asset"], confidence, timeout)
             if found is None:
                 raise TimeoutError(f"Khong tim thay anh: {data['asset']}")
             if step.type == "click_image":
                 self.engine.click(*found)
+        elif step.type == "log":
+            return str(data["message"])
+        elif step.type == "if_image":
+            found = self._find_image(
+                data["asset"], float(data.get("confidence", 0.85)),
+                float(data.get("timeout", 0)),
+            )
+            branch = "then_steps" if found is not None else "else_steps"
+            self._execute_steps(self._nested(data.get(branch, [])), events)
+            return "found" if found is not None else "not_found"
+        elif step.type == "repeat":
+            count = int(data["count"])
+            for current in range(count):
+                if self._stopped:
+                    break
+                self._execute_steps(self._nested(data["steps"]), events)
+            return f"{count} lan"
+        elif step.type == "retry":
+            attempts = int(data["attempts"])
+            last_error: Exception | None = None
+            for current in range(1, attempts + 1):
+                try:
+                    self._execute_steps(self._nested(data["steps"]), events)
+                    return f"thanh cong lan {current}/{attempts}"
+                except Exception as exc:
+                    last_error = exc
+                    if current < attempts:
+                        self.sleep(float(data.get("delay_seconds", 0)))
+            self._execute_steps(self._nested(data.get("on_exhausted", [])), events)
+            if bool(data.get("continue_after_exhausted", False)):
+                return f"that bai sau {attempts} lan: {last_error}"
+            raise RuntimeError(f"Retry that bai sau {attempts} lan: {last_error}")
+        return ""
 
 
 class FunctionRecorder:
