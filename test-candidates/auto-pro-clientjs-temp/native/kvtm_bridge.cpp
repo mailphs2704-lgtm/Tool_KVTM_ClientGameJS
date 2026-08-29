@@ -10,6 +10,7 @@ constexpr UINT WM_KVTM_CAPTURE = WM_APP + 0x418;
 constexpr wchar_t kWindowProperty[] = L"KVTM_ENGINE_BRIDGE_20260828";
 constexpr DWORD kCaptureVersion = 1;
 constexpr DWORD kPixelFormatBgra8BottomUp = 1;
+constexpr DWORD kPixelFormatBgra8TopDown = 2;
 constexpr DWORD kMaxCaptureBytes = 64u * 1024u * 1024u;
 constexpr unsigned int GL_FRONT_VALUE = 0x0404;
 constexpr unsigned int GL_BACK_VALUE = 0x0405;
@@ -216,7 +217,7 @@ LONG dispatch_capture(CaptureCommand* command) {
     header->width = width;
     header->height = height;
     header->stride = stride;
-    header->pixel_format = kPixelFormatBgra8BottomUp;
+    header->pixel_format = kPixelFormatBgra8TopDown;
     header->buffer_size = pixel_bytes;
     header->status = 1;
     MemoryBarrier();
@@ -240,6 +241,17 @@ LONG dispatch_capture(CaptureCommand* command) {
     if (gl_error != 0) {
         header->status = 3;
         return ERROR_READ_FAULT;
+    }
+
+    // GameClientJS presents this OpenGL surface rotated 180 degrees relative
+    // to the logical game coordinates. Normalize the shared frame once in
+    // native code so Live View and AUTO consume the same top-down image.
+    auto* words = reinterpret_cast<std::uint32_t*>(pixels);
+    const size_t pixel_count = static_cast<size_t>(width) * height;
+    for (size_t left = 0, right = pixel_count - 1; left < right; ++left, --right) {
+        const std::uint32_t value = words[left];
+        words[left] = words[right];
+        words[right] = value;
     }
 
     const DWORD frame = static_cast<DWORD>(InterlockedIncrement(&g_capture_frame));
