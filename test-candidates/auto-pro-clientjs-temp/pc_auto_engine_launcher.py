@@ -21,11 +21,14 @@ install_adaptive_matching()
 install_clientjs_auto_patch()
 
 PC_PREFIX = "PC:"
+PROFILE_PREFIX = "PCID:"
 _original_connect = u2.connect
 
 
 def pc_connect(device_id=None, *args, **kwargs):
     value = str(device_id or "")
+    if value.startswith(PROFILE_PREFIX):
+        return EngineDriver(value[len(PROFILE_PREFIX):], reference_size=(1000, 1000))
     if value.startswith(PC_PREFIX):
         return EngineDriver(int(value[len(PC_PREFIX):]), reference_size=(1000, 1000))
     return _original_connect(device_id, *args, **kwargs)
