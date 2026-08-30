@@ -237,7 +237,7 @@ class PCDriver:
 
     def _trace(self, action: str, **details) -> None:
         """Record a bounded action trace for PC bridge diagnosis."""
-        if self._trace_count >= 80:
+        if self._trace_count >= 240:
             return
         try:
             self.trace_dir.mkdir(parents=True, exist_ok=True)
