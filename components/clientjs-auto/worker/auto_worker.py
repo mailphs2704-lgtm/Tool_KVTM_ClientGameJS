@@ -48,7 +48,10 @@ class GuiProxy:
     def __getattr__(self, name):
         def no_op(*_args, **_kwargs):
             emit("gui_callback", name=name)
-            return None
+            # Recovered AUTO PRO reads optional GUI settings with
+            # gui_callback(...).get(key, default). An empty mapping keeps
+            # those built-in defaults active in the headless Multi worker.
+            return {}
         return no_op
 
 
