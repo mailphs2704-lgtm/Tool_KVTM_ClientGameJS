@@ -514,13 +514,12 @@ class MultiApp(tk.Tk):
         self.update_idletasks()
         work_w = primary["right"] - primary["left"]
         work_h = primary["bottom"] - primary["top"]
-        # Open maximized inside the primary monitor work area. Reading
-        # winfo_width() during the first idle callback can still return 1 and
-        # previously collapsed the window to its minimum size.
-        width = work_w
-        height = work_h
-        x = primary["left"]
-        y = primary["top"]
+        # Default operator layout: compact 820x790 window centered on the
+        # primary monitor, clamped only when the work area is smaller.
+        width = min(820, work_w)
+        height = min(790, work_h)
+        x = primary["left"] + max(0, (work_w - width) // 2)
+        y = primary["top"] + max(0, (work_h - height) // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
         if hasattr(self, "content_canvas"):
             self.content_canvas.yview_moveto(0.0)
