@@ -1,3 +1,7 @@
+param(
+    [string]$OutputName = "KVTM-ClientJS-Suite-v0.15.1-test"
+)
+
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
@@ -55,7 +59,7 @@ New-Item -ItemType Directory -Path $NativeOut -Force | Out-Null
 Copy-Item -Path (Join-Path $PatchSource "native\*") -Destination $NativeOut -Force
 
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "README.txt") -Destination $OutputRoot
-foreach ($name in @("01_BUILD_BRIDGE.bat", "02_START_MULTI.bat", "03_START_AUTO.bat", "04_BUILD_MULTI_EXE.bat")) {
+foreach ($name in @("01_BUILD_BRIDGE.bat", "02_START_MULTI.bat", "02_START_MULTI_DEV.bat", "03_START_AUTO.bat", "04_BUILD_MULTI_EXE.bat")) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $OutputRoot
 }
 
