@@ -144,6 +144,7 @@ def main() -> int:
             f"PC:{args.pid}",
             136,
             gui_ref=proxy,
+            options={},
         )
     except Exception as exc:
         emit(
