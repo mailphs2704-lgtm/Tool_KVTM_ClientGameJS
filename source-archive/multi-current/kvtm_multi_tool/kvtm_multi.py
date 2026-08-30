@@ -684,16 +684,6 @@ class MultiApp(tk.Tk):
             background="#2f80ed", bordercolor="#e8eef7", lightcolor="#2f80ed",
             darkcolor="#2f80ed",
         )
-        style.configure("Auto.TNotebook", background="#ffffff", borderwidth=0)
-        style.configure(
-            "Auto.TNotebook.Tab", padding=(10, 6),
-            font=("Segoe UI Semibold", 9), foreground="#53627a",
-        )
-        style.map(
-            "Auto.TNotebook.Tab",
-            background=[("selected", "#e8f1ff"), ("active", "#eef4fc")],
-            foreground=[("selected", "#1768c4"), ("active", "#263653")],
-        )
         style.configure(
             "AutoOption.TCheckbutton", background="#ffffff",
             foreground="#263653", font=("Segoe UI", 9), padding=(4, 2),
@@ -859,14 +849,14 @@ class MultiApp(tk.Tk):
         )
         panel.pack(fill="x", padx=12, pady=(5, 7))
 
-        self.auto_tabs = ttk.Notebook(panel, style="Auto.TNotebook")
-        self.auto_tabs.pack(fill="x")
+        tab_bar = tk.Frame(panel, background="#ffffff", height=36)
+        tab_bar.pack(fill="x", pady=(0, 8))
+        tab_host = ttk.Frame(panel, style="Detail.TFrame", height=142)
+        tab_host.pack(fill="x")
+        tab_host.pack_propagate(False)
 
-        main_tab = ttk.Frame(self.auto_tabs, padding=(4, 8), style="Detail.TFrame")
-        self.auto_tabs.add(main_tab, text="Chức năng chính")
-
-        self.auto_feature_tabs = {}
         feature_tabs = (
+            ("main", "Chức năng chính"),
             ("delete_items", "Xóa VP bằng KC"),
             ("summer_spin", "Quay hè"),
             ("upgrade_storage", "Nâng kho"),
@@ -874,20 +864,45 @@ class MultiApp(tk.Tk):
             ("deliver_sheep", "Giao cừu"),
             ("produce_gems", "Sản xuất ngọc"),
         )
-        for key, label in feature_tabs:
-            feature_frame = ttk.Frame(
-                self.auto_tabs, padding=(12, 12), style="Detail.TFrame"
+        self.auto_feature_tabs = {}
+        self.auto_tab_buttons = {}
+        for column, (key, label) in enumerate(feature_tabs):
+            tab_bar.grid_columnconfigure(column, weight=1, uniform="auto_tab")
+            button = tk.Button(
+                tab_bar, text=label, relief="flat", borderwidth=0,
+                highlightthickness=0, background="#e8eef7",
+                foreground="#263653", activebackground="#dce8f8",
+                activeforeground="#1768c4", font=("Segoe UI Semibold", 9),
+                cursor="hand2", padx=6, pady=7,
+                command=lambda selected=key: self._show_auto_tab(selected),
             )
-            self.auto_tabs.add(feature_frame, text=label)
-            self.auto_feature_tabs[key] = feature_frame
+            button.grid(
+                row=0, column=column, sticky="ew",
+                padx=(0 if column == 0 else 3, 0),
+            )
+            self.auto_tab_buttons[key] = button
+
+            frame = ttk.Frame(tab_host, padding=(4, 7), style="Detail.TFrame")
+            frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+            frame.place_forget()
+            self.auto_feature_tabs[key] = frame
+
+        main_tab = self.auto_feature_tabs["main"]
+        for key, label in feature_tabs[1:]:
+            feature_frame = self.auto_feature_tabs[key]
             ttk.Label(
                 feature_frame, text=label.upper(), style="AutoKey.TLabel"
-            ).pack(anchor="w")
+            ).pack(anchor="w", padx=8, pady=(5, 0))
+            ttk.Separator(feature_frame, orient="horizontal").pack(
+                fill="x", padx=8, pady=(7, 8)
+            )
             ttk.Label(
                 feature_frame,
                 text=f"Cấu hình {label} sẽ được bổ sung tại đây.",
                 style="AutoValue.TLabel", anchor="w",
-            ).pack(fill="x", pady=(7, 4))
+            ).pack(fill="x", padx=8)
+
+        self._show_auto_tab("main")
 
         main_tab.columnconfigure(0, weight=3)
         main_tab.columnconfigure(1, weight=2)
@@ -985,6 +1000,27 @@ class MultiApp(tk.Tk):
             action_row, textvariable=self.auto_scope_note, style="Key.TLabel",
             anchor="e",
         ).pack(side="right", fill="x", expand=True, padx=(14, 0))
+
+    def _show_auto_tab(self, selected: str) -> None:
+        """Switch flat AUTO feature buttons without native Windows tab chrome."""
+        frames = getattr(self, "auto_feature_tabs", {})
+        buttons = getattr(self, "auto_tab_buttons", {})
+        if selected not in frames:
+            selected = "main"
+        for key, frame in frames.items():
+            if key == selected:
+                frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+                frame.lift()
+            else:
+                frame.place_forget()
+        for key, button in buttons.items():
+            active = key == selected
+            button.configure(
+                background="#2f80ed" if active else "#e8eef7",
+                foreground="#ffffff" if active else "#263653",
+                activebackground="#246fca" if active else "#dce8f8",
+                activeforeground="#ffffff" if active else "#1768c4",
+            )
 
     def _refresh_auto_target(self) -> None:
         ids = self.selected_ids()
