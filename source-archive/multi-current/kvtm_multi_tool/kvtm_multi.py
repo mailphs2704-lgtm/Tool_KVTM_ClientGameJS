@@ -845,12 +845,22 @@ class MultiApp(tk.Tk):
         )
         panel.pack(fill="x", padx=12, pady=(5, 7))
 
-        panel.columnconfigure(0, weight=3)
-        panel.columnconfigure(1, weight=2)
-        panel.columnconfigure(2, weight=2)
-        panel.columnconfigure(3, weight=3)
+        self.auto_tabs = ttk.Notebook(panel)
+        self.auto_tabs.pack(fill="x")
 
-        function_box = ttk.Frame(panel, style="Detail.TFrame")
+        main_tab = ttk.Frame(self.auto_tabs, padding=(4, 8), style="Detail.TFrame")
+        auxiliary_tab = ttk.Frame(
+            self.auto_tabs, padding=(12, 12), style="Detail.TFrame"
+        )
+        self.auto_tabs.add(main_tab, text="Chức năng chính")
+        self.auto_tabs.add(auxiliary_tab, text="Chức năng phụ")
+
+        main_tab.columnconfigure(0, weight=3)
+        main_tab.columnconfigure(1, weight=2)
+        main_tab.columnconfigure(2, weight=2)
+        main_tab.columnconfigure(3, weight=3)
+
+        function_box = ttk.Frame(main_tab, style="Detail.TFrame")
         function_box.grid(row=0, column=0, sticky="ew", padx=(0, 12))
         ttk.Label(function_box, text="CHỨC NĂNG", style="AutoKey.TLabel").pack(anchor="w")
         self.auto_function = tk.StringVar(value=self._auto_function_names[0])
@@ -860,7 +870,7 @@ class MultiApp(tk.Tk):
         )
         self.auto_function_combo.pack(fill="x", pady=(4, 0))
 
-        target_box = ttk.Frame(panel, style="Detail.TFrame")
+        target_box = ttk.Frame(main_tab, style="Detail.TFrame")
         target_box.grid(row=0, column=1, sticky="ew", padx=(0, 12))
         ttk.Label(target_box, text="TÀI KHOẢN ÁP DỤNG", style="AutoKey.TLabel").pack(anchor="w")
         self.auto_target = tk.StringVar(value="Chưa chọn tài khoản")
@@ -869,7 +879,7 @@ class MultiApp(tk.Tk):
             anchor="w",
         ).pack(fill="x", pady=(7, 0))
 
-        state_box = ttk.Frame(panel, style="Detail.TFrame")
+        state_box = ttk.Frame(main_tab, style="Detail.TFrame")
         state_box.grid(row=0, column=2, sticky="ew", padx=(0, 12))
         ttk.Label(state_box, text="TRẠNG THÁI", style="AutoKey.TLabel").pack(anchor="w")
         self.auto_status = tk.StringVar(value="Sẵn sàng")
@@ -878,7 +888,7 @@ class MultiApp(tk.Tk):
             anchor="w",
         ).pack(fill="x", pady=(7, 0))
 
-        progress_box = ttk.Frame(panel, style="Detail.TFrame")
+        progress_box = ttk.Frame(main_tab, style="Detail.TFrame")
         progress_box.grid(row=0, column=3, sticky="ew")
         progress_header = ttk.Frame(progress_box, style="Detail.TFrame")
         progress_header.pack(fill="x")
@@ -894,7 +904,7 @@ class MultiApp(tk.Tk):
             style="Auto.Horizontal.TProgressbar",
         ).pack(fill="x", pady=(7, 0))
 
-        action_row = ttk.Frame(panel, style="Detail.TFrame")
+        action_row = ttk.Frame(main_tab, style="Detail.TFrame")
         action_row.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(10, 0))
         self.auto_start_button = ttk.Button(
             action_row, text="▶ Bắt đầu", command=self._auto_ui_start,
@@ -921,6 +931,13 @@ class MultiApp(tk.Tk):
             action_row, textvariable=self.auto_scope_note, style="Key.TLabel",
             anchor="e",
         ).pack(side="right", fill="x", expand=True, padx=(14, 0))
+
+        ttk.Label(
+            auxiliary_tab,
+            text="Khu vực chức năng phụ — sẵn sàng bổ sung tác vụ mới",
+            style="AutoValue.TLabel",
+            anchor="center",
+        ).pack(fill="both", expand=True, pady=14)
 
     def _refresh_auto_target(self) -> None:
         ids = self.selected_ids()
