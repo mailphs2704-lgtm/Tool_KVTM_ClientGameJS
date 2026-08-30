@@ -27,6 +27,32 @@
         "Tuychon",
         "GoFiendHome"
       ]
+    },
+    {
+      "key": "produce_9_nuoc_hh_9_tra_da_9_vai_vang",
+      "label": "9 Nước HH + 9 Trà Đá + 9 Vải Vàng",
+      "auto_pro_function_id": 318,
+      "entrypoint": "FarmAutomation.produceItems_318",
+      "enabled_for_test": true,
+      "required_auto_modules": [
+        "automation",
+        "adb_controller",
+        "image_processor",
+        "engine_driver",
+        "pc_driver",
+        "adaptive_cv",
+        "clientjs_auto_patch"
+      ],
+      "required_methods": [
+        "plantTrees",
+        "makeItems",
+        "harvestTrees",
+        "openGame",
+        "goUp",
+        "goDownLast",
+        "Tuychon",
+        "GoFiendHome"
+      ]
     }
   ]
 }
