@@ -24,7 +24,7 @@ from pc_driver import (
 
 APP_NAME = "KVTM Multi"
 GAME_ID = "24"
-APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi"
+APP_DIR = Path(os.environ.get("KVTM_MULTI_APP_DIR") or (Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi"))
 PROFILE_FILE = APP_DIR / "profiles.json"
 SETTINGS_FILE = APP_DIR / "settings.json"
 RUNNING_MAP_FILE = APP_DIR / "running_clients.json"
