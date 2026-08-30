@@ -684,6 +684,20 @@ class MultiApp(tk.Tk):
             background="#2f80ed", bordercolor="#e8eef7", lightcolor="#2f80ed",
             darkcolor="#2f80ed",
         )
+        style.configure("Auto.TNotebook", background="#ffffff", borderwidth=0)
+        style.configure(
+            "Auto.TNotebook.Tab", padding=(10, 6),
+            font=("Segoe UI Semibold", 9), foreground="#53627a",
+        )
+        style.map(
+            "Auto.TNotebook.Tab",
+            background=[("selected", "#e8f1ff"), ("active", "#eef4fc")],
+            foreground=[("selected", "#1768c4"), ("active", "#263653")],
+        )
+        style.configure(
+            "AutoOption.TCheckbutton", background="#ffffff",
+            foreground="#263653", font=("Segoe UI", 9), padding=(4, 2),
+        )
         style.configure("Sash", sashthickness=6, background="#dbe3ef")
 
         header = ttk.Frame(self, padding=(18, 13), style="Header.TFrame")
@@ -845,15 +859,35 @@ class MultiApp(tk.Tk):
         )
         panel.pack(fill="x", padx=12, pady=(5, 7))
 
-        self.auto_tabs = ttk.Notebook(panel)
+        self.auto_tabs = ttk.Notebook(panel, style="Auto.TNotebook")
         self.auto_tabs.pack(fill="x")
 
         main_tab = ttk.Frame(self.auto_tabs, padding=(4, 8), style="Detail.TFrame")
-        auxiliary_tab = ttk.Frame(
-            self.auto_tabs, padding=(12, 12), style="Detail.TFrame"
-        )
         self.auto_tabs.add(main_tab, text="Chức năng chính")
-        self.auto_tabs.add(auxiliary_tab, text="Chức năng phụ")
+
+        self.auto_feature_tabs = {}
+        feature_tabs = (
+            ("delete_items", "Xóa VP bằng KC"),
+            ("summer_spin", "Quay hè"),
+            ("upgrade_storage", "Nâng kho"),
+            ("hire_shrimp", "Thuê tôm"),
+            ("deliver_sheep", "Giao cừu"),
+            ("produce_gems", "Sản xuất ngọc"),
+        )
+        for key, label in feature_tabs:
+            feature_frame = ttk.Frame(
+                self.auto_tabs, padding=(12, 12), style="Detail.TFrame"
+            )
+            self.auto_tabs.add(feature_frame, text=label)
+            self.auto_feature_tabs[key] = feature_frame
+            ttk.Label(
+                feature_frame, text=label.upper(), style="AutoKey.TLabel"
+            ).pack(anchor="w")
+            ttk.Label(
+                feature_frame,
+                text=f"Cấu hình {label} sẽ được bổ sung tại đây.",
+                style="AutoValue.TLabel", anchor="w",
+            ).pack(fill="x", pady=(7, 4))
 
         main_tab.columnconfigure(0, weight=3)
         main_tab.columnconfigure(1, weight=2)
@@ -904,8 +938,28 @@ class MultiApp(tk.Tk):
             style="Auto.Horizontal.TProgressbar",
         ).pack(fill="x", pady=(7, 0))
 
+        quick_options = ttk.Frame(main_tab, style="Detail.TFrame")
+        quick_options.grid(
+            row=1, column=0, columnspan=4, sticky="ew", pady=(9, 0)
+        )
+        self.auto_quick_options = {
+            "open_chests": tk.BooleanVar(value=False),
+            "produce_feed": tk.BooleanVar(value=False),
+            "sell_all_scratch_items": tk.BooleanVar(value=False),
+        }
+        for column, (key, label) in enumerate((
+            ("open_chests", "Mở rương"),
+            ("produce_feed", "Sản xuất cám"),
+            ("sell_all_scratch_items", "Bán hết VP cào"),
+        )):
+            ttk.Checkbutton(
+                quick_options, text=label,
+                variable=self.auto_quick_options[key],
+                style="AutoOption.TCheckbutton",
+            ).grid(row=0, column=column, sticky="w", padx=(0, 18))
+
         action_row = ttk.Frame(main_tab, style="Detail.TFrame")
-        action_row.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        action_row.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 0))
         self.auto_start_button = ttk.Button(
             action_row, text="▶ Bắt đầu", command=self._auto_ui_start,
             style="AutoStart.TButton",
@@ -931,13 +985,6 @@ class MultiApp(tk.Tk):
             action_row, textvariable=self.auto_scope_note, style="Key.TLabel",
             anchor="e",
         ).pack(side="right", fill="x", expand=True, padx=(14, 0))
-
-        ttk.Label(
-            auxiliary_tab,
-            text="Khu vực chức năng phụ — sẵn sàng bổ sung tác vụ mới",
-            style="AutoValue.TLabel",
-            anchor="center",
-        ).pack(fill="both", expand=True, pady=14)
 
     def _refresh_auto_target(self) -> None:
         ids = self.selected_ids()
