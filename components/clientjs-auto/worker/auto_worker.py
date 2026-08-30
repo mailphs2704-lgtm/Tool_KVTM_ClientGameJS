@@ -213,17 +213,22 @@ def main() -> int:
         emit("worker_error", error=f"Thông số tốc độ không hợp lệ: {exc}")
         return 2
 
-    if args.function_id != 136:
-        emit("worker_error", error="Worker thử nghiệm chỉ cho phép Function 136")
+    allowed_function_ids = {136, 318}
+    if args.function_id not in allowed_function_ids:
+        emit(
+            "worker_error",
+            error=f"Worker thử nghiệm không cho phép Function {args.function_id}",
+        )
         return 2
 
     auto_root = Path(args.auto_root).resolve()
     try:
         automation_module = install_clientjs_runtime(auto_root)
         automation_class = automation_module.FarmAutomation
-        entrypoint = getattr(automation_class, "produceItems_136", None)
+        entrypoint_name = f"produceItems_{args.function_id}"
+        entrypoint = getattr(automation_class, entrypoint_name, None)
         if not callable(entrypoint):
-            raise RuntimeError("Thiếu FarmAutomation.produceItems_136")
+            raise RuntimeError(f"Thiếu FarmAutomation.{entrypoint_name}")
 
         proxy = GuiProxy()
         constructor_tuning = {
@@ -232,7 +237,7 @@ def main() -> int:
         }
         automation = automation_class(
             f"PC:{args.pid}",
-            136,
+            args.function_id,
             gui_ref=proxy,
             options=auto_options,
             **constructor_tuning,
@@ -256,7 +261,7 @@ def main() -> int:
         try:
             emit(
                 "worker_started", pid=args.pid, profile_id=args.profile_id,
-                profile_name=args.profile_name, function_id=136,
+                profile_name=args.profile_name, function_id=args.function_id,
                 options=auto_options, tuning=auto_tuning,
             )
             automation.start()
@@ -322,7 +327,10 @@ def main() -> int:
     task.join(timeout=5.0)
     if outcome["error"]:
         return 1
-    emit("worker_finished", profile_id=args.profile_id, function_id=136)
+    emit(
+        "worker_finished", profile_id=args.profile_id,
+        function_id=args.function_id,
+    )
     return 0
 
 
