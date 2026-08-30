@@ -37,12 +37,12 @@ def main() -> int:
         entrypoint = f"produceItems_{args.function_id}"
         method = getattr(automation.FarmAutomation, entrypoint, None)
         if not callable(method):
-            raise RuntimeError(f"Không tìm thấy Automation.{entrypoint}")
+            raise RuntimeError(f"Không tìm thấy FarmAutomation.{entrypoint}")
 
         emit(
             "probe_ok",
             function_id=args.function_id,
-            entrypoint=f"Automation.{entrypoint}",
+            entrypoint=f"FarmAutomation.{entrypoint}",
             automation_signature=str(inspect.signature(automation.FarmAutomation)),
             auto_root=str(auto_root),
         )
