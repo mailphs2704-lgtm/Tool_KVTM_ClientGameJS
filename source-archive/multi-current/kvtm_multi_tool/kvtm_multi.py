@@ -1345,6 +1345,12 @@ class MultiApp(tk.Tk):
         elif event == "log":
             if message:
                 self.note.set(message)
+        elif event == "tuning_applied":
+            self.note.set("AUTO đang chạy đã nhận cấu hình tốc độ mới.")
+            self.auto_scope_note.set("Đã áp dụng nóng • Có hiệu lực từ thao tác kế tiếp")
+        elif event == "tuning_error":
+            error = str(payload.get("error") or "Không rõ lỗi")
+            self.note.set(f"Lỗi áp dụng tốc độ: {error}")
         elif event == "stats":
             data = self._game_data.setdefault(profile_id, {})
             data["sales"] = payload.get("total", data.get("sales", "—"))
@@ -1405,14 +1411,6 @@ class MultiApp(tk.Tk):
             self.auto_progress_text.set("0%")
 
     def _auto_ui_configure(self) -> None:
-        if any(worker.poll() is None for worker in self._auto_workers.values()):
-            messagebox.showinfo(
-                APP_NAME,
-                "Hãy dừng AUTO trước khi thay đổi tốc độ. Giá trị mới được áp dụng ở lần Bắt đầu kế tiếp.",
-                parent=self,
-            )
-            return
-
         dialog = tk.Toplevel(self)
         dialog.title("Cấu hình tốc độ AUTO ClientJS")
         dialog.transient(self)
@@ -1485,7 +1483,27 @@ class MultiApp(tk.Tk):
                 validated[key] = value
             self.settings["auto_tuning"] = validated
             save_settings(self.settings)
-            self.note.set("Đã lưu cấu hình tốc độ AUTO ClientJS.")
+            updated_workers = 0
+            payload = json.dumps(
+                {"command": "update_tuning", "tuning": validated},
+                ensure_ascii=True, separators=(",", ":"),
+            ) + "\n"
+            for worker in list(self._auto_workers.values()):
+                try:
+                    if worker.poll() is None and worker.stdin:
+                        worker.stdin.write(payload)
+                        worker.stdin.flush()
+                        updated_workers += 1
+                except (OSError, ValueError):
+                    pass
+            if updated_workers:
+                self.note.set(
+                    f"Đã lưu và áp dụng tốc độ mới cho {updated_workers} AUTO đang chạy."
+                )
+            else:
+                self.note.set(
+                    "Đã lưu cấu hình; sẽ áp dụng khi bắt đầu AUTO."
+                )
             dialog.destroy()
 
         ttk.Button(
