@@ -126,6 +126,7 @@ def main() -> int:
     parser.add_argument("--profile-name", required=True)
     parser.add_argument("--function-id", type=int, default=136)
     parser.add_argument("--options-json", default="{}")
+    parser.add_argument("--tuning-json", default="{}")
     args = parser.parse_args()
 
     try:
@@ -151,6 +152,67 @@ def main() -> int:
         for key in allowed_option_keys
     }
 
+    tuning_defaults = {
+        "harvest_speed": 0.045,
+        "go_up_wait": 0.7,
+        "production_wait": 0.4,
+        "swipe_count": 4,
+        "quay_speed": 0.5,
+        "shop_drag_speed": 0.35,
+        "speed_sell_item": 0.5,
+        "check_harvest": 0.3,
+        "click_speed": 0.3,
+        "delete_check_speed": 0.5,
+        "next_gieo": 0.4,
+        "delete_count": 10,
+        "max_sell_times": 1,
+        "collect_gold_speed": 0.4,
+        "check_nang_kho": 0.5,
+        "delay_vao_game": 55,
+    }
+    integer_tuning = {"swipe_count", "delete_count", "max_sell_times", "delay_vao_game"}
+    tuning_ranges = {
+        "harvest_speed": (0.01, 3.0),
+        "go_up_wait": (0.05, 10.0),
+        "production_wait": (0.05, 10.0),
+        "swipe_count": (1, 20),
+        "quay_speed": (0.05, 5.0),
+        "shop_drag_speed": (0.05, 3.0),
+        "speed_sell_item": (0.05, 5.0),
+        "check_harvest": (0.05, 5.0),
+        "click_speed": (0.02, 5.0),
+        "delete_check_speed": (0.05, 5.0),
+        "next_gieo": (0.05, 5.0),
+        "delete_count": (1, 100),
+        "max_sell_times": (1, 50),
+        "collect_gold_speed": (0.05, 5.0),
+        "check_nang_kho": (0.05, 10.0),
+        "delay_vao_game": (0, 300),
+    }
+    try:
+        requested_tuning = json.loads(args.tuning_json)
+    except json.JSONDecodeError as exc:
+        emit("worker_error", error=f"Tuning JSON không hợp lệ: {exc}")
+        return 2
+    if not isinstance(requested_tuning, dict):
+        emit("worker_error", error="Tuning JSON phải là object")
+        return 2
+    unknown_tuning = set(requested_tuning) - set(tuning_defaults)
+    if unknown_tuning:
+        emit("worker_error", error=f"Thông số tốc độ không hỗ trợ: {sorted(unknown_tuning)}")
+        return 2
+    auto_tuning = dict(tuning_defaults)
+    try:
+        for key, raw_value in requested_tuning.items():
+            value = int(raw_value) if key in integer_tuning else float(raw_value)
+            minimum, maximum = tuning_ranges[key]
+            if not minimum <= value <= maximum:
+                raise ValueError(f"{key} phải từ {minimum} đến {maximum}")
+            auto_tuning[key] = value
+    except (TypeError, ValueError) as exc:
+        emit("worker_error", error=f"Thông số tốc độ không hợp lệ: {exc}")
+        return 2
+
     if args.function_id != 136:
         emit("worker_error", error="Worker thử nghiệm chỉ cho phép Function 136")
         return 2
@@ -164,12 +226,20 @@ def main() -> int:
             raise RuntimeError("Thiếu FarmAutomation.produceItems_136")
 
         proxy = GuiProxy()
+        constructor_tuning = {
+            key: value for key, value in auto_tuning.items()
+            if key != "shop_drag_speed"
+        }
         automation = automation_class(
             f"PC:{args.pid}",
             136,
             gui_ref=proxy,
             options=auto_options,
+            **constructor_tuning,
         )
+        controller = getattr(automation, "adb", None)
+        if controller is not None:
+            controller.shop_drag_speed = auto_tuning["shop_drag_speed"]
     except Exception as exc:
         emit(
             "worker_error",
@@ -187,7 +257,7 @@ def main() -> int:
             emit(
                 "worker_started", pid=args.pid, profile_id=args.profile_id,
                 profile_name=args.profile_name, function_id=136,
-                options=auto_options,
+                options=auto_options, tuning=auto_tuning,
             )
             automation.start()
         except Exception as exc:
