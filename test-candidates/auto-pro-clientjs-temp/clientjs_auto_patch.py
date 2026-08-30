@@ -227,31 +227,73 @@ def _install_controller_patch(adb_controller_module) -> None:
         processor = self.image_processor
         original_find = processor.find_image
         fallback_used = False
+        chest_screen_changed = False
+
+        def _chest_region():
+            frame = self.driver.screenshot(format="opencv")
+            return frame[430:760, 270:730].copy()
+
+        def _difference(before, after):
+            try:
+                import cv2
+                return float(cv2.absdiff(before, after).mean())
+            except Exception:
+                return 0.0
 
         def find_with_clientjs_prompt(*args, **kwargs):
-            nonlocal fallback_used
-            result = original_find(*args, **kwargs)
+            nonlocal fallback_used, chest_screen_changed
             name = str(args[0]) if args else str(kwargs.get("tree_type", ""))
+            result = original_find(*args, **kwargs)
+
+            # ruong_go is visible both before and after opening. It is not a
+            # valid success signal by itself on ClientJS.
+            if name == "ruong_go" and fallback_used and not chest_screen_changed:
+                return False
             if name != "mo_ruong" or result or fallback_used:
                 return result
 
-            # The current ClientJS prompt says "Chạm để mở rương" and no
-            # longer resembles assets/items/mo_ruong.png. At this point the
-            # original flow has already verified chest + ruong_go, so a
-            # centered tap is safe. The legacy method then verifies that the
-            # chest screen changed before reporting success.
             fallback_used = True
             try:
                 self.gui.log(
-                    "ClientJS: dùng điểm mở rương dự phòng vì template mo_ruong đã đổi",
+                    "ClientJS: template mo_ruong đã đổi; xác nhận bằng thay đổi màn hình",
                     device_id=self.device_id,
                 )
             except Exception:
                 pass
-            if kwargs.get("click"):
-                self.driver.click(500, 557)
-                time.sleep(0.35)
-            return True
+
+            if not kwargs.get("click"):
+                return False
+
+            before = _chest_region()
+            # All points stay inside the selected chest/prompt. Stop as soon
+            # as the modal visibly changes so no extra tap reaches the game.
+            for x, y in ((500, 557), (433, 557), (500, 620)):
+                if _stopped(stop_event):
+                    return False
+                self.driver.click(x, y)
+                time.sleep(0.65)
+                after = _chest_region()
+                score = _difference(before, after)
+                try:
+                    self.driver._trace(
+                        "clientjs_chest_probe",
+                        logical=[x, y],
+                        screen_change=round(score, 3),
+                    )
+                except Exception:
+                    pass
+                if score >= 2.0:
+                    chest_screen_changed = True
+                    return True
+
+            try:
+                self.gui.log(
+                    "ClientJS: đã nhấn vùng rương nhưng màn hình không thay đổi",
+                    device_id=self.device_id,
+                )
+            except Exception:
+                pass
+            return False
 
         processor.find_image = find_with_clientjs_prompt
         try:
