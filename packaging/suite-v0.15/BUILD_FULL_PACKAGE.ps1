@@ -8,6 +8,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $AutoSource = Join-Path $RepoRoot "source-archive\auto-pro-reference"
 $MultiSource = Join-Path $RepoRoot "source-archive\multi-current\kvtm_multi_tool"
 $PatchSource = Join-Path $RepoRoot "test-candidates\auto-pro-clientjs-temp"
+$ClientJsAutoSource = Join-Path $RepoRoot "components\clientjs-auto"
 $OutputRoot = Join-Path (Join-Path $RepoRoot "dist") $OutputName
 
 foreach ($required in @(
@@ -16,7 +17,9 @@ foreach ($required in @(
     (Join-Path $AutoSource "runtime\pyc\gui.pyc"),
     (Join-Path $AutoSource "runtime\pyc\adb_controller.pyc"),
     (Join-Path $MultiSource "kvtm_multi.py"),
-    (Join-Path $PatchSource "clientjs_auto_patch.py")
+    (Join-Path $PatchSource "clientjs_auto_patch.py"),
+    (Join-Path $ClientJsAutoSource "catalog\functions.json"),
+    (Join-Path $ClientJsAutoSource "worker\runtime_probe.py")
 )) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Thieu file bat buoc trong repo: $required"
@@ -54,6 +57,11 @@ foreach ($name in $PatchFiles) {
     Copy-Item -LiteralPath $source -Destination (Join-Path $AutoOut $name) -Force
 }
 
+$ComponentsOut = Join-Path $OutputRoot "components"
+$ClientJsAutoOut = Join-Path $ComponentsOut "clientjs-auto"
+New-Item -ItemType Directory -Path $ClientJsAutoOut -Force | Out-Null
+Copy-Item -Path (Join-Path $ClientJsAutoSource "*") -Destination $ClientJsAutoOut -Recurse -Force
+
 $NativeOut = Join-Path $AutoOut "native"
 New-Item -ItemType Directory -Path $NativeOut -Force | Out-Null
 Copy-Item -Path (Join-Path $PatchSource "native\*") -Destination $NativeOut -Force
@@ -69,7 +77,9 @@ $checks = @(
     (Join-Path $AutoOut "runtime\pyc\adb_controller.pyc"),
     (Join-Path $AutoOut "_internal\cv2\cv2.pyd"),
     (Join-Path $AutoOut "clientjs_auto_patch.py"),
-    (Join-Path $MultiOut "kvtm_multi.py")
+    (Join-Path $MultiOut "kvtm_multi.py"),
+    (Join-Path $ClientJsAutoOut "catalog\functions.json"),
+    (Join-Path $ClientJsAutoOut "worker\runtime_probe.py")
 )
 foreach ($file in $checks) {
     if (-not (Test-Path -LiteralPath $file)) {
