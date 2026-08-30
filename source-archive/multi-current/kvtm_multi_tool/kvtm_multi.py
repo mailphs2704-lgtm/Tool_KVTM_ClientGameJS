@@ -918,7 +918,68 @@ class MultiApp(tk.Tk):
             f"Function {function_spec.get('auto_pro_function_id')} • "
             f"đã chuẩn bị {len(ids)} tài khoản • chưa gửi lệnh thao tác game"
         )
-        self.note.set("UI AUTO đã nhận cấu hình; engine sẽ được nối ở bước tiếp theo.")
+        self.note.set("Đang kiểm tra runtime AUTO PRO cho Function 136...")
+        threading.Thread(
+            target=self._probe_auto_runtime,
+            args=(function_spec,),
+            daemon=True,
+        ).start()
+
+    def _probe_auto_runtime(self, function_spec: dict) -> None:
+        """Validate the recovered AUTO PRO libraries without touching the game."""
+        package_root = TOOL_DIR.parent
+        auto_root = package_root / "AUTO_PRO"
+        worker = (
+            package_root / "components" / "clientjs-auto" /
+            "worker" / "runtime_probe.py"
+        )
+        try:
+            if not worker.is_file():
+                raise FileNotFoundError(f"Thiếu worker: {worker}")
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            result = subprocess.run(
+                [
+                    sys.executable, str(worker),
+                    "--auto-root", str(auto_root),
+                    "--function-id", str(function_spec["auto_pro_function_id"]),
+                ],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", creationflags=flags, timeout=90,
+            )
+            payload = None
+            for line in reversed(result.stdout.splitlines()):
+                try:
+                    candidate = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(candidate, dict) and candidate.get("event"):
+                    payload = candidate
+                    break
+            if result.returncode or not payload or payload.get("event") != "probe_ok":
+                detail = (
+                    (payload or {}).get("error") or result.stderr.strip() or
+                    result.stdout.strip() or f"exit code {result.returncode}"
+                )
+                raise RuntimeError(detail)
+            self.after(0, lambda p=payload: self._auto_probe_ok(p))
+        except Exception as exc:
+            self.after(0, lambda error=str(exc): self._auto_probe_failed(error))
+
+    def _auto_probe_ok(self, payload: dict) -> None:
+        self.auto_status.set("Thư viện sẵn sàng")
+        self.auto_progress.set(10)
+        self.auto_progress_text.set("10%")
+        self.auto_scope_note.set(
+            f"Đã xác nhận {payload.get('entrypoint')} • chưa thao tác game"
+        )
+        self.note.set("AUTO PRO Function 136 và các thư viện ClientJS đã sẵn sàng.")
+
+    def _auto_probe_failed(self, error: str) -> None:
+        self.auto_status.set("Lỗi thư viện")
+        self.auto_progress.set(0)
+        self.auto_progress_text.set("0%")
+        self.auto_scope_note.set("Runtime probe thất bại")
+        messagebox.showerror(APP_NAME, f"Không nạp được thư viện AUTO PRO:\n{error}")
 
     def _auto_ui_pause(self) -> None:
         self.auto_status.set("Tạm dừng")
