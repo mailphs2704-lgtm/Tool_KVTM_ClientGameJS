@@ -888,17 +888,38 @@ class MultiApp(tk.Tk):
             self.auto_feature_tabs[key] = frame
 
         main_tab = self.auto_feature_tabs["main"]
+        # These switches map one-to-one to AUTO PRO's legacy option keys.
+        # Every launch starts disabled deliberately; selecting a feature is an
+        # explicit operator action and no old saved setting can turn it on.
+        optional_keys = {
+            "delete_items": "Xoa_vp_kc",
+            "summer_spin": "auto_quay_he",
+            "upgrade_storage": "auto_nang_kho",
+            "hire_shrimp": "thue_tom",
+            "deliver_sheep": "giao_cu",
+            "produce_gems": "san_xuat_ngoc",
+        }
+        self.auto_optional_features = {
+            option_key: tk.BooleanVar(value=False)
+            for option_key in optional_keys.values()
+        }
         for key, label in feature_tabs[1:]:
             feature_frame = self.auto_feature_tabs[key]
+            option_key = optional_keys[key]
             ttk.Label(
                 feature_frame, text=label.upper(), style="AutoKey.TLabel"
             ).pack(anchor="w", padx=8, pady=(5, 0))
             ttk.Separator(feature_frame, orient="horizontal").pack(
                 fill="x", padx=8, pady=(7, 8)
             )
+            ttk.Checkbutton(
+                feature_frame, text=f"Bật {label}",
+                variable=self.auto_optional_features[option_key],
+                style="AutoOption.TCheckbutton",
+            ).pack(anchor="w", padx=8, pady=(2, 5))
             ttk.Label(
                 feature_frame,
-                text=f"Cấu hình {label} sẽ được bổ sung tại đây.",
+                text="Mặc định OFF • Chỉ chạy khi được bật trước lúc Bắt đầu.",
                 style="AutoValue.TLabel", anchor="w",
             ).pack(fill="x", padx=8)
 
@@ -1000,6 +1021,33 @@ class MultiApp(tk.Tk):
             action_row, textvariable=self.auto_scope_note, style="Key.TLabel",
             anchor="e",
         ).pack(side="right", fill="x", expand=True, padx=(14, 0))
+
+    def _collect_auto_options(self) -> dict:
+        """Return the complete legacy AUTO PRO option map; all keys default OFF."""
+        options = {
+            "Xoa_vp_kc": False,
+            "open_chest": False,
+            "auto_quay_he": False,
+            "auto_nang_kho": False,
+            "thue_tom": False,
+            "giao_cu": False,
+            "san_xuat_ngoc": False,
+            "sx_event_cam": False,
+            "sell_all": False,
+        }
+        quick_map = {
+            "open_chests": "open_chest",
+            "produce_feed": "sx_event_cam",
+            "sell_all_scratch_items": "sell_all",
+        }
+        for ui_key, option_key in quick_map.items():
+            variable = getattr(self, "auto_quick_options", {}).get(ui_key)
+            options[option_key] = bool(variable.get()) if variable else False
+        for option_key, variable in getattr(
+            self, "auto_optional_features", {}
+        ).items():
+            options[option_key] = bool(variable.get())
+        return options
 
     def _show_auto_tab(self, selected: str) -> None:
         """Switch flat AUTO feature buttons without native Windows tab chrome."""
@@ -1150,6 +1198,10 @@ class MultiApp(tk.Tk):
                 "--profile-id", str(profile["id"]),
                 "--profile-name", str(profile.get("name") or profile["id"]),
                 "--function-id", str(function_spec["auto_pro_function_id"]),
+                "--options-json", json.dumps(
+                    self._collect_auto_options(),
+                    ensure_ascii=True, separators=(",", ":"),
+                ),
             ],
             cwd=str(auto_root), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, encoding="utf-8",
