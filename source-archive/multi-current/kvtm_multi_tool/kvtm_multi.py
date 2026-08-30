@@ -33,6 +33,42 @@ PROFILE_BACKUP_DIR = APP_DIR / "profile-backups"
 DEFAULT_CLIENT = Path(r"C:\Program Files\ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")
 DEFAULT_GAME = Path(os.environ.get("APPDATA", Path.home())) / "VNG Corporation" / "ZingPlay" / "zpp" / GAME_ID / "game"
 DEFAULT_DISPLAY = {"width": 1000, "height": 1000, "dpi": 240}
+DEFAULT_AUTO_TUNING = {
+    "harvest_speed": 0.045,
+    "go_up_wait": 0.7,
+    "production_wait": 0.4,
+    "swipe_count": 4,
+    "quay_speed": 0.5,
+    "shop_drag_speed": 0.35,
+    "speed_sell_item": 0.5,
+    "check_harvest": 0.3,
+    "click_speed": 0.3,
+    "delete_check_speed": 0.5,
+    "next_gieo": 0.4,
+    "delete_count": 10,
+    "max_sell_times": 1,
+    "collect_gold_speed": 0.4,
+    "check_nang_kho": 0.5,
+    "delay_vao_game": 55,
+}
+AUTO_TUNING_SPECS = {
+    "harvest_speed": ("Tốc độ thu hoạch", 0.01, 3.0, False),
+    "go_up_wait": ("Chờ sau khi kéo tầng", 0.05, 10.0, False),
+    "production_wait": ("Chờ sản xuất", 0.05, 10.0, False),
+    "swipe_count": ("Số lần kéo màn", 1, 20, True),
+    "quay_speed": ("Tốc độ quay/kéo", 0.05, 5.0, False),
+    "shop_drag_speed": ("Tốc độ kéo quầy", 0.05, 3.0, False),
+    "speed_sell_item": ("Tốc độ bán vật phẩm", 0.05, 5.0, False),
+    "check_harvest": ("Chu kỳ kiểm tra thu hoạch", 0.05, 5.0, False),
+    "click_speed": ("Khoảng nghỉ giữa click", 0.02, 5.0, False),
+    "delete_check_speed": ("Chu kỳ kiểm tra xóa", 0.05, 5.0, False),
+    "next_gieo": ("Chờ chuyển lượt gieo", 0.05, 5.0, False),
+    "delete_count": ("Số lượt xóa tối đa", 1, 100, True),
+    "max_sell_times": ("Số lượt bán tối đa", 1, 50, True),
+    "collect_gold_speed": ("Tốc độ thu vàng", 0.05, 5.0, False),
+    "check_nang_kho": ("Chu kỳ kiểm tra nâng kho", 0.05, 10.0, False),
+    "delay_vao_game": ("Chờ sau khi vào game (giây)", 0, 300, True),
+}
 TOOL_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 
 DWM_TNP_RECTDESTINATION = 0x00000001
@@ -413,11 +449,26 @@ def load_settings() -> dict:
     except (FileNotFoundError, json.JSONDecodeError):
         saved = {}
     display = saved.get("display", {}) if isinstance(saved, dict) else {}
-    return {"display": {
-        "width": int(display.get("width", DEFAULT_DISPLAY["width"])),
-        "height": int(display.get("height", DEFAULT_DISPLAY["height"])),
-        "dpi": int(display.get("dpi", DEFAULT_DISPLAY["dpi"])),
-    }, "bridge_bin": str(saved.get("bridge_bin", "")) if isinstance(saved, dict) else ""}
+    raw_tuning = saved.get("auto_tuning", {}) if isinstance(saved, dict) else {}
+    tuning = dict(DEFAULT_AUTO_TUNING)
+    if isinstance(raw_tuning, dict):
+        for key, default in DEFAULT_AUTO_TUNING.items():
+            try:
+                _label, minimum, maximum, integer = AUTO_TUNING_SPECS[key]
+                value = int(raw_tuning[key]) if integer else float(raw_tuning[key])
+                if minimum <= value <= maximum:
+                    tuning[key] = value
+            except (KeyError, TypeError, ValueError):
+                pass
+    return {
+        "display": {
+            "width": int(display.get("width", DEFAULT_DISPLAY["width"])),
+            "height": int(display.get("height", DEFAULT_DISPLAY["height"])),
+            "dpi": int(display.get("dpi", DEFAULT_DISPLAY["dpi"])),
+        },
+        "bridge_bin": str(saved.get("bridge_bin", "")) if isinstance(saved, dict) else "",
+        "auto_tuning": tuning,
+    }
 
 
 def save_settings(settings: dict) -> None:
@@ -1022,6 +1073,13 @@ class MultiApp(tk.Tk):
             anchor="e",
         ).pack(side="right", fill="x", expand=True, padx=(14, 0))
 
+    def _collect_auto_tuning(self) -> dict:
+        tuning = self.settings.get("auto_tuning", {})
+        return {
+            key: tuning.get(key, default)
+            for key, default in DEFAULT_AUTO_TUNING.items()
+        }
+
     def _collect_auto_options(self) -> dict:
         """Return the complete legacy AUTO PRO option map; all keys default OFF."""
         options = {
@@ -1202,6 +1260,10 @@ class MultiApp(tk.Tk):
                     self._collect_auto_options(),
                     ensure_ascii=True, separators=(",", ":"),
                 ),
+                "--tuning-json", json.dumps(
+                    self._collect_auto_tuning(),
+                    ensure_ascii=True, separators=(",", ":"),
+                ),
             ],
             cwd=str(auto_root), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, encoding="utf-8",
@@ -1343,11 +1405,108 @@ class MultiApp(tk.Tk):
             self.auto_progress_text.set("0%")
 
     def _auto_ui_configure(self) -> None:
-        messagebox.showinfo(
-            APP_NAME,
-            "Function thử nghiệm: 9 Vải Vàng + 9 Táo Sấy (ID 136).\n\n"
-            "Các thông số hiện dùng mặc định của AUTO PRO. AUTO LD không bị thay đổi.",
-        )
+        if any(worker.poll() is None for worker in self._auto_workers.values()):
+            messagebox.showinfo(
+                APP_NAME,
+                "Hãy dừng AUTO trước khi thay đổi tốc độ. Giá trị mới được áp dụng ở lần Bắt đầu kế tiếp.",
+                parent=self,
+            )
+            return
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Cấu hình tốc độ AUTO ClientJS")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        dialog.configure(background="#f3f6fa")
+        dialog.grab_set()
+
+        header = ttk.Frame(dialog, padding=(16, 14, 16, 8))
+        header.pack(fill="x")
+        ttk.Label(
+            header, text="CẤU HÌNH TỐC ĐỘ AUTO CLIENTJS",
+            style="AutoKey.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            header,
+            text="Đơn vị thời gian là giây. Số nhỏ hơn chạy nhanh hơn nhưng dễ thao tác sai.",
+            style="AutoValue.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
+
+        body = ttk.Frame(dialog, padding=(16, 4, 16, 8))
+        body.pack(fill="both", expand=True)
+        current = self._collect_auto_tuning()
+        variables = {}
+        items = list(AUTO_TUNING_SPECS.items())
+        split_at = (len(items) + 1) // 2
+        for index, (key, (label, minimum, maximum, integer)) in enumerate(items):
+            column_group = 0 if index < split_at else 1
+            row = index if column_group == 0 else index - split_at
+            base_column = column_group * 2
+            ttk.Label(body, text=label, style="AutoValue.TLabel").grid(
+                row=row, column=base_column, sticky="w",
+                padx=(0 if column_group == 0 else 24, 8), pady=5,
+            )
+            value = current.get(key, DEFAULT_AUTO_TUNING[key])
+            variable = tk.StringVar(value=str(value))
+            variables[key] = variable
+            increment = 1 if integer else (0.01 if minimum < 0.05 else 0.05)
+            tk.Spinbox(
+                body, from_=minimum, to=maximum, increment=increment,
+                textvariable=variable, width=9, justify="right",
+                font=("Segoe UI", 10),
+            ).grid(row=row, column=base_column + 1, sticky="e", pady=5)
+
+        ttk.Separator(dialog, orient="horizontal").pack(fill="x", padx=16)
+        actions = ttk.Frame(dialog, padding=(16, 10, 16, 14))
+        actions.pack(fill="x")
+
+        def reset_defaults():
+            for key, default in DEFAULT_AUTO_TUNING.items():
+                variables[key].set(str(default))
+
+        def save_values():
+            validated = {}
+            for key, variable in variables.items():
+                label, minimum, maximum, integer = AUTO_TUNING_SPECS[key]
+                try:
+                    value = int(variable.get()) if integer else float(variable.get())
+                except ValueError:
+                    messagebox.showerror(
+                        APP_NAME, f"{label}: giá trị không hợp lệ.", parent=dialog
+                    )
+                    return
+                if not minimum <= value <= maximum:
+                    messagebox.showerror(
+                        APP_NAME,
+                        f"{label}: chỉ nhận từ {minimum} đến {maximum}.",
+                        parent=dialog,
+                    )
+                    return
+                validated[key] = value
+            self.settings["auto_tuning"] = validated
+            save_settings(self.settings)
+            self.note.set("Đã lưu cấu hình tốc độ AUTO ClientJS.")
+            dialog.destroy()
+
+        ttk.Button(
+            actions, text="Khôi phục mặc định", command=reset_defaults,
+            style="Action.TButton",
+        ).pack(side="left")
+        ttk.Button(
+            actions, text="Hủy", command=dialog.destroy,
+            style="Action.TButton",
+        ).pack(side="right")
+        ttk.Button(
+            actions, text="Lưu cấu hình", command=save_values,
+            style="AutoStart.TButton",
+        ).pack(side="right", padx=(0, 8))
+
+        dialog.update_idletasks()
+        x = self.winfo_rootx() + max(0, (self.winfo_width() - dialog.winfo_width()) // 2)
+        y = self.winfo_rooty() + max(0, (self.winfo_height() - dialog.winfo_height()) // 2)
+        dialog.geometry(f"+{x}+{y}")
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        dialog.wait_window()
 
     def _create_account_tree(self, parent, title: str):
         box = ttk.LabelFrame(
