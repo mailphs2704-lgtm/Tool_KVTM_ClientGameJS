@@ -28,7 +28,7 @@ def main() -> int:
         importlib.import_module("local_launcher")
         automation = importlib.import_module("automation")
         required_modules = (
-            "adb_controller", "image_processor", "settings", "engine_driver",
+            "adb_controller", "image_processor", "engine_driver",
             "pc_driver", "adaptive_cv", "clientjs_auto_patch",
         )
         for name in required_modules:
