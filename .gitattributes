@@ -1,3 +1,5 @@
 source-archive/auto-pro-reference/runtime/pyc/** filter=lfs diff=lfs merge=lfs -text
 source-archive/auto-pro-reference/_internal/** filter=lfs diff=lfs merge=lfs -text
 source-archive/auto-pro-reference/platform-tools/** filter=lfs diff=lfs merge=lfs -text
+source-archive/auto-pro-reference/runtime/pyc/uiautomator2/assets/.gitignore -filter -diff -merge text
+source-archive/auto-pro-reference/runtime/pyc/uiautomator2/assets/sync.sh -filter -diff -merge text
