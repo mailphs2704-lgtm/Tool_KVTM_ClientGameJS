@@ -11,7 +11,6 @@
         "automation",
         "adb_controller",
         "image_processor",
-        "settings",
         "engine_driver",
         "pc_driver",
         "adaptive_cv",
