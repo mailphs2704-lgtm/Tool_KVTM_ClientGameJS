@@ -2,6 +2,7 @@
 setlocal
 cd /d "%~dp0"
 set "KVTM_MULTI_APP_DIR=%~dp0data-dev"
+set "KVTM_MULTI_INSTANCE_NAME=KVTM Multi DEV"
 if not exist "%KVTM_MULTI_APP_DIR%" mkdir "%KVTM_MULTI_APP_DIR%"
 cd /d "%~dp0Multi"
 where py >nul 2>nul
