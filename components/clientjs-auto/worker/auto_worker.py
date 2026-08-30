@@ -30,6 +30,34 @@ def emit(event: str, **data) -> None:
     print(json.dumps({"event": event, **data}, ensure_ascii=False), flush=True)
 
 
+def exception_frame_diagnostics(exc: BaseException) -> dict:
+    """Return safe locals from the deepest recovered-runtime traceback frame."""
+    tb = exc.__traceback__
+    while tb is not None and tb.tb_next is not None:
+        tb = tb.tb_next
+    if tb is None:
+        return {}
+    frame = tb.tb_frame
+    local_types = {}
+    local_values = {}
+    for name, value in frame.f_locals.items():
+        local_types[name] = type(value).__name__
+        if name == "self":
+            continue
+        try:
+            rendered = repr(value)
+        except Exception:
+            rendered = "<repr failed>"
+        local_values[name] = rendered[:500]
+    return {
+        "source_file": frame.f_code.co_filename,
+        "function": frame.f_code.co_name,
+        "line": tb.tb_lineno,
+        "local_types": local_types,
+        "local_values": local_values,
+    }
+
+
 class GuiProxy:
     """Minimal GUI contract consumed by the recovered FarmAutomation runtime."""
 
@@ -118,7 +146,12 @@ def main() -> int:
             gui_ref=proxy,
         )
     except Exception as exc:
-        emit("worker_error", error=repr(exc), traceback=traceback.format_exc())
+        emit(
+            "worker_error",
+            error=repr(exc),
+            traceback=traceback.format_exc(),
+            diagnostics=exception_frame_diagnostics(exc),
+        )
         return 1
 
     finished = threading.Event()
