@@ -677,6 +677,7 @@ class MultiApp(tk.Tk):
         )
         self.content_canvas.bind("<MouseWheel>", self._scroll_content)
         self.content_frame.bind("<MouseWheel>", self._scroll_content)
+        self.bind_all("<MouseWheel>", self._scroll_content, add="+")
         self.content_canvas.bind("<Button-4>", self._scroll_content)
         self.content_canvas.bind("<Button-5>", self._scroll_content)
 
