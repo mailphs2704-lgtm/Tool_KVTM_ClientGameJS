@@ -836,10 +836,12 @@ class MultiApp(tk.Tk):
 
     def _build_auto_panel(self) -> None:
         """Build the ClientJS AUTO control surface below the account workspace."""
+        # Keep AUTO controls outside the scrollable account workspace so the
+        # operator can always start/stop a task on short desktop work areas.
         panel = ttk.LabelFrame(
-            self.content_frame, text="AUTO CLIENTJS", padding=(12, 9), style="Auto.TLabelframe"
+            self, text="AUTO CLIENTJS", padding=(12, 9), style="Auto.TLabelframe"
         )
-        panel.pack(fill="x", padx=12, pady=(0, 7))
+        panel.pack(fill="x", padx=12, pady=(5, 7))
 
         panel.columnconfigure(0, weight=3)
         panel.columnconfigure(1, weight=2)
