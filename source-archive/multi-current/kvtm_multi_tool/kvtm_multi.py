@@ -1146,42 +1146,64 @@ class MultiApp(tk.Tk):
 
     def _auto_ui_start(self) -> None:
         ids = self.selected_ids()
-        if len(ids) != 1:
+        if not ids:
             messagebox.showinfo(
-                APP_NAME, "Bản thử Function 136 chỉ chạy đúng một tài khoản mỗi lần."
+                APP_NAME, "Hãy tích chọn ít nhất một tài khoản đang chạy."
             )
-            return
-        profile_id = ids[0]
-        profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
-        proc = self.processes.get(profile_id)
-        if not profile or not proc or proc.poll() is not None:
-            messagebox.showinfo(
-                APP_NAME, "Hãy mở tài khoản thử nghiệm bằng Multi DEV trước khi chạy AUTO."
-            )
-            return
-        current = self._auto_workers.get(profile_id)
-        if current and current.poll() is None:
-            messagebox.showinfo(APP_NAME, "Tài khoản này đang chạy AUTO.")
             return
         function_spec = self._auto_functions_by_label.get(self.auto_function.get())
         if not function_spec:
             messagebox.showinfo(APP_NAME, "Hãy chọn chức năng AUTO đã được cho phép.")
             return
 
+        ready_ids = []
+        unavailable = []
+        already_running = []
+        for profile_id in ids:
+            profile = next(
+                (p for p in self.profiles if p.get("id") == profile_id), None
+            )
+            proc = self.processes.get(profile_id)
+            if not profile or not proc or proc.poll() is not None:
+                unavailable.append(
+                    str((profile or {}).get("name") or profile_id)
+                )
+                continue
+            current = self._auto_workers.get(profile_id)
+            if current and current.poll() is None:
+                already_running.append(str(profile.get("name") or profile_id))
+                continue
+            ready_ids.append(profile_id)
+
+        if unavailable:
+            messagebox.showinfo(
+                APP_NAME,
+                "Các tài khoản sau chưa được mở bằng Multi DEV:\n- "
+                + "\n- ".join(unavailable),
+            )
+            return
+        if not ready_ids:
+            messagebox.showinfo(
+                APP_NAME,
+                "Tất cả tài khoản đã chọn đều đang chạy AUTO."
+                if already_running else "Không có tài khoản hợp lệ để chạy AUTO.",
+            )
+            return
+
+        function_id = int(function_spec["auto_pro_function_id"])
         self.auto_status.set("Kiểm tra thư viện")
         self.auto_progress.set(5)
         self.auto_progress_text.set("5%")
         self.auto_scope_note.set(
-            f"Function {function_spec.get('auto_pro_function_id')} • "
-            f"{profile.get('name')} • PID {proc.pid}"
+            f"Function {function_id} • chuẩn bị {len(ready_ids)} tài khoản"
         )
         threading.Thread(
             target=self._probe_auto_runtime,
-            args=(function_spec, profile_id),
+            args=(dict(function_spec), tuple(ready_ids)),
             daemon=True,
         ).start()
 
-    def _probe_auto_runtime(self, function_spec: dict, profile_id: str) -> None:
+    def _probe_auto_runtime(self, function_spec: dict, profile_ids: tuple[str, ...]) -> None:
         """Validate AUTO PRO before allowing the execution worker to touch game."""
         package_root = TOOL_DIR.parent
         auto_root = package_root / "AUTO_PRO"
@@ -1218,25 +1240,53 @@ class MultiApp(tk.Tk):
                 )
                 raise RuntimeError(detail)
             self.after(
-                0, lambda spec=dict(function_spec), pid=profile_id:
-                self._auto_probe_ok(spec, pid)
+                0, lambda spec=dict(function_spec), ids=tuple(profile_ids):
+                self._auto_probe_ok(spec, ids)
             )
         except Exception as exc:
             self.after(0, lambda error=str(exc): self._auto_probe_failed(error))
 
-    def _auto_probe_ok(self, function_spec: dict, profile_id: str) -> None:
-        profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
-        proc = self.processes.get(profile_id)
-        if not profile or not proc or proc.poll() is not None:
-            self._auto_probe_failed("Client đã đóng hoặc PID không còn hợp lệ.")
+    def _auto_probe_ok(
+        self, function_spec: dict, profile_ids: tuple[str, ...]
+    ) -> None:
+        launched = 0
+        failed = []
+        for profile_id in profile_ids:
+            profile = next(
+                (p for p in self.profiles if p.get("id") == profile_id), None
+            )
+            proc = self.processes.get(profile_id)
+            if not profile or not proc or proc.poll() is not None:
+                failed.append(str((profile or {}).get("name") or profile_id))
+                continue
+            try:
+                self._launch_auto_worker(profile, proc, function_spec)
+                launched += 1
+            except Exception as exc:
+                failed.append(
+                    f"{profile.get('name') or profile_id}: {exc}"
+                )
+
+        if not launched:
+            self._auto_probe_failed(
+                "Không khởi động được tài khoản nào. " + "; ".join(failed)
+            )
             return
         self.auto_status.set("Đang khởi động")
-        self.auto_progress.set(10)
-        self.auto_progress_text.set("10%")
-        try:
-            self._launch_auto_worker(profile, proc, function_spec)
-        except Exception as exc:
-            self._auto_probe_failed(str(exc))
+        self.auto_progress.set(15)
+        self.auto_progress_text.set("15%")
+        function_id = int(function_spec["auto_pro_function_id"])
+        self.auto_scope_note.set(
+            f"Function {function_id} • {launched} tài khoản đang kết nối"
+        )
+        if failed:
+            self.note.set(
+                f"Đã mở {launched} AUTO; bỏ qua: " + "; ".join(failed)
+            )
+        else:
+            self.note.set(
+                f"Đã mở Function {function_id} cho {launched} tài khoản."
+            )
 
     def _launch_auto_worker(self, profile: dict, proc, function_spec: dict) -> None:
         package_root = TOOL_DIR.parent
@@ -1278,7 +1328,10 @@ class MultiApp(tk.Tk):
         self.auto_status.set("Đang kết nối ClientJS")
         self.auto_progress.set(15)
         self.auto_progress_text.set("15%")
-        self.note.set(f"Đã mở AUTO worker Function 136 cho {profile.get('name')}.")
+        self.note.set(
+            f"Đã mở AUTO worker Function {function_spec['auto_pro_function_id']} "
+            f"cho {profile.get('name')}."
+        )
 
     def _read_auto_worker(self, profile_id: str, worker) -> None:
         if not worker.stdout:
@@ -1337,7 +1390,7 @@ class MultiApp(tk.Tk):
             self.auto_progress.set(20)
             self.auto_progress_text.set("20%")
             self.auto_scope_note.set(
-                f"Function 136 • PID {payload.get('pid')} • đang chạy"
+                f"Function {payload.get('function_id')} • PID {payload.get('pid')} • đang chạy"
             )
         elif event == "progress":
             self.auto_status.set(message or "Đang chạy")
@@ -1365,7 +1418,10 @@ class MultiApp(tk.Tk):
             error = str(payload.get("error") or "Lỗi worker không xác định")
             self.auto_status.set("Lỗi AUTO")
             self.auto_scope_note.set(error[:120])
-            messagebox.showerror(APP_NAME, f"AUTO Function 136 lỗi:\n{error}")
+            messagebox.showerror(
+                APP_NAME,
+                f"AUTO Function {payload.get('function_id', '?')} lỗi:\n{error}",
+            )
         elif event == "worker_exit":
             worker = self._auto_workers.get(profile_id)
             if worker and worker.poll() is not None:
