@@ -5,7 +5,7 @@
       "key": "produce_9_vai_vang_9_tao_say",
       "label": "9 Vải Vàng + 9 Táo Sấy",
       "auto_pro_function_id": 136,
-      "entrypoint": "Automation.produceItems_136",
+      "entrypoint": "FarmAutomation.produceItems_136",
       "enabled_for_test": true,
       "required_auto_modules": [
         "automation",
