@@ -469,6 +469,8 @@ class MultiApp(tk.Tk):
         self._active_profile_id: str | None = None
         self._game_data: dict[str, dict] = {}
         self._auto_profile_states: dict[str, dict] = {}
+        self._auto_workers: dict[str, subprocess.Popen] = {}
+        self._auto_worker_queue: queue.Queue = queue.Queue(maxsize=512)
         self._auto_catalog = load_clientjs_auto_catalog()
         self._auto_functions_by_label = {
             str(item.get("label")): item
@@ -484,6 +486,7 @@ class MultiApp(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         threading.Thread(target=self._bridge_monitor, daemon=True).start()
         self.after(100, self._update_live_dwm)
+        self.after(100, self._poll_auto_workers)
         self.after(1500, self._poll)
 
     def _keep_control_on_primary(self) -> None:
@@ -903,30 +906,43 @@ class MultiApp(tk.Tk):
 
     def _auto_ui_start(self) -> None:
         ids = self.selected_ids()
-        if not ids:
-            messagebox.showinfo(APP_NAME, "Hãy chọn ít nhất một tài khoản để chạy AUTO.")
+        if len(ids) != 1:
+            messagebox.showinfo(
+                APP_NAME, "Bản thử Function 136 chỉ chạy đúng một tài khoản mỗi lần."
+            )
             return
-        function_name = self.auto_function.get()
-        function_spec = self._auto_functions_by_label.get(function_name)
+        profile_id = ids[0]
+        profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
+        proc = self.processes.get(profile_id)
+        if not profile or not proc or proc.poll() is not None:
+            messagebox.showinfo(
+                APP_NAME, "Hãy mở tài khoản thử nghiệm bằng Multi DEV trước khi chạy AUTO."
+            )
+            return
+        current = self._auto_workers.get(profile_id)
+        if current and current.poll() is None:
+            messagebox.showinfo(APP_NAME, "Tài khoản này đang chạy AUTO.")
+            return
+        function_spec = self._auto_functions_by_label.get(self.auto_function.get())
         if not function_spec:
             messagebox.showinfo(APP_NAME, "Hãy chọn chức năng AUTO đã được cho phép.")
             return
-        self.auto_status.set("Chờ kết nối engine")
-        self.auto_progress.set(0)
-        self.auto_progress_text.set("0%")
+
+        self.auto_status.set("Kiểm tra thư viện")
+        self.auto_progress.set(5)
+        self.auto_progress_text.set("5%")
         self.auto_scope_note.set(
             f"Function {function_spec.get('auto_pro_function_id')} • "
-            f"đã chuẩn bị {len(ids)} tài khoản • chưa gửi lệnh thao tác game"
+            f"{profile.get('name')} • PID {proc.pid}"
         )
-        self.note.set("Đang kiểm tra runtime AUTO PRO cho Function 136...")
         threading.Thread(
             target=self._probe_auto_runtime,
-            args=(function_spec,),
+            args=(function_spec, profile_id),
             daemon=True,
         ).start()
 
-    def _probe_auto_runtime(self, function_spec: dict) -> None:
-        """Validate the recovered AUTO PRO libraries without touching the game."""
+    def _probe_auto_runtime(self, function_spec: dict, profile_id: str) -> None:
+        """Validate AUTO PRO before allowing the execution worker to touch game."""
         package_root = TOOL_DIR.parent
         auto_root = package_root / "AUTO_PRO"
         worker = (
@@ -961,18 +977,134 @@ class MultiApp(tk.Tk):
                     result.stdout.strip() or f"exit code {result.returncode}"
                 )
                 raise RuntimeError(detail)
-            self.after(0, lambda p=payload: self._auto_probe_ok(p))
+            self.after(
+                0, lambda spec=dict(function_spec), pid=profile_id:
+                self._auto_probe_ok(spec, pid)
+            )
         except Exception as exc:
             self.after(0, lambda error=str(exc): self._auto_probe_failed(error))
 
-    def _auto_probe_ok(self, payload: dict) -> None:
-        self.auto_status.set("Thư viện sẵn sàng")
+    def _auto_probe_ok(self, function_spec: dict, profile_id: str) -> None:
+        profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
+        proc = self.processes.get(profile_id)
+        if not profile or not proc or proc.poll() is not None:
+            self._auto_probe_failed("Client đã đóng hoặc PID không còn hợp lệ.")
+            return
+        self.auto_status.set("Đang khởi động")
         self.auto_progress.set(10)
         self.auto_progress_text.set("10%")
-        self.auto_scope_note.set(
-            f"Đã xác nhận {payload.get('entrypoint')} • chưa thao tác game"
+        try:
+            self._launch_auto_worker(profile, proc, function_spec)
+        except Exception as exc:
+            self._auto_probe_failed(str(exc))
+
+    def _launch_auto_worker(self, profile: dict, proc, function_spec: dict) -> None:
+        package_root = TOOL_DIR.parent
+        auto_root = package_root / "AUTO_PRO"
+        worker_file = (
+            package_root / "components" / "clientjs-auto" /
+            "worker" / "auto_worker.py"
         )
-        self.note.set("AUTO PRO Function 136 và các thư viện ClientJS đã sẵn sàng.")
+        if not worker_file.is_file():
+            raise FileNotFoundError(f"Thiếu worker: {worker_file}")
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        worker = subprocess.Popen(
+            [
+                sys.executable, str(worker_file),
+                "--auto-root", str(auto_root),
+                "--pid", str(proc.pid),
+                "--profile-id", str(profile["id"]),
+                "--profile-name", str(profile.get("name") or profile["id"]),
+                "--function-id", str(function_spec["auto_pro_function_id"]),
+            ],
+            cwd=str(auto_root), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+            errors="replace", bufsize=1, creationflags=flags,
+        )
+        self._auto_workers[profile["id"]] = worker
+        threading.Thread(
+            target=self._read_auto_worker,
+            args=(profile["id"], worker),
+            daemon=True,
+        ).start()
+        self.auto_status.set("Đang kết nối ClientJS")
+        self.auto_progress.set(15)
+        self.auto_progress_text.set("15%")
+        self.note.set(f"Đã mở AUTO worker Function 136 cho {profile.get('name')}.")
+
+    def _read_auto_worker(self, profile_id: str, worker) -> None:
+        if not worker.stdout:
+            return
+        for line in worker.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                payload = {"event": "log", "message": line}
+            payload["profile_id"] = profile_id
+            try:
+                self._auto_worker_queue.put(payload, timeout=1.0)
+            except queue.Full:
+                pass
+        try:
+            self._auto_worker_queue.put_nowait({
+                "event": "worker_exit", "profile_id": profile_id,
+                "returncode": worker.wait(timeout=1.0),
+            })
+        except Exception:
+            pass
+
+    def _poll_auto_workers(self) -> None:
+        if self._bridge_stop.is_set():
+            return
+        try:
+            while True:
+                payload = self._auto_worker_queue.get_nowait()
+                self._handle_auto_worker_event(payload)
+        except queue.Empty:
+            pass
+        self.after(100, self._poll_auto_workers)
+
+    def _handle_auto_worker_event(self, payload: dict) -> None:
+        profile_id = str(payload.get("profile_id") or "")
+        event = str(payload.get("event") or "")
+        message = str(payload.get("message") or "")
+        if event == "worker_started":
+            self.auto_status.set("Đang chạy")
+            self.auto_progress.set(20)
+            self.auto_progress_text.set("20%")
+            self.auto_scope_note.set(
+                f"Function 136 • PID {payload.get('pid')} • đang chạy"
+            )
+        elif event == "progress":
+            self.auto_status.set(message or "Đang chạy")
+            self.note.set(message or "AUTO đang chạy")
+        elif event == "log":
+            if message:
+                self.note.set(message)
+        elif event == "stats":
+            data = self._game_data.setdefault(profile_id, {})
+            data["sales"] = payload.get("total", data.get("sales", "—"))
+            self._show_account_details(self._active_profile_id)
+        elif event == "worker_stopping":
+            self.auto_status.set("Đang dừng")
+        elif event == "worker_finished":
+            self.auto_status.set("Hoàn thành")
+            self.auto_progress.set(100)
+            self.auto_progress_text.set("100%")
+        elif event == "worker_error":
+            error = str(payload.get("error") or "Lỗi worker không xác định")
+            self.auto_status.set("Lỗi AUTO")
+            self.auto_scope_note.set(error[:120])
+            messagebox.showerror(APP_NAME, f"AUTO Function 136 lỗi:\n{error}")
+        elif event == "worker_exit":
+            worker = self._auto_workers.get(profile_id)
+            if worker and worker.poll() is not None:
+                self._auto_workers.pop(profile_id, None)
+            if int(payload.get("returncode") or 0) and self.auto_status.get() != "Lỗi AUTO":
+                self.auto_status.set("Worker đã dừng")
 
     def _auto_probe_failed(self, error: str) -> None:
         self.auto_status.set("Lỗi thư viện")
@@ -981,21 +1113,41 @@ class MultiApp(tk.Tk):
         self.auto_scope_note.set("Runtime probe thất bại")
         messagebox.showerror(APP_NAME, f"Không nạp được thư viện AUTO PRO:\n{error}")
 
+    def _send_auto_command(self, command: str) -> bool:
+        sent = False
+        for profile_id in self.selected_ids():
+            worker = self._auto_workers.get(profile_id)
+            if not worker or worker.poll() is not None or not worker.stdin:
+                continue
+            try:
+                worker.stdin.write(json.dumps({"command": command}) + "\n")
+                worker.stdin.flush()
+                sent = True
+            except OSError:
+                continue
+        return sent
+
     def _auto_ui_pause(self) -> None:
-        self.auto_status.set("Tạm dừng")
-        self.auto_scope_note.set("UI đã ghi nhận tạm dừng • engine chưa được kết nối")
+        if self._send_auto_command("pause"):
+            self.auto_status.set("Đang tạm dừng")
+            self.auto_scope_note.set("Worker sẽ dừng an toàn tại checkpoint gần nhất")
+        else:
+            self.note.set("Không có AUTO đang chạy trên tài khoản đã chọn.")
 
     def _auto_ui_stop(self) -> None:
-        self.auto_status.set("Đã dừng")
-        self.auto_progress.set(0)
-        self.auto_progress_text.set("0%")
-        self.auto_scope_note.set("Không có thao tác AUTO đang chạy")
+        if self._send_auto_command("stop"):
+            self.auto_status.set("Đang dừng")
+            self.auto_scope_note.set("Đã gửi yêu cầu dừng an toàn")
+        else:
+            self.auto_status.set("Đã dừng")
+            self.auto_progress.set(0)
+            self.auto_progress_text.set("0%")
 
     def _auto_ui_configure(self) -> None:
         messagebox.showinfo(
             APP_NAME,
-            "Khung cấu hình AUTO sẽ được nối với cấu hình AUTO PRO ở bước tiếp theo.\n\n"
-            "AUTO LD hiện tại không bị thay đổi.",
+            "Function thử nghiệm: 9 Vải Vàng + 9 Táo Sấy (ID 136).\n\n"
+            "Các thông số hiện dùng mặc định của AUTO PRO. AUTO LD không bị thay đổi.",
         )
 
     def _create_account_tree(self, parent, title: str):
@@ -1641,6 +1793,14 @@ class MultiApp(tk.Tk):
 
     def _on_close(self) -> None:
         self._bridge_stop.set()
+        for worker in list(self._auto_workers.values()):
+            try:
+                if worker.poll() is None and worker.stdin:
+                    worker.stdin.write('{"command":"stop"}\n')
+                    worker.stdin.flush()
+                    worker.terminate()
+            except OSError:
+                pass
         for profile_id in list(self._live_thumbnails):
             self._unregister_live_thumbnail(profile_id)
         for preview in list(self.previews.values()):
