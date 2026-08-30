@@ -514,10 +514,13 @@ class MultiApp(tk.Tk):
         self.update_idletasks()
         work_w = primary["right"] - primary["left"]
         work_h = primary["bottom"] - primary["top"]
-        width = min(max(760, self.winfo_width()), work_w)
-        height = min(max(480, self.winfo_height()), work_h)
-        x = primary["left"] + max(0, (work_w - width) // 2)
-        y = primary["top"] + max(0, (work_h - height) // 2)
+        # Open maximized inside the primary monitor work area. Reading
+        # winfo_width() during the first idle callback can still return 1 and
+        # previously collapsed the window to its minimum size.
+        width = work_w
+        height = work_h
+        x = primary["left"]
+        y = primary["top"]
         self.geometry(f"{width}x{height}+{x}+{y}")
         if hasattr(self, "content_canvas"):
             self.content_canvas.yview_moveto(0.0)
