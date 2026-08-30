@@ -125,7 +125,31 @@ def main() -> int:
     parser.add_argument("--profile-id", required=True)
     parser.add_argument("--profile-name", required=True)
     parser.add_argument("--function-id", type=int, default=136)
+    parser.add_argument("--options-json", default="{}")
     args = parser.parse_args()
+
+    try:
+        requested_options = json.loads(args.options_json)
+    except json.JSONDecodeError as exc:
+        emit("worker_error", error=f"Options JSON không hợp lệ: {exc}")
+        return 2
+    if not isinstance(requested_options, dict):
+        emit("worker_error", error="Options JSON phải là object")
+        return 2
+    allowed_option_keys = {
+        "Xoa_vp_kc", "open_chest", "auto_quay_he", "auto_nang_kho",
+        "thue_tom", "giao_cu", "san_xuat_ngoc", "sx_event_cam",
+        "sell_all",
+    }
+    # Reject unknown fields and normalize every supported switch to bool.
+    unknown = set(requested_options) - allowed_option_keys
+    if unknown:
+        emit("worker_error", error=f"Options không được hỗ trợ: {sorted(unknown)}")
+        return 2
+    auto_options = {
+        key: bool(requested_options.get(key, False))
+        for key in allowed_option_keys
+    }
 
     if args.function_id != 136:
         emit("worker_error", error="Worker thử nghiệm chỉ cho phép Function 136")
@@ -144,7 +168,7 @@ def main() -> int:
             f"PC:{args.pid}",
             136,
             gui_ref=proxy,
-            options={},
+            options=auto_options,
         )
     except Exception as exc:
         emit(
@@ -163,6 +187,7 @@ def main() -> int:
             emit(
                 "worker_started", pid=args.pid, profile_id=args.profile_id,
                 profile_name=args.profile_name, function_id=136,
+                options=auto_options,
             )
             automation.start()
         except Exception as exc:
