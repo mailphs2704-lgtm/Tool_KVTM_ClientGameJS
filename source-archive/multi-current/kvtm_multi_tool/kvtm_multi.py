@@ -425,6 +425,26 @@ def save_settings(settings: dict) -> None:
     SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def load_clientjs_auto_catalog() -> list[dict]:
+    """Load allow-listed ClientJS AUTO functions from the component catalog."""
+    candidates = [
+        TOOL_DIR.parent / "components" / "clientjs-auto" / "catalog" / "functions.json",
+        Path(__file__).resolve().parents[3] / "components" / "clientjs-auto" / "catalog" / "functions.json",
+    ]
+    for path in candidates:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            functions = payload.get("functions", [])
+            if isinstance(functions, list):
+                return [
+                    item for item in functions
+                    if isinstance(item, dict) and item.get("enabled_for_test")
+                ]
+        except (FileNotFoundError, OSError, json.JSONDecodeError, AttributeError):
+            continue
+    return []
+
+
 class MultiApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -449,10 +469,14 @@ class MultiApp(tk.Tk):
         self._active_profile_id: str | None = None
         self._game_data: dict[str, dict] = {}
         self._auto_profile_states: dict[str, dict] = {}
+        self._auto_catalog = load_clientjs_auto_catalog()
+        self._auto_functions_by_label = {
+            str(item.get("label")): item
+            for item in self._auto_catalog if item.get("label")
+        }
         self._auto_function_names = (
             "Chọn chức năng AUTO",
-            "AUTO PRO theo cấu hình tài khoản",
-            "Dọn quầy bằng acc clone",
+            *self._auto_functions_by_label.keys(),
         )
         self._build_ui()
         self.after_idle(self._keep_control_on_primary)
@@ -883,14 +907,16 @@ class MultiApp(tk.Tk):
             messagebox.showinfo(APP_NAME, "Hãy chọn ít nhất một tài khoản để chạy AUTO.")
             return
         function_name = self.auto_function.get()
-        if function_name == self._auto_function_names[0]:
-            messagebox.showinfo(APP_NAME, "Hãy chọn chức năng AUTO.")
+        function_spec = self._auto_functions_by_label.get(function_name)
+        if not function_spec:
+            messagebox.showinfo(APP_NAME, "Hãy chọn chức năng AUTO đã được cho phép.")
             return
         self.auto_status.set("Chờ kết nối engine")
         self.auto_progress.set(0)
         self.auto_progress_text.set("0%")
         self.auto_scope_note.set(
-            f"Đã chuẩn bị {len(ids)} tài khoản • chưa gửi lệnh thao tác game"
+            f"Function {function_spec.get('auto_pro_function_id')} • "
+            f"đã chuẩn bị {len(ids)} tài khoản • chưa gửi lệnh thao tác game"
         )
         self.note.set("UI AUTO đã nhận cấu hình; engine sẽ được nối ở bước tiếp theo.")
 
