@@ -646,8 +646,42 @@ class MultiApp(tk.Tk):
             style="Subtitle.TLabel",
         ).pack(side="left", padx=(18, 0), pady=(5, 0))
 
+        # Scroll the complete workspace when the window is shorter than its
+        # requested content. Header and bottom status remain permanently visible.
+        body = ttk.Frame(self, style="App.TFrame")
+        body.pack(fill="both", expand=True)
+        self.content_canvas = tk.Canvas(
+            body, background="#f3f6fa", highlightthickness=0, borderwidth=0
+        )
+        content_scroll = ttk.Scrollbar(
+            body, orient="vertical", command=self.content_canvas.yview
+        )
+        self.content_canvas.configure(yscrollcommand=content_scroll.set)
+        content_scroll.pack(side="right", fill="y")
+        self.content_canvas.pack(side="left", fill="both", expand=True)
+        self.content_frame = ttk.Frame(self.content_canvas, style="App.TFrame")
+        self._content_window = self.content_canvas.create_window(
+            (0, 0), window=self.content_frame, anchor="nw"
+        )
+        self.content_frame.bind(
+            "<Configure>",
+            lambda _event: self.content_canvas.configure(
+                scrollregion=self.content_canvas.bbox("all")
+            ),
+        )
+        self.content_canvas.bind(
+            "<Configure>",
+            lambda event: self.content_canvas.itemconfigure(
+                self._content_window, width=event.width
+            ),
+        )
+        self.content_canvas.bind("<MouseWheel>", self._scroll_content)
+        self.content_frame.bind("<MouseWheel>", self._scroll_content)
+        self.content_canvas.bind("<Button-4>", self._scroll_content)
+        self.content_canvas.bind("<Button-5>", self._scroll_content)
+
         controls = ttk.LabelFrame(
-            self, text="BẢNG ĐIỀU KHIỂN", padding=(10, 8), style="Panel.TLabelframe"
+            self.content_frame, text="BẢNG ĐIỀU KHIỂN", padding=(10, 8), style="Panel.TLabelframe"
         )
         controls.pack(fill="x", padx=12, pady=(8, 8))
         for column in range(6):
@@ -672,7 +706,7 @@ class MultiApp(tk.Tk):
             ).grid(row=row, column=column, sticky="ew", padx=4, pady=4)
 
         # Main workspace: account status on the left, selected account data on the right.
-        workspace = ttk.Panedwindow(self, orient="horizontal")
+        workspace = ttk.Panedwindow(self.content_frame, orient="horizontal", height=420)
         workspace.pack(fill="both", expand=True, padx=12, pady=(0, 6))
 
         account_panel = ttk.Frame(workspace, style="App.TFrame")
@@ -729,10 +763,23 @@ class MultiApp(tk.Tk):
         self.note = tk.StringVar(value="Sẵn sàng")
         ttk.Label(self, textvariable=self.note, style="Status.TLabel").pack(fill="x")
 
+    def _scroll_content(self, event) -> str:
+        """Scroll the responsive content area with mouse wheel or Linux buttons."""
+        if getattr(event, "num", None) == 4:
+            delta = -3
+        elif getattr(event, "num", None) == 5:
+            delta = 3
+        else:
+            wheel = int(getattr(event, "delta", 0))
+            delta = -int(wheel / 120) * 3 if wheel else 0
+        if delta:
+            self.content_canvas.yview_scroll(delta, "units")
+        return "break"
+
     def _build_auto_panel(self) -> None:
         """Build the ClientJS AUTO control surface below the account workspace."""
         panel = ttk.LabelFrame(
-            self, text="AUTO CLIENTJS", padding=(12, 9), style="Auto.TLabelframe"
+            self.content_frame, text="AUTO CLIENTJS", padding=(12, 9), style="Auto.TLabelframe"
         )
         panel.pack(fill="x", padx=12, pady=(0, 7))
 
