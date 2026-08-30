@@ -11,6 +11,21 @@ import time
 import traceback
 
 
+def configure_utf8_stdio() -> None:
+    """Keep Vietnamese AUTO PRO messages safe on Windows pipe consoles."""
+    for stream_name in ("stdin", "stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
+configure_utf8_stdio()
+
+
 def emit(event: str, **data) -> None:
     print(json.dumps({"event": event, **data}, ensure_ascii=False), flush=True)
 
