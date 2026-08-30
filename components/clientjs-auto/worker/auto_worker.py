@@ -277,7 +277,42 @@ def main() -> int:
         except queue.Empty:
             continue
         action = str(command.get("command") or "").lower()
-        if action in {"stop", "pause"}:
+        if action == "update_tuning":
+            requested_update = command.get("tuning")
+            if not isinstance(requested_update, dict):
+                emit("tuning_error", error="Tuning cập nhật phải là object")
+                continue
+            unknown_update = set(requested_update) - set(tuning_defaults)
+            if unknown_update:
+                emit(
+                    "tuning_error",
+                    error=f"Thông số tốc độ không hỗ trợ: {sorted(unknown_update)}",
+                )
+                continue
+            try:
+                validated_update = {}
+                for key, raw_value in requested_update.items():
+                    value = int(raw_value) if key in integer_tuning else float(raw_value)
+                    minimum, maximum = tuning_ranges[key]
+                    if not minimum <= value <= maximum:
+                        raise ValueError(f"{key} phải từ {minimum} đến {maximum}")
+                    validated_update[key] = value
+            except (TypeError, ValueError) as exc:
+                emit("tuning_error", error=f"Thông số tốc độ không hợp lệ: {exc}")
+                continue
+
+            # Validate the complete payload first, then expose the new values.
+            # Individual Python attribute assignments are atomic, so the AUTO
+            # thread can safely read them at its next operation/checkpoint.
+            controller = getattr(automation, "adb", None)
+            if controller is None:
+                emit("tuning_error", error="AUTO chưa có ADBController")
+                continue
+            for key, value in validated_update.items():
+                setattr(controller, key, value)
+                auto_tuning[key] = value
+            emit("tuning_applied", tuning=dict(auto_tuning))
+        elif action in {"stop", "pause"}:
             emit("worker_stopping", reason=action)
             try:
                 automation.stop()
