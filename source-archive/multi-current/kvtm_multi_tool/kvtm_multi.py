@@ -449,8 +449,15 @@ class MultiApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("1180x760")
-        self.minsize(940, 620)
+        # Fit the complete control surface inside the primary screen at startup.
+        # The scrollable body remains available for unusually small displays.
+        screen_w = max(800, self.winfo_screenwidth())
+        screen_h = max(600, self.winfo_screenheight())
+        initial_w = min(1180, max(900, screen_w - 40))
+        initial_h = min(900, max(600, screen_h - 80))
+        self.geometry(f"{initial_w}x{initial_h}")
+        self.minsize(min(860, initial_w), min(560, initial_h))
+        self._workspace_height = max(300, min(420, initial_h - 330))
         self.configure(background="#f3f6fa")
         self.option_add("*Font", ("Segoe UI", 10))
         self.profiles = load_profiles()
@@ -734,7 +741,9 @@ class MultiApp(tk.Tk):
             ).grid(row=row, column=column, sticky="ew", padx=4, pady=4)
 
         # Main workspace: account status on the left, selected account data on the right.
-        workspace = ttk.Panedwindow(self.content_frame, orient="horizontal", height=420)
+        workspace = ttk.Panedwindow(
+            self.content_frame, orient="horizontal", height=self._workspace_height
+        )
         workspace.pack(fill="both", expand=True, padx=12, pady=(0, 6))
 
         account_panel = ttk.Frame(workspace, style="App.TFrame")
@@ -775,16 +784,25 @@ class MultiApp(tk.Tk):
         fields_frame = ttk.Frame(detail_panel, style="Detail.TFrame")
         fields_frame.pack(fill="both", expand=True)
         self.detail_vars = {}
-        for row, (label, key) in enumerate(fields):
+        # Two compact field groups keep every in-game value visible without
+        # forcing a tall fixed window on 720p/768p desktops.
+        split_at = (len(fields) + 1) // 2
+        for index, (label, key) in enumerate(fields):
+            group = 0 if index < split_at else 1
+            row = index if group == 0 else index - split_at
+            label_column = group * 2
+            value_column = label_column + 1
             ttk.Label(fields_frame, text=label.upper(), style="Key.TLabel").grid(
-                row=row, column=0, sticky="w", padx=(2, 18), pady=6
+                row=row, column=label_column, sticky="w",
+                padx=(2 if group == 0 else 18, 10), pady=5
             )
             value = tk.StringVar(value="—")
             self.detail_vars[key] = value
             ttk.Label(
                 fields_frame, textvariable=value, style="Value.TLabel"
-            ).grid(row=row, column=1, sticky="w", pady=6)
+            ).grid(row=row, column=value_column, sticky="w", pady=5)
         fields_frame.columnconfigure(1, weight=1)
+        fields_frame.columnconfigure(3, weight=1)
 
         self._build_auto_panel()
 
