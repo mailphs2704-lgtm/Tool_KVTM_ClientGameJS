@@ -449,15 +449,24 @@ class MultiApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(APP_NAME)
-        # Fit the complete control surface inside the primary screen at startup.
-        # The scrollable body remains available for unusually small displays.
-        screen_w = max(800, self.winfo_screenwidth())
-        screen_h = max(600, self.winfo_screenheight())
-        initial_w = min(1180, max(900, screen_w - 40))
-        initial_h = min(900, max(600, screen_h - 80))
+        # Fit the complete control surface inside the primary work area,
+        # including the Windows taskbar.
+        work_w = max(800, self.winfo_screenwidth())
+        work_h = max(560, self.winfo_screenheight() - 80)
+        try:
+            primary = next(
+                (item for item in self._monitors() if item["primary"]), None
+            )
+            if primary:
+                work_w = primary["right"] - primary["left"]
+                work_h = primary["bottom"] - primary["top"]
+        except Exception:
+            pass
+        initial_w = min(1180, max(860, work_w))
+        initial_h = min(900, max(560, work_h))
         self.geometry(f"{initial_w}x{initial_h}")
-        self.minsize(min(860, initial_w), min(560, initial_h))
-        self._workspace_height = max(300, min(420, initial_h - 330))
+        self.minsize(min(820, initial_w), min(520, initial_h))
+        self._workspace_height = max(240, min(380, initial_h - 350))
         self.configure(background="#f3f6fa")
         self.option_add("*Font", ("Segoe UI", 10))
         self.profiles = load_profiles()
@@ -489,6 +498,7 @@ class MultiApp(tk.Tk):
         )
         self._build_ui()
         self.after_idle(self._keep_control_on_primary)
+        self.after_idle(lambda: self.content_canvas.yview_moveto(0.0))
         self.refresh()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         threading.Thread(target=self._bridge_monitor, daemon=True).start()
@@ -509,6 +519,8 @@ class MultiApp(tk.Tk):
         x = primary["left"] + max(0, (work_w - width) // 2)
         y = primary["top"] + max(0, (work_h - height) // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
+        if hasattr(self, "content_canvas"):
+            self.content_canvas.yview_moveto(0.0)
         self.deiconify()
         self.lift()
         self.attributes("-topmost", True)
@@ -1188,7 +1200,7 @@ class MultiApp(tk.Tk):
         parent.add(box, weight=1)
         tree = ttk.Treeview(
             box, columns=("name", "pid"), show=("tree", "headings"),
-            selectmode="browse", style="Account.Treeview",
+            selectmode="browse", style="Account.Treeview", height=4,
         )
         tree.heading("#0", text="Chọn")
         tree.column("#0", width=54, minwidth=54, stretch=False, anchor="center")
