@@ -212,13 +212,55 @@ def _install_controller_patch(adb_controller_module) -> None:
     cls._rolldownItem = _rolldown_item
 
     original_open_game = cls.openGame
+    original_open_chests = cls.openChests
 
     def open_game(self, stop_event=None):
         if str(getattr(self, "device_id", "")).startswith(("PC:", "PCID:")):
             return _pc_open_game(self, stop_event)
         return original_open_game(self, stop_event)
 
+    def open_chests(self, stop_event=None):
+        """Keep the legacy chest flow but handle ClientJS's text-only open prompt."""
+        if not str(getattr(self, "device_id", "")).startswith(("PC:", "PCID:")):
+            return original_open_chests(self, stop_event)
+
+        processor = self.image_processor
+        original_find = processor.find_image
+        fallback_used = False
+
+        def find_with_clientjs_prompt(*args, **kwargs):
+            nonlocal fallback_used
+            result = original_find(*args, **kwargs)
+            name = str(args[0]) if args else str(kwargs.get("tree_type", ""))
+            if name != "mo_ruong" or result or fallback_used:
+                return result
+
+            # The current ClientJS prompt says "Chạm để mở rương" and no
+            # longer resembles assets/items/mo_ruong.png. At this point the
+            # original flow has already verified chest + ruong_go, so a
+            # centered tap is safe. The legacy method then verifies that the
+            # chest screen changed before reporting success.
+            fallback_used = True
+            try:
+                self.gui.log(
+                    "ClientJS: dùng điểm mở rương dự phòng vì template mo_ruong đã đổi",
+                    device_id=self.device_id,
+                )
+            except Exception:
+                pass
+            if kwargs.get("click"):
+                self.driver.click(500, 557)
+                time.sleep(0.35)
+            return True
+
+        processor.find_image = find_with_clientjs_prompt
+        try:
+            return original_open_chests(self, stop_event)
+        finally:
+            processor.find_image = original_find
+
     cls.openGame = open_game
+    cls.openChests = open_chests
     cls._clientjs_shop_patch_installed = True
 
 
