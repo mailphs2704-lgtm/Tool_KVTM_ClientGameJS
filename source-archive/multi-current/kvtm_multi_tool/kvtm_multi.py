@@ -1044,6 +1044,7 @@ class MultiApp(tk.Tk):
             except json.JSONDecodeError:
                 payload = {"event": "log", "message": line}
             payload["profile_id"] = profile_id
+            self._write_auto_log(profile_id, payload)
             try:
                 self._auto_worker_queue.put(payload, timeout=1.0)
             except queue.Full:
@@ -1054,6 +1055,18 @@ class MultiApp(tk.Tk):
                 "returncode": worker.wait(timeout=1.0),
             })
         except Exception:
+            pass
+
+    def _write_auto_log(self, profile_id: str, payload: dict) -> None:
+        try:
+            log_dir = APP_DIR / "auto-logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            day = time.strftime("%Y%m%d")
+            destination = log_dir / f"{profile_id}-{day}.jsonl"
+            record = {"timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), **payload}
+            with destination.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
             pass
 
     def _poll_auto_workers(self) -> None:
