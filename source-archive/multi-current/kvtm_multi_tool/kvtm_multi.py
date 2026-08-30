@@ -22,7 +22,7 @@ from pc_driver import (
 )
 
 
-APP_NAME = "KVTM Multi"
+APP_NAME = os.environ.get("KVTM_MULTI_INSTANCE_NAME", "KVTM Multi")
 GAME_ID = "24"
 APP_DIR = Path(os.environ.get("KVTM_MULTI_APP_DIR") or (Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi"))
 PROFILE_FILE = APP_DIR / "profiles.json"
