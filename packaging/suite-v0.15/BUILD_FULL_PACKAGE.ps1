@@ -19,7 +19,8 @@ foreach ($required in @(
     (Join-Path $MultiSource "kvtm_multi.py"),
     (Join-Path $PatchSource "clientjs_auto_patch.py"),
     (Join-Path $ClientJsAutoSource "catalog\functions.json"),
-    (Join-Path $ClientJsAutoSource "worker\runtime_probe.py")
+    (Join-Path $ClientJsAutoSource "worker\runtime_probe.py"),
+    (Join-Path $ClientJsAutoSource "worker\auto_worker.py")
 )) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Thieu file bat buoc trong repo: $required"
@@ -79,7 +80,8 @@ $checks = @(
     (Join-Path $AutoOut "clientjs_auto_patch.py"),
     (Join-Path $MultiOut "kvtm_multi.py"),
     (Join-Path $ClientJsAutoOut "catalog\functions.json"),
-    (Join-Path $ClientJsAutoOut "worker\runtime_probe.py")
+    (Join-Path $ClientJsAutoOut "worker\runtime_probe.py"),
+    (Join-Path $ClientJsAutoOut "worker\auto_worker.py")
 )
 foreach ($file in $checks) {
     if (-not (Test-Path -LiteralPath $file)) {
