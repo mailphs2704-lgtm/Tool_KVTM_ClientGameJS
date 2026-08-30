@@ -447,6 +447,12 @@ class MultiApp(tk.Tk):
         self._checked_profiles: set[str] = set()
         self._active_profile_id: str | None = None
         self._game_data: dict[str, dict] = {}
+        self._auto_profile_states: dict[str, dict] = {}
+        self._auto_function_names = (
+            "Chọn chức năng AUTO",
+            "AUTO PRO theo cấu hình tài khoản",
+            "Dọn quầy bằng acc clone",
+        )
         self._build_ui()
         self.after_idle(self._keep_control_on_primary)
         self.refresh()
@@ -589,6 +595,46 @@ class MultiApp(tk.Tk):
             "Status.TLabel", background="#e8eef7", foreground="#4d5d75",
             padding=(12, 7), font=("Segoe UI", 9),
         )
+        style.configure(
+            "Auto.TLabelframe", background="#ffffff", bordercolor="#bfd1e8",
+            relief="solid", borderwidth=1,
+        )
+        style.configure(
+            "Auto.TLabelframe.Label", background="#f3f6fa",
+            foreground="#174a7e", font=("Segoe UI Semibold", 10),
+        )
+        style.configure(
+            "AutoKey.TLabel", background="#ffffff", foreground="#64748b",
+            font=("Segoe UI Semibold", 8),
+        )
+        style.configure(
+            "AutoValue.TLabel", background="#ffffff", foreground="#17233b",
+            font=("Segoe UI Semibold", 10),
+        )
+        style.configure(
+            "AutoStart.TButton", background="#16a36a", foreground="#ffffff",
+            bordercolor="#128458", padding=(13, 7), relief="flat",
+            font=("Segoe UI Semibold", 9),
+        )
+        style.map(
+            "AutoStart.TButton",
+            background=[("pressed", "#0f704c"), ("active", "#138b5c")],
+            foreground=[("disabled", "#d5ddd9"), ("active", "#ffffff")],
+        )
+        style.configure(
+            "AutoStop.TButton", background="#e8eef7", foreground="#9f2530",
+            bordercolor="#cbd6e6", padding=(11, 7), relief="flat",
+            font=("Segoe UI Semibold", 9),
+        )
+        style.map(
+            "AutoStop.TButton",
+            background=[("pressed", "#f2cfd2"), ("active", "#f8e0e2")],
+        )
+        style.configure(
+            "Auto.Horizontal.TProgressbar", troughcolor="#e8eef7",
+            background="#2f80ed", bordercolor="#e8eef7", lightcolor="#2f80ed",
+            darkcolor="#2f80ed",
+        )
         style.configure("Sash", sashthickness=6, background="#dbe3ef")
 
         header = ttk.Frame(self, padding=(18, 13), style="Header.TFrame")
@@ -626,7 +672,7 @@ class MultiApp(tk.Tk):
 
         # Main workspace: account status on the left, selected account data on the right.
         workspace = ttk.Panedwindow(self, orient="horizontal")
-        workspace.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        workspace.pack(fill="both", expand=True, padx=12, pady=(0, 6))
 
         account_panel = ttk.Frame(workspace, style="App.TFrame")
         detail_panel = ttk.LabelFrame(
@@ -677,8 +723,144 @@ class MultiApp(tk.Tk):
             ).grid(row=row, column=1, sticky="w", pady=6)
         fields_frame.columnconfigure(1, weight=1)
 
+        self._build_auto_panel()
+
         self.note = tk.StringVar(value="Sẵn sàng")
         ttk.Label(self, textvariable=self.note, style="Status.TLabel").pack(fill="x")
+
+    def _build_auto_panel(self) -> None:
+        """Build the ClientJS AUTO control surface below the account workspace."""
+        panel = ttk.LabelFrame(
+            self, text="AUTO CLIENTJS", padding=(12, 9), style="Auto.TLabelframe"
+        )
+        panel.pack(fill="x", padx=12, pady=(0, 7))
+
+        panel.columnconfigure(0, weight=3)
+        panel.columnconfigure(1, weight=2)
+        panel.columnconfigure(2, weight=2)
+        panel.columnconfigure(3, weight=3)
+
+        function_box = ttk.Frame(panel, style="Detail.TFrame")
+        function_box.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        ttk.Label(function_box, text="CHỨC NĂNG", style="AutoKey.TLabel").pack(anchor="w")
+        self.auto_function = tk.StringVar(value=self._auto_function_names[0])
+        self.auto_function_combo = ttk.Combobox(
+            function_box, textvariable=self.auto_function,
+            values=self._auto_function_names, state="readonly", height=8,
+        )
+        self.auto_function_combo.pack(fill="x", pady=(4, 0))
+
+        target_box = ttk.Frame(panel, style="Detail.TFrame")
+        target_box.grid(row=0, column=1, sticky="ew", padx=(0, 12))
+        ttk.Label(target_box, text="TÀI KHOẢN ÁP DỤNG", style="AutoKey.TLabel").pack(anchor="w")
+        self.auto_target = tk.StringVar(value="Chưa chọn tài khoản")
+        ttk.Label(
+            target_box, textvariable=self.auto_target, style="AutoValue.TLabel",
+            anchor="w",
+        ).pack(fill="x", pady=(7, 0))
+
+        state_box = ttk.Frame(panel, style="Detail.TFrame")
+        state_box.grid(row=0, column=2, sticky="ew", padx=(0, 12))
+        ttk.Label(state_box, text="TRẠNG THÁI", style="AutoKey.TLabel").pack(anchor="w")
+        self.auto_status = tk.StringVar(value="Sẵn sàng")
+        ttk.Label(
+            state_box, textvariable=self.auto_status, style="AutoValue.TLabel",
+            anchor="w",
+        ).pack(fill="x", pady=(7, 0))
+
+        progress_box = ttk.Frame(panel, style="Detail.TFrame")
+        progress_box.grid(row=0, column=3, sticky="ew")
+        progress_header = ttk.Frame(progress_box, style="Detail.TFrame")
+        progress_header.pack(fill="x")
+        ttk.Label(progress_header, text="TIẾN TRÌNH", style="AutoKey.TLabel").pack(side="left")
+        self.auto_progress_text = tk.StringVar(value="0%")
+        ttk.Label(
+            progress_header, textvariable=self.auto_progress_text,
+            style="AutoKey.TLabel",
+        ).pack(side="right")
+        self.auto_progress = tk.DoubleVar(value=0.0)
+        ttk.Progressbar(
+            progress_box, variable=self.auto_progress, maximum=100,
+            style="Auto.Horizontal.TProgressbar",
+        ).pack(fill="x", pady=(7, 0))
+
+        action_row = ttk.Frame(panel, style="Detail.TFrame")
+        action_row.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        self.auto_start_button = ttk.Button(
+            action_row, text="▶ Bắt đầu", command=self._auto_ui_start,
+            style="AutoStart.TButton",
+        )
+        self.auto_start_button.pack(side="left")
+        ttk.Button(
+            action_row, text="Ⅱ Tạm dừng", command=self._auto_ui_pause,
+            style="Action.TButton",
+        ).pack(side="left", padx=(7, 0))
+        ttk.Button(
+            action_row, text="■ Dừng", command=self._auto_ui_stop,
+            style="AutoStop.TButton",
+        ).pack(side="left", padx=(7, 0))
+        ttk.Button(
+            action_row, text="Cấu hình", command=self._auto_ui_configure,
+            style="Action.TButton",
+        ).pack(side="left", padx=(7, 0))
+
+        self.auto_scope_note = tk.StringVar(
+            value="Engine chưa được kết nối • UI sẵn sàng cho bước tích hợp AUTO PRO"
+        )
+        ttk.Label(
+            action_row, textvariable=self.auto_scope_note, style="Key.TLabel",
+            anchor="e",
+        ).pack(side="right", fill="x", expand=True, padx=(14, 0))
+
+    def _refresh_auto_target(self) -> None:
+        ids = self.selected_ids()
+        if not hasattr(self, "auto_target"):
+            return
+        if not ids:
+            self.auto_target.set("Chưa chọn tài khoản")
+            return
+        names = [
+            str(profile.get("name") or "Chưa đặt tên")
+            for profile in self.profiles if profile.get("id") in set(ids)
+        ]
+        if len(names) <= 2:
+            self.auto_target.set(", ".join(names))
+        else:
+            self.auto_target.set(f"{names[0]}, {names[1]} +{len(names) - 2}")
+
+    def _auto_ui_start(self) -> None:
+        ids = self.selected_ids()
+        if not ids:
+            messagebox.showinfo(APP_NAME, "Hãy chọn ít nhất một tài khoản để chạy AUTO.")
+            return
+        function_name = self.auto_function.get()
+        if function_name == self._auto_function_names[0]:
+            messagebox.showinfo(APP_NAME, "Hãy chọn chức năng AUTO.")
+            return
+        self.auto_status.set("Chờ kết nối engine")
+        self.auto_progress.set(0)
+        self.auto_progress_text.set("0%")
+        self.auto_scope_note.set(
+            f"Đã chuẩn bị {len(ids)} tài khoản • chưa gửi lệnh thao tác game"
+        )
+        self.note.set("UI AUTO đã nhận cấu hình; engine sẽ được nối ở bước tiếp theo.")
+
+    def _auto_ui_pause(self) -> None:
+        self.auto_status.set("Tạm dừng")
+        self.auto_scope_note.set("UI đã ghi nhận tạm dừng • engine chưa được kết nối")
+
+    def _auto_ui_stop(self) -> None:
+        self.auto_status.set("Đã dừng")
+        self.auto_progress.set(0)
+        self.auto_progress_text.set("0%")
+        self.auto_scope_note.set("Không có thao tác AUTO đang chạy")
+
+    def _auto_ui_configure(self) -> None:
+        messagebox.showinfo(
+            APP_NAME,
+            "Khung cấu hình AUTO sẽ được nối với cấu hình AUTO PRO ở bước tiếp theo.\n\n"
+            "AUTO LD hiện tại không bị thay đổi.",
+        )
 
     def _create_account_tree(self, parent, title: str):
         box = ttk.LabelFrame(
@@ -724,6 +906,7 @@ class MultiApp(tk.Tk):
                 self._checked_profiles.add(profile_id)
             tree.item(profile_id, text="☑" if profile_id in self._checked_profiles else "☐")
         self._show_account_details(profile_id)
+        self._refresh_auto_target()
 
     def _show_account_details(self, profile_id: str | None) -> None:
         profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
@@ -794,6 +977,7 @@ class MultiApp(tk.Tk):
         if self._active_profile_id not in valid_ids:
             self._active_profile_id = None
         self._show_account_details(self._active_profile_id)
+        self._refresh_auto_target()
 
     def _prepare_dwm(self):
         dwm = ctypes.windll.dwmapi
