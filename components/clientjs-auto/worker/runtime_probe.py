@@ -35,7 +35,7 @@ def main() -> int:
             importlib.import_module(name)
 
         entrypoint = f"produceItems_{args.function_id}"
-        method = getattr(automation.Automation, entrypoint, None)
+        method = getattr(automation.FarmAutomation, entrypoint, None)
         if not callable(method):
             raise RuntimeError(f"Không tìm thấy Automation.{entrypoint}")
 
@@ -43,7 +43,7 @@ def main() -> int:
             "probe_ok",
             function_id=args.function_id,
             entrypoint=f"Automation.{entrypoint}",
-            automation_signature=str(inspect.signature(automation.Automation)),
+            automation_signature=str(inspect.signature(automation.FarmAutomation)),
             auto_root=str(auto_root),
         )
         return 0
