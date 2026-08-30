@@ -8,7 +8,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $AutoSource = Join-Path $RepoRoot "source-archive\auto-pro-reference"
 $MultiSource = Join-Path $RepoRoot "source-archive\multi-current\kvtm_multi_tool"
 $PatchSource = Join-Path $RepoRoot "test-candidates\auto-pro-clientjs-temp"
-$OutputRoot = Join-Path $RepoRoot "dist\KVTM-ClientJS-Suite-v0.15.1-test"
+$OutputRoot = Join-Path (Join-Path $RepoRoot "dist") $OutputName
 
 foreach ($required in @(
     (Join-Path $AutoSource "local_launcher.py"),
