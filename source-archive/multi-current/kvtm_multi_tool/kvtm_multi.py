@@ -713,12 +713,12 @@ class MultiApp(tk.Tk):
             foreground="#174a7e", font=("Segoe UI Semibold", 10),
         )
         style.configure(
-            "AutoKey.TLabel", background="#ffffff", foreground="#64748b",
-            font=("Segoe UI Semibold", 8),
+            "AutoKey.TLabel", background="#ffffff", foreground="#52627a",
+            font=("Segoe UI Semibold", 9),
         )
         style.configure(
             "AutoValue.TLabel", background="#ffffff", foreground="#17233b",
-            font=("Segoe UI Semibold", 10),
+            font=("Segoe UI", 10),
         )
         style.configure(
             "AutoStart.TButton", background="#16a36a", foreground="#ffffff",
@@ -1057,10 +1057,9 @@ class MultiApp(tk.Tk):
 
         self._show_auto_tab("main")
 
-        main_tab.columnconfigure(0, weight=3)
-        main_tab.columnconfigure(1, weight=2)
+        main_tab.columnconfigure(0, weight=4)
+        main_tab.columnconfigure(1, weight=3)
         main_tab.columnconfigure(2, weight=2)
-        main_tab.columnconfigure(3, weight=3)
 
         function_box = ttk.Frame(main_tab, style="Detail.TFrame")
         function_box.grid(row=0, column=0, sticky="ew", padx=(0, 12))
@@ -1099,7 +1098,7 @@ class MultiApp(tk.Tk):
         ).pack(fill="x", pady=(7, 0))
 
         state_box = ttk.Frame(main_tab, style="Detail.TFrame")
-        state_box.grid(row=0, column=2, sticky="ew", padx=(0, 12))
+        state_box.grid(row=0, column=2, sticky="ew")
         ttk.Label(state_box, text="TRẠNG THÁI", style="AutoKey.TLabel").pack(anchor="w")
         self.auto_status = tk.StringVar(value="Sẵn sàng")
         ttk.Label(
@@ -1107,25 +1106,13 @@ class MultiApp(tk.Tk):
             anchor="w",
         ).pack(fill="x", pady=(7, 0))
 
-        progress_box = ttk.Frame(main_tab, style="Detail.TFrame")
-        progress_box.grid(row=0, column=3, sticky="ew")
-        progress_header = ttk.Frame(progress_box, style="Detail.TFrame")
-        progress_header.pack(fill="x")
-        ttk.Label(progress_header, text="TIẾN TRÌNH", style="AutoKey.TLabel").pack(side="left")
+        # Worker progress values remain internal; the visual progress box was removed.
         self.auto_progress_text = tk.StringVar(value="0%")
-        ttk.Label(
-            progress_header, textvariable=self.auto_progress_text,
-            style="AutoKey.TLabel",
-        ).pack(side="right")
         self.auto_progress = tk.DoubleVar(value=0.0)
-        ttk.Progressbar(
-            progress_box, variable=self.auto_progress, maximum=100,
-            style="Auto.Horizontal.TProgressbar",
-        ).pack(fill="x", pady=(7, 0))
 
         quick_options = ttk.Frame(main_tab, style="Detail.TFrame")
         quick_options.grid(
-            row=1, column=0, columnspan=4, sticky="ew", pady=(9, 0)
+            row=1, column=0, columnspan=3, sticky="ew", pady=(9, 0)
         )
         self.auto_quick_options = {
             "open_chests": tk.BooleanVar(value=False),
@@ -1142,7 +1129,7 @@ class MultiApp(tk.Tk):
             ).grid(row=0, column=column, sticky="w", padx=(0, 8))
 
         action_row = ttk.Frame(main_tab, style="Detail.TFrame")
-        action_row.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        action_row.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         self.auto_start_button = ttk.Button(
             action_row, text="▶ Bắt đầu", command=self._auto_ui_start,
             style="AutoStart.TButton",
@@ -1878,8 +1865,8 @@ class MultiApp(tk.Tk):
             box, columns=("name", "pid"), show=("tree", "headings"),
             selectmode="browse", style="Account.Treeview", height=4,
         )
-        tree.heading("#0", text="LỰA CHỌN")
-        tree.column("#0", width=98, minwidth=98, stretch=False, anchor="center")
+        tree.heading("#0", text="")
+        tree.column("#0", width=46, minwidth=46, stretch=False, anchor="center")
         tree.heading("name", text="Tên client")
         tree.column("name", width=230, anchor="w")
         tree.heading("pid", text="PID")
@@ -1913,7 +1900,7 @@ class MultiApp(tk.Tk):
                 self._checked_profiles.add(profile_id)
             tree.item(
                 profile_id,
-                text="✓ ĐÃ CHỌN" if profile_id in self._checked_profiles else "＋ CHỌN",
+                text="✓" if profile_id in self._checked_profiles else "＋",
             )
         self._show_account_details(profile_id)
         self._refresh_auto_target()
@@ -1981,8 +1968,7 @@ class MultiApp(tk.Tk):
             target.insert(
                 "", "end", iid=profile_id,
                 text=(
-                    "✓ ĐÃ CHỌN"
-                    if profile_id in self._checked_profiles else "＋ CHỌN"
+                    "✓" if profile_id in self._checked_profiles else "＋"
                 ),
                 values=(profile.get("name", "Chưa đặt tên"), proc.pid if alive else "—"),
                 tags=("online" if alive else "offline",),
