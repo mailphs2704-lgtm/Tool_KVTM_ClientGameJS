@@ -4,6 +4,7 @@ import argparse
 import dis
 import importlib
 import json
+import os
 from pathlib import Path
 import queue
 import sys
@@ -137,10 +138,11 @@ def install_clientjs_runtime(auto_root: Path):
     import uiautomator2 as u2
     from engine_driver import EngineDriver
     from adaptive_cv import install_adaptive_matching
-    from clientjs_auto_patch import install_clientjs_auto_patch
+    from clientjs_auto_patch import _install_controller_patch
+    import adb_controller
 
     install_adaptive_matching()
-    install_clientjs_auto_patch()
+    _install_controller_patch(adb_controller)
 
     original_connect = u2.connect
 
@@ -155,6 +157,61 @@ def install_clientjs_runtime(auto_root: Path):
     u2.connect = pc_connect
     return importlib.import_module("automation")
 
+
+
+def install_headless_clientjs_runtime(auto_root: Path):
+    """Load recovered AUTO PRO controller code without importing its GUI."""
+    root = Path(auto_root).resolve()
+    pyc = root / "runtime" / "pyc"
+    internal = root / "_internal"
+    for path in (
+        pyc,
+        internal,
+        internal / "win32",
+        internal / "win32" / "lib",
+        internal / "Pythonwin",
+        internal / "pywin32_system32",
+        root,
+    ):
+        if path.exists():
+            sys.path.insert(0, str(path))
+    if hasattr(os, "add_dll_directory"):
+        for path in (
+            internal,
+            internal / "cv2",
+            internal / "numpy.libs",
+            internal / "pywin32_system32",
+            internal / "Pythonwin",
+        ):
+            if path.exists():
+                try:
+                    os.add_dll_directory(str(path))
+                except OSError:
+                    pass
+    os.environ["PATH"] = os.pathsep.join((
+        str(internal),
+        str(root / "platform-tools"),
+        os.environ.get("PATH", ""),
+    ))
+
+    import uiautomator2 as u2
+    from engine_driver import EngineDriver
+    from adaptive_cv import install_adaptive_matching
+    from clientjs_auto_patch import _install_controller_patch
+    import adb_controller
+
+    install_adaptive_matching()
+    _install_controller_patch(adb_controller)
+    original_connect = u2.connect
+
+    def pc_connect(device_id=None, *args, **kwargs):
+        value = str(device_id or "")
+        if value.startswith("PC:"):
+            return EngineDriver(int(value[3:]), reference_size=(1000, 1000))
+        return original_connect(device_id, *args, **kwargs)
+
+    u2.connect = pc_connect
+    return importlib.import_module("automation")
 
 
 def discover_buy_sell_items(automation_module, automation) -> tuple[list[dict], str]:
