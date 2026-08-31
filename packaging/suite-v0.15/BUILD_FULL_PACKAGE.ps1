@@ -13,6 +13,7 @@ $DistRoot = Join-Path $RepoRoot "dist"
 $OutputRoot = Join-Path $DistRoot $OutputName
 $PreserveRoot = Join-Path $DistRoot (".kvtm-dev-data-" + [guid]::NewGuid().ToString("N"))
 $PreservedFiles = @{}
+$PreservedClearStall = $false
 New-Item -ItemType Directory -Path $DistRoot -Force | Out-Null
 
 function Test-GitLfsPointer {
@@ -134,6 +135,16 @@ foreach ($name in @("profiles.json", "settings.json")) {
     }
 }
 
+# Carryover fingerprints reference templates under the fixed current output
+# path, so preserve only the current package's clear-stall runtime tree. Never
+# borrow it from another package or APPDATA instance.
+$CurrentClearStall = Join-Path $CurrentData "clear-stall"
+if (Test-Path -LiteralPath $CurrentClearStall -PathType Container) {
+    $PreservedClearStallPath = Join-Path $PreserveRoot "clear-stall"
+    Copy-Item -LiteralPath $CurrentClearStall -Destination $PreservedClearStallPath -Recurse -Force
+    $PreservedClearStall = $true
+}
+
 foreach ($required in @(
     (Join-Path $AutoSource "local_launcher.py"),
     (Join-Path $AutoSource "runtime\pyc\gui_base.pyc"),
@@ -244,8 +255,8 @@ if (Test-Path -LiteralPath $ZipPath) {
 }
 Compress-Archive -LiteralPath $OutputRoot -DestinationPath $ZipPath -CompressionLevel Optimal
 
-# Restore local account data only after ZIP creation so login/profile data is
-# never embedded in the distributable archive.
+# Restore local account/runtime data only after ZIP creation so it is never
+# embedded in the distributable archive.
 $DevDataOut = Join-Path $OutputRoot "data-dev"
 New-Item -ItemType Directory -Path $DevDataOut -Force | Out-Null
 foreach ($name in @("profiles.json", "settings.json")) {
@@ -253,6 +264,10 @@ foreach ($name in @("profiles.json", "settings.json")) {
     if (Test-Path -LiteralPath $preserved -PathType Leaf) {
         Copy-Item -LiteralPath $preserved -Destination (Join-Path $DevDataOut $name) -Force
     }
+}
+if ($PreservedClearStall) {
+    $preserved = Join-Path $PreserveRoot "clear-stall"
+    Copy-Item -LiteralPath $preserved -Destination (Join-Path $DevDataOut "clear-stall") -Recurse -Force
 }
 Remove-Item -LiteralPath $PreserveRoot -Recurse -Force
 
@@ -267,5 +282,8 @@ if ($PreservedFiles.Count -gt 0) {
     }
 } else {
     Write-Host "DATA: no existing profile/settings found; data-dev created empty" -ForegroundColor Yellow
+}
+if ($PreservedClearStall) {
+    Write-Host "DATA KEPT: clear-stall carryover/templates" -ForegroundColor Cyan
 }
 Write-Host "FIXED DEV: use this same folder for every build" -ForegroundColor Cyan
