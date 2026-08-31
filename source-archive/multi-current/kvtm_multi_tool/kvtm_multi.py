@@ -450,6 +450,10 @@ def load_settings() -> dict:
         saved = {}
     display = saved.get("display", {}) if isinstance(saved, dict) else {}
     raw_tuning = saved.get("auto_tuning", {}) if isinstance(saved, dict) else {}
+    raw_delete_profiles = (
+        saved.get("auto_delete_profiles", {}) if isinstance(saved, dict) else {}
+    )
+    delete_profiles = raw_delete_profiles if isinstance(raw_delete_profiles, dict) else {}
     tuning = dict(DEFAULT_AUTO_TUNING)
     if isinstance(raw_tuning, dict):
         for key, default in DEFAULT_AUTO_TUNING.items():
@@ -468,6 +472,7 @@ def load_settings() -> dict:
         },
         "bridge_bin": str(saved.get("bridge_bin", "")) if isinstance(saved, dict) else "",
         "auto_tuning": tuning,
+        "auto_delete_profiles": delete_profiles,
     }
 
 
@@ -954,7 +959,7 @@ class MultiApp(tk.Tk):
             option_key: tk.BooleanVar(value=False)
             for option_key in optional_keys.values()
         }
-        for key, label in feature_tabs[1:]:
+        for key, label in feature_tabs[2:]:
             feature_frame = self.auto_feature_tabs[key]
             option_key = optional_keys[key]
             ttk.Label(
@@ -974,6 +979,47 @@ class MultiApp(tk.Tk):
                 style="AutoValue.TLabel", anchor="w",
             ).pack(fill="x", padx=8)
 
+        delete_tab = self.auto_feature_tabs["delete_items"]
+        delete_header = ttk.Frame(delete_tab, style="Detail.TFrame")
+        delete_header.pack(fill="x", padx=8, pady=(4, 0))
+        ttk.Label(
+            delete_header, text="XÓA VẬT PHẨM BẰNG KC",
+            style="AutoKey.TLabel",
+        ).pack(side="left")
+        self.auto_delete_context = tk.StringVar(
+            value="Chọn tài khoản và chức năng AUTO để cấu hình"
+        )
+        ttk.Label(
+            delete_header, textvariable=self.auto_delete_context,
+            style="AutoValue.TLabel", anchor="e",
+        ).pack(side="right", fill="x", expand=True, padx=(18, 0))
+        ttk.Separator(delete_tab, orient="horizontal").pack(
+            fill="x", padx=8, pady=(7, 7)
+        )
+        delete_body = ttk.Frame(delete_tab, style="Detail.TFrame")
+        delete_body.pack(fill="x", padx=8)
+        self.auto_delete_enabled = tk.BooleanVar(value=False)
+        self.auto_delete_enabled_button = ttk.Checkbutton(
+            delete_body, text="Bật Xóa VP bằng KC",
+            variable=self.auto_delete_enabled,
+            command=self._save_auto_delete_config,
+            style="AutoOption.TCheckbutton",
+        )
+        self.auto_delete_enabled_button.pack(side="left", anchor="n", padx=(0, 24))
+        self.auto_delete_items_frame = ttk.Frame(
+            delete_body, style="Detail.TFrame"
+        )
+        self.auto_delete_items_frame.pack(side="left", fill="x", expand=True)
+        self.auto_delete_item_vars = {}
+        self._auto_delete_refreshing = False
+        self.auto_delete_note = tk.StringVar(
+            value="Mặc định OFF • Không chọn VP = xóa tất cả VP của chức năng."
+        )
+        ttk.Label(
+            delete_tab, textvariable=self.auto_delete_note,
+            style="AutoValue.TLabel", anchor="w",
+        ).pack(fill="x", padx=8, pady=(7, 0))
+
         self._show_auto_tab("main")
 
         main_tab.columnconfigure(0, weight=3)
@@ -990,6 +1036,11 @@ class MultiApp(tk.Tk):
             values=self._auto_function_names, state="readonly", height=8,
         )
         self.auto_function_combo.pack(fill="x", pady=(4, 0))
+        self.auto_function_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._refresh_auto_delete_panel(),
+            add="+",
+        )
 
         target_box = ttk.Frame(main_tab, style="Detail.TFrame")
         target_box.grid(row=0, column=1, sticky="ew", padx=(0, 12))
@@ -1080,8 +1131,96 @@ class MultiApp(tk.Tk):
             for key, default in DEFAULT_AUTO_TUNING.items()
         }
 
-    def _collect_auto_options(self) -> dict:
-        """Return the complete legacy AUTO PRO option map; all keys default OFF."""
+    def _delete_config_context(self) -> tuple[str | None, dict | None]:
+        profile_id = self._active_profile_id
+        if not profile_id:
+            ids = self.selected_ids()
+            profile_id = ids[0] if len(ids) == 1 else None
+        function_spec = self._auto_functions_by_label.get(self.auto_function.get())
+        return profile_id, function_spec
+
+    def _refresh_auto_delete_panel(self) -> None:
+        if not hasattr(self, "auto_delete_items_frame"):
+            return
+        self._auto_delete_refreshing = True
+        try:
+            for widget in self.auto_delete_items_frame.winfo_children():
+                widget.destroy()
+            self.auto_delete_item_vars = {}
+            profile_id, function_spec = self._delete_config_context()
+            profile = next(
+                (p for p in self.profiles if p.get("id") == profile_id), None
+            )
+            items = list((function_spec or {}).get("delete_items") or [])
+            valid = bool(profile and function_spec and items)
+            self.auto_delete_enabled_button.configure(
+                state="normal" if valid else "disabled"
+            )
+            if not valid:
+                self.auto_delete_enabled.set(False)
+                self.auto_delete_context.set(
+                    "Chọn tài khoản và chức năng AUTO để cấu hình"
+                )
+                ttk.Label(
+                    self.auto_delete_items_frame,
+                    text="Chưa có danh sách vật phẩm phù hợp.",
+                    style="AutoValue.TLabel",
+                ).pack(anchor="w")
+                return
+            function_key = str(function_spec.get("key") or "")
+            profiles_cfg = self.settings.setdefault("auto_delete_profiles", {})
+            profile_cfg = profiles_cfg.get(profile_id, {})
+            saved_cfg = profile_cfg.get(function_key, {})
+            if not isinstance(saved_cfg, dict):
+                saved_cfg = {}
+            selected = {
+                str(item) for item in saved_cfg.get("items", [])
+                if str(item) in items
+            }
+            self.auto_delete_enabled.set(bool(saved_cfg.get("enabled", False)))
+            self.auto_delete_context.set(
+                f"{profile.get('name') or profile_id} • {function_spec.get('label')}"
+            )
+            for item in items:
+                variable = tk.BooleanVar(value=item in selected)
+                self.auto_delete_item_vars[item] = variable
+                ttk.Checkbutton(
+                    self.auto_delete_items_frame, text=item,
+                    variable=variable, command=self._save_auto_delete_config,
+                    style="AutoOption.TCheckbutton",
+                ).pack(side="left", padx=(0, 20))
+            self.auto_delete_note.set(
+                "Mặc định OFF • Không chọn VP = xóa tất cả VP của chức năng."
+            )
+        finally:
+            self._auto_delete_refreshing = False
+
+    def _save_auto_delete_config(self) -> None:
+        if getattr(self, "_auto_delete_refreshing", False):
+            return
+        profile_id, function_spec = self._delete_config_context()
+        if not profile_id or not function_spec:
+            return
+        function_key = str(function_spec.get("key") or "")
+        items = [
+            item for item, variable in self.auto_delete_item_vars.items()
+            if bool(variable.get())
+        ]
+        profiles_cfg = self.settings.setdefault("auto_delete_profiles", {})
+        profile_cfg = profiles_cfg.setdefault(profile_id, {})
+        profile_cfg[function_key] = {
+            "enabled": bool(self.auto_delete_enabled.get()),
+            "items": items,
+        }
+        save_settings(self.settings)
+        self.auto_delete_note.set(
+            "Đã lưu riêng cho tài khoản này • Không chọn VP = xóa tất cả."
+        )
+
+    def _collect_auto_options(
+        self, profile_id: str | None = None, function_spec: dict | None = None
+    ) -> dict:
+        """Build legacy options and translate selected delete targets to skip_items."""
         options = {
             "Xoa_vp_kc": False,
             "open_chest": False,
@@ -1092,6 +1231,7 @@ class MultiApp(tk.Tk):
             "san_xuat_ngoc": False,
             "sx_event_cam": False,
             "sell_all": False,
+            "skip_items": [],
         }
         quick_map = {
             "open_chests": "open_chest",
@@ -1104,7 +1244,34 @@ class MultiApp(tk.Tk):
         for option_key, variable in getattr(
             self, "auto_optional_features", {}
         ).items():
-            options[option_key] = bool(variable.get())
+            if option_key != "Xoa_vp_kc":
+                options[option_key] = bool(variable.get())
+
+        if profile_id and function_spec:
+            function_key = str(function_spec.get("key") or "")
+            allowed_items = [
+                str(item) for item in function_spec.get("delete_items", [])
+            ]
+            profiles_cfg = self.settings.get("auto_delete_profiles", {})
+            profile_cfg = (
+                profiles_cfg.get(profile_id, {})
+                if isinstance(profiles_cfg, dict) else {}
+            )
+            saved_cfg = (
+                profile_cfg.get(function_key, {})
+                if isinstance(profile_cfg, dict) else {}
+            )
+            if isinstance(saved_cfg, dict):
+                enabled = bool(saved_cfg.get("enabled", False))
+                selected = {
+                    str(item) for item in saved_cfg.get("items", [])
+                    if str(item) in allowed_items
+                }
+                options["Xoa_vp_kc"] = enabled
+                if enabled and selected:
+                    options["skip_items"] = [
+                        item for item in allowed_items if item not in selected
+                    ]
         return options
 
     def _show_auto_tab(self, selected: str) -> None:
@@ -1307,7 +1474,7 @@ class MultiApp(tk.Tk):
                 "--profile-name", str(profile.get("name") or profile["id"]),
                 "--function-id", str(function_spec["auto_pro_function_id"]),
                 "--options-json", json.dumps(
-                    self._collect_auto_options(),
+                    self._collect_auto_options(profile["id"], function_spec),
                     ensure_ascii=True, separators=(",", ":"),
                 ),
                 "--tuning-json", json.dumps(
@@ -1627,6 +1794,7 @@ class MultiApp(tk.Tk):
             tree.item(profile_id, text="☑" if profile_id in self._checked_profiles else "☐")
         self._show_account_details(profile_id)
         self._refresh_auto_target()
+        self._refresh_auto_delete_panel()
 
     def _show_account_details(self, profile_id: str | None) -> None:
         profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
