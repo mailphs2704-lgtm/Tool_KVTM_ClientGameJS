@@ -529,7 +529,7 @@ class MultiApp(tk.Tk):
         initial_h = min(900, max(560, work_h))
         self.geometry(f"{initial_w}x{initial_h}")
         self.minsize(min(820, initial_w), min(520, initial_h))
-        self._workspace_height = max(240, min(380, initial_h - 350))
+        self._workspace_height = 380
         self.configure(background="#f3f6fa")
         self.option_add("*Font", ("Segoe UI", 10))
         self.profiles = load_profiles()
@@ -561,7 +561,6 @@ class MultiApp(tk.Tk):
         )
         self._build_ui()
         self.after_idle(self._keep_control_on_primary)
-        self.after_idle(lambda: self.content_canvas.yview_moveto(0.0))
         self.refresh()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         threading.Thread(target=self._bridge_monitor, daemon=True).start()
@@ -577,15 +576,13 @@ class MultiApp(tk.Tk):
         self.update_idletasks()
         work_w = primary["right"] - primary["left"]
         work_h = primary["bottom"] - primary["top"]
-        # Default operator layout: compact 820x790 window centered on the
-        # primary monitor, clamped only when the work area is smaller.
+        # Fixed-height layout keeps controls, account center and AUTO visible
+        # without a vertical scrollbar on a normal 1080p desktop.
         width = min(820, work_w)
-        height = min(790, work_h)
+        height = min(900, work_h)
         x = primary["left"] + max(0, (work_w - width) // 2)
         y = primary["top"] + max(0, (work_h - height) // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
-        if hasattr(self, "content_canvas"):
-            self.content_canvas.yview_moveto(0.0)
         self.deiconify()
         self.lift()
         self.attributes("-topmost", True)
@@ -761,46 +758,19 @@ class MultiApp(tk.Tk):
             style="Subtitle.TLabel",
         ).pack(side="left", padx=(18, 0), pady=(5, 0))
 
-        # Scroll the complete workspace when the window is shorter than its
-        # requested content. Header and bottom status remain permanently visible.
-        body = ttk.Frame(self, style="App.TFrame")
-        body.pack(fill="both", expand=True)
-        self.content_canvas = tk.Canvas(
-            body, background="#f3f6fa", highlightthickness=0, borderwidth=0
-        )
-        content_scroll = ttk.Scrollbar(
-            body, orient="vertical", command=self.content_canvas.yview
-        )
-        self.content_canvas.configure(yscrollcommand=content_scroll.set)
-        content_scroll.pack(side="right", fill="y")
-        self.content_canvas.pack(side="left", fill="both", expand=True)
-        self.content_frame = ttk.Frame(self.content_canvas, style="App.TFrame")
-        self._content_window = self.content_canvas.create_window(
-            (0, 0), window=self.content_frame, anchor="nw"
-        )
-        self.content_frame.bind(
-            "<Configure>",
-            lambda _event: self.content_canvas.configure(
-                scrollregion=self.content_canvas.bbox("all")
-            ),
-        )
-        self.content_canvas.bind(
-            "<Configure>",
-            lambda event: self.content_canvas.itemconfigure(
-                self._content_window, width=event.width
-            ),
-        )
-        self.content_canvas.bind("<MouseWheel>", self._scroll_content)
-        self.content_frame.bind("<MouseWheel>", self._scroll_content)
-        self.bind_all("<MouseWheel>", self._scroll_content, add="+")
-        self.content_canvas.bind("<Button-4>", self._scroll_content)
-        self.content_canvas.bind("<Button-5>", self._scroll_content)
+        # The control/account center has a fixed height and no scrollbar.
+        # AUTO controls remain directly below it and are always visible.
+        body = ttk.Frame(self, style="App.TFrame", height=520)
+        body.pack(fill="x")
+        body.pack_propagate(False)
+        self.content_frame = ttk.Frame(body, style="App.TFrame")
+        self.content_frame.pack(fill="both", expand=True)
 
         controls = ttk.LabelFrame(
             self.content_frame, text="BẢNG ĐIỀU KHIỂN", padding=(10, 8), style="Panel.TLabelframe"
         )
         controls.pack(fill="x", padx=12, pady=(8, 8))
-        for column in range(6):
+        for column in range(5):
             controls.columnconfigure(column, weight=1, uniform="control")
 
         buttons = (
@@ -809,12 +779,9 @@ class MultiApp(tk.Tk):
             (0, 2, "Mở tất cả", self.launch_all),
             (0, 3, "Dừng chọn", self.stop_selected),
             (0, 4, "Xóa hồ sơ", self.delete_selected),
-            (0, 5, "Bridge DLL", self.configure_bridge),
-            (1, 0, "Xếp cửa sổ", self.tile),
-            (1, 1, "Sang màn ảo", self.move_selected_to_virtual),
-            (1, 2, "Về màn chính", self.move_selected_to_primary),
-            (1, 3, "Độ phân giải", self.configure_display),
-            (1, 4, "Chụp ảnh", self.capture_diagnostic),
+            (1, 0, "Ẩn/Hiện client", self.toggle_selected_visibility),
+            (1, 1, "Độ phân giải", self.configure_display),
+            (1, 2, "Chụp ảnh", self.capture_diagnostic),
         )
         for row, column, label, command in buttons:
             ttk.Button(
@@ -889,19 +856,6 @@ class MultiApp(tk.Tk):
 
         self.note = tk.StringVar(value="Sẵn sàng")
         ttk.Label(self, textvariable=self.note, style="Status.TLabel").pack(fill="x")
-
-    def _scroll_content(self, event) -> str:
-        """Scroll the responsive content area with mouse wheel or Linux buttons."""
-        if getattr(event, "num", None) == 4:
-            delta = -3
-        elif getattr(event, "num", None) == 5:
-            delta = 3
-        else:
-            wheel = int(getattr(event, "delta", 0))
-            delta = -int(wheel / 120) * 3 if wheel else 0
-        if delta:
-            self.content_canvas.yview_scroll(delta, "units")
-        return "break"
 
     def _build_auto_panel(self) -> None:
         """Build the ClientJS AUTO control surface below the account workspace."""
@@ -2353,6 +2307,45 @@ class MultiApp(tk.Tk):
             )
         kind = "màn hình chính" if monitor["primary"] else "màn hình phụ/ảo"
         self.note.set(f"Đã chuyển {len(measured)} client, vùng game đúng 1000x1000 trên {kind}")
+
+    def toggle_selected_visibility(self) -> None:
+        """Move selected clients between the primary and virtual monitor."""
+        ids = self.selected_ids()
+        if not ids:
+            messagebox.showinfo(APP_NAME, "Hãy chọn ít nhất một hồ sơ đang chạy.")
+            return
+        primary = next((item for item in self._monitors() if item["primary"]), None)
+        if not primary:
+            messagebox.showerror(APP_NAME, "Không xác định được màn hình chính.")
+            return
+        on_primary = False
+        found = False
+        for profile_id in ids:
+            proc = self.processes.get(profile_id)
+            if not proc or proc.poll() is not None:
+                continue
+            hwnd = self._window_for_pid(proc.pid)
+            if not hwnd:
+                continue
+            rect = wintypes.RECT()
+            if not ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                continue
+            found = True
+            center_x = (rect.left + rect.right) // 2
+            center_y = (rect.top + rect.bottom) // 2
+            if (
+                primary["left"] <= center_x < primary["right"]
+                and primary["top"] <= center_y < primary["bottom"]
+            ):
+                on_primary = True
+                break
+        if not found:
+            messagebox.showinfo(APP_NAME, "Không tìm thấy client được mở bằng Multi.")
+            return
+        if on_primary:
+            self.move_selected_to_virtual()
+        else:
+            self.move_selected_to_primary()
 
     def move_selected_to_virtual(self) -> None:
         monitors = [item for item in self._monitors() if not item["primary"]]
