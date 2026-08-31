@@ -9,12 +9,6 @@ import threading
 import time
 import traceback
 
-from auto_worker import GuiProxy, configure_utf8_stdio, install_clientjs_runtime
-
-
-configure_utf8_stdio()
-
-
 def emit(event: str, **data) -> None:
     print(json.dumps({"event": event, **data}, ensure_ascii=False), flush=True)
 
@@ -39,6 +33,28 @@ def main() -> int:
     parser.add_argument("--max-pages", type=int, required=True)
     parser.add_argument("--work-dir", required=True)
     args = parser.parse_args()
+
+    emit(
+        "worker_boot",
+        pid=args.pid,
+        profile_id=args.profile_id,
+        profile_name=args.profile_name,
+        workflow="clear_stall_python",
+        stage="process_started",
+    )
+    emit(
+        "worker_boot",
+        pid=args.pid,
+        profile_id=args.profile_id,
+        workflow="clear_stall_python",
+        stage="importing_auto_worker",
+    )
+    from auto_worker import (
+        GuiProxy,
+        configure_utf8_stdio,
+        install_clientjs_runtime,
+    )
+    configure_utf8_stdio()
 
     if not 1 <= args.friend_ordinal <= 500:
         emit("worker_error", error="Bạn bè số phải trong khoảng 1..500")
