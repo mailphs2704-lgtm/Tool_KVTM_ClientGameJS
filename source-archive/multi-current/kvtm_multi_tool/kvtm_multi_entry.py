@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 import time
 
@@ -199,6 +200,24 @@ class MultiApp(core.MultiApp):
             self.auto_clear_stall_status.set(
                 f"Đang chờ lịch • Lần tiếp theo {next_text}"
             )
+
+    def _on_close(self) -> None:
+        """Never leave a headless Dọn quầy worker behind when Multi exits."""
+        for worker in list(self._clear_stall_workers.values()):
+            try:
+                if worker.poll() is not None:
+                    continue
+                if worker.stdin:
+                    worker.stdin.write(
+                        json.dumps({"command": "stop"}, separators=(",", ":"))
+                        + "\n"
+                    )
+                    worker.stdin.flush()
+                worker.terminate()
+            except (OSError, ValueError):
+                pass
+        self._clear_stall_workers.clear()
+        super()._on_close()
 
 
 def main() -> int:
