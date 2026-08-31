@@ -9,10 +9,11 @@ from typing import Callable
 
 from .adapter import AutoProNavigationAdapter
 from .detector import (
+    AUTO_PRO_STALL_VIEW_COUNT,
     DetectedSlot,
     StallScanner,
     TOTAL_STALL_SLOTS,
-    VISIBLE_STALL_SLOTS,
+    new_local_slots_for_view,
 )
 from .manifest import ItemFingerprint, PurchasedItem, TransactionManifest
 from .transaction import NoEmptyStallSlot, VisualTransactionExecutor
@@ -36,8 +37,10 @@ class ClearStallRequest:
             raise ValueError("Quầy phải trong khoảng 1..4")
         if not 1 <= int(self.buy_quantity) <= 999:
             raise ValueError("Số lượng mua phải trong khoảng 1..999")
-        if not 1 <= int(self.max_scan_pages) <= 50:
-            raise ValueError("Số lượt quét an toàn phải trong khoảng 1..50")
+        if not AUTO_PRO_STALL_VIEW_COUNT <= int(self.max_scan_pages) <= 50:
+            raise ValueError(
+                f"Dọn đủ 20 ô cần tối thiểu {AUTO_PRO_STALL_VIEW_COUNT} lượt quét"
+            )
 
 
 class ClearStallWorkflow:
@@ -73,7 +76,7 @@ class ClearStallWorkflow:
             self.log(f"Đã nạp {carryover} VP lẻ từ lượt Dọn quầy trước")
 
     def discover_source_items(self) -> list[DetectedSlot]:
-        """Scan the twenty physical friend-stall positions without overlap duplicates."""
+        """Scan exactly the four AUTO PRO views that cover twenty physical slots."""
         self._checkpoint("WAITING_MAIN_SCREEN")
         self.adapter.ensure_main_screen()
         self._checkpoint("NAVIGATING_FRIEND")
@@ -85,69 +88,26 @@ class ClearStallWorkflow:
         self.adapter.open_target_stall(self.request.stall_id)
 
         detected: list[DetectedSlot] = []
-        previous_scan = None
-        covered_slots = 0
         self.forward_swipes = 0
-        max_views = max(TOTAL_STALL_SLOTS, int(self.request.max_scan_pages))
 
-        for view in range(1, max_views + 1):
+        for view in range(1, AUTO_PRO_STALL_VIEW_COUNT + 1):
             self._ensure_running()
             self._checkpoint(f"SCANNING_VIEW_{view}")
             scan = self.scanner.scan_page(self.adapter.screenshot(), view)
-
-            if previous_scan is None:
-                new_local_slots = list(range(1, VISIBLE_STALL_SLOTS + 1))
-                covered_slots = min(TOTAL_STALL_SLOTS, VISIBLE_STALL_SLOTS)
-                self.last_unique_page = 1
-            else:
-                shift = self.scanner.infer_forward_shift(previous_scan, scan)
-                if shift == 0:
-                    if not previous_scan.slots and not scan.slots:
-                        # Identical empty windows are visually ambiguous. Count
-                        # only one conservative physical position so we keep
-                        # swiping instead of pretending eight unseen slots moved.
-                        shift = 1
-                        self.log(
-                            "Hai cửa sổ quầy đều trống; tính tiến tối thiểu 1 ô để tiếp tục quét"
-                        )
-                    elif covered_slots < TOTAL_STALL_SLOTS:
-                        raise RuntimeError(
-                            f"Quầy không dịch sau swipe khi mới phủ {covered_slots}/20 ô"
-                        )
-                    else:
-                        break
-
-                overlap = VISIBLE_STALL_SLOTS - shift
-                needed = min(shift, TOTAL_STALL_SLOTS - covered_slots)
-                new_local_slots = list(
-                    range(overlap + 1, overlap + needed + 1)
-                )
-                covered_slots += needed
-                self.forward_swipes += 1
-                self.last_unique_page = view
-
-            new_local_set = set(new_local_slots)
+            new_local_set = set(new_local_slots_for_view(view))
             new_items = [slot for slot in scan.slots if slot.slot in new_local_set]
             detected.extend(new_items)
+            self.last_unique_page = view
+            covered_slots = min(TOTAL_STALL_SLOTS, 8 + (view - 1) * 4)
             self.log(
-                f"Cửa sổ {view}: thêm {len(new_local_slots)} vị trí, "
-                f"{len(new_items)} VP • đã phủ {covered_slots}/{TOTAL_STALL_SLOTS} ô"
+                f"Cửa sổ {view}/{AUTO_PRO_STALL_VIEW_COUNT}: "
+                f"{len(new_items)} VP ở vùng mới • đã phủ {covered_slots}/20 ô"
             )
 
-            if covered_slots >= TOTAL_STALL_SLOTS:
-                break
+            if view < AUTO_PRO_STALL_VIEW_COUNT:
+                self.adapter.swipe_next_stall_page()
+                self.forward_swipes += 1
 
-            previous_scan = scan
-            self.adapter.swipe_next_stall_page()
-        else:
-            raise RuntimeError(
-                f"Vượt {max_views} lượt swipe nhưng chưa phủ đủ 20 ô quầy"
-            )
-
-        if covered_slots < TOTAL_STALL_SLOTS:
-            raise RuntimeError(
-                f"Chỉ xác nhận được {covered_slots}/{TOTAL_STALL_SLOTS} ô quầy nguồn"
-            )
         if not detected:
             if self.manifest.purchased_total > 0:
                 self.log(
@@ -162,7 +122,7 @@ class ClearStallWorkflow:
     def prepare_manifest_items(
         self, detected: list[DetectedSlot]
     ) -> list[PurchasedItem]:
-        """Create pending records; quantities remain zero until purchase proof."""
+        """Create one source record per occupied physical slot."""
         pending = []
         for slot in detected:
             item = PurchasedItem(
@@ -181,40 +141,47 @@ class ClearStallWorkflow:
         pending: list[PurchasedItem],
         executor: VisualTransactionExecutor,
     ) -> int:
-        """Buy at most requested_total unique physical listings."""
+        """Repeat-buy the same visible listing until it disappears or target is met."""
         if not pending and self.manifest.purchased_total > 0:
             self._checkpoint("PURCHASE_SKIPPED_CARRYOVER_ONLY")
             return 0
 
-        # Return from the final scanned window to the first one using exactly
-        # the number of forward windows that were confirmed as moving.
+        # Return from view four to view one using the exact three recovered
+        # _scroll_back_shop transitions that mirror _rollbackItem.
         for _ in range(self.forward_swipes):
             self.adapter.swipe_previous_stall_page()
 
         current_page = 1
         purchased = 0
+        target = int(self.request.buy_quantity)
+
         for item in pending:
             self._ensure_running()
-            if purchased >= int(self.request.buy_quantity):
+            if purchased >= target:
                 break
             while current_page < item.source_page:
                 self.adapter.swipe_next_stall_page()
                 current_page += 1
-            self._checkpoint(
-                f"BUYING_VIEW_{item.source_page}_SLOT_{item.source_slot}"
-            )
-            executor.purchase_listing(item)
-            # Recovered GoFiendHome counts one successful direct click as one
-            # purchased unit when the warehouse-full marker is absent.
-            self.mark_purchase_verified(
-                item,
-                inventory_before=purchased,
-                inventory_after=purchased + 1,
-            )
-            purchased += 1
+
+            while purchased < target and item.purchased_quantity < item.requested_quantity:
+                self._ensure_running()
+                if not executor.source_listing_matches(item):
+                    break
+                self._checkpoint(
+                    f"BUYING_VIEW_{item.source_page}_SLOT_{item.source_slot}_UNIT_{purchased + 1}"
+                )
+                executor.purchase_listing(item)
+                self.mark_purchase_verified(
+                    item,
+                    inventory_before=purchased,
+                    inventory_after=purchased + 1,
+                )
+                purchased += 1
+
         if purchased <= 0:
             raise RuntimeError("Không có giao dịch mua nào được xác nhận")
         self._checkpoint("PURCHASE_COMPLETE")
+        self.log(f"Đã mua {purchased}/{target} VP theo giới hạn của clone")
         return purchased
 
     def mark_purchase_verified(
@@ -228,7 +195,7 @@ class ClearStallWorkflow:
         self.manifest.save(self.manifest_path)
         self._save_carryover()
         self.log(
-            f"Đã xác nhận mua {item.purchased_quantity} tại "
+            f"Đã xác nhận mua {item.purchased_quantity} VP từ "
             f"cửa sổ {item.source_page}, ô {item.source_slot}"
         )
 
