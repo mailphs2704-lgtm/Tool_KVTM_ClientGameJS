@@ -454,6 +454,12 @@ def load_settings() -> dict:
         saved.get("auto_delete_profiles", {}) if isinstance(saved, dict) else {}
     )
     delete_profiles = raw_delete_profiles if isinstance(raw_delete_profiles, dict) else {}
+    raw_quay_he_profiles = (
+        saved.get("auto_quay_he_profiles", {}) if isinstance(saved, dict) else {}
+    )
+    quay_he_profiles = (
+        raw_quay_he_profiles if isinstance(raw_quay_he_profiles, dict) else {}
+    )
     tuning = dict(DEFAULT_AUTO_TUNING)
     if isinstance(raw_tuning, dict):
         for key, default in DEFAULT_AUTO_TUNING.items():
@@ -473,6 +479,7 @@ def load_settings() -> dict:
         "bridge_bin": str(saved.get("bridge_bin", "")) if isinstance(saved, dict) else "",
         "auto_tuning": tuning,
         "auto_delete_profiles": delete_profiles,
+        "auto_quay_he_profiles": quay_he_profiles,
     }
 
 
@@ -914,7 +921,7 @@ class MultiApp(tk.Tk):
         feature_tabs = (
             ("main", "Chức năng chính"),
             ("delete_items", "Xóa VP bằng KC"),
-            ("summer_spin", "Quay hè"),
+            ("summer_spin", "Quay Hề"),
             ("upgrade_storage", "Nâng kho"),
             ("hire_shrimp", "Thuê tôm"),
             ("deliver_sheep", "Giao cừu"),
@@ -959,7 +966,7 @@ class MultiApp(tk.Tk):
             option_key: tk.BooleanVar(value=False)
             for option_key in optional_keys.values()
         }
-        for key, label in feature_tabs[2:]:
+        for key, label in feature_tabs[3:]:
             feature_frame = self.auto_feature_tabs[key]
             option_key = optional_keys[key]
             ttk.Label(
@@ -978,6 +985,55 @@ class MultiApp(tk.Tk):
                 text="Mặc định OFF • Chỉ chạy khi được bật trước lúc Bắt đầu.",
                 style="AutoValue.TLabel", anchor="w",
             ).pack(fill="x", padx=8)
+
+        quay_he_tab = self.auto_feature_tabs["summer_spin"]
+        quay_he_header = ttk.Frame(quay_he_tab, style="Detail.TFrame")
+        quay_he_header.pack(fill="x", padx=8, pady=(4, 0))
+        ttk.Label(
+            quay_he_header, text="TỰ ĐỘNG QUAY HỀ", style="AutoKey.TLabel"
+        ).pack(side="left")
+        self.auto_quay_he_context = tk.StringVar(value="Chọn tài khoản để cấu hình")
+        ttk.Label(
+            quay_he_header, textvariable=self.auto_quay_he_context,
+            style="AutoValue.TLabel", anchor="e",
+        ).pack(side="right", fill="x", expand=True, padx=(18, 0))
+        ttk.Separator(quay_he_tab, orient="horizontal").pack(
+            fill="x", padx=8, pady=(7, 7)
+        )
+        quay_he_body = ttk.Frame(quay_he_tab, style="Detail.TFrame")
+        quay_he_body.pack(fill="x", padx=8)
+        self.auto_quay_he_enabled = tk.BooleanVar(value=False)
+        self.auto_quay_he_enabled_button = ttk.Checkbutton(
+            quay_he_body, text="Bật tự động Quay Hề",
+            variable=self.auto_quay_he_enabled,
+            command=self._save_auto_quay_he_config,
+            style="AutoOption.TCheckbutton",
+        )
+        self.auto_quay_he_enabled_button.pack(side="left", padx=(0, 30))
+        ttk.Label(
+            quay_he_body, text="Số lượt quay:", style="AutoValue.TLabel"
+        ).pack(side="left", padx=(0, 8))
+        self.auto_quay_he_count = tk.IntVar(value=1)
+        self.auto_quay_he_count_spin = ttk.Spinbox(
+            quay_he_body, from_=1, to=100, width=7,
+            textvariable=self.auto_quay_he_count,
+            command=self._save_auto_quay_he_config,
+        )
+        self.auto_quay_he_count_spin.pack(side="left")
+        self.auto_quay_he_count_spin.bind(
+            "<FocusOut>", lambda _event: self._save_auto_quay_he_config(), add="+"
+        )
+        self.auto_quay_he_count_spin.bind(
+            "<Return>", lambda _event: self._save_auto_quay_he_config(), add="+"
+        )
+        self.auto_quay_he_note = tk.StringVar(
+            value="Mặc định OFF • 1 lượt là lượt quay miễn phí • Không quay bằng KC."
+        )
+        ttk.Label(
+            quay_he_tab, textvariable=self.auto_quay_he_note,
+            style="AutoValue.TLabel", anchor="w",
+        ).pack(fill="x", padx=8, pady=(9, 0))
+        self._auto_quay_he_refreshing = False
 
         delete_tab = self.auto_feature_tabs["delete_items"]
         delete_header = ttk.Frame(delete_tab, style="Detail.TFrame")
@@ -1131,6 +1187,67 @@ class MultiApp(tk.Tk):
             for key, default in DEFAULT_AUTO_TUNING.items()
         }
 
+    def _refresh_auto_quay_he_panel(self) -> None:
+        if not hasattr(self, "auto_quay_he_enabled_button"):
+            return
+        self._auto_quay_he_refreshing = True
+        try:
+            profile_id = self._active_profile_id
+            if not profile_id:
+                ids = self.selected_ids()
+                profile_id = ids[0] if len(ids) == 1 else None
+            profile = next(
+                (p for p in self.profiles if p.get("id") == profile_id), None
+            )
+            state = "normal" if profile else "disabled"
+            self.auto_quay_he_enabled_button.configure(state=state)
+            self.auto_quay_he_count_spin.configure(state=state)
+            if not profile:
+                self.auto_quay_he_enabled.set(False)
+                self.auto_quay_he_count.set(1)
+                self.auto_quay_he_context.set("Chọn tài khoản để cấu hình")
+                return
+            profiles_cfg = self.settings.setdefault("auto_quay_he_profiles", {})
+            saved_cfg = profiles_cfg.get(profile_id, {})
+            if not isinstance(saved_cfg, dict):
+                saved_cfg = {}
+            try:
+                count = max(1, min(100, int(saved_cfg.get("count", 1))))
+            except (TypeError, ValueError):
+                count = 1
+            self.auto_quay_he_enabled.set(bool(saved_cfg.get("enabled", False)))
+            self.auto_quay_he_count.set(count)
+            self.auto_quay_he_context.set(str(profile.get("name") or profile_id))
+            self.auto_quay_he_note.set(
+                "Mặc định OFF • 1 lượt là lượt quay miễn phí • Không quay bằng KC."
+            )
+        finally:
+            self._auto_quay_he_refreshing = False
+
+    def _save_auto_quay_he_config(self) -> None:
+        if getattr(self, "_auto_quay_he_refreshing", False):
+            return
+        profile_id = self._active_profile_id
+        if not profile_id:
+            ids = self.selected_ids()
+            profile_id = ids[0] if len(ids) == 1 else None
+        if not profile_id:
+            return
+        try:
+            count = max(1, min(100, int(self.auto_quay_he_count.get())))
+        except (tk.TclError, TypeError, ValueError):
+            count = 1
+        self.auto_quay_he_count.set(count)
+        profiles_cfg = self.settings.setdefault("auto_quay_he_profiles", {})
+        profiles_cfg[profile_id] = {
+            "enabled": bool(self.auto_quay_he_enabled.get()),
+            "count": count,
+        }
+        save_settings(self.settings)
+        self.auto_quay_he_note.set(
+            f"Đã lưu riêng cho tài khoản này • {count} lượt • Không quay bằng KC."
+        )
+
     def _delete_config_context(self) -> tuple[str | None, dict | None]:
         profile_id = self._active_profile_id
         if not profile_id:
@@ -1225,6 +1342,7 @@ class MultiApp(tk.Tk):
             "Xoa_vp_kc": False,
             "open_chest": False,
             "auto_quay_he": False,
+            "quay_he_count": 1,
             "auto_nang_kho": False,
             "thue_tom": False,
             "giao_cu": False,
@@ -1244,8 +1362,22 @@ class MultiApp(tk.Tk):
         for option_key, variable in getattr(
             self, "auto_optional_features", {}
         ).items():
-            if option_key != "Xoa_vp_kc":
+            if option_key not in {"Xoa_vp_kc", "auto_quay_he"}:
                 options[option_key] = bool(variable.get())
+
+        if profile_id:
+            profiles_cfg = self.settings.get("auto_quay_he_profiles", {})
+            saved_cfg = (
+                profiles_cfg.get(profile_id, {})
+                if isinstance(profiles_cfg, dict) else {}
+            )
+            if isinstance(saved_cfg, dict):
+                try:
+                    count = max(1, min(100, int(saved_cfg.get("count", 1))))
+                except (TypeError, ValueError):
+                    count = 1
+                options["auto_quay_he"] = bool(saved_cfg.get("enabled", False))
+                options["quay_he_count"] = count
 
         if profile_id and function_spec:
             function_key = str(function_spec.get("key") or "")
@@ -1795,6 +1927,7 @@ class MultiApp(tk.Tk):
         self._show_account_details(profile_id)
         self._refresh_auto_target()
         self._refresh_auto_delete_panel()
+        self._refresh_auto_quay_he_panel()
 
     def _show_account_details(self, profile_id: str | None) -> None:
         profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
