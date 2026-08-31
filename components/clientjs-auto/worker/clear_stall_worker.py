@@ -6,6 +6,7 @@ from pathlib import Path
 import queue
 import sys
 import threading
+import time
 import traceback
 
 from auto_worker import GuiProxy, configure_utf8_stdio, install_clientjs_runtime
@@ -127,14 +128,30 @@ def main() -> int:
 
         task = threading.Thread(target=run_workflow, daemon=True)
         task.start()
+        command_accept_after = time.monotonic() + 4.0
         while not bool(outcome["done"]):
             try:
                 command = commands.get(timeout=0.20)
             except queue.Empty:
                 continue
-            if str(command.get("command") or "").lower() in {"stop", "pause"}:
+            action = str(command.get("command") or "").lower()
+            if action in {"stop", "pause"}:
+                if time.monotonic() < command_accept_after:
+                    emit(
+                        "log",
+                        message=(
+                            "Đã bỏ qua lệnh Dừng xuất hiện trong 4 giây "
+                            "khởi động đầu"
+                        ),
+                        ignored_command=command,
+                    )
+                    continue
                 stop_event.set()
-                emit("worker_stopping", reason="user")
+                emit(
+                    "worker_stopping",
+                    reason="user",
+                    command=command,
+                )
         task.join(timeout=3.0)
         error = outcome.get("error")
         if error is not None:
