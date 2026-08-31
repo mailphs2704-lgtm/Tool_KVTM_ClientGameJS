@@ -30,7 +30,7 @@ class ItemFingerprint:
             raise ValueError("Ảnh vật phẩm không hợp lệ")
         return cls(
             sha256=hashlib.sha256(raw).hexdigest(),
-            perceptual_hash=_average_hash_bgra(raw, width, height),
+            perceptual_hash=_average_hash_bgr(raw, width, height),
             width=int(width),
             height=int(height),
             template_file=str(template_file),
@@ -125,17 +125,18 @@ class TransactionManifest:
         temporary.replace(target)
 
 
-def _average_hash_bgra(raw: bytes, width: int, height: int) -> str:
-    """Dependency-free 8x8 average hash for matching the same icon after return."""
-    expected = int(width) * int(height) * 4
-    if len(raw) < expected:
-        raise ValueError("Ảnh BGRA không đủ dữ liệu")
+def _average_hash_bgr(raw: bytes, width: int, height: int) -> str:
+    """Dependency-free 8x8 average hash for BGR or BGRA ClientJS captures."""
+    pixels = int(width) * int(height)
+    channels = len(raw) // pixels if pixels else 0
+    if channels not in {3, 4} or len(raw) < pixels * channels:
+        raise ValueError("Ảnh BGR/BGRA không đủ dữ liệu")
     values = []
     for out_y in range(8):
         source_y = min(height - 1, int((out_y + 0.5) * height / 8))
         for out_x in range(8):
             source_x = min(width - 1, int((out_x + 0.5) * width / 8))
-            offset = (source_y * width + source_x) * 4
+            offset = (source_y * width + source_x) * channels
             blue, green, red = raw[offset : offset + 3]
             values.append((int(red) * 30 + int(green) * 59 + int(blue) * 11) // 100)
     average = sum(values) / len(values)
