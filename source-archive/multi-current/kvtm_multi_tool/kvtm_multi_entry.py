@@ -3,6 +3,8 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import subprocess
+import threading
 import time
 
 import kvtm_multi as core
@@ -14,14 +16,36 @@ CLEAR_STALL_REQUIRED_VIEWS = 4
 class MultiApp(core.MultiApp):
     """Production entrypoint with a strict per-profile Dọn quầy lifecycle."""
 
-    def _clear_stall_busy(self, except_profile: str | None = None) -> bool:
-        """Only one Dọn quầy clone may own ClientJS automation at a time."""
-        for profile_id in tuple(self._clear_stall_starting):
-            if profile_id != except_profile:
-                return True
-        for profile_id, worker in tuple(self._clear_stall_workers.items()):
-            if profile_id == except_profile:
+    def _build_auto_panel(self) -> None:
+        super()._build_auto_panel()
+        self._clear_stall_probe_workers = {}
+        self._clear_stall_probe_starting = set()
+        self._clear_stall_probe_terminal = {}
+
+        action_row = self.auto_clear_stall_start_button.master
+        self.auto_clear_stall_probe_button = core.ttk.Button(
+            action_row,
+            text="✓ Kiểm tra Dọn quầy",
+            style="Action.TButton",
+            command=self._start_clear_stall_probe,
+        )
+        self.auto_clear_stall_probe_button.pack(side="left", padx=(8, 0))
+
+    def _clear_stall_busy(self) -> bool:
+        """Only one Dọn quầy/probe clone may own ClientJS automation at a time."""
+        if tuple(self._clear_stall_starting):
+            return True
+        if tuple(getattr(self, "_clear_stall_probe_starting", ())):
+            return True
+        for worker in tuple(self._clear_stall_workers.values()):
+            try:
+                if worker.poll() is None:
+                    return True
+            except Exception:
                 continue
+        for worker in tuple(
+            getattr(self, "_clear_stall_probe_workers", {}).values()
+        ):
             try:
                 if worker.poll() is None:
                     return True
@@ -53,7 +77,6 @@ class MultiApp(core.MultiApp):
         core.save_settings(self.settings)
         self._clear_stall_starting.discard(profile_id)
 
-        # A failed scheduled run must never leave its clone running unattended.
         proc = self.processes.get(profile_id)
         if proc and proc.poll() is None:
             proc.terminate()
@@ -99,12 +122,10 @@ class MultiApp(core.MultiApp):
         if target_id is None:
             target_id, _profile = self._clear_stall_profile()
 
-        # User requirement: finish and close one clone before moving to another.
-        # Manual starts obey the same ownership rule as scheduled starts.
-        if target_id and self._clear_stall_busy(except_profile=target_id):
+        if target_id and self._clear_stall_busy():
             if not scheduled and hasattr(self, "auto_clear_stall_status"):
                 self.auto_clear_stall_status.set(
-                    "Đang có clone khác Dọn quầy • tài khoản này chờ lượt"
+                    "Đang có clone khác Dọn quầy/kiểm tra • tài khoản này chờ lượt"
                 )
             return
 
@@ -112,8 +133,6 @@ class MultiApp(core.MultiApp):
         if not target_id:
             return
 
-        # The core reports an immediate launch error through its checkpoint.
-        # Re-arm here so a single launch failure cannot permanently zero a timer.
         job = self._clear_stall_job(target_id)
         checkpoint = str(job.get("last_checkpoint") or "")
         if checkpoint.startswith("Lỗi mở clone:"):
@@ -131,6 +150,223 @@ class MultiApp(core.MultiApp):
                         "finished_at": time.time(),
                     },
                 )
+
+    def _start_clear_stall_probe(self) -> None:
+        """Open the selected clone and scan four stall views without buying/selling."""
+        self._save_clear_stall_config()
+        profile_id, profile = self._clear_stall_profile()
+        if not profile_id or not profile:
+            core.messagebox.showinfo(core.APP_NAME, "Hãy chọn một tài khoản clone.")
+            return
+        if self._clear_stall_busy():
+            self.auto_clear_stall_status.set(
+                "Đang có phiên Dọn quầy/kiểm tra khác • chờ phiên đó kết thúc"
+            )
+            return
+        auto_worker = self._auto_workers.get(profile_id)
+        if auto_worker and auto_worker.poll() is None:
+            core.messagebox.showinfo(
+                core.APP_NAME,
+                "Hãy dừng AUTO chính của clone trước khi kiểm tra Dọn quầy.",
+            )
+            return
+
+        self._clear_stall_probe_starting.add(profile_id)
+        try:
+            proc = self.processes.get(profile_id)
+            if not proc or proc.poll() is not None:
+                self._launch(profile)
+                proc = self.processes.get(profile_id)
+            if not proc or proc.poll() is not None:
+                raise RuntimeError("Không mở được ClientJS của clone")
+        except Exception as exc:
+            self._clear_stall_probe_starting.discard(profile_id)
+            self.auto_clear_stall_status.set(f"Lỗi mở clone để kiểm tra: {exc}")
+            core.messagebox.showerror(core.APP_NAME, str(exc))
+            return
+
+        self.auto_clear_stall_status.set(
+            "Kiểm tra chỉ đọc • đang chờ ClientJS sẵn sàng"
+        )
+        self.after(
+            2500,
+            lambda pid=profile_id: self._launch_clear_stall_probe_worker(pid),
+        )
+
+    def _launch_clear_stall_probe_worker(self, profile_id: str) -> None:
+        profile = next(
+            (p for p in self.profiles if p.get("id") == profile_id), None
+        )
+        proc = self.processes.get(profile_id)
+        if not profile or not proc or proc.poll() is not None:
+            self._clear_stall_probe_starting.discard(profile_id)
+            self.auto_clear_stall_status.set(
+                "Kiểm tra lỗi: clone đã đóng trước khi worker khởi động"
+            )
+            return
+
+        job = self._clear_stall_job(profile_id)
+        package_root = core.TOOL_DIR.parent
+        auto_root = package_root / "AUTO_PRO"
+        worker_file = (
+            package_root / "components" / "clientjs-auto" /
+            "worker" / "clear_stall_live_probe.py"
+        )
+        if not worker_file.is_file():
+            self._clear_stall_probe_starting.discard(profile_id)
+            self.auto_clear_stall_status.set(f"Thiếu probe worker: {worker_file}")
+            return
+
+        friend = int(job.get("target_friend_ordinal", 1))
+        stall = int(job.get("target_stall_id", 2))
+        run_id = time.strftime("%Y%m%d-%H%M%S")
+        work_dir = core.APP_DIR / "clear-stall-probe" / profile_id / run_id
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            worker = subprocess.Popen(
+                [
+                    core.sys.executable,
+                    str(worker_file),
+                    "--auto-root", str(auto_root),
+                    "--pid", str(proc.pid),
+                    "--profile-id", str(profile_id),
+                    "--profile-name", str(profile.get("name") or profile_id),
+                    "--friend-ordinal", str(friend),
+                    "--stall-id", str(stall),
+                    "--work-dir", str(work_dir),
+                ],
+                cwd=str(auto_root),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                creationflags=flags,
+            )
+        except Exception as exc:
+            self._clear_stall_probe_starting.discard(profile_id)
+            self.auto_clear_stall_status.set(f"Lỗi mở probe worker: {exc}")
+            return
+
+        self._clear_stall_probe_workers[profile_id] = worker
+        self._clear_stall_probe_terminal.pop(profile_id, None)
+        self._clear_stall_probe_starting.discard(profile_id)
+        self.auto_clear_stall_status.set(
+            f"Kiểm tra chỉ đọc • Nhà bạn {friend} • Quầy {stall}"
+        )
+        threading.Thread(
+            target=self._read_clear_stall_probe_worker,
+            args=(profile_id, worker),
+            daemon=True,
+        ).start()
+
+    def _read_clear_stall_probe_worker(self, profile_id: str, worker) -> None:
+        if worker.stdout:
+            for line in worker.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    payload = {"event": "probe_progress", "message": line}
+                payload["profile_id"] = profile_id
+                self.after(
+                    0,
+                    lambda data=dict(payload):
+                    self._handle_clear_stall_probe_event(data),
+                )
+        try:
+            returncode = worker.wait(timeout=1.0)
+        except Exception:
+            returncode = -1
+        self.after(
+            0,
+            lambda: self._handle_clear_stall_probe_event({
+                "event": "probe_exit",
+                "profile_id": profile_id,
+                "returncode": returncode,
+            }),
+        )
+
+    def _close_probe_clone(self, profile_id: str) -> None:
+        proc = self.processes.get(profile_id)
+        try:
+            if proc and proc.poll() is None:
+                proc.terminate()
+        except OSError:
+            pass
+        self.after(500, self.refresh)
+
+    def _handle_clear_stall_probe_event(self, payload: dict) -> None:
+        profile_id = str(payload.get("profile_id") or "")
+        event = str(payload.get("event") or "")
+        message = str(payload.get("message") or "")
+
+        if event == "probe_boot":
+            stage = str(payload.get("stage") or "")
+            labels = {
+                "importing_runtime": "Kiểm tra: đang nạp runtime",
+                "loading_auto_pro_runtime": "Kiểm tra: đang nạp AUTO PRO",
+                "constructing_controller": "Kiểm tra: đang kết nối ClientJS",
+                "controller_ready": "Kiểm tra: đã kết nối ClientJS",
+            }
+            if profile_id == self._active_profile_id:
+                self.auto_clear_stall_status.set(labels.get(stage, f"Kiểm tra: {stage}"))
+            return
+
+        if event == "probe_progress":
+            if profile_id == self._active_profile_id and message:
+                self.auto_clear_stall_status.set(message)
+            if message:
+                self.note.set(message)
+            return
+
+        if event == "probe_ok":
+            self._clear_stall_probe_terminal[profile_id] = "ok"
+            occupied = int(payload.get("occupied_new_total") or 0)
+            report = str(payload.get("report") or "")
+            if profile_id == self._active_profile_id:
+                self.auto_clear_stall_status.set(
+                    f"Kiểm tra PASS • {occupied}/20 ô có VP • đã lưu ảnh/report"
+                )
+            self.note.set(f"Dọn quầy probe PASS: {report}")
+            self._close_probe_clone(profile_id)
+            return
+
+        if event == "probe_stopped":
+            self._clear_stall_probe_terminal[profile_id] = "stopped"
+            if profile_id == self._active_profile_id:
+                self.auto_clear_stall_status.set("Đã dừng kiểm tra Dọn quầy")
+            self._close_probe_clone(profile_id)
+            return
+
+        if event == "probe_error":
+            self._clear_stall_probe_terminal[profile_id] = "error"
+            error = str(payload.get("error") or "Lỗi probe không xác định")
+            report = str(payload.get("report") or "")
+            if profile_id == self._active_profile_id:
+                self.auto_clear_stall_status.set("Kiểm tra Dọn quầy lỗi")
+                core.messagebox.showerror(
+                    core.APP_NAME,
+                    f"Kiểm tra Dọn quầy lỗi:\n{error}\n\nReport: {report}",
+                )
+            self._close_probe_clone(profile_id)
+            return
+
+        if event == "probe_exit":
+            returncode = int(payload.get("returncode") or 0)
+            self._clear_stall_probe_workers.pop(profile_id, None)
+            terminal = self._clear_stall_probe_terminal.pop(profile_id, None)
+            if returncode and terminal not in {"error", "stopped"}:
+                if profile_id == self._active_profile_id:
+                    self.auto_clear_stall_status.set(
+                        f"Probe worker dừng bất ngờ (mã {returncode})"
+                    )
+                self._close_probe_clone(profile_id)
+            self._refresh_clear_stall_panel()
 
     def _poll_clear_stall_schedule(self) -> None:
         """Run due clone jobs FIFO, never concurrently."""
@@ -214,8 +450,6 @@ class MultiApp(core.MultiApp):
             return
 
         if event == "worker_finished":
-            # Let the core persist the next-run timestamp first, then enforce
-            # the Dọn quầy ownership rule regardless of any legacy saved toggle.
             super()._handle_clear_stall_worker_event(payload)
             job = self._clear_stall_job(profile_id)
             bought = int(payload.get("bought") or 0)
@@ -267,6 +501,27 @@ class MultiApp(core.MultiApp):
 
         super()._handle_clear_stall_worker_event(payload)
 
+    def _stop_clear_stall(self) -> None:
+        profile_id, _profile = self._clear_stall_profile()
+        profile_id = str(profile_id or "")
+        if profile_id in getattr(self, "_clear_stall_probe_starting", set()):
+            self._clear_stall_probe_starting.discard(profile_id)
+            self._close_probe_clone(profile_id)
+            self.auto_clear_stall_status.set("Đã hủy kiểm tra trước khi worker chạy")
+            return
+        probe = getattr(self, "_clear_stall_probe_workers", {}).get(profile_id)
+        if probe and probe.poll() is None:
+            try:
+                if probe.stdin:
+                    probe.stdin.write(json.dumps({"command": "stop"}) + "\n")
+                    probe.stdin.flush()
+                self.auto_clear_stall_status.set("Đang dừng kiểm tra Dọn quầy")
+            except (OSError, ValueError):
+                probe.terminate()
+                self._close_probe_clone(profile_id)
+            return
+        super()._stop_clear_stall()
+
     def _refresh_clear_stall_panel(self) -> None:
         super()._refresh_clear_stall_panel()
         if not hasattr(self, "auto_clear_stall_status"):
@@ -291,6 +546,19 @@ class MultiApp(core.MultiApp):
                 pass
 
         profile_id, profile = self._clear_stall_profile()
+        main_auto_busy = False
+        if profile_id:
+            auto_worker = self._auto_workers.get(profile_id)
+            main_auto_busy = bool(auto_worker and auto_worker.poll() is None)
+        if hasattr(self, "auto_clear_stall_probe_button"):
+            self.auto_clear_stall_probe_button.configure(
+                state=(
+                    "normal"
+                    if profile and not main_auto_busy and not self._clear_stall_busy()
+                    else "disabled"
+                )
+            )
+
         if not profile_id or not profile:
             return
         job = self._clear_stall_job(profile_id)
@@ -312,7 +580,12 @@ class MultiApp(core.MultiApp):
         worker = self._clear_stall_workers.get(profile_id)
         if worker and worker.poll() is None:
             return
+        probe = getattr(self, "_clear_stall_probe_workers", {}).get(profile_id)
+        if probe and probe.poll() is None:
+            return
         if profile_id in self._clear_stall_starting:
+            return
+        if profile_id in getattr(self, "_clear_stall_probe_starting", set()):
             return
         if not bool(job.get("enabled", False)):
             return
@@ -327,10 +600,21 @@ class MultiApp(core.MultiApp):
             )
 
     def _on_close(self) -> None:
-        """Stop Dọn quầy workers and only the clones owned by those runs."""
+        """Stop Dọn quầy/probe workers and only the clones owned by those runs."""
         active_profiles = set(self._clear_stall_workers)
         active_profiles.update(self._clear_stall_starting)
-        for worker in list(self._clear_stall_workers.values()):
+        active_profiles.update(
+            getattr(self, "_clear_stall_probe_workers", {}).keys()
+        )
+        active_profiles.update(
+            getattr(self, "_clear_stall_probe_starting", set())
+        )
+
+        all_workers = list(self._clear_stall_workers.values())
+        all_workers.extend(
+            getattr(self, "_clear_stall_probe_workers", {}).values()
+        )
+        for worker in all_workers:
             try:
                 if worker.poll() is not None:
                     continue
@@ -343,8 +627,11 @@ class MultiApp(core.MultiApp):
                 worker.terminate()
             except (OSError, ValueError):
                 pass
+
         self._clear_stall_workers.clear()
         self._clear_stall_starting.clear()
+        getattr(self, "_clear_stall_probe_workers", {}).clear()
+        getattr(self, "_clear_stall_probe_starting", set()).clear()
         for profile_id in active_profiles:
             proc = self.processes.get(profile_id)
             try:
