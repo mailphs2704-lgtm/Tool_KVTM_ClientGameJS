@@ -8,8 +8,26 @@ import time
 import kvtm_multi as core
 
 
+CLEAR_STALL_REQUIRED_VIEWS = 4
+
+
 class MultiApp(core.MultiApp):
     """Production entrypoint with a strict per-profile Dọn quầy lifecycle."""
+
+    def _clear_stall_busy(self, except_profile: str | None = None) -> bool:
+        """Only one Dọn quầy clone may own ClientJS automation at a time."""
+        for profile_id in tuple(self._clear_stall_starting):
+            if profile_id != except_profile:
+                return True
+        for profile_id, worker in tuple(self._clear_stall_workers.items()):
+            if profile_id == except_profile:
+                continue
+            try:
+                if worker.poll() is None:
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _rearm_clear_stall_after_failure(
         self,
@@ -45,16 +63,32 @@ class MultiApp(core.MultiApp):
         self.after(500, self.refresh)
 
     def _save_clear_stall_config(self) -> None:
-        """Dọn quầy owns the clone lifecycle, so closing after every run is mandatory."""
+        """Enforce close-after-run and the four views required to cover 20 slots."""
         if hasattr(self, "auto_clear_stall_close"):
             self.auto_clear_stall_close.set(True)
+        if hasattr(self, "auto_clear_stall_pages"):
+            try:
+                pages = int(self.auto_clear_stall_pages.get())
+            except Exception:
+                pages = CLEAR_STALL_REQUIRED_VIEWS
+            self.auto_clear_stall_pages.set(max(CLEAR_STALL_REQUIRED_VIEWS, pages))
         super()._save_clear_stall_config()
         profile_id, profile = self._clear_stall_profile()
         if not profile_id or not profile:
             return
         job = self._clear_stall_job(profile_id)
+        changed = False
         if job and not bool(job.get("close_client_after_run", False)):
             job["close_client_after_run"] = True
+            changed = True
+        try:
+            pages = int(job.get("max_scan_pages", CLEAR_STALL_REQUIRED_VIEWS) or 0)
+        except (TypeError, ValueError):
+            pages = CLEAR_STALL_REQUIRED_VIEWS
+        if pages < CLEAR_STALL_REQUIRED_VIEWS:
+            job["max_scan_pages"] = CLEAR_STALL_REQUIRED_VIEWS
+            changed = True
+        if changed:
             self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
             core.save_settings(self.settings)
 
@@ -64,6 +98,15 @@ class MultiApp(core.MultiApp):
         target_id = profile_id
         if target_id is None:
             target_id, _profile = self._clear_stall_profile()
+
+        # User requirement: finish and close one clone before moving to another.
+        # Manual starts obey the same ownership rule as scheduled starts.
+        if target_id and self._clear_stall_busy(except_profile=target_id):
+            if not scheduled and hasattr(self, "auto_clear_stall_status"):
+                self.auto_clear_stall_status.set(
+                    "Đang có clone khác Dọn quầy • tài khoản này chờ lượt"
+                )
+            return
 
         super()._start_clear_stall(profile_id, scheduled)
         if not target_id:
@@ -88,6 +131,30 @@ class MultiApp(core.MultiApp):
                         "finished_at": time.time(),
                     },
                 )
+
+    def _poll_clear_stall_schedule(self) -> None:
+        """Run due clone jobs FIFO, never concurrently."""
+        if self._bridge_stop.is_set():
+            return
+        if not self._clear_stall_busy():
+            now = time.time()
+            jobs = self.settings.get("clear_stall_jobs", {})
+            due_jobs = []
+            if isinstance(jobs, dict):
+                for profile_id, job in tuple(jobs.items()):
+                    if not isinstance(job, dict) or not job.get("enabled", False):
+                        continue
+                    try:
+                        due = float(job.get("next_run_at", 0) or 0)
+                    except (TypeError, ValueError):
+                        due = 0
+                    if due > 0 and due <= now:
+                        due_jobs.append((due, str(profile_id)))
+            for _due, profile_id in sorted(due_jobs):
+                self._start_clear_stall(profile_id, scheduled=True)
+                if self._clear_stall_busy():
+                    break
+        self.after(1000, self._poll_clear_stall_schedule)
 
     def _launch_clear_stall_worker(self, profile_id: str) -> None:
         super()._launch_clear_stall_worker(profile_id)
@@ -205,19 +272,40 @@ class MultiApp(core.MultiApp):
         if not hasattr(self, "auto_clear_stall_status"):
             return
 
-        # This is a workflow invariant, not a user preference. Keep the legacy
-        # control visible for layout compatibility but lock it to ON.
         if hasattr(self, "auto_clear_stall_close"):
             self.auto_clear_stall_close.set(True)
         if hasattr(self, "auto_clear_stall_close_button"):
             self.auto_clear_stall_close_button.configure(state="disabled")
+        if hasattr(self, "auto_clear_stall_pages"):
+            try:
+                pages = int(self.auto_clear_stall_pages.get())
+            except Exception:
+                pages = CLEAR_STALL_REQUIRED_VIEWS
+            self.auto_clear_stall_pages.set(max(CLEAR_STALL_REQUIRED_VIEWS, pages))
+        if hasattr(self, "auto_clear_stall_pages_spin"):
+            try:
+                self.auto_clear_stall_pages_spin.configure(
+                    from_=CLEAR_STALL_REQUIRED_VIEWS
+                )
+            except Exception:
+                pass
 
         profile_id, profile = self._clear_stall_profile()
         if not profile_id or not profile:
             return
         job = self._clear_stall_job(profile_id)
+        changed = False
         if job and not bool(job.get("close_client_after_run", False)):
             job["close_client_after_run"] = True
+            changed = True
+        try:
+            pages = int(job.get("max_scan_pages", CLEAR_STALL_REQUIRED_VIEWS) or 0)
+        except (TypeError, ValueError):
+            pages = CLEAR_STALL_REQUIRED_VIEWS
+        if pages < CLEAR_STALL_REQUIRED_VIEWS:
+            job["max_scan_pages"] = CLEAR_STALL_REQUIRED_VIEWS
+            changed = True
+        if changed:
             self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
             core.save_settings(self.settings)
 
