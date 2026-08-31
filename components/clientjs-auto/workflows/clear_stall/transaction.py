@@ -6,7 +6,12 @@ import time
 from typing import Any, Callable, Iterable
 
 from .detector import ICON_HALF_HEIGHT, ICON_HALF_WIDTH, VISIBLE_SLOT_CENTERS
-from .manifest import ItemFingerprint, PurchasedItem, hamming_distance
+from .manifest import (
+    ItemFingerprint,
+    PurchasedItem,
+    RESALE_BATCH_SIZE,
+    hamming_distance,
+)
 
 
 PURCHASE_CONFIRM_TEMPLATES = (
@@ -16,14 +21,13 @@ PURCHASE_CONFIRM_TEMPLATES = (
     "xac_nhan",
     "dong_y",
 )
-SALE_CONFIRM_TEMPLATES = (
-    "sell_item",
-    "ban_vat_pham",
-    "ban",
-    "xac_nhan",
-    "dong_y",
-)
 CANCEL_TEMPLATES = ("huy", "close_game", "close")
+
+# Recovered AUTO PRO sellItems() geometry at the fixed 1000x1000 ClientJS size.
+AUTO_PRO_DAT_BAN_ZONE = (662, 598, 231, 145)
+AUTO_PRO_SL10_ZONE = (737, 426, 81, 81)
+AUTO_PRO_CONFIRM_ZONE = (390, 552, 211, 102)
+AUTO_PRO_PLACE_SALE = (771, 692)
 
 
 @dataclass(frozen=True)
@@ -101,33 +105,68 @@ class VisualTransactionExecutor:
             return None
         return best
 
-    def sell_manifest_item(self, item: PurchasedItem) -> VerifiedAction:
-        """Sell only a visible inventory icon matching the purchased fingerprint."""
+    def sell_manifest_batch(
+        self,
+        fingerprint: ItemFingerprint,
+        quantity: int = RESALE_BATCH_SIZE,
+    ) -> VerifiedAction:
+        """Place exactly ten VP into one empty own-stall slot using AUTO PRO flow."""
+        if int(quantity) != RESALE_BATCH_SIZE:
+            raise ValueError("Dọn quầy chỉ treo đúng 10 VP cho mỗi ô quầy")
         self._ensure_running()
-        match = self.find_inventory_match(item.fingerprint)
+        match = self.find_inventory_match(fingerprint)
         if match is None:
-            raise RuntimeError(
-                f"Không tìm thấy đúng vật phẩm đã mua từ trang "
-                f"{item.source_page}, ô {item.source_slot}"
-            )
+            raise RuntimeError("Không tìm thấy đúng loại VP cần treo bán trong kho")
         slot, center, distance = match
-        before = self._region()
+
+        # AUTO PRO sellItems() first opens the item, waits for dat_ban, then
+        # requires the sl10 marker before pressing the place-sale button.
         self.driver.click(*center)
-        template = self._wait_and_click(SALE_CONFIRM_TEMPLATES, timeout=5.0)
-        if not template:
+        if not self._wait_for_template(
+            "dat_ban",
+            timeout=4.0,
+            threshold=0.84,
+            search_zone=AUTO_PRO_DAT_BAN_ZONE,
+        ):
             self._cancel_dialog()
             raise RuntimeError(
-                f"Vật phẩm khớp ô kho {slot} nhưng không mở được hộp bán"
+                f"VP ở ô kho {slot} không mở được màn hình đặt bán"
             )
+        if not self._wait_for_template(
+            "sl10",
+            timeout=2.5,
+            threshold=0.82,
+            search_zone=AUTO_PRO_SL10_ZONE,
+        ):
+            self._cancel_dialog()
+            raise RuntimeError(
+                "Loại VP được manifest tính đủ 10 nhưng AUTO PRO không thấy sl10"
+            )
+
+        before = self._region()
+        self.driver.click(*AUTO_PRO_PLACE_SALE)
+        # Some warehouse groups have an additional confirmation in the old
+        # AUTO PRO flow. Click it only when it actually appears.
+        self._wait_for_template(
+            "dong_y",
+            timeout=1.2,
+            threshold=0.82,
+            search_zone=AUTO_PRO_CONFIRM_ZONE,
+            click=True,
+        )
         change = self._wait_for_change(before, timeout=6.0)
         if change < self.minimum_screen_change:
             self._cancel_dialog()
-            raise RuntimeError(f"Không xác nhận được giao dịch bán tại ô kho {slot}")
+            raise RuntimeError(f"Không xác nhận được lô bán 10 VP tại ô kho {slot}")
         self.log(
-            f"Đã bán vật phẩm khớp manifest tại ô {slot} "
-            f"(distance={distance}, change={change:.2f})"
+            f"Đã treo 10 VP vào một ô quầy "
+            f"(ô kho={slot}, distance={distance}, change={change:.2f})"
         )
-        return VerifiedAction(change, template, center)
+        return VerifiedAction(change, "sl10", center)
+
+    def sell_manifest_item(self, item: PurchasedItem) -> VerifiedAction:
+        """Backward-compatible wrapper; clear-stall resale uses ten-VP batches."""
+        return self.sell_manifest_batch(item.fingerprint, RESALE_BATCH_SIZE)
 
     def _wait_and_click(
         self,
@@ -148,6 +187,32 @@ class VisualTransactionExecutor:
                     continue
             time.sleep(0.20)
         return ""
+
+    def _wait_for_template(
+        self,
+        name: str,
+        *,
+        timeout: float,
+        threshold: float,
+        search_zone: tuple[int, int, int, int] | None = None,
+        click: bool = False,
+    ) -> bool:
+        deadline = time.monotonic() + float(timeout)
+        while time.monotonic() < deadline:
+            self._ensure_running()
+            kwargs = {
+                "threshold": float(threshold),
+                "click": bool(click),
+            }
+            if search_zone is not None:
+                kwargs["search_zone"] = search_zone
+            try:
+                if self.processor.find_image(name, **kwargs):
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.20)
+        return False
 
     def _wait_for_change(self, before, *, timeout: float) -> float:
         deadline = time.monotonic() + float(timeout)
