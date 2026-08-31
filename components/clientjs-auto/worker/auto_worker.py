@@ -58,6 +58,7 @@ def exception_frame_diagnostics(exc: BaseException) -> dict:
             rendered = "<repr failed>"
         local_values[name] = rendered[:500]
     instructions = []
+    nested_code = []
     try:
         for instruction in dis.get_instructions(frame.f_code):
             positions = getattr(instruction, "positions", None)
@@ -71,8 +72,27 @@ def exception_frame_diagnostics(exc: BaseException) -> dict:
                     "opname": instruction.opname,
                     "argrepr": instruction.argrepr,
                 })
+        for constant in frame.f_code.co_consts:
+            if not hasattr(constant, "co_code"):
+                continue
+            if abs(int(getattr(constant, "co_firstlineno", 0)) - int(tb.tb_lineno)) > 1:
+                continue
+            nested_code.append({
+                "name": constant.co_name,
+                "first_line": constant.co_firstlineno,
+                "names": list(constant.co_names),
+                "instructions": [
+                    {
+                        "offset": item.offset,
+                        "opname": item.opname,
+                        "argrepr": item.argrepr,
+                    }
+                    for item in dis.get_instructions(constant)
+                ][:80],
+            })
     except Exception:
         instructions = []
+        nested_code = []
     return {
         "source_file": frame.f_code.co_filename,
         "function": frame.f_code.co_name,
@@ -81,6 +101,7 @@ def exception_frame_diagnostics(exc: BaseException) -> dict:
         "local_values": local_values,
         "none_attributes": none_attributes,
         "instructions": instructions[:80],
+        "nested_code": nested_code,
     }
 
 
