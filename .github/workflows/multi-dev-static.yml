@@ -38,7 +38,13 @@ jobs:
               PurchasedItem,
               TransactionManifest,
           )
-          from clear_stall.detector import PageScan, StallScanner
+          from clear_stall.detector import (
+              AUTO_PRO_STALL_VIEW_COUNT,
+              PageScan,
+              StallScanner,
+              new_local_slots_for_view,
+              physical_slot_index,
+          )
           from clear_stall.workflow import ClearStallRequest, ClearStallWorkflow
 
           def fp(char: str):
@@ -65,6 +71,28 @@ jobs:
 
           a = fp('a')
           b = fp('b')
+
+          # Recovered AUTO PRO uses four eight-slot views with four-slot overlap.
+          physical = []
+          for view in range(1, AUTO_PRO_STALL_VIEW_COUNT + 1):
+              for local_slot in new_local_slots_for_view(view):
+                  physical.append(physical_slot_index(view, local_slot))
+          assert physical == list(range(1, 21)), physical
+
+          # One physical listing may be clicked repeatedly; record_purchase must
+          # accumulate rather than replace the already purchased quantity.
+          repeated = PurchasedItem(a, 1, 1, requested_quantity=8)
+          for count in range(8):
+              repeated.record_purchase(count, count + 1)
+          assert repeated.purchased_quantity == 8
+          assert repeated.inventory_before == 0
+          assert repeated.inventory_after == 8
+          try:
+              repeated.record_purchase(8, 9)
+          except RuntimeError:
+              pass
+          else:
+              raise AssertionError('purchase accumulation exceeded requested quantity')
 
           m = manifest_for((a, 7))
           assert m.sellable_total == 0
@@ -104,6 +132,8 @@ jobs:
           assert m.sellable_total == 10
           assert len(m.resale_batches()) == 1
 
+          # Diagnostic overlap inference remains available but no longer owns
+          # physical slot coverage in the production workflow.
           prev = PageScan(1, (), tuple('abcdefgh'), 'p1')
           cur1 = PageScan(2, (), tuple('bcdefghi'), 'p2')
           cur2 = PageScan(2, (), tuple('cdefghij'), 'p3')
@@ -117,12 +147,12 @@ jobs:
           with tempfile.TemporaryDirectory() as temp:
               root = Path(temp)
 
-              def workflow(profile, run_name):
+              def workflow(profile, run_name, buy_quantity=8):
                   request = ClearStallRequest(
                       profile_id=profile,
                       friend_ordinal=2,
                       stall_id=2,
-                      buy_quantity=8,
+                      buy_quantity=buy_quantity,
                       max_scan_pages=20,
                       work_dir=root / profile / run_name,
                   )
@@ -150,6 +180,34 @@ jobs:
 
               other = workflow('profile-B', 'run-1')
               assert other.manifest.purchased_total == 0
+
+              class RepeatingExecutor:
+                  def __init__(self, available):
+                      self.available = available
+                      self.clicks = 0
+
+                  def source_listing_matches(self, _item):
+                      return self.available > 0
+
+                  def purchase_listing(self, _item):
+                      self.available -= 1
+                      self.clicks += 1
+
+              full = workflow('profile-C', 'repeat-full', buy_quantity=8)
+              full_item = PurchasedItem(a, 1, 1, requested_quantity=8)
+              full.manifest.add_item(full_item)
+              full_executor = RepeatingExecutor(8)
+              assert full.execute_purchases([full_item], full_executor) == 8
+              assert full_item.purchased_quantity == 8
+              assert full_executor.clicks == 8
+
+              partial = workflow('profile-D', 'repeat-partial', buy_quantity=8)
+              partial_item = PurchasedItem(a, 1, 1, requested_quantity=8)
+              partial.manifest.add_item(partial_item)
+              partial_executor = RepeatingExecutor(3)
+              assert partial.execute_purchases([partial_item], partial_executor) == 3
+              assert partial_item.purchased_quantity == 3
+              assert partial_executor.clicks == 3
 
           print('CLEAR_STALL_STATIC_OK')
           PY
