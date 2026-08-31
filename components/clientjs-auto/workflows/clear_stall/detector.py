@@ -8,13 +8,24 @@ from typing import Any
 from .manifest import ItemFingerprint
 
 
-# Reference coordinates used by the recovered ClientJS shop flow at 1000x1000.
-# The friend stall has twenty physical slots but only eight are visible at once.
+# Reference geometry at the fixed 1000x1000 ClientJS size. The friend stall has
+# twenty physical slots but only eight are visible at once.
 TOTAL_STALL_SLOTS = 20
+
+# Crop centers stay inside the item art and avoid price/count text.
 VISIBLE_SLOT_CENTERS = (
     (300, 456), (432, 456), (565, 456), (698, 456),
     (300, 647), (432, 647), (565, 647), (698, 647),
 )
+
+# Exact direct-purchase click points recovered from ADBController.GoFiendHome.
+# Keep these separate from crop centers: AUTO PRO deliberately clicks slightly
+# above the icon center while image detection uses a broader item region.
+FRIEND_PURCHASE_CLICK_CENTERS = (
+    (290, 435), (423, 432), (554, 435), (690, 435),
+    (288, 628), (431, 632), (555, 622), (683, 625),
+)
+
 VISIBLE_STALL_SLOTS = len(VISIBLE_SLOT_CENTERS)
 ICON_HALF_WIDTH = 42
 ICON_HALF_HEIGHT = 42
@@ -78,7 +89,9 @@ class StallScanner:
             cy1 = max(0, center_y - CELL_HALF_HEIGHT)
             cy2 = min(height, center_y + CELL_HALF_HEIGHT)
             cell = frame[cy1:cy2, cx1:cx2].copy()
-            signatures.append(_visual_signature(cell, occupied=score >= self.empty_threshold))
+            signatures.append(
+                _visual_signature(cell, occupied=score >= self.empty_threshold)
+            )
 
             if score < self.empty_threshold:
                 continue
@@ -143,7 +156,10 @@ def _occupancy_score(image: Any) -> float:
     """Use luminance spread as a conservative empty-slot rejection signal."""
     try:
         import cv2
-        channels = getattr(image, "shape", (0, 0, 0))[2] if len(image.shape) >= 3 else 1
+        channels = (
+            getattr(image, "shape", (0, 0, 0))[2]
+            if len(image.shape) >= 3 else 1
+        )
         conversion = cv2.COLOR_BGRA2GRAY if channels == 4 else cv2.COLOR_BGR2GRAY
         gray = cv2.cvtColor(image, conversion)
         return float(gray.std())
@@ -151,14 +167,20 @@ def _occupancy_score(image: Any) -> float:
         raw = image.tobytes()
         if not raw:
             return 0.0
-        pixels = max(1, int(getattr(image, "shape", (1, 1))[0]) * int(getattr(image, "shape", (1, 1))[1]))
+        pixels = max(
+            1,
+            int(getattr(image, "shape", (1, 1))[0])
+            * int(getattr(image, "shape", (1, 1))[1]),
+        )
         channels = max(1, len(raw) // pixels)
         luminance = []
         for offset in range(0, len(raw) - max(2, channels - 1), channels):
             blue = raw[offset]
             green = raw[offset + 1] if channels > 1 else blue
             red = raw[offset + 2] if channels > 2 else green
-            luminance.append((int(red) * 30 + int(green) * 59 + int(blue) * 11) // 100)
+            luminance.append(
+                (int(red) * 30 + int(green) * 59 + int(blue) * 11) // 100
+            )
         average = sum(luminance) / max(1, len(luminance))
         variance = sum((value - average) ** 2 for value in luminance) / max(
             1, len(luminance)
@@ -183,7 +205,10 @@ def _visual_signature(image: Any, *, occupied: bool) -> str:
         return prefix + f"{bits:064x}"
     except Exception:
         prefix = b"o" if occupied else b"e"
-        return (prefix + hashlib.sha256(image.tobytes()).hexdigest().encode("ascii")[:64]).decode("ascii")
+        return (
+            prefix
+            + hashlib.sha256(image.tobytes()).hexdigest().encode("ascii")[:64]
+        ).decode("ascii")
 
 
 def _save_image(path: Path, image: Any) -> None:
