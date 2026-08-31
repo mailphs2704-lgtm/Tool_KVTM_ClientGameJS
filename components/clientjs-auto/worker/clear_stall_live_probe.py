@@ -93,7 +93,7 @@ def main() -> int:
     adapter = None
     forward_swipes = 0
     report: dict[str, object] = {
-        "version": 2,
+        "version": 3,
         "mode": "read_only_live_probe",
         "profile_id": args.profile_id,
         "profile_name": args.profile_name,
@@ -101,6 +101,7 @@ def main() -> int:
         "friend_ordinal": args.friend_ordinal,
         "stall_id": args.stall_id,
         "started_at": time.time(),
+        "checkpoints": [],
         "stages": [],
         "views": [],
     }
@@ -111,16 +112,21 @@ def main() -> int:
             encoding="utf-8",
         )
 
+    def checkpoint(stage: str, **details) -> None:
+        entry = {"stage": str(stage), "at": time.time(), **details}
+        report["checkpoints"].append(entry)
+        report["last_stage"] = str(stage)
+        persist_report()
+        emit("probe_boot", stage=str(stage), **details)
+
     def log(message: str) -> None:
         emit("probe_progress", message=str(message))
 
-    def capture_stage(stage: str):
-        if adapter is None:
-            return None
-        frame = adapter.screenshot()
+    def capture_driver(stage: str, driver):
+        checkpoint(f"{stage}-capture-start")
+        frame = driver.screenshot(format="opencv")
         height, width = frame.shape[:2]
-        index = len(report["stages"])
-        capture_path = work_dir / f"stage-{index:02d}-{stage}.png"
+        capture_path = work_dir / f"stage-{len(report['stages']):02d}-{stage}.png"
         save_frame(capture_path, frame)
         entry = {
             "stage": stage,
@@ -139,42 +145,81 @@ def main() -> int:
         )
         return frame
 
+    def capture_stage(stage: str):
+        if adapter is None:
+            return None
+        return capture_driver(stage, adapter.driver)
+
     try:
-        emit("probe_boot", stage="loading_auto_pro_runtime")
+        # Persist every blocking boundary before entering it. This makes a
+        # stopped probe diagnostically useful even when no AUTO PRO object was
+        # fully constructed yet.
+        checkpoint("loading-auto-pro-runtime")
         automation_module = install_headless_clientjs_runtime(
             Path(args.auto_root).resolve()
         )
-        emit("probe_boot", stage="constructing_controller")
+        checkpoint("auto-pro-runtime-loaded")
+
+        # Always capture the real GameClientJS window before engine injection.
+        # This is deliberately independent from ADBController/ImageProcessor.
+        checkpoint("raw-window-driver-constructing")
+        from pc_driver import PCDriver
+        raw_driver = PCDriver(args.pid, reference_size=(1000, 1000))
+        checkpoint("raw-window-driver-ready")
+        capture_driver("raw-window", raw_driver)
+
+        # Build the Cocos EngineDriver exactly once. ADBController normally
+        # reaches it through uiautomator2.connect("PC:<pid>"). Reusing this
+        # preconnected instance prevents duplicate profile lookup / bridge
+        # injection during FarmAutomation construction.
+        checkpoint("engine-driver-constructing")
+        from engine_driver import EngineDriver
+        engine_driver = EngineDriver(args.pid, reference_size=(1000, 1000))
+        checkpoint("engine-driver-ready")
+        capture_driver("engine-driver", engine_driver)
+
+        import uiautomator2 as u2
+        previous_connect = u2.connect
+        wanted_device = f"PC:{args.pid}"
+
+        def reuse_connect(device_id=None, *connect_args, **connect_kwargs):
+            if str(device_id or "") == wanted_device:
+                return engine_driver
+            return previous_connect(device_id, *connect_args, **connect_kwargs)
+
+        u2.connect = reuse_connect
+        checkpoint("preconnected-driver-bound")
+
+        checkpoint("farm-automation-constructing")
         automation = automation_module.FarmAutomation(
-            f"PC:{args.pid}",
+            wanted_device,
             136,
             gui_ref=GuiProxy(),
             options={},
             skip_items=[],
         )
+        checkpoint("farm-automation-constructed")
         adapter = AutoProNavigationAdapter(
             automation,
             stop_event=stop_event,
             logger=log,
         )
-        emit("probe_boot", stage="controller_ready")
+        checkpoint("controller-ready")
         capture_stage("controller-ready")
 
-        emit("probe_boot", stage="starting_autopro_popup_guard")
+        checkpoint("starting-autopro-popup-guard")
         adapter.start_auto_pro_popup_guard()
 
-        # Do not wait silently for three minutes. Auto Pro owns popup handling;
-        # probe only gives it a short deterministic window to reach main screen.
-        emit("probe_boot", stage="waiting_main_screen")
+        checkpoint("waiting-main-screen")
         adapter.ensure_main_screen(timeout=45.0)
         capture_stage("main-screen")
 
         adapter.configure_target(args.friend_ordinal, args.stall_id)
-        emit("probe_boot", stage="navigating_friend")
+        checkpoint("navigating-friend")
         adapter.go_to_friend_home(args.friend_ordinal, verify=False)
         capture_stage("friend-home")
 
-        emit("probe_boot", stage="opening_friend_stall")
+        checkpoint("opening-friend-stall")
         adapter.open_target_stall(args.stall_id, verify=False)
         capture_stage("stall-open")
 
@@ -186,6 +231,7 @@ def main() -> int:
             if stop_event.is_set():
                 raise InterruptedError("Live probe da duoc yeu cau dung")
 
+            checkpoint(f"scanning-view-{view:02d}")
             frame = adapter.screenshot()
             height, width = frame.shape[:2]
             capture_path = work_dir / f"view-{view:02d}.png"
