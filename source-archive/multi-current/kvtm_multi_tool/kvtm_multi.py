@@ -466,6 +466,12 @@ def load_settings() -> dict:
     nang_kho_profiles = (
         raw_nang_kho_profiles if isinstance(raw_nang_kho_profiles, dict) else {}
     )
+    raw_clear_stall_jobs = (
+        saved.get("clear_stall_jobs", {}) if isinstance(saved, dict) else {}
+    )
+    clear_stall_jobs = (
+        raw_clear_stall_jobs if isinstance(raw_clear_stall_jobs, dict) else {}
+    )
     tuning = dict(DEFAULT_AUTO_TUNING)
     if isinstance(raw_tuning, dict):
         for key, default in DEFAULT_AUTO_TUNING.items():
@@ -487,6 +493,7 @@ def load_settings() -> dict:
         "auto_delete_profiles": delete_profiles,
         "auto_quay_he_profiles": quay_he_profiles,
         "auto_nang_kho_profiles": nang_kho_profiles,
+        "clear_stall_jobs": clear_stall_jobs,
     }
 
 
@@ -987,50 +994,82 @@ class MultiApp(tk.Tk):
             clear_stall_header, text="DỌN QUẦY CLIENTJS",
             style="AutoKey.TLabel",
         ).pack(side="left")
-        self.auto_clear_stall_status = tk.StringVar(value="CHƯA NỐI WORKER")
-        tk.Label(
-            clear_stall_header, textvariable=self.auto_clear_stall_status,
-            background="#fff3cd", foreground="#8a5a00",
-            font=("Segoe UI Semibold", 8), padx=8, pady=3,
-        ).pack(side="right")
+        self.auto_clear_stall_context = tk.StringVar(value="Chọn tài khoản clone")
+        ttk.Label(
+            clear_stall_header, textvariable=self.auto_clear_stall_context,
+            style="AutoValue.TLabel", anchor="e",
+        ).pack(side="right", fill="x", expand=True, padx=(18, 0))
         ttk.Separator(clear_stall_tab, orient="horizontal").pack(
-            fill="x", padx=8, pady=(6, 7)
+            fill="x", padx=8, pady=(6, 6)
         )
         clear_stall_body = ttk.Frame(clear_stall_tab, style="Detail.TFrame")
         clear_stall_body.pack(fill="x", padx=8)
-        clear_stall_items = (
-            ("CHU KỲ", "65 phút"),
-            ("KÍCH HOẠT CLIENT", "Chỉ mở clone khi đến lịch"),
-            ("ACC CHÍNH", "Bạn bè số N • không cần PID"),
-            ("AN TOÀN", "Không chắc chắn → dừng"),
+        self.auto_clear_stall_enabled = tk.BooleanVar(value=False)
+        self.auto_clear_stall_enabled_button = self._make_toggle_button(
+            clear_stall_body, "Bật lịch Dọn quầy",
+            self.auto_clear_stall_enabled, self._save_clear_stall_config,
         )
-        for column, (title, value) in enumerate(clear_stall_items):
-            card = tk.Frame(
-                clear_stall_body, background="#f5f8fc",
-                highlightthickness=1, highlightbackground="#d8e2ef",
-                padx=9, pady=6,
-            )
-            card.grid(
-                row=0, column=column, sticky="nsew",
-                padx=(0 if column == 0 else 4, 0),
-            )
-            clear_stall_body.columnconfigure(column, weight=1)
-            tk.Label(
-                card, text=title, background="#f5f8fc", foreground="#64748b",
-                font=("Segoe UI Semibold", 8), anchor="w",
-            ).pack(fill="x")
-            tk.Label(
-                card, text=value, background="#f5f8fc", foreground="#17233b",
-                font=("Segoe UI", 9), anchor="w",
-            ).pack(fill="x", pady=(3, 0))
+        self.auto_clear_stall_enabled_button.grid(
+            row=0, column=0, sticky="w", padx=(0, 10)
+        )
         ttk.Label(
-            clear_stall_tab,
-            text=(
-                "Tham khảo GoFiendHome/Function 170 • Clone tìm acc chính theo "
-                "số thứ tự bạn bè và xác nhận đúng nhà trước khi dọn quầy."
-            ),
+            clear_stall_body, text="Bạn bè số:", style="AutoValue.TLabel"
+        ).grid(row=0, column=1, sticky="e", padx=(0, 5))
+        self.auto_clear_stall_friend = tk.IntVar(value=1)
+        self.auto_clear_stall_friend_spin = ttk.Spinbox(
+            clear_stall_body, from_=1, to=500, width=5,
+            textvariable=self.auto_clear_stall_friend,
+            command=self._save_clear_stall_config,
+        )
+        self.auto_clear_stall_friend_spin.grid(row=0, column=2, sticky="w", padx=(0, 10))
+        ttk.Label(
+            clear_stall_body, text="Quầy:", style="AutoValue.TLabel"
+        ).grid(row=0, column=3, sticky="e", padx=(0, 5))
+        self.auto_clear_stall_stall = tk.IntVar(value=2)
+        self.auto_clear_stall_stall_spin = ttk.Spinbox(
+            clear_stall_body, from_=1, to=4, width=4,
+            textvariable=self.auto_clear_stall_stall,
+            command=self._save_clear_stall_config,
+        )
+        self.auto_clear_stall_stall_spin.grid(row=0, column=4, sticky="w", padx=(0, 10))
+        ttk.Label(
+            clear_stall_body, text="Chu kỳ:", style="AutoValue.TLabel"
+        ).grid(row=0, column=5, sticky="e", padx=(0, 5))
+        self.auto_clear_stall_interval = tk.IntVar(value=65)
+        self.auto_clear_stall_interval_spin = ttk.Spinbox(
+            clear_stall_body, from_=5, to=1440, width=6,
+            textvariable=self.auto_clear_stall_interval,
+            command=self._save_clear_stall_config,
+        )
+        self.auto_clear_stall_interval_spin.grid(row=0, column=6, sticky="w")
+        ttk.Label(
+            clear_stall_body, text="phút", style="AutoValue.TLabel"
+        ).grid(row=0, column=7, sticky="w", padx=(4, 10))
+        self.auto_clear_stall_close = tk.BooleanVar(value=True)
+        self.auto_clear_stall_close_button = self._make_toggle_button(
+            clear_stall_body, "Đóng clone sau khi xong",
+            self.auto_clear_stall_close, self._save_clear_stall_config,
+        )
+        self.auto_clear_stall_close_button.grid(row=0, column=8, sticky="w")
+        for widget in (
+            self.auto_clear_stall_friend_spin,
+            self.auto_clear_stall_stall_spin,
+            self.auto_clear_stall_interval_spin,
+        ):
+            widget.bind(
+                "<FocusOut>", lambda _event: self._save_clear_stall_config(), add="+"
+            )
+            widget.bind(
+                "<Return>", lambda _event: self._save_clear_stall_config(), add="+"
+            )
+        self.auto_clear_stall_status = tk.StringVar(
+            value="Chưa chọn clone • Chưa nối scheduler/worker"
+        )
+        ttk.Label(
+            clear_stall_tab, textvariable=self.auto_clear_stall_status,
             style="AutoValue.TLabel", anchor="w",
-        ).pack(fill="x", padx=8, pady=(7, 0))
+        ).pack(fill="x", padx=8, pady=(8, 0))
+        self._clear_stall_refreshing = False
 
         nang_kho_tab = self.auto_feature_tabs["upgrade_storage"]
         nang_kho_header = ttk.Frame(nang_kho_tab, style="Detail.TFrame")
@@ -1299,6 +1338,143 @@ class MultiApp(tk.Tk):
             key: tuning.get(key, default)
             for key, default in DEFAULT_AUTO_TUNING.items()
         }
+
+    def _clear_stall_profile(self) -> tuple[str | None, dict | None]:
+        profile_id = self._active_profile_id
+        if not profile_id:
+            ids = self.selected_ids()
+            profile_id = ids[0] if len(ids) == 1 else None
+        profile = next(
+            (p for p in self.profiles if p.get("id") == profile_id), None
+        )
+        return profile_id, profile
+
+    def _refresh_clear_stall_panel(self) -> None:
+        if not hasattr(self, "auto_clear_stall_enabled_button"):
+            return
+        self._clear_stall_refreshing = True
+        try:
+            profile_id, profile = self._clear_stall_profile()
+            state = "normal" if profile else "disabled"
+            for widget in (
+                self.auto_clear_stall_enabled_button,
+                self.auto_clear_stall_friend_spin,
+                self.auto_clear_stall_stall_spin,
+                self.auto_clear_stall_interval_spin,
+                self.auto_clear_stall_close_button,
+            ):
+                widget.configure(state=state)
+            if not profile:
+                self.auto_clear_stall_enabled.set(False)
+                self.auto_clear_stall_friend.set(1)
+                self.auto_clear_stall_stall.set(2)
+                self.auto_clear_stall_interval.set(65)
+                self.auto_clear_stall_close.set(True)
+                self.auto_clear_stall_context.set("Chọn tài khoản clone")
+                self.auto_clear_stall_status.set(
+                    "Chưa chọn clone • Chưa nối scheduler/worker"
+                )
+                return
+            jobs = self.settings.setdefault("clear_stall_jobs", {})
+            saved = jobs.get(profile_id, {})
+            if not isinstance(saved, dict):
+                saved = {}
+            try:
+                friend = max(1, min(500, int(saved.get("target_friend_ordinal", 1))))
+            except (TypeError, ValueError):
+                friend = 1
+            try:
+                stall = max(1, min(4, int(saved.get("target_stall_id", 2))))
+            except (TypeError, ValueError):
+                stall = 2
+            try:
+                interval = max(5, min(1440, int(saved.get("interval_minutes", 65))))
+            except (TypeError, ValueError):
+                interval = 65
+            self.auto_clear_stall_enabled.set(bool(saved.get("enabled", False)))
+            self.auto_clear_stall_friend.set(friend)
+            self.auto_clear_stall_stall.set(stall)
+            self.auto_clear_stall_interval.set(interval)
+            self.auto_clear_stall_close.set(
+                bool(saved.get("close_client_after_run", True))
+            )
+            self.auto_clear_stall_context.set(
+                f"Clone: {profile.get('name') or profile_id}"
+            )
+            next_run = float(saved.get("next_run_at", 0) or 0)
+            if bool(saved.get("enabled", False)) and next_run > 0:
+                next_text = time.strftime("%d/%m %H:%M:%S", time.localtime(next_run))
+                self.auto_clear_stall_status.set(
+                    f"Đã lưu lịch • Lần tới {next_text} • Chưa nối worker"
+                )
+            else:
+                self.auto_clear_stall_status.set(
+                    "Mặc định OFF • Cấu hình đã sẵn sàng cho scheduler"
+                )
+        finally:
+            self._clear_stall_refreshing = False
+
+    def _save_clear_stall_config(self) -> None:
+        if getattr(self, "_clear_stall_refreshing", False):
+            return
+        profile_id, profile = self._clear_stall_profile()
+        if not profile_id or not profile:
+            return
+        try:
+            friend = max(1, min(500, int(self.auto_clear_stall_friend.get())))
+            stall = max(1, min(4, int(self.auto_clear_stall_stall.get())))
+            interval = max(5, min(1440, int(self.auto_clear_stall_interval.get())))
+        except (tk.TclError, TypeError, ValueError):
+            friend, stall, interval = 1, 2, 65
+        self.auto_clear_stall_friend.set(friend)
+        self.auto_clear_stall_stall.set(stall)
+        self.auto_clear_stall_interval.set(interval)
+        jobs = self.settings.setdefault("clear_stall_jobs", {})
+        previous = jobs.get(profile_id, {})
+        if not isinstance(previous, dict):
+            previous = {}
+        enabled = bool(self.auto_clear_stall_enabled.get())
+        previous_enabled = bool(previous.get("enabled", False))
+        try:
+            previous_interval = int(
+                previous.get("interval_minutes", interval) or interval
+            )
+        except (TypeError, ValueError):
+            previous_interval = interval
+        try:
+            next_run = float(previous.get("next_run_at", 0) or 0)
+        except (TypeError, ValueError):
+            next_run = 0
+        if enabled and (
+            not previous_enabled or previous_interval != interval or next_run <= 0
+        ):
+            next_run = time.time() + interval * 60
+        elif not enabled:
+            next_run = 0
+        jobs[profile_id] = {
+            "schema_version": 1,
+            "job_id": str(previous.get("job_id") or f"clear-stall-{profile_id}"),
+            "clone_profile_id": profile_id,
+            "target_mode": "friend_ordinal",
+            "target_friend_ordinal": friend,
+            "target_stall_id": stall,
+            "interval_minutes": interval,
+            "next_run_at": next_run,
+            "close_client_after_run": bool(self.auto_clear_stall_close.get()),
+            "enabled": enabled,
+            "last_checkpoint": str(previous.get("last_checkpoint") or "WAITING"),
+            "last_result": previous.get("last_result"),
+        }
+        save_settings(self.settings)
+        if enabled:
+            next_text = time.strftime("%d/%m %H:%M:%S", time.localtime(next_run))
+            self.auto_clear_stall_status.set(
+                f"Đã lưu lịch • Lần tới {next_text} • Chưa nối worker"
+            )
+        else:
+            self.auto_clear_stall_status.set(
+                "Đã lưu • Dọn quầy đang OFF • Chưa nối worker"
+            )
 
     def _redraw_auto_nang_kho_types(self) -> None:
         selected = self.auto_nang_kho_type.get()
@@ -2171,6 +2347,7 @@ class MultiApp(tk.Tk):
         self._refresh_auto_delete_panel()
         self._refresh_auto_quay_he_panel()
         self._refresh_auto_nang_kho_panel()
+        self._refresh_clear_stall_panel()
 
     def _show_account_details(self, profile_id: str | None) -> None:
         profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
@@ -2244,6 +2421,7 @@ class MultiApp(tk.Tk):
             self._active_profile_id = None
         self._show_account_details(self._active_profile_id)
         self._refresh_auto_target()
+        self._refresh_clear_stall_panel()
 
     def _prepare_dwm(self):
         dwm = ctypes.windll.dwmapi
