@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterable
 
 
 class AutoProNavigationAdapter:
-    """Safe compatibility layer around recovered AUTO PRO navigation methods."""
+    """Compatibility layer around recovered AUTO PRO navigation methods."""
 
     FRIEND_METHODS = (
         "GoFiendHome",  # spelling used by the recovered AUTO PRO build
@@ -47,13 +47,53 @@ class AutoProNavigationAdapter:
             raise RuntimeError("ADBController không có driver ClientJS")
         self.stop_event = stop_event
         self.log = logger
+        self._popup_guard_thread: threading.Thread | None = None
+        # AUTO PRO methods also consult this controller-owned event directly.
+        try:
+            setattr(self.controller, "_stop_event", self.stop_event)
+        except Exception:
+            pass
+
+    def start_auto_pro_popup_guard(self) -> bool:
+        """Run AUTO PRO's original event/popup handler in the background."""
+        method = getattr(self.controller, "eventgame", None)
+        if not callable(method):
+            self.log("AUTO PRO không có eventgame; bỏ qua popup guard")
+            return False
+        thread = self._popup_guard_thread
+        if thread is not None and thread.is_alive():
+            return True
+
+        def runner() -> None:
+            while not self.stop_event.is_set():
+                try:
+                    self._invoke(method, {"stop_event": self.stop_event})
+                except InterruptedError:
+                    return
+                except Exception as exc:
+                    if self.stop_event.is_set():
+                        return
+                    self.log(f"Popup guard Auto Pro tạm dừng: {exc}")
+                    time.sleep(1.0)
+                else:
+                    # Some recovered builds return after one sweep while others
+                    # keep eventgame alive internally. Re-run only when it returns.
+                    time.sleep(0.35)
+
+        self._popup_guard_thread = threading.Thread(
+            target=runner,
+            name="autopro-popup-guard",
+            daemon=True,
+        )
+        self._popup_guard_thread.start()
+        self.log("Đã bật cơ chế bỏ popup gốc của Auto Pro (eventgame)")
+        return True
 
     def ensure_main_screen(self, timeout: float = 180.0) -> None:
-        """Wait through ClientJS login/intermediate popups before navigation."""
-        started = time.monotonic()
-        deadline = started + float(timeout)
+        """Reach the main screen while AUTO PRO eventgame owns popup handling."""
+        self.start_auto_pro_popup_guard()
+        deadline = time.monotonic() + float(timeout)
         last_progress = 0.0
-        last_back = 0.0
         while time.monotonic() < deadline:
             self._ensure_running()
             if self._find_any(("friend_off", "icon_home")):
@@ -61,57 +101,36 @@ class AutoProNavigationAdapter:
                 return
 
             clicked = False
-            for name in ("close_game", "close", "dong", "huy"):
-                try:
-                    if self.controller.image_processor.find_image(
-                        name, threshold=0.80, click=True
-                    ):
-                        self.log(f"Đã đóng popup: {name}")
-                        clicked = True
-                        break
-                except Exception:
-                    continue
-            if not clicked:
-                try:
-                    if self.controller.image_processor.find_image(
-                        "tai_khoan", threshold=0.82, click=True
-                    ):
-                        self.driver.click(984, 341)
-                        self.log("Đã chọn tài khoản ClientJS")
-                        clicked = True
-                    elif self.controller.image_processor.find_image(
-                        "tai_khoan_on", threshold=0.82, click=False
-                    ):
-                        self.driver.click(981, 338)
-                        self.log("Đã chọn tài khoản đang online")
-                        clicked = True
-                    elif self.controller.image_processor.find_image(
-                        "icon_game", threshold=0.80, click=True
-                    ):
-                        self.log("Đã mở game từ màn hình trung gian")
-                        clicked = True
-                except Exception:
-                    pass
+            # Keep only AUTO PRO's account/game-entry actions here. Event/news
+            # popups are deliberately delegated to controller.eventgame().
+            try:
+                if self.controller.image_processor.find_image(
+                    "tai_khoan", threshold=0.82, click=True
+                ):
+                    self.driver.click(984, 341)
+                    self.log("Đã chọn tài khoản ClientJS")
+                    clicked = True
+                elif self.controller.image_processor.find_image(
+                    "tai_khoan_on", threshold=0.82, click=False
+                ):
+                    self.driver.click(981, 338)
+                    self.log("Đã chọn tài khoản đang online")
+                    clicked = True
+                elif self.controller.image_processor.find_image(
+                    "icon_game", threshold=0.80, click=True
+                ):
+                    self.log("Đã mở game từ màn hình trung gian")
+                    clicked = True
+            except Exception:
+                pass
 
             now = time.monotonic()
-            if (
-                not clicked
-                and now - started >= 12.0
-                and now - last_back >= 5.0
-            ):
-                press_back = getattr(self.controller, "press_back", None)
-                if callable(press_back):
-                    try:
-                        self._invoke(
-                            press_back, {"stop_event": self.stop_event}
-                        )
-                        self.log("Đã gửi Back để đóng popup chưa có template")
-                        last_back = now
-                    except Exception:
-                        pass
             if now - last_progress >= 5.0:
                 remaining = max(0, int(deadline - now))
-                self.log(f"Đang chờ màn hình chính ClientJS • còn {remaining}s")
+                self.log(
+                    "Auto Pro đang xử lý màn hình vào game/popup • "
+                    f"còn {remaining}s"
+                )
                 last_progress = now
             time.sleep(0.7 if clicked else 1.0)
         raise RuntimeError(
