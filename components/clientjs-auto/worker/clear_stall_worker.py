@@ -94,6 +94,11 @@ def main() -> int:
             workflow="clear_stall_python",
             stage="loading_auto_pro_runtime",
         )
+        # BUILD_FULL_PACKAGE already ships the synchronized runtime.
+        # Avoid rescanning/copying the complete PyInstaller tree for every
+        # independent Dọn quầy worker.
+        import os
+        os.environ["KVTM_SKIP_RUNTIME_SYNC"] = "1"
         automation_module = install_clientjs_runtime(
             Path(args.auto_root).resolve()
         )
