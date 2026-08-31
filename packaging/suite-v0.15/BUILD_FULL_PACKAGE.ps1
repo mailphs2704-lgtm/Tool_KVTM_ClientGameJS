@@ -60,22 +60,22 @@ function Resolve-AutoProLfsRuntime {
         return
     }
 
-    Write-Host ("Git LFS: phát hiện {0} runtime pointer, đang lấy object thật..." -f $pointers.Count) -ForegroundColor Yellow
+    Write-Host ("Git LFS: found {0} runtime pointers; resolving real objects..." -f $pointers.Count) -ForegroundColor Yellow
 
     $gitCommand = Get-Command git -ErrorAction SilentlyContinue
     if ($null -eq $gitCommand) {
-        throw "Runtime AUTO PRO còn Git LFS pointer nhưng máy không có git để tự phục hồi."
+        throw "AUTO PRO runtime still contains Git LFS pointers and git is unavailable."
     }
 
     Push-Location $RepoRoot
     try {
         & git lfs version | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            throw "Git LFS chưa sẵn sàng."
+            throw "Git LFS is not available."
         }
         & git lfs pull
         if ($LASTEXITCODE -ne 0) {
-            throw "git lfs pull thất bại."
+            throw "git lfs pull failed."
         }
     }
     finally {
@@ -86,16 +86,16 @@ function Resolve-AutoProLfsRuntime {
     if ($remaining.Count -gt 0) {
         $sample = ($remaining | Select-Object -First 12 | ForEach-Object { $_.FullName }) -join "`n  - "
         throw (
-            "Không thể đóng gói: còn {0} Git LFS pointer trong AUTO PRO runtime.`n  - {1}" -f
+            "Cannot package: {0} Git LFS pointers remain in AUTO PRO runtime.`n  - {1}" -f
             $remaining.Count, $sample
         )
     }
 
-    Write-Host "Git LFS runtime VERIFIED: toàn bộ pointer đã được thay bằng object thật" -ForegroundColor Green
+    Write-Host "Git LFS runtime VERIFIED: all tracked files are real objects" -ForegroundColor Green
 }
 
 # The recovered AUTO PRO runtime is intentionally tracked with Git LFS. Never
-# allow a 128-byte pointer text file to be copied into a distributable package.
+# allow pointer text files to be copied into a distributable package.
 Resolve-AutoProLfsRuntime
 
 # Preserve isolated DEV data before replacing the fixed package. Prefer the
@@ -152,10 +152,10 @@ foreach ($required in @(
     (Join-Path $ClientJsAutoSource "workflows\clear_stall\workflow.py")
 )) {
     if (-not (Test-Path -LiteralPath $required)) {
-        throw "Thieu file bat buoc trong repo: $required"
+        throw "Missing required repository file: $required"
     }
     if (Test-GitLfsPointer -Path $required) {
-        throw "File bắt buộc vẫn là Git LFS pointer, không phải runtime thật: $required"
+        throw "Required file is still a Git LFS pointer: $required"
     }
 }
 
@@ -176,7 +176,7 @@ $packagedPointers = @(Get-GitLfsPointers -Root $AutoOut)
 if ($packagedPointers.Count -gt 0) {
     $sample = ($packagedPointers | Select-Object -First 12 | ForEach-Object { $_.FullName }) -join "`n  - "
     throw (
-        "Đóng gói bị chặn: AUTO_PRO output còn {0} Git LFS pointer.`n  - {1}" -f
+        "Package blocked: AUTO_PRO output still contains {0} Git LFS pointers.`n  - {1}" -f
         $packagedPointers.Count, $sample
     )
 }
@@ -194,7 +194,7 @@ $PatchFiles = @(
 foreach ($name in $PatchFiles) {
     $source = Join-Path $PatchSource $name
     if (-not (Test-Path -LiteralPath $source)) {
-        throw "Thieu file adapter ClientJS: $source"
+        throw "Missing ClientJS adapter file: $source"
     }
     Copy-Item -LiteralPath $source -Destination (Join-Path $AutoOut $name) -Force
 }
@@ -231,10 +231,10 @@ $checks = @(
 )
 foreach ($file in $checks) {
     if (-not (Test-Path -LiteralPath $file)) {
-        throw "Dong goi khong day du: $file"
+        throw "Incomplete package: $file"
     }
     if (Test-GitLfsPointer -Path $file) {
-        throw "Dong goi chứa Git LFS pointer thay vì dữ liệu thật: $file"
+        throw "Package contains Git LFS pointer instead of real data: $file"
     }
 }
 
