@@ -41,7 +41,10 @@ def sync_pyinstaller_package_files():
             pass
     return copied
 
-sync_pyinstaller_package_files()
+if os.environ.get("KVTM_SKIP_RUNTIME_SYNC", "").strip().lower() not in {
+    "1", "true", "yes", "on"
+}:
+    sync_pyinstaller_package_files()
 
 # Make recovered bytecode and bundled native dependencies importable.
 sys.path.insert(0, str(PYC))
