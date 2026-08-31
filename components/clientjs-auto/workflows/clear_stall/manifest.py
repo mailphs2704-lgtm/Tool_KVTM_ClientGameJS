@@ -97,15 +97,17 @@ class PurchasedItem:
         return item
 
     def record_purchase(self, before: int, after: int) -> None:
+        """Accumulate direct buys while one friend-stall listing remains visible."""
         before_value, after_value = int(before), int(after)
         delta = after_value - before_value
         if delta <= 0:
             raise RuntimeError("Không xác nhận được số lượng vật phẩm vừa mua")
-        if delta > self.requested_quantity:
+        if self.purchased_quantity + delta > self.requested_quantity:
             raise RuntimeError("Số lượng tăng vượt mức đã yêu cầu")
-        self.inventory_before = before_value
+        if self.inventory_before is None:
+            self.inventory_before = before_value
         self.inventory_after = after_value
-        self.purchased_quantity = delta
+        self.purchased_quantity += delta
 
     @property
     def remaining_to_sell(self) -> int:
