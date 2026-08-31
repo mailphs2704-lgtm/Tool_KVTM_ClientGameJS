@@ -322,7 +322,7 @@ def main() -> int:
             args.function_id,
             gui_ref=proxy,
             options=auto_options,
-            skip_items=skip_items or None,
+            skip_items=skip_items,
             auto_nang_kho_type=auto_nang_kho_type,
             auto_nang_kho_time_hours=auto_nang_kho_time_hours,
             auto_nang_kho_balance=auto_nang_kho_balance,
