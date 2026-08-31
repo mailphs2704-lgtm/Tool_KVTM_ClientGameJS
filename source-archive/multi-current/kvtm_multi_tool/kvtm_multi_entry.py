@@ -202,7 +202,9 @@ class MultiApp(core.MultiApp):
             )
 
     def _on_close(self) -> None:
-        """Never leave a headless Dọn quầy worker behind when Multi exits."""
+        """Stop Dọn quầy workers and only the clones owned by those runs."""
+        active_profiles = set(self._clear_stall_workers)
+        active_profiles.update(self._clear_stall_starting)
         for worker in list(self._clear_stall_workers.values()):
             try:
                 if worker.poll() is not None:
@@ -217,6 +219,14 @@ class MultiApp(core.MultiApp):
             except (OSError, ValueError):
                 pass
         self._clear_stall_workers.clear()
+        self._clear_stall_starting.clear()
+        for profile_id in active_profiles:
+            proc = self.processes.get(profile_id)
+            try:
+                if proc and proc.poll() is None:
+                    proc.terminate()
+            except OSError:
+                pass
         super()._on_close()
 
 
