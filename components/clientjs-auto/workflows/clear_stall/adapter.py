@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
+import sys
 import threading
 import time
 from typing import Any, Callable, Iterable
@@ -30,6 +32,12 @@ class AutoProNavigationAdapter:
         "openShop",
         "OpenShop",
     )
+    # ClientJS has newer skins for the generic popup close button. The old
+    # AUTO PRO template still points to the correct shape, but its color/size
+    # can score below the original 0.80 threshold. This fallback uses that
+    # same template at several scales and only while recovering main screen.
+    POPUP_FALLBACK_THRESHOLD = 0.58
+    POPUP_FALLBACK_SCALES = (0.75, 0.80, 0.85, 0.90, 1.00, 1.10, 1.20, 1.30)
 
     def __init__(
         self,
@@ -48,6 +56,7 @@ class AutoProNavigationAdapter:
         self.stop_event = stop_event
         self.log = logger
         self._popup_guard_thread: threading.Thread | None = None
+        self._popup_template_cache: Path | None = None
         try:
             setattr(self.controller, "_stop_event", self.stop_event)
         except Exception:
@@ -81,6 +90,110 @@ class AutoProNavigationAdapter:
         self.log("Đã bật cơ chế bỏ popup gốc của Auto Pro (eventgame)")
         return True
 
+    def _popup_template_path(self) -> Path | None:
+        cached = self._popup_template_cache
+        if cached is not None and cached.is_file():
+            return cached
+        candidates = [Path.cwd()]
+        for value in sys.path:
+            try:
+                path = Path(value)
+            except (TypeError, ValueError):
+                continue
+            if path not in candidates:
+                candidates.append(path)
+        for root in candidates:
+            candidate = root / "assets" / "items" / "x_popup_event.png"
+            if candidate.is_file():
+                self._popup_template_cache = candidate
+                return candidate
+        return None
+
+    def _dismiss_clientjs_popup_fallback(self) -> bool:
+        """Close a visible modal X when the legacy AUTO PRO skin scores too low.
+
+        The detector is intentionally limited to the upper-right modal region
+        and uses AUTO PRO's own x_popup_event.png at multiple scales. It is
+        called only while recovering the main screen, so closing a modal is the
+        desired action. No absolute close-button coordinate is stored.
+        """
+        template_path = self._popup_template_path()
+        if template_path is None:
+            return False
+        try:
+            import cv2
+
+            frame = self.driver.screenshot(format="opencv")
+            height, width = frame.shape[:2]
+            if width < 200 or height < 200:
+                return False
+            template = cv2.imread(str(template_path), cv2.IMREAD_COLOR)
+            if template is None or template.size == 0:
+                return False
+
+            # Covers modal close buttons while excluding the permanent top-right
+            # game HUD buttons. Coordinates are derived from frame proportions.
+            x0 = int(width * 0.55)
+            y0 = int(height * 0.15)
+            x1 = width
+            y1 = int(height * 0.50)
+            roi = frame[y0:y1, x0:x1]
+            best_score = -1.0
+            best_location = None
+            best_shape = None
+
+            for scale in self.POPUP_FALLBACK_SCALES:
+                target_w = max(2, round(template.shape[1] * scale))
+                target_h = max(2, round(template.shape[0] * scale))
+                if target_w >= roi.shape[1] or target_h >= roi.shape[0]:
+                    continue
+                interpolation = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_CUBIC
+                scaled = cv2.resize(
+                    template,
+                    (target_w, target_h),
+                    interpolation=interpolation,
+                )
+                result = cv2.matchTemplate(roi, scaled, cv2.TM_CCOEFF_NORMED)
+                _minimum, maximum, _min_location, max_location = cv2.minMaxLoc(result)
+                if float(maximum) > best_score:
+                    best_score = float(maximum)
+                    best_location = max_location
+                    best_shape = (target_w, target_h)
+
+            if (
+                best_location is None
+                or best_shape is None
+                or best_score < self.POPUP_FALLBACK_THRESHOLD
+            ):
+                return False
+
+            target_w, target_h = best_shape
+            click_x = x0 + int(best_location[0]) + target_w // 2
+            click_y = y0 + int(best_location[1]) + target_h // 2
+            self.driver.click(click_x, click_y)
+            self.log(
+                "ClientJS: đóng popup bằng fallback template Auto Pro "
+                f"(score={best_score:.3f})"
+            )
+            time.sleep(0.45)
+            return True
+        except Exception as exc:
+            self.log(f"ClientJS popup fallback bỏ qua: {exc}")
+            return False
+
+    def _dismiss_entry_popup(self) -> bool:
+        processor = getattr(self.controller, "image_processor", None)
+        finder = getattr(processor, "find_image", None)
+        if callable(finder):
+            try:
+                if finder("x_popup_event", threshold=0.80, click=True):
+                    self.log("Đã đóng popup bằng template gốc Auto Pro")
+                    time.sleep(0.35)
+                    return True
+            except Exception:
+                pass
+        return self._dismiss_clientjs_popup_fallback()
+
     def ensure_main_screen(self, timeout: float = 180.0) -> None:
         """Reach the main screen while AUTO PRO eventgame owns popup handling."""
         self.start_auto_pro_popup_guard()
@@ -91,6 +204,12 @@ class AutoProNavigationAdapter:
             if self._find_any(("friend_off", "icon_home")):
                 self.log("Đã xác nhận màn hình chính ClientJS")
                 return
+
+            # eventgame remains authoritative. This explicit pass exists only
+            # because current ClientJS popup skins may no longer reach the old
+            # x_popup_event threshold used by recovered AUTO PRO.
+            if self._dismiss_entry_popup():
+                continue
 
             clicked = False
             try:
