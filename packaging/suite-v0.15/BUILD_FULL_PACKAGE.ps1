@@ -57,10 +57,14 @@ foreach ($required in @(
     (Join-Path $AutoSource "runtime\pyc\gui.pyc"),
     (Join-Path $AutoSource "runtime\pyc\adb_controller.pyc"),
     (Join-Path $MultiSource "kvtm_multi.py"),
+    (Join-Path $MultiSource "kvtm_multi_entry.py"),
     (Join-Path $PatchSource "clientjs_auto_patch.py"),
     (Join-Path $ClientJsAutoSource "catalog\functions.json"),
     (Join-Path $ClientJsAutoSource "worker\runtime_probe.py"),
-    (Join-Path $ClientJsAutoSource "worker\auto_worker.py")
+    (Join-Path $ClientJsAutoSource "worker\auto_worker.py"),
+    (Join-Path $ClientJsAutoSource "worker\clear_stall_worker.py"),
+    (Join-Path $ClientJsAutoSource "workflows\clear_stall\manifest.py"),
+    (Join-Path $ClientJsAutoSource "workflows\clear_stall\workflow.py")
 )) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Thieu file bat buoc trong repo: $required"
@@ -119,9 +123,13 @@ $checks = @(
     (Join-Path $AutoOut "_internal\cv2\cv2.pyd"),
     (Join-Path $AutoOut "clientjs_auto_patch.py"),
     (Join-Path $MultiOut "kvtm_multi.py"),
+    (Join-Path $MultiOut "kvtm_multi_entry.py"),
     (Join-Path $ClientJsAutoOut "catalog\functions.json"),
     (Join-Path $ClientJsAutoOut "worker\runtime_probe.py"),
-    (Join-Path $ClientJsAutoOut "worker\auto_worker.py")
+    (Join-Path $ClientJsAutoOut "worker\auto_worker.py"),
+    (Join-Path $ClientJsAutoOut "worker\clear_stall_worker.py"),
+    (Join-Path $ClientJsAutoOut "workflows\clear_stall\manifest.py"),
+    (Join-Path $ClientJsAutoOut "workflows\clear_stall\workflow.py")
 )
 foreach ($file in $checks) {
     if (-not (Test-Path -LiteralPath $file)) {
@@ -151,6 +159,7 @@ Write-Host "PACKAGE OK" -ForegroundColor Green
 Write-Host "Folder: $OutputRoot"
 Write-Host "ZIP:    $ZipPath"
 Write-Host "runtime/pyc VERIFIED: gui_base.pyc, gui.pyc, adb_controller.pyc"
+Write-Host "clear_stall VERIFIED: entrypoint, worker, manifest, workflow" -ForegroundColor Green
 if ($PreservedFiles.Count -gt 0) {
     foreach ($name in $PreservedFiles.Keys) {
         Write-Host ("DATA KEPT: {0} <- {1}" -f $name, $PreservedFiles[$name]) -ForegroundColor Cyan
