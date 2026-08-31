@@ -61,6 +61,8 @@ class ClearStallWorkflow:
 
     def discover_source_items(self) -> list[DetectedSlot]:
         """Enter the target stall and scan pages before allowing a purchase."""
+        self._checkpoint("WAITING_MAIN_SCREEN")
+        self.adapter.ensure_main_screen()
         self._checkpoint("NAVIGATING_FRIEND")
         self.adapter.configure_target(
             self.request.friend_ordinal, self.request.stall_id
