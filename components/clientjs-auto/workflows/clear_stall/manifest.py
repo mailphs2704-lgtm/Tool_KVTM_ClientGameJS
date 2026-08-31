@@ -59,6 +59,11 @@ class ItemFingerprint:
             template_file=str(payload.get("template_file") or ""),
         )
 
+    @property
+    def group_key(self) -> str:
+        """Conservative item-type key: never combine visually different VP."""
+        return self.perceptual_hash
+
 
 @dataclass
 class PurchasedItem:
@@ -125,6 +130,18 @@ class PurchasedItem:
         )
 
 
+@dataclass(frozen=True)
+class ResaleBatch:
+    """One own-stall slot: exactly ten VP of one fingerprint group."""
+
+    fingerprint: ItemFingerprint
+    quantity: int = RESALE_BATCH_SIZE
+
+    def __post_init__(self) -> None:
+        if int(self.quantity) != RESALE_BATCH_SIZE:
+            raise ValueError("Một ô quầy Dọn quầy phải bán đúng 10 VP")
+
+
 @dataclass
 class TransactionManifest:
     profile_id: str
@@ -145,14 +162,53 @@ class TransactionManifest:
         return sum(item.sold_quantity for item in self.items)
 
     @property
+    def remaining_total(self) -> int:
+        return max(0, self.purchased_total - self.sold_total)
+
+    def _groups(self) -> list[tuple[ItemFingerprint, list[PurchasedItem]]]:
+        """Group only exact perceptual hashes; false merging is worse than deferring."""
+        ordered: list[tuple[ItemFingerprint, list[PurchasedItem]]] = []
+        by_key: dict[str, list[PurchasedItem]] = {}
+        representatives: dict[str, ItemFingerprint] = {}
+        for item in self.items:
+            key = item.fingerprint.group_key
+            if key not in by_key:
+                by_key[key] = []
+                representatives[key] = item.fingerprint
+                ordered.append((item.fingerprint, by_key[key]))
+            by_key[key].append(item)
+        return ordered
+
+    @property
     def sellable_total(self) -> int:
-        """Only complete groups of ten VP may be placed back on the stall."""
-        return (self.purchased_total // RESALE_BATCH_SIZE) * RESALE_BATCH_SIZE
+        """Count full groups of ten independently for each VP type."""
+        total = 0
+        for _fingerprint, items in self._groups():
+            quantity = sum(item.purchased_quantity for item in items)
+            total += (quantity // RESALE_BATCH_SIZE) * RESALE_BATCH_SIZE
+        return total
+
+    @property
+    def planned_remainder_total(self) -> int:
+        return max(0, self.purchased_total - self.sellable_total)
 
     @property
     def retained_total(self) -> int:
-        """Keep the incomplete group in inventory for a later clear-stall run."""
-        return self.purchased_total - self.sellable_total
+        """Actual unsold VP after the current resale attempt."""
+        return self.remaining_total
+
+    def resale_batches(self) -> list[ResaleBatch]:
+        batches: list[ResaleBatch] = []
+        for fingerprint, items in self._groups():
+            purchased = sum(item.purchased_quantity for item in items)
+            sold = sum(item.sold_quantity for item in items)
+            available = max(0, purchased - sold)
+            batch_count = available // RESALE_BATCH_SIZE
+            batches.extend(
+                ResaleBatch(fingerprint=fingerprint)
+                for _ in range(batch_count)
+            )
+        return batches
 
     def add_item(self, item: PurchasedItem) -> None:
         if self.state not in {"CREATED", "BUYING"}:
@@ -167,10 +223,37 @@ class TransactionManifest:
             raise RuntimeError("Không có giao dịch mua đã xác nhận")
         self.state = "RESELLING"
 
+    def record_group_sale(
+        self,
+        fingerprint: ItemFingerprint,
+        quantity: int = RESALE_BATCH_SIZE,
+    ) -> None:
+        remaining = int(quantity)
+        if remaining <= 0 or remaining % RESALE_BATCH_SIZE != 0:
+            raise RuntimeError("Lô bán lại phải là bội số của 10 VP")
+        matching = [
+            item for item in self.items
+            if item.fingerprint.group_key == fingerprint.group_key
+        ]
+        available = sum(item.remaining_to_sell for item in matching)
+        if available < remaining:
+            raise RuntimeError(
+                f"Nhóm VP chỉ còn {available}, không đủ xác nhận bán {remaining}"
+            )
+        for item in matching:
+            if remaining <= 0:
+                break
+            take = min(item.remaining_to_sell, remaining)
+            if take > 0:
+                item.record_sale(take)
+                remaining -= take
+        if remaining:
+            raise RuntimeError("Không phân bổ hết số lượng đã bán vào manifest")
+
     def complete(self) -> None:
         if self.sold_total != self.sellable_total:
             raise RuntimeError(
-                "Chưa bán lại đủ số lượng theo nhóm 10 VP đã xác nhận"
+                "Chưa bán lại đủ các lô 10 VP đã xác nhận theo từng loại"
             )
         self.state = "COMPLETED"
 
