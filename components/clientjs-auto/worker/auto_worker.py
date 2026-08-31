@@ -142,7 +142,7 @@ def main() -> int:
         "thue_tom", "giao_cu", "san_xuat_ngoc", "sx_event_cam",
         "sell_all",
     }
-    allowed_option_keys = boolean_option_keys | {"skip_items"}
+    allowed_option_keys = boolean_option_keys | {"skip_items", "quay_he_count"}
     unknown = set(requested_options) - allowed_option_keys
     if unknown:
         emit("worker_error", error=f"Options không được hỗ trợ: {sorted(unknown)}")
@@ -156,10 +156,19 @@ def main() -> int:
     skip_items = list(dict.fromkeys(
         item.strip() for item in requested_skip_items
     ))
+    try:
+        quay_he_count = int(requested_options.get("quay_he_count", 1))
+    except (TypeError, ValueError):
+        emit("worker_error", error="quay_he_count phải là số nguyên")
+        return 2
+    if not 1 <= quay_he_count <= 100:
+        emit("worker_error", error="quay_he_count phải trong khoảng 1..100")
+        return 2
     auto_options = {
         key: bool(requested_options.get(key, False))
         for key in boolean_option_keys
     }
+    auto_options["quay_he_count"] = quay_he_count
 
     tuning_defaults = {
         "harvest_speed": 0.045,
