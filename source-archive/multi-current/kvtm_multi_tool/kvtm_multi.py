@@ -2050,6 +2050,18 @@ class MultiApp(tk.Tk):
             )
             return
         self._clear_stall_workers[profile_id] = worker
+        self._write_auto_log(profile_id, {
+            "event": "worker_spawned",
+            "workflow": "clear_stall",
+            "pid": proc.pid,
+            "worker_pid": worker.pid,
+            "worker_file": str(worker_file),
+            "work_dir": str(work_dir),
+            "friend_ordinal": friend,
+            "stall_id": stall,
+            "quantity": quantity,
+            "max_pages": pages,
+        })
         self._set_clear_stall_checkpoint(
             profile_id,
             (
@@ -2106,7 +2118,20 @@ class MultiApp(tk.Tk):
         profile_id = str(payload.get("profile_id") or "")
         event = str(payload.get("event") or "")
         message = str(payload.get("message") or "")
-        if event == "worker_started":
+        if event in {"worker_spawned", "worker_boot"}:
+            stage = str(payload.get("stage") or "process_spawned")
+            stage_labels = {
+                "process_spawned": "Đã mở tiến trình Dọn quầy",
+                "process_started": "Worker Dọn quầy đã khởi động",
+                "importing_auto_worker": "Đang nạp bộ điều khiển AUTO PRO",
+                "loading_auto_pro_runtime": "Đang nạp runtime AUTO PRO",
+                "constructing_controller": "Đang kết nối ClientJS",
+                "controller_ready": "Đã kết nối ClientJS",
+            }
+            self._set_clear_stall_checkpoint(
+                profile_id, stage_labels.get(stage, f"Khởi tạo: {stage}")
+            )
+        elif event == "worker_started":
             self._set_clear_stall_checkpoint(
                 profile_id, "Đang vào nhà bạn và quét toàn bộ quầy"
             )
