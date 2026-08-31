@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import dis
 import importlib
 import json
 from pathlib import Path
@@ -40,21 +41,46 @@ def exception_frame_diagnostics(exc: BaseException) -> dict:
     frame = tb.tb_frame
     local_types = {}
     local_values = {}
+    none_attributes = []
     for name, value in frame.f_locals.items():
         local_types[name] = type(value).__name__
         if name == "self":
+            try:
+                none_attributes = sorted(
+                    key for key, item in vars(value).items() if item is None
+                )[:200]
+            except Exception:
+                none_attributes = []
             continue
         try:
             rendered = repr(value)
         except Exception:
             rendered = "<repr failed>"
         local_values[name] = rendered[:500]
+    instructions = []
+    try:
+        for instruction in dis.get_instructions(frame.f_code):
+            positions = getattr(instruction, "positions", None)
+            line = getattr(positions, "lineno", None)
+            if line is None:
+                line = instruction.starts_line
+            if line is not None and abs(int(line) - int(tb.tb_lineno)) <= 1:
+                instructions.append({
+                    "offset": instruction.offset,
+                    "line": line,
+                    "opname": instruction.opname,
+                    "argrepr": instruction.argrepr,
+                })
+    except Exception:
+        instructions = []
     return {
         "source_file": frame.f_code.co_filename,
         "function": frame.f_code.co_name,
         "line": tb.tb_lineno,
         "local_types": local_types,
         "local_values": local_values,
+        "none_attributes": none_attributes,
+        "instructions": instructions[:80],
     }
 
 
@@ -374,7 +400,12 @@ def main() -> int:
             automation.start()
         except Exception as exc:
             outcome["error"] = repr(exc)
-            emit("worker_error", error=repr(exc), traceback=traceback.format_exc())
+            emit(
+                "worker_error",
+                error=repr(exc),
+                traceback=traceback.format_exc(),
+                diagnostics=exception_frame_diagnostics(exc),
+            )
         finally:
             finished.set()
 
