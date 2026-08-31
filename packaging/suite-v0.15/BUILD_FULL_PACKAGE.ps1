@@ -1,5 +1,5 @@
 param(
-    [string]$OutputName = "KVTM-ClientJS-Suite-v0.15.1-test"
+    [string]$OutputName = "KVTM-ClientJS-Suite-Multi-DEV"
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,7 +9,47 @@ $AutoSource = Join-Path $RepoRoot "source-archive\auto-pro-reference"
 $MultiSource = Join-Path $RepoRoot "source-archive\multi-current\kvtm_multi_tool"
 $PatchSource = Join-Path $RepoRoot "test-candidates\auto-pro-clientjs-temp"
 $ClientJsAutoSource = Join-Path $RepoRoot "components\clientjs-auto"
-$OutputRoot = Join-Path (Join-Path $RepoRoot "dist") $OutputName
+$DistRoot = Join-Path $RepoRoot "dist"
+$OutputRoot = Join-Path $DistRoot $OutputName
+$PreserveRoot = Join-Path $DistRoot (".kvtm-dev-data-" + [guid]::NewGuid().ToString("N"))
+$PreservedFiles = @{}
+New-Item -ItemType Directory -Path $DistRoot -Force | Out-Null
+
+# Preserve isolated DEV data before replacing the fixed package. Prefer the
+# current fixed folder, then the newest older DEV package, then APPDATA.
+$DataCandidates = @()
+$CurrentData = Join-Path $OutputRoot "data-dev"
+if (Test-Path -LiteralPath $CurrentData -PathType Container) {
+    $DataCandidates += $CurrentData
+}
+if (Test-Path -LiteralPath $DistRoot -PathType Container) {
+    $DataCandidates += @(
+        Get-ChildItem -LiteralPath $DistRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.FullName -ne $OutputRoot -and
+                $_.Name -like "KVTM-ClientJS-Suite-Multi-*" -and
+                (Test-Path -LiteralPath (Join-Path $_.FullName "data-dev") -PathType Container)
+            } |
+            Sort-Object LastWriteTime -Descending |
+            ForEach-Object { Join-Path $_.FullName "data-dev" }
+    )
+}
+$MainProfileDir = Join-Path $env:APPDATA "KVTM Multi"
+if (Test-Path -LiteralPath $MainProfileDir -PathType Container) {
+    $DataCandidates += $MainProfileDir
+}
+
+New-Item -ItemType Directory -Path $PreserveRoot -Force | Out-Null
+foreach ($name in @("profiles.json", "settings.json")) {
+    foreach ($candidate in $DataCandidates) {
+        $source = Join-Path $candidate $name
+        if (Test-Path -LiteralPath $source -PathType Leaf) {
+            Copy-Item -LiteralPath $source -Destination (Join-Path $PreserveRoot $name) -Force
+            $PreservedFiles[$name] = $source
+            break
+        }
+    }
+}
 
 foreach ($required in @(
     (Join-Path $AutoSource "local_launcher.py"),
@@ -95,7 +135,27 @@ if (Test-Path -LiteralPath $ZipPath) {
 }
 Compress-Archive -LiteralPath $OutputRoot -DestinationPath $ZipPath -CompressionLevel Optimal
 
+# Restore local account data only after ZIP creation so login/profile data is
+# never embedded in the distributable archive.
+$DevDataOut = Join-Path $OutputRoot "data-dev"
+New-Item -ItemType Directory -Path $DevDataOut -Force | Out-Null
+foreach ($name in @("profiles.json", "settings.json")) {
+    $preserved = Join-Path $PreserveRoot $name
+    if (Test-Path -LiteralPath $preserved -PathType Leaf) {
+        Copy-Item -LiteralPath $preserved -Destination (Join-Path $DevDataOut $name) -Force
+    }
+}
+Remove-Item -LiteralPath $PreserveRoot -Recurse -Force
+
 Write-Host "PACKAGE OK" -ForegroundColor Green
 Write-Host "Folder: $OutputRoot"
 Write-Host "ZIP:    $ZipPath"
 Write-Host "runtime/pyc VERIFIED: gui_base.pyc, gui.pyc, adb_controller.pyc"
+if ($PreservedFiles.Count -gt 0) {
+    foreach ($name in $PreservedFiles.Keys) {
+        Write-Host ("DATA KEPT: {0} <- {1}" -f $name, $PreservedFiles[$name]) -ForegroundColor Cyan
+    }
+} else {
+    Write-Host "DATA: no existing profile/settings found; data-dev created empty" -ForegroundColor Yellow
+}
+Write-Host "FIXED DEV: use this same folder for every build" -ForegroundColor Cyan
