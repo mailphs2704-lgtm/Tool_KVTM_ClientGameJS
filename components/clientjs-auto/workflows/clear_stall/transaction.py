@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import threading
 import time
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from .detector import ICON_HALF_HEIGHT, ICON_HALF_WIDTH, VISIBLE_SLOT_CENTERS
 from .manifest import (
@@ -15,21 +15,20 @@ from .manifest import (
 )
 
 
-PURCHASE_CONFIRM_TEMPLATES = (
-    "buy_item",
-    "mua_vat_pham",
-    "mua",
-    "xac_nhan",
-    "dong_y",
-)
 CANCEL_TEMPLATES = ("huy", "close_game", "close")
 
-# Recovered AUTO PRO sellItems() geometry at the fixed 1000x1000 ClientJS size.
+# Recovered AUTO PRO geometry at the fixed 1000x1000 ClientJS size.
+AUTO_PRO_PURCHASE_FULL_ZONE = (669, 351, 91, 88)
+AUTO_PRO_OWN_EMPTY_STALL_ZONE = (196, 340, 599, 395)
 AUTO_PRO_INVENTORY_ZONE = (14, 345, 397, 379)
 AUTO_PRO_DAT_BAN_ZONE = (662, 598, 231, 145)
 AUTO_PRO_SL10_ZONE = (737, 426, 81, 81)
 AUTO_PRO_CONFIRM_ZONE = (390, 552, 211, 102)
 AUTO_PRO_PLACE_SALE = (771, 692)
+
+
+class NoEmptyStallSlot(RuntimeError):
+    """The clone has no visible empty sale slot; unsold VP must be deferred."""
 
 
 @dataclass(frozen=True)
@@ -40,7 +39,7 @@ class VerifiedAction:
 
 
 class VisualTransactionExecutor:
-    """Purchase and resell with visual proof around every state-changing click."""
+    """Purchase and resell using the recovered AUTO PRO shop interaction order."""
 
     def __init__(
         self,
@@ -62,29 +61,38 @@ class VisualTransactionExecutor:
         self.fingerprint_distance = int(fingerprint_distance)
 
     def purchase_listing(self, item: PurchasedItem) -> VerifiedAction:
-        """Buy one source listing and return only after visible confirmation."""
+        """Buy one friend-stall unit exactly as recovered GoFiendHome does."""
         self._ensure_running()
         center = self._slot_center(item.source_slot)
         before = self._region()
         self.driver.click(*center)
-        template = self._wait_and_click(PURCHASE_CONFIRM_TEMPLATES, timeout=5.0)
-        if not template:
-            self._cancel_dialog()
-            raise RuntimeError(
-                f"Ô {item.source_slot} trang {item.source_page} không mở hộp mua"
-            )
-        change = self._wait_for_change(before, timeout=6.0)
-        if change < self.minimum_screen_change:
-            self._cancel_dialog()
-            raise RuntimeError(
-                f"Không xác nhận được giao dịch mua tại trang "
-                f"{item.source_page}, ô {item.source_slot}"
-            )
+
+        # Recovered AUTO PRO does not wait for a buy confirmation dialog here.
+        # It sleeps 0.5s, checks image 'x' in this fixed zone (warehouse full),
+        # and otherwise counts the click as one successful purchase.
+        self._sleep_checked(0.5)
+        try:
+            if self.processor.find_image(
+                "x",
+                search_zone=AUTO_PRO_PURCHASE_FULL_ZONE,
+                threshold=0.85,
+                click=False,
+            ):
+                raise RuntimeError("Kho clone đã đầy trong lúc mua VP nhà bạn")
+        except RuntimeError:
+            raise
+        except Exception:
+            # Missing/older 'x' template must not turn a recovered successful
+            # direct purchase into a false failure.
+            pass
+
+        after = self._region()
+        change = _mean_difference(before, after)
         self.log(
-            f"Đã xác nhận giao diện thay đổi sau mua "
-            f"(template={template}, change={change:.2f})"
+            f"Đã mua 1 VP tại cửa sổ {item.source_page}, ô {item.source_slot} "
+            f"theo luồng Auto Pro (change={change:.2f})"
         )
-        return VerifiedAction(change, template, center)
+        return VerifiedAction(change, "direct_friend_purchase", center)
 
     def find_inventory_match(
         self,
@@ -94,8 +102,6 @@ class VisualTransactionExecutor:
         frame = self.driver.screenshot(format="opencv")
 
         # First use the exact source icon captured during the friend-stall scan.
-        # AUTO PRO sellItems() searches this left-side warehouse region rather
-        # than the eight shop coordinates, so matching here is the primary path.
         template_path = Path(fingerprint.template_file)
         if template_path.is_file():
             try:
@@ -117,7 +123,9 @@ class VisualTransactionExecutor:
                         scaled = cv2.resize(
                             template,
                             (scaled_w, scaled_h),
-                            interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR,
+                            interpolation=(
+                                cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
+                            ),
                         )
                         result = cv2.matchTemplate(
                             zone, scaled, cv2.TM_CCOEFF_NORMED
@@ -136,7 +144,7 @@ class VisualTransactionExecutor:
                 pass
 
         # Conservative fallback for older captures where the saved template is
-        # unavailable. This keeps the previous pHash behaviour as a recovery path.
+        # unavailable. Keep pHash as recovery only; never fuzzy-group VP types.
         best = None
         for slot, center in enumerate(VISIBLE_SLOT_CENTERS, start=1):
             crop = self._crop_icon(frame, center)
@@ -157,17 +165,31 @@ class VisualTransactionExecutor:
         fingerprint: ItemFingerprint,
         quantity: int = RESALE_BATCH_SIZE,
     ) -> VerifiedAction:
-        """Place exactly ten VP into one empty own-stall slot using AUTO PRO flow."""
+        """Put exactly ten VP into one empty own-stall slot using AUTO PRO flow."""
         if int(quantity) != RESALE_BATCH_SIZE:
             raise ValueError("Dọn quầy chỉ treo đúng 10 VP cho mỗi ô quầy")
         self._ensure_running()
+
+        # makeBuyItems() first finds/clicks a 'quaytrong' slot. Accounts can
+        # have different stall capacities, so we do not assume a fixed count.
+        if not self._wait_for_template(
+            "quaytrong",
+            timeout=1.8,
+            threshold=0.78,
+            search_zone=AUTO_PRO_OWN_EMPTY_STALL_ZONE,
+            click=True,
+        ):
+            raise NoEmptyStallSlot("Quầy clone hiện không còn ô trống")
+        self._sleep_checked(0.25)
+
         match = self.find_inventory_match(fingerprint)
         if match is None:
+            self._cancel_dialog()
             raise RuntimeError("Không tìm thấy đúng loại VP cần treo bán trong kho")
         slot, center, distance = match
 
-        # AUTO PRO sellItems() first opens the item, waits for dat_ban, then
-        # requires the sl10 marker before pressing the place-sale button.
+        # AUTO PRO sellItems() selects the item, waits for dat_ban, requires
+        # sl10, then presses the place-sale button.
         self.driver.click(*center)
         if not self._wait_for_template(
             "dat_ban",
@@ -192,8 +214,6 @@ class VisualTransactionExecutor:
 
         before = self._region()
         self.driver.click(*AUTO_PRO_PLACE_SALE)
-        # Some warehouse groups have an additional confirmation in the old
-        # AUTO PRO flow. Click it only when it actually appears.
         self._wait_for_template(
             "dong_y",
             timeout=1.2,
@@ -214,26 +234,6 @@ class VisualTransactionExecutor:
     def sell_manifest_item(self, item: PurchasedItem) -> VerifiedAction:
         """Backward-compatible wrapper; clear-stall resale uses ten-VP batches."""
         return self.sell_manifest_batch(item.fingerprint, RESALE_BATCH_SIZE)
-
-    def _wait_and_click(
-        self,
-        templates: Iterable[str],
-        *,
-        timeout: float,
-    ) -> str:
-        deadline = time.monotonic() + float(timeout)
-        while time.monotonic() < deadline:
-            self._ensure_running()
-            for name in templates:
-                try:
-                    if self.processor.find_image(
-                        name, threshold=0.84, click=True
-                    ):
-                        return name
-                except Exception:
-                    continue
-            time.sleep(0.20)
-        return ""
 
     def _wait_for_template(
         self,
@@ -258,7 +258,7 @@ class VisualTransactionExecutor:
                     return True
             except Exception:
                 pass
-            time.sleep(0.20)
+            self._sleep_checked(0.20)
         return False
 
     def _wait_for_change(self, before, *, timeout: float) -> float:
@@ -270,8 +270,14 @@ class VisualTransactionExecutor:
             best = max(best, _mean_difference(before, after))
             if best >= self.minimum_screen_change:
                 return best
-            time.sleep(0.20)
+            self._sleep_checked(0.20)
         return best
+
+    def _sleep_checked(self, duration: float) -> None:
+        deadline = time.monotonic() + max(0.0, float(duration))
+        while time.monotonic() < deadline:
+            self._ensure_running()
+            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
     def _cancel_dialog(self) -> None:
         for name in CANCEL_TEMPLATES:
