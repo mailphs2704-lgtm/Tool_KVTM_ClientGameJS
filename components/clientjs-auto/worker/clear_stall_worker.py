@@ -10,7 +10,7 @@ import time
 import traceback
 
 def emit(event: str, **data) -> None:
-    print(json.dumps({"event": event, **data}, ensure_ascii=False), flush=True)
+    print(json.dumps({"event": event, **data}, ensure_ascii=True), flush=True)
 
 
 def command_reader(commands: queue.Queue) -> None:
