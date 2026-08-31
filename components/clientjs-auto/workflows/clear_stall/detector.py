@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from .manifest import ItemFingerprint, hamming_distance
+from .manifest import ItemFingerprint
 
 
 # Reference coordinates used by the recovered ClientJS shop flow at 1000x1000.
@@ -48,7 +48,6 @@ class StallScanner:
         self.empty_threshold = float(empty_threshold)
         self.duplicate_distance = int(duplicate_distance)
         self._page_signatures: list[str] = []
-        self._item_hashes: list[str] = []
 
     def scan_page(self, frame: Any, page: int) -> PageScan:
         if page < 1:
@@ -83,9 +82,6 @@ class StallScanner:
                 str(template_file),
             )
             signatures.append(fingerprint.perceptual_hash)
-            if self._is_duplicate_item(fingerprint.perceptual_hash):
-                continue
-            self._item_hashes.append(fingerprint.perceptual_hash)
             slots.append(
                 DetectedSlot(
                     page=page,
@@ -103,13 +99,6 @@ class StallScanner:
             return True
         self._page_signatures.append(scan.signature)
         return False
-
-    def _is_duplicate_item(self, current_hash: str) -> bool:
-        return any(
-            hamming_distance(current_hash, previous) <= self.duplicate_distance
-            for previous in self._item_hashes
-        )
-
 
 def _occupancy_score(image: Any) -> float:
     """Use luminance spread as a conservative empty-slot rejection signal."""
