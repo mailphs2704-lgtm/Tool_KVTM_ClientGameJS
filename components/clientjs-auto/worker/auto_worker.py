@@ -142,7 +142,13 @@ def main() -> int:
         "thue_tom", "giao_cu", "san_xuat_ngoc", "sx_event_cam",
         "sell_all",
     }
-    allowed_option_keys = boolean_option_keys | {"skip_items", "quay_he_count"}
+    upgrade_option_keys = {
+        "auto_nang_kho_type", "auto_nang_kho_time_hours",
+        "auto_nang_kho_balance", "kc_nang_kho",
+    }
+    allowed_option_keys = (
+        boolean_option_keys | {"skip_items", "quay_he_count"} | upgrade_option_keys
+    )
     unknown = set(requested_options) - allowed_option_keys
     if unknown:
         emit("worker_error", error=f"Options không được hỗ trợ: {sorted(unknown)}")
@@ -164,11 +170,38 @@ def main() -> int:
     if not 1 <= quay_he_count <= 100:
         emit("worker_error", error="quay_he_count phải trong khoảng 1..100")
         return 2
+    auto_nang_kho_type = str(
+        requested_options.get("auto_nang_kho_type", "Kho 1 & 2")
+    )
+    allowed_nang_kho_types = {"Kho 1", "Kho 2", "Kho 1 & 2", "Max Kho"}
+    if auto_nang_kho_type not in allowed_nang_kho_types:
+        emit("worker_error", error="auto_nang_kho_type không hợp lệ")
+        return 2
+    try:
+        auto_nang_kho_time_hours = int(
+            requested_options.get("auto_nang_kho_time_hours", 2)
+        )
+    except (TypeError, ValueError):
+        emit("worker_error", error="auto_nang_kho_time_hours phải là số nguyên")
+        return 2
+    if not 1 <= auto_nang_kho_time_hours <= 168:
+        emit("worker_error", error="auto_nang_kho_time_hours phải trong khoảng 1..168")
+        return 2
+    auto_nang_kho_balance = bool(
+        requested_options.get("auto_nang_kho_balance", True)
+    )
+    kc_nang_kho = bool(requested_options.get("kc_nang_kho", False))
     auto_options = {
         key: bool(requested_options.get(key, False))
         for key in boolean_option_keys
     }
-    auto_options["quay_he_count"] = quay_he_count
+    auto_options.update({
+        "quay_he_count": quay_he_count,
+        "auto_nang_kho_type": auto_nang_kho_type,
+        "auto_nang_kho_time_hours": auto_nang_kho_time_hours,
+        "auto_nang_kho_balance": auto_nang_kho_balance,
+        "kc_nang_kho": kc_nang_kho,
+    })
 
     tuning_defaults = {
         "harvest_speed": 0.045,
@@ -259,6 +292,10 @@ def main() -> int:
             gui_ref=proxy,
             options=auto_options,
             skip_items=skip_items or None,
+            auto_nang_kho_type=auto_nang_kho_type,
+            auto_nang_kho_time_hours=auto_nang_kho_time_hours,
+            auto_nang_kho_balance=auto_nang_kho_balance,
+            kc_nang_kho=kc_nang_kho,
             **constructor_tuning,
         )
         controller = getattr(automation, "adb", None)
