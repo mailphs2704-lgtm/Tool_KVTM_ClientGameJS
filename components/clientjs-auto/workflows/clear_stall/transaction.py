@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 import threading
 import time
 from typing import Any, Callable, Iterable
@@ -24,6 +25,7 @@ PURCHASE_CONFIRM_TEMPLATES = (
 CANCEL_TEMPLATES = ("huy", "close_game", "close")
 
 # Recovered AUTO PRO sellItems() geometry at the fixed 1000x1000 ClientJS size.
+AUTO_PRO_INVENTORY_ZONE = (14, 345, 397, 379)
 AUTO_PRO_DAT_BAN_ZONE = (662, 598, 231, 145)
 AUTO_PRO_SL10_ZONE = (737, 426, 81, 81)
 AUTO_PRO_CONFIRM_ZONE = (390, 552, 211, 102)
@@ -88,8 +90,53 @@ class VisualTransactionExecutor:
         self,
         fingerprint: ItemFingerprint,
     ) -> tuple[int, tuple[int, int], int] | None:
-        """Return the closest visible inventory slot if it is an exact-safe match."""
+        """Find the purchased VP inside AUTO PRO's recovered warehouse region."""
         frame = self.driver.screenshot(format="opencv")
+
+        # First use the exact source icon captured during the friend-stall scan.
+        # AUTO PRO sellItems() searches this left-side warehouse region rather
+        # than the eight shop coordinates, so matching here is the primary path.
+        template_path = Path(fingerprint.template_file)
+        if template_path.is_file():
+            try:
+                import cv2
+
+                template = cv2.imread(str(template_path), cv2.IMREAD_COLOR)
+                if template is not None and template.size:
+                    x, y, width, height = AUTO_PRO_INVENTORY_ZONE
+                    zone = frame[y : y + height, x : x + width]
+                    if zone.ndim == 3 and zone.shape[2] == 4:
+                        zone = cv2.cvtColor(zone, cv2.COLOR_BGRA2BGR)
+                    best_score = -1.0
+                    best_center = None
+                    for scale in (0.90, 0.95, 1.00, 1.05, 1.10):
+                        scaled_w = max(8, int(template.shape[1] * scale))
+                        scaled_h = max(8, int(template.shape[0] * scale))
+                        if scaled_w > zone.shape[1] or scaled_h > zone.shape[0]:
+                            continue
+                        scaled = cv2.resize(
+                            template,
+                            (scaled_w, scaled_h),
+                            interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR,
+                        )
+                        result = cv2.matchTemplate(
+                            zone, scaled, cv2.TM_CCOEFF_NORMED
+                        )
+                        _minimum, maximum, _min_loc, max_loc = cv2.minMaxLoc(result)
+                        if float(maximum) > best_score:
+                            best_score = float(maximum)
+                            best_center = (
+                                x + max_loc[0] + scaled_w // 2,
+                                y + max_loc[1] + scaled_h // 2,
+                            )
+                    if best_center is not None and best_score >= 0.72:
+                        distance = max(0, int(round((1.0 - best_score) * 64)))
+                        return 0, best_center, distance
+            except Exception:
+                pass
+
+        # Conservative fallback for older captures where the saved template is
+        # unavailable. This keeps the previous pHash behaviour as a recovery path.
         best = None
         for slot, center in enumerate(VISIBLE_SLOT_CENTERS, start=1):
             crop = self._crop_icon(frame, center)
