@@ -915,6 +915,7 @@ class MultiApp(tk.Tk):
             ("hire_shrimp", "Thuê tôm"),
             ("deliver_sheep", "Giao cừu"),
             ("produce_gems", "Sản xuất ngọc"),
+            ("clear_stall", "Dọn quầy"),
         )
         self.auto_feature_tabs = {}
         self.auto_tab_buttons = {}
@@ -955,7 +956,12 @@ class MultiApp(tk.Tk):
             option_key: tk.BooleanVar(value=False)
             for option_key in optional_keys.values()
         }
-        for key, label in feature_tabs[4:]:
+        legacy_optional_tabs = {
+            "hire_shrimp", "deliver_sheep", "produce_gems"
+        }
+        for key, label in feature_tabs:
+            if key not in legacy_optional_tabs:
+                continue
             feature_frame = self.auto_feature_tabs[key]
             option_key = optional_keys[key]
             ttk.Label(
@@ -973,6 +979,58 @@ class MultiApp(tk.Tk):
                 text="Mặc định OFF • Chỉ chạy khi được bật trước lúc Bắt đầu.",
                 style="AutoValue.TLabel", anchor="w",
             ).pack(fill="x", padx=8)
+
+        clear_stall_tab = self.auto_feature_tabs["clear_stall"]
+        clear_stall_header = ttk.Frame(clear_stall_tab, style="Detail.TFrame")
+        clear_stall_header.pack(fill="x", padx=8, pady=(3, 0))
+        ttk.Label(
+            clear_stall_header, text="DỌN QUẦY CLIENTJS",
+            style="AutoKey.TLabel",
+        ).pack(side="left")
+        self.auto_clear_stall_status = tk.StringVar(value="CHƯA NỐI WORKER")
+        tk.Label(
+            clear_stall_header, textvariable=self.auto_clear_stall_status,
+            background="#fff3cd", foreground="#8a5a00",
+            font=("Segoe UI Semibold", 8), padx=8, pady=3,
+        ).pack(side="right")
+        ttk.Separator(clear_stall_tab, orient="horizontal").pack(
+            fill="x", padx=8, pady=(6, 7)
+        )
+        clear_stall_body = ttk.Frame(clear_stall_tab, style="Detail.TFrame")
+        clear_stall_body.pack(fill="x", padx=8)
+        clear_stall_items = (
+            ("CHU KỲ", "65 phút"),
+            ("KÍCH HOẠT CLIENT", "Chỉ mở clone khi đến lịch"),
+            ("NHẬN DIỆN", "Profile ID • tự bắt PID mới"),
+            ("AN TOÀN", "Không chắc chắn → dừng"),
+        )
+        for column, (title, value) in enumerate(clear_stall_items):
+            card = tk.Frame(
+                clear_stall_body, background="#f5f8fc",
+                highlightthickness=1, highlightbackground="#d8e2ef",
+                padx=9, pady=6,
+            )
+            card.grid(
+                row=0, column=column, sticky="nsew",
+                padx=(0 if column == 0 else 4, 0),
+            )
+            clear_stall_body.columnconfigure(column, weight=1)
+            tk.Label(
+                card, text=title, background="#f5f8fc", foreground="#64748b",
+                font=("Segoe UI Semibold", 8), anchor="w",
+            ).pack(fill="x")
+            tk.Label(
+                card, text=value, background="#f5f8fc", foreground="#17233b",
+                font=("Segoe UI", 9), anchor="w",
+            ).pack(fill="x", pady=(3, 0))
+        ttk.Label(
+            clear_stall_tab,
+            text=(
+                "Module mới độc lập AUTO PRO • Sẽ dùng capture/input/PID hiện có "
+                "và worker riêng có thể phục hồi sau reset ClientJS."
+            ),
+            style="AutoValue.TLabel", anchor="w",
+        ).pack(fill="x", padx=8, pady=(7, 0))
 
         nang_kho_tab = self.auto_feature_tabs["upgrade_storage"]
         nang_kho_header = ttk.Frame(nang_kho_tab, style="Detail.TFrame")
