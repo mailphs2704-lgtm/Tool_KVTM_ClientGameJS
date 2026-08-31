@@ -72,15 +72,12 @@ jobs:
           a = fp('a')
           b = fp('b')
 
-          # Recovered AUTO PRO uses four eight-slot views with four-slot overlap.
           physical = []
           for view in range(1, AUTO_PRO_STALL_VIEW_COUNT + 1):
               for local_slot in new_local_slots_for_view(view):
                   physical.append(physical_slot_index(view, local_slot))
           assert physical == list(range(1, 21)), physical
 
-          # One physical listing may be clicked repeatedly; record_purchase must
-          # accumulate rather than replace the already purchased quantity.
           repeated = PurchasedItem(a, 1, 1, requested_quantity=8)
           for count in range(8):
               repeated.record_purchase(count, count + 1)
@@ -117,7 +114,6 @@ jobs:
           assert m.sellable_total == 20
           assert len(m.resale_batches()) == 2
 
-          # Different VP types must never be combined into one ten-unit batch.
           m = manifest_for((a, 6), (b, 4))
           assert m.purchased_total == 10
           assert m.sellable_total == 0
@@ -127,13 +123,10 @@ jobs:
           assert m.sellable_total == 10
           assert m.planned_remainder_total == 9
 
-          # Carryover 3 + a later 7 of the same VP must become one batch of 10.
           m = manifest_for((a, 3), (a, 7))
           assert m.sellable_total == 10
           assert len(m.resale_batches()) == 1
 
-          # Diagnostic overlap inference remains available but no longer owns
-          # physical slot coverage in the production workflow.
           prev = PageScan(1, (), tuple('abcdefgh'), 'p1')
           cur1 = PageScan(2, (), tuple('bcdefghi'), 'p2')
           cur2 = PageScan(2, (), tuple('cdefghij'), 'p3')
@@ -142,8 +135,6 @@ jobs:
           assert StallScanner.infer_forward_shift(prev, cur2) == 2
           assert StallScanner.infer_forward_shift(prev, same) == 0
 
-          # Persist carryover outside each run folder, reload it on the next run,
-          # and prove one profile can never consume another profile's remainder.
           with tempfile.TemporaryDirectory() as temp:
               root = Path(temp)
 
@@ -231,6 +222,24 @@ jobs:
         shell: powershell
         run: |
           & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
+
+      - name: Verify carryover survives fixed DEV rebuild
+        shell: powershell
+        run: |
+          $root = Join-Path $PWD "dist\KVTM-ClientJS-Suite-CI"
+          $marker = Join-Path $root "data-dev\clear-stall\profile-ci\carryover-marker.txt"
+          New-Item -ItemType Directory -Path (Split-Path $marker) -Force | Out-Null
+          Set-Content -LiteralPath $marker -Value "KEEP-CLEAR-STALL" -Encoding ASCII
+
+          & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
+
+          if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
+            throw "clear-stall runtime data was lost during fixed DEV rebuild"
+          }
+          if ((Get-Content -LiteralPath $marker -Raw).Trim() -ne "KEEP-CLEAR-STALL") {
+            throw "clear-stall runtime marker changed during rebuild"
+          }
+          Write-Host "CLEAR_STALL_REBUILD_PRESERVE_OK" -ForegroundColor Green
 
       - name: Verify package contents and privacy
         shell: powershell
