@@ -170,7 +170,9 @@ Cấu hình được lưu trong `data-dev`, tách khỏi source và được scr
 
 ## 8. Trạng thái hiện tại
 
-- Tab Dọn quầy đã được thêm vào Multi DEV.
-- Chu kỳ thiết kế mặc định là 65 phút.
-- Chưa có worker và chưa phát sinh thao tác game.
-- Bước triển khai tiếp theo: Pha 1 — schema cấu hình và form ghép cặp tài khoản.
+- Pha 1 đã có form cấu hình thật trong tab Dọn quầy, lưu riêng theo profile clone.
+- Các trường đang hoạt động: bật/tắt lịch, thứ tự bạn bè, quầy 1–4, chu kỳ 5–1440 phút và đóng client sau khi hoàn tất.
+- Mặc định OFF; chu kỳ mặc định 65 phút; quầy mặc định số 2.
+- Schema chuẩn hóa và scheduler trạng thái đã có: lọc job đến hạn, khóa trạng thái đang chạy, ghi hoàn tất/thất bại và tính lịch kế tiếp.
+- Scheduler chưa được nối vào vòng lặp Multi và chưa có worker thao tác game; bật lịch hiện chỉ lưu cấu hình an toàn.
+- Bước tiếp theo: Pha 2 — nối scheduler vào Multi, resolver profile → PID/HWND, sau đó mới xây detector/worker.
