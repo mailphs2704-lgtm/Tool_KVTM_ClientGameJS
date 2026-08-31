@@ -1001,7 +1001,7 @@ class MultiApp(tk.Tk):
         clear_stall_items = (
             ("CHU KỲ", "65 phút"),
             ("KÍCH HOẠT CLIENT", "Chỉ mở clone khi đến lịch"),
-            ("NHẬN DIỆN", "Profile ID • tự bắt PID mới"),
+            ("ACC CHÍNH", "Bạn bè số N • không cần PID"),
             ("AN TOÀN", "Không chắc chắn → dừng"),
         )
         for column, (title, value) in enumerate(clear_stall_items):
@@ -1026,8 +1026,8 @@ class MultiApp(tk.Tk):
         ttk.Label(
             clear_stall_tab,
             text=(
-                "Module mới độc lập AUTO PRO • Sẽ dùng capture/input/PID hiện có "
-                "và worker riêng có thể phục hồi sau reset ClientJS."
+                "Tham khảo GoFiendHome/Function 170 • Clone tìm acc chính theo "
+                "số thứ tự bạn bè và xác nhận đúng nhà trước khi dọn quầy."
             ),
             style="AutoValue.TLabel", anchor="w",
         ).pack(fill="x", padx=8, pady=(7, 0))
