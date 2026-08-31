@@ -169,6 +169,31 @@ class ClearStallWorkflow:
         self.adapter.return_to_clone_home()
         self._checkpoint("READY_TO_RESELL")
 
+    def execute_resale(
+        self,
+        executor: VisualTransactionExecutor,
+    ) -> int:
+        """Return home and sell only manifest fingerprints, one proof at a time."""
+        self.begin_resale()
+        self.adapter.open_clone_stall_for_sale(self.request.stall_id)
+        sold = 0
+        for item in self.manifest.items:
+            self._ensure_running()
+            while item.remaining_to_sell > 0:
+                self._checkpoint(
+                    f"SELLING_SOURCE_PAGE_{item.source_page}_SLOT_{item.source_slot}"
+                )
+                executor.sell_manifest_item(item)
+                self.mark_sale_verified(item, 1)
+                sold += 1
+        if sold != self.manifest.purchased_total:
+            raise RuntimeError(
+                f"Số lượng bán {sold} không khớp số đã mua "
+                f"{self.manifest.purchased_total}"
+            )
+        self.complete()
+        return sold
+
     def mark_sale_verified(self, item: PurchasedItem, quantity: int) -> None:
         item.record_sale(quantity)
         self.manifest.save(self.manifest_path)
