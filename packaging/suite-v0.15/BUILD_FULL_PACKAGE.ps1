@@ -15,6 +15,89 @@ $PreserveRoot = Join-Path $DistRoot (".kvtm-dev-data-" + [guid]::NewGuid().ToStr
 $PreservedFiles = @{}
 New-Item -ItemType Directory -Path $DistRoot -Force | Out-Null
 
+function Test-GitLfsPointer {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+    $item = Get-Item -LiteralPath $Path
+    if ($item.Length -gt 1024) {
+        return $false
+    }
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $length = [Math]::Min(200, [int]$stream.Length)
+        if ($length -le 0) {
+            return $false
+        }
+        $buffer = New-Object byte[] $length
+        $read = $stream.Read($buffer, 0, $length)
+        $text = [System.Text.Encoding]::ASCII.GetString($buffer, 0, $read)
+        return $text.StartsWith("version https://git-lfs.github.com/spec/v1")
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+function Get-GitLfsPointers {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+        return @()
+    }
+    return @(
+        Get-ChildItem -LiteralPath $Root -Recurse -File -ErrorAction Stop |
+            Where-Object { Test-GitLfsPointer -Path $_.FullName }
+    )
+}
+
+function Resolve-AutoProLfsRuntime {
+    $pointers = @(Get-GitLfsPointers -Root $AutoSource)
+    if ($pointers.Count -eq 0) {
+        return
+    }
+
+    Write-Host ("Git LFS: phát hiện {0} runtime pointer, đang lấy object thật..." -f $pointers.Count) -ForegroundColor Yellow
+
+    $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+    if ($null -eq $gitCommand) {
+        throw "Runtime AUTO PRO còn Git LFS pointer nhưng máy không có git để tự phục hồi."
+    }
+
+    Push-Location $RepoRoot
+    try {
+        & git lfs version | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Git LFS chưa sẵn sàng."
+        }
+        & git lfs pull
+        if ($LASTEXITCODE -ne 0) {
+            throw "git lfs pull thất bại."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    $remaining = @(Get-GitLfsPointers -Root $AutoSource)
+    if ($remaining.Count -gt 0) {
+        $sample = ($remaining | Select-Object -First 12 | ForEach-Object { $_.FullName }) -join "`n  - "
+        throw (
+            "Không thể đóng gói: còn {0} Git LFS pointer trong AUTO PRO runtime.`n  - {1}" -f
+            $remaining.Count, $sample
+        )
+    }
+
+    Write-Host "Git LFS runtime VERIFIED: toàn bộ pointer đã được thay bằng object thật" -ForegroundColor Green
+}
+
+# The recovered AUTO PRO runtime is intentionally tracked with Git LFS. Never
+# allow a 128-byte pointer text file to be copied into a distributable package.
+Resolve-AutoProLfsRuntime
+
 # Preserve isolated DEV data before replacing the fixed package. Prefer the
 # current fixed folder, then the newest older DEV package, then APPDATA.
 $DataCandidates = @()
@@ -56,6 +139,8 @@ foreach ($required in @(
     (Join-Path $AutoSource "runtime\pyc\gui_base.pyc"),
     (Join-Path $AutoSource "runtime\pyc\gui.pyc"),
     (Join-Path $AutoSource "runtime\pyc\adb_controller.pyc"),
+    (Join-Path $AutoSource "runtime\pyc\uiautomator2\__init__.pyc"),
+    (Join-Path $AutoSource "_internal\cv2\cv2.pyd"),
     (Join-Path $MultiSource "kvtm_multi.py"),
     (Join-Path $MultiSource "kvtm_multi_entry.py"),
     (Join-Path $PatchSource "clientjs_auto_patch.py"),
@@ -68,6 +153,9 @@ foreach ($required in @(
 )) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Thieu file bat buoc trong repo: $required"
+    }
+    if (Test-GitLfsPointer -Path $required) {
+        throw "File bắt buộc vẫn là Git LFS pointer, không phải runtime thật: $required"
     }
 }
 
@@ -83,6 +171,15 @@ New-Item -ItemType Directory -Path $AutoOut, $MultiOut -Force | Out-Null
 # the actual AUTO PRO source modules, not disposable cache files.
 Copy-Item -Path (Join-Path $AutoSource "*") -Destination $AutoOut -Recurse -Force
 Copy-Item -Path (Join-Path $MultiSource "*") -Destination $MultiOut -Recurse -Force
+
+$packagedPointers = @(Get-GitLfsPointers -Root $AutoOut)
+if ($packagedPointers.Count -gt 0) {
+    $sample = ($packagedPointers | Select-Object -First 12 | ForEach-Object { $_.FullName }) -join "`n  - "
+    throw (
+        "Đóng gói bị chặn: AUTO_PRO output còn {0} Git LFS pointer.`n  - {1}" -f
+        $packagedPointers.Count, $sample
+    )
+}
 
 $PatchFiles = @(
     "adaptive_cv.py",
@@ -120,6 +217,7 @@ $checks = @(
     (Join-Path $AutoOut "runtime\pyc\gui_base.pyc"),
     (Join-Path $AutoOut "runtime\pyc\gui.pyc"),
     (Join-Path $AutoOut "runtime\pyc\adb_controller.pyc"),
+    (Join-Path $AutoOut "runtime\pyc\uiautomator2\__init__.pyc"),
     (Join-Path $AutoOut "_internal\cv2\cv2.pyd"),
     (Join-Path $AutoOut "clientjs_auto_patch.py"),
     (Join-Path $MultiOut "kvtm_multi.py"),
@@ -134,6 +232,9 @@ $checks = @(
 foreach ($file in $checks) {
     if (-not (Test-Path -LiteralPath $file)) {
         throw "Dong goi khong day du: $file"
+    }
+    if (Test-GitLfsPointer -Path $file) {
+        throw "Dong goi chứa Git LFS pointer thay vì dữ liệu thật: $file"
     }
 }
 
@@ -158,7 +259,7 @@ Remove-Item -LiteralPath $PreserveRoot -Recurse -Force
 Write-Host "PACKAGE OK" -ForegroundColor Green
 Write-Host "Folder: $OutputRoot"
 Write-Host "ZIP:    $ZipPath"
-Write-Host "runtime/pyc VERIFIED: gui_base.pyc, gui.pyc, adb_controller.pyc"
+Write-Host "runtime/pyc VERIFIED: real LFS objects, not pointer text" -ForegroundColor Green
 Write-Host "clear_stall VERIFIED: entrypoint, worker, manifest, workflow" -ForegroundColor Green
 if ($PreservedFiles.Count -gt 0) {
     foreach ($name in $PreservedFiles.Keys) {
