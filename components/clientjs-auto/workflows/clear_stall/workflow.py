@@ -8,6 +8,7 @@ from typing import Callable
 from .adapter import AutoProNavigationAdapter
 from .detector import DetectedSlot, StallScanner
 from .manifest import PurchasedItem, TransactionManifest
+from .transaction import VisualTransactionExecutor
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class ClearStallWorkflow:
             target_stall_id=int(request.stall_id),
             requested_total=int(request.buy_quantity),
         )
+        self.last_unique_page = 0
 
     def discover_source_items(self) -> list[DetectedSlot]:
         """Enter the target stall and scan pages before allowing a purchase."""
@@ -76,6 +78,7 @@ class ClearStallWorkflow:
                 self.log(f"Dừng quét: trang {page} đã xuất hiện trước đó")
                 break
             detected.extend(scan.slots)
+            self.last_unique_page = page
             self.log(
                 f"Trang {page}: nhận dạng {len(scan.slots)} vật phẩm mới"
             )
@@ -110,6 +113,40 @@ class ClearStallWorkflow:
             # purchase dialog/inventory delta is read. Do not decrement here.
         self.manifest.save(self.manifest_path)
         return pending
+
+    def execute_purchases(
+        self,
+        pending: list[PurchasedItem],
+        executor: VisualTransactionExecutor,
+    ) -> int:
+        """Buy at most requested_total listings and prove every accepted click."""
+        for _ in range(max(0, self.last_unique_page - 1)):
+            self.adapter.swipe_previous_stall_page()
+        current_page = 1
+        purchased = 0
+        for item in pending:
+            self._ensure_running()
+            if purchased >= int(self.request.buy_quantity):
+                break
+            while current_page < item.source_page:
+                self.adapter.swipe_next_stall_page()
+                current_page += 1
+            self._checkpoint(
+                f"BUYING_PAGE_{item.source_page}_SLOT_{item.source_slot}"
+            )
+            executor.purchase_listing(item)
+            # One confirmed source listing counts as one requested VP. The
+            # manifest never assumes the contents of an unconfirmed click.
+            self.mark_purchase_verified(
+                item,
+                inventory_before=purchased,
+                inventory_after=purchased + 1,
+            )
+            purchased += 1
+        if purchased <= 0:
+            raise RuntimeError("Không có giao dịch mua nào được xác nhận")
+        self._checkpoint("PURCHASE_COMPLETE")
+        return purchased
 
     def mark_purchase_verified(
         self,
