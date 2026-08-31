@@ -21,6 +21,7 @@ class MultiApp(core.MultiApp):
         job = self._clear_stall_job(profile_id)
         interval = max(5, int(job.get("interval_minutes", 65) or 65))
         now = time.time()
+        job["close_client_after_run"] = True
         job["last_checkpoint"] = str(checkpoint)
         job["last_result"] = result or {
             "ok": False,
@@ -42,6 +43,20 @@ class MultiApp(core.MultiApp):
         if profile_id == self._active_profile_id:
             self._refresh_clear_stall_panel()
         self.after(500, self.refresh)
+
+    def _save_clear_stall_config(self) -> None:
+        """Dọn quầy owns the clone lifecycle, so closing after every run is mandatory."""
+        if hasattr(self, "auto_clear_stall_close"):
+            self.auto_clear_stall_close.set(True)
+        super()._save_clear_stall_config()
+        profile_id, profile = self._clear_stall_profile()
+        if not profile_id or not profile:
+            return
+        job = self._clear_stall_job(profile_id)
+        if job and not bool(job.get("close_client_after_run", False)):
+            job["close_client_after_run"] = True
+            self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+            core.save_settings(self.settings)
 
     def _start_clear_stall(
         self, profile_id: str | None = None, scheduled: bool = False
@@ -132,12 +147,15 @@ class MultiApp(core.MultiApp):
             return
 
         if event == "worker_finished":
+            # Let the core persist the next-run timestamp first, then enforce
+            # the Dọn quầy ownership rule regardless of any legacy saved toggle.
             super()._handle_clear_stall_worker_event(payload)
             job = self._clear_stall_job(profile_id)
             bought = int(payload.get("bought") or 0)
             sold = int(payload.get("sold") or 0)
             retained = int(payload.get("retained") or 0)
             finished_at = time.time()
+            job["close_client_after_run"] = True
             job["last_checkpoint"] = (
                 f"Hoàn thành • mua {bought} • bán {sold} • giữ lại {retained}"
             )
@@ -150,8 +168,14 @@ class MultiApp(core.MultiApp):
             }
             self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
             core.save_settings(self.settings)
+
+            proc = self.processes.get(profile_id)
+            if proc and proc.poll() is None:
+                proc.terminate()
+
             if profile_id == self._active_profile_id:
                 self._refresh_clear_stall_panel()
+            self.after(500, self.refresh)
             return
 
         if event == "worker_exit":
@@ -180,15 +204,28 @@ class MultiApp(core.MultiApp):
         super()._refresh_clear_stall_panel()
         if not hasattr(self, "auto_clear_stall_status"):
             return
+
+        # This is a workflow invariant, not a user preference. Keep the legacy
+        # control visible for layout compatibility but lock it to ON.
+        if hasattr(self, "auto_clear_stall_close"):
+            self.auto_clear_stall_close.set(True)
+        if hasattr(self, "auto_clear_stall_close_button"):
+            self.auto_clear_stall_close_button.configure(state="disabled")
+
         profile_id, profile = self._clear_stall_profile()
         if not profile_id or not profile:
             return
+        job = self._clear_stall_job(profile_id)
+        if job and not bool(job.get("close_client_after_run", False)):
+            job["close_client_after_run"] = True
+            self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+            core.save_settings(self.settings)
+
         worker = self._clear_stall_workers.get(profile_id)
         if worker and worker.poll() is None:
             return
         if profile_id in self._clear_stall_starting:
             return
-        job = self._clear_stall_job(profile_id)
         if not bool(job.get("enabled", False)):
             return
         try:
