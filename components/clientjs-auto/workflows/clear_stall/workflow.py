@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
 from pathlib import Path
 import threading
+import time
 from typing import Callable
 
 from .adapter import AutoProNavigationAdapter
@@ -49,8 +51,10 @@ class ClearStallWorkflow:
         self.adapter = adapter
         self.stop_event = stop_event
         self.log = logger
-        self.manifest_path = Path(request.work_dir) / "transaction.json"
-        self.scanner = StallScanner(Path(request.work_dir) / "templates")
+        self.work_dir = Path(request.work_dir)
+        self.manifest_path = self.work_dir / "transaction.json"
+        self.carryover_path = self.work_dir.parent / "carryover.json"
+        self.scanner = StallScanner(self.work_dir / "templates")
         self.manifest = TransactionManifest(
             profile_id=request.profile_id,
             target_friend_ordinal=int(request.friend_ordinal),
@@ -58,6 +62,9 @@ class ClearStallWorkflow:
             requested_total=int(request.buy_quantity),
         )
         self.last_unique_page = 0
+        carryover = self._load_carryover()
+        if carryover > 0:
+            self.log(f"Đã nạp {carryover} VP lẻ từ lượt Dọn quầy trước")
 
     def discover_source_items(self) -> list[DetectedSlot]:
         """Enter the target stall and scan pages before allowing a purchase."""
@@ -89,6 +96,12 @@ class ClearStallWorkflow:
                 break
             self.adapter.swipe_next_stall_page()
         if not detected:
+            if self.manifest.purchased_total > 0:
+                self.log(
+                    "Quầy nguồn không có VP mới; tiếp tục xử lý VP carryover trong kho"
+                )
+                self._checkpoint("SOURCE_SCAN_EMPTY_CARRYOVER_ONLY")
+                return []
             raise RuntimeError("Không nhận dạng được vật phẩm nào trên quầy nguồn")
         self._checkpoint("SOURCE_SCAN_COMPLETE")
         return detected
@@ -122,6 +135,9 @@ class ClearStallWorkflow:
         executor: VisualTransactionExecutor,
     ) -> int:
         """Buy at most requested_total listings and prove every accepted click."""
+        if not pending and self.manifest.purchased_total > 0:
+            self._checkpoint("PURCHASE_SKIPPED_CARRYOVER_ONLY")
+            return 0
         for _ in range(max(0, self.last_unique_page - 1)):
             self.adapter.swipe_previous_stall_page()
         current_page = 1
@@ -159,6 +175,7 @@ class ClearStallWorkflow:
     ) -> None:
         item.record_purchase(inventory_before, inventory_after)
         self.manifest.save(self.manifest_path)
+        self._save_carryover()
         self.log(
             f"Đã xác nhận mua {item.purchased_quantity} tại "
             f"trang {item.source_page}, ô {item.source_slot}"
@@ -211,16 +228,69 @@ class ClearStallWorkflow:
     def mark_sale_verified(self, item: PurchasedItem, quantity: int) -> None:
         item.record_sale(quantity)
         self.manifest.save(self.manifest_path)
+        self._save_carryover()
 
     def complete(self) -> None:
         self.manifest.complete()
         self.manifest.save(self.manifest_path)
+        self._save_carryover()
         self._checkpoint("COMPLETED")
 
     def fail(self, error: Exception) -> None:
         self.manifest.fail(error)
         self.manifest.save(self.manifest_path)
+        self._save_carryover()
         self.log(f"Dọn quầy dừng an toàn: {error}")
+
+    def _load_carryover(self) -> int:
+        try:
+            payload = json.loads(self.carryover_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return 0
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Không đọc được carryover Dọn quầy: {exc}") from exc
+        if not isinstance(payload, dict) or int(payload.get("version") or 0) != 1:
+            raise RuntimeError("Carryover Dọn quầy sai phiên bản")
+        if str(payload.get("profile_id") or "") != str(self.request.profile_id):
+            raise RuntimeError("Carryover Dọn quầy không thuộc profile hiện tại")
+        raw_items = payload.get("items")
+        if not isinstance(raw_items, list):
+            raise RuntimeError("Carryover Dọn quầy thiếu danh sách vật phẩm")
+        loaded = 0
+        for raw in raw_items:
+            item = PurchasedItem.from_dict(raw)
+            copy = item.carryover_copy()
+            if copy is None:
+                continue
+            self.manifest.items.append(copy)
+            loaded += copy.purchased_quantity
+        return loaded
+
+    def _save_carryover(self) -> None:
+        pending = []
+        for item in self.manifest.items:
+            copy = item.carryover_copy()
+            if copy is not None:
+                pending.append(copy)
+        if not pending:
+            try:
+                self.carryover_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return
+        payload = {
+            "version": 1,
+            "profile_id": str(self.request.profile_id),
+            "updated_at": time.time(),
+            "items": [asdict(item) for item in pending],
+        }
+        self.carryover_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.carryover_path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temporary.replace(self.carryover_path)
 
     def _checkpoint(self, state: str) -> None:
         self.manifest.state = state
