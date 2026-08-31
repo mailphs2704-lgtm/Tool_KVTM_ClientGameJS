@@ -93,7 +93,7 @@ def main() -> int:
     adapter = None
     forward_swipes = 0
     report: dict[str, object] = {
-        "version": 1,
+        "version": 2,
         "mode": "read_only_live_probe",
         "profile_id": args.profile_id,
         "profile_name": args.profile_name,
@@ -101,11 +101,43 @@ def main() -> int:
         "friend_ordinal": args.friend_ordinal,
         "stall_id": args.stall_id,
         "started_at": time.time(),
+        "stages": [],
         "views": [],
     }
 
+    def persist_report() -> None:
+        report_path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
     def log(message: str) -> None:
         emit("probe_progress", message=str(message))
+
+    def capture_stage(stage: str):
+        if adapter is None:
+            return None
+        frame = adapter.screenshot()
+        height, width = frame.shape[:2]
+        index = len(report["stages"])
+        capture_path = work_dir / f"stage-{index:02d}-{stage}.png"
+        save_frame(capture_path, frame)
+        entry = {
+            "stage": stage,
+            "capture": str(capture_path),
+            "frame_size": [int(width), int(height)],
+            "at": time.time(),
+        }
+        report["stages"].append(entry)
+        report["last_stage"] = stage
+        persist_report()
+        emit(
+            "probe_progress",
+            message=f"Da chup trang thai: {stage} ({width}x{height})",
+            stage=stage,
+            capture=str(capture_path),
+        )
+        return frame
 
     try:
         emit("probe_boot", stage="loading_auto_pro_runtime")
@@ -126,11 +158,25 @@ def main() -> int:
             logger=log,
         )
         emit("probe_boot", stage="controller_ready")
+        capture_stage("controller-ready")
 
-        adapter.ensure_main_screen()
+        emit("probe_boot", stage="starting_autopro_popup_guard")
+        adapter.start_auto_pro_popup_guard()
+
+        # Do not wait silently for three minutes. Auto Pro owns popup handling;
+        # probe only gives it a short deterministic window to reach main screen.
+        emit("probe_boot", stage="waiting_main_screen")
+        adapter.ensure_main_screen(timeout=45.0)
+        capture_stage("main-screen")
+
         adapter.configure_target(args.friend_ordinal, args.stall_id)
-        adapter.go_to_friend_home(args.friend_ordinal)
-        adapter.open_target_stall(args.stall_id)
+        emit("probe_boot", stage="navigating_friend")
+        adapter.go_to_friend_home(args.friend_ordinal, verify=False)
+        capture_stage("friend-home")
+
+        emit("probe_boot", stage="opening_friend_stall")
+        adapter.open_target_stall(args.stall_id, verify=False)
+        capture_stage("stall-open")
 
         covered_physical_slots: list[int] = []
         occupied_new_physical_slots: list[int] = []
@@ -176,16 +222,19 @@ def main() -> int:
 
             covered_physical_slots.extend(new_physical)
             occupied_new_physical_slots.extend(occupied_new)
-            view_report = {
-                "view": view,
-                "capture": str(capture_path),
-                "new_local_slots": list(new_local),
-                "new_physical_slots": new_physical,
-                "occupied_visible_slots": occupied_visible,
-                "occupied_new_physical_slots": occupied_new,
-                "signature": scan.signature,
-            }
-            report["views"].append(view_report)
+            report["views"].append(
+                {
+                    "view": view,
+                    "capture": str(capture_path),
+                    "new_local_slots": list(new_local),
+                    "new_physical_slots": new_physical,
+                    "occupied_visible_slots": occupied_visible,
+                    "occupied_new_physical_slots": occupied_new,
+                    "signature": scan.signature,
+                }
+            )
+            report["last_stage"] = f"view-{view:02d}"
+            persist_report()
             emit(
                 "probe_progress",
                 message=(
@@ -217,10 +266,8 @@ def main() -> int:
         )
         report["completed_at"] = time.time()
         report["ok"] = True
-        report_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        report["last_stage"] = "completed"
+        persist_report()
         emit(
             "probe_ok",
             profile_id=args.profile_id,
@@ -234,10 +281,7 @@ def main() -> int:
         report["stopped"] = True
         report["error"] = str(exc)
         report["completed_at"] = time.time()
-        report_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        persist_report()
         emit("probe_stopped", report=str(report_path), error=str(exc))
         return 0
     except Exception as exc:
@@ -246,12 +290,11 @@ def main() -> int:
         report["traceback"] = traceback.format_exc()
         report["completed_at"] = time.time()
         try:
-            report_path.write_text(
-                json.dumps(report, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            if adapter is not None and not stop_event.is_set():
+                capture_stage("error-state")
         except Exception:
             pass
+        persist_report()
         emit(
             "probe_error",
             error=repr(exc),
@@ -260,7 +303,7 @@ def main() -> int:
         )
         return 1
     finally:
-        if adapter is not None:
+        if adapter is not None and not stop_event.is_set():
             while forward_swipes > 0:
                 try:
                     adapter.swipe_previous_stall_page()
