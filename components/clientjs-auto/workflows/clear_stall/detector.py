@@ -9,8 +9,11 @@ from .manifest import ItemFingerprint
 
 
 # Reference geometry at the fixed 1000x1000 ClientJS size. The friend stall has
-# twenty physical slots but only eight are visible at once.
+# twenty physical slots but only eight are visible at once. Recovered AUTO PRO
+# GoFiendHome uses swipe_count=4; _rollbackItem is called between those views.
 TOTAL_STALL_SLOTS = 20
+AUTO_PRO_STALL_VIEW_COUNT = 4
+AUTO_PRO_STALL_SHIFT = 4
 
 # Crop centers stay inside the item art and avoid price/count text.
 VISIBLE_SLOT_CENTERS = (
@@ -33,6 +36,27 @@ CELL_HALF_WIDTH = 52
 CELL_HALF_HEIGHT = 67
 
 
+def physical_slot_index(view: int, local_slot: int) -> int:
+    """Map one visible slot to its physical 1..20 position in the friend stall."""
+    view_value = int(view)
+    slot_value = int(local_slot)
+    if not 1 <= view_value <= AUTO_PRO_STALL_VIEW_COUNT:
+        raise ValueError(f"Cửa sổ quầy không hợp lệ: {view_value}")
+    if not 1 <= slot_value <= VISIBLE_STALL_SLOTS:
+        raise ValueError(f"Ô hiển thị không hợp lệ: {slot_value}")
+    return (view_value - 1) * AUTO_PRO_STALL_SHIFT + slot_value
+
+
+def new_local_slots_for_view(view: int) -> tuple[int, ...]:
+    """Return only physical slots that have not appeared in an earlier view."""
+    view_value = int(view)
+    if not 1 <= view_value <= AUTO_PRO_STALL_VIEW_COUNT:
+        raise ValueError(f"Cửa sổ quầy không hợp lệ: {view_value}")
+    if view_value == 1:
+        return tuple(range(1, VISIBLE_STALL_SLOTS + 1))
+    return tuple(range(VISIBLE_STALL_SLOTS - AUTO_PRO_STALL_SHIFT + 1, VISIBLE_STALL_SLOTS + 1))
+
+
 @dataclass(frozen=True)
 class DetectedSlot:
     page: int
@@ -40,6 +64,10 @@ class DetectedSlot:
     center: tuple[int, int]
     fingerprint: ItemFingerprint
     occupancy_score: float
+
+    @property
+    def physical_slot(self) -> int:
+        return physical_slot_index(self.page, self.slot)
 
 
 @dataclass(frozen=True)
@@ -51,7 +79,7 @@ class PageScan:
 
 
 class StallScanner:
-    """Scan overlapping eight-slot views while preserving twenty physical slots."""
+    """Scan the four recovered eight-slot views of the twenty-slot friend stall."""
 
     def __init__(
         self,
@@ -81,9 +109,8 @@ class StallScanner:
             crop = frame[y1:y2, x1:x2].copy()
             score = _occupancy_score(crop)
 
-            # A larger cell signature is used only to align two overlapping
-            # shop views. It includes item/count/price context and is never used
-            # as the item identity for resale.
+            # A larger cell signature is kept for diagnostics. Item identity for
+            # purchase/resale always comes from the inner icon fingerprint.
             cx1 = max(0, center_x - CELL_HALF_WIDTH)
             cx2 = min(width, center_x + CELL_HALF_WIDTH)
             cy1 = max(0, center_y - CELL_HALF_HEIGHT)
@@ -125,15 +152,7 @@ class StallScanner:
 
     @staticmethod
     def infer_forward_shift(previous: PageScan, current: PageScan) -> int:
-        """Infer how many physical slots entered from the right after one swipe.
-
-        AUTO PRO's _rollbackItem performs small left swipes, so consecutive
-        windows overlap. We accept only sequence-consistent overlaps. When
-        repeated empty/equal cells make more than one shift possible, choose
-        the smallest shift: this is conservative and prevents buying a physical
-        slot twice. The twenty-slot coverage loop will keep swiping for any
-        still-unseen positions.
-        """
+        """Diagnostic overlap inference retained for captures and regression tests."""
         before = previous.slot_signatures
         after = current.slot_signatures
         if len(before) != VISIBLE_STALL_SLOTS or len(after) != VISIBLE_STALL_SLOTS:
@@ -147,7 +166,7 @@ class StallScanner:
                 candidates.append(shift)
         if not candidates:
             raise RuntimeError(
-                "Không xác định được số ô quầy đã dịch sau swipe; dừng để tránh mua trùng"
+                "Không xác định được số ô quầy đã dịch sau swipe"
             )
         return min(candidates)
 
@@ -189,7 +208,7 @@ def _occupancy_score(image: Any) -> float:
 
 
 def _visual_signature(image: Any, *, occupied: bool) -> str:
-    """Compact stable cell signature for overlap alignment, not item identity."""
+    """Compact stable cell signature for diagnostics, not item identity."""
     try:
         import cv2
         gray = cv2.cvtColor(
