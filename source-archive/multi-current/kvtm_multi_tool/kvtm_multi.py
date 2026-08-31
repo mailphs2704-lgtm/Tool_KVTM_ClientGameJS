@@ -2127,11 +2127,22 @@ class MultiApp(tk.Tk):
             self._set_clear_stall_checkpoint(profile_id, "Đang dừng an toàn")
         elif event == "worker_error":
             error = str(payload.get("error") or "Lỗi Dọn quầy không xác định")
+            diagnostics = payload.get("diagnostics")
+            detail = ""
+            if isinstance(diagnostics, dict):
+                source = str(diagnostics.get("source_file") or "")
+                function = str(diagnostics.get("function") or "")
+                line = diagnostics.get("line")
+                if source or function or line:
+                    detail = f"\nTại: {source} • {function} • dòng {line}"
             self._set_clear_stall_checkpoint(
-                profile_id, "Dọn quầy lỗi", {"ok": False, "error": error}
+                profile_id, "Dọn quầy lỗi",
+                {"ok": False, "error": error, "diagnostics": diagnostics},
             )
             if profile_id == self._active_profile_id:
-                messagebox.showerror(APP_NAME, f"Dọn quầy lỗi:\n{error}")
+                messagebox.showerror(
+                    APP_NAME, f"Dọn quầy lỗi:\n{error}{detail}"
+                )
         elif event == "worker_finished":
             job = self._clear_stall_job(profile_id)
             interval = max(5, int(job.get("interval_minutes", 65) or 65))
