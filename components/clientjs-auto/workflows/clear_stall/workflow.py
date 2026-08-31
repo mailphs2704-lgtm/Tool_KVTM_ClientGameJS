@@ -175,24 +175,36 @@ class ClearStallWorkflow:
         self,
         executor: VisualTransactionExecutor,
     ) -> int:
-        """Return home and sell only manifest fingerprints, one proof at a time."""
+        """Sell complete groups of ten and keep the incomplete VP group."""
         self.begin_resale()
+        sellable = self.manifest.sellable_total
+        retained = self.manifest.retained_total
+        if sellable <= 0:
+            self.log(
+                f"Giữ lại {retained} VP lẻ trong kho; chưa đủ nhóm 10 để bán"
+            )
+            self.complete()
+            return 0
+
         self.adapter.open_clone_stall_for_sale(self.request.stall_id)
         sold = 0
         for item in self.manifest.items:
             self._ensure_running()
-            while item.remaining_to_sell > 0:
+            while item.remaining_to_sell > 0 and sold < sellable:
                 self._checkpoint(
                     f"SELLING_SOURCE_PAGE_{item.source_page}_SLOT_{item.source_slot}"
                 )
                 executor.sell_manifest_item(item)
                 self.mark_sale_verified(item, 1)
                 sold += 1
-        if sold != self.manifest.purchased_total:
+            if sold >= sellable:
+                break
+        if sold != sellable:
             raise RuntimeError(
-                f"Số lượng bán {sold} không khớp số đã mua "
-                f"{self.manifest.purchased_total}"
+                f"Số lượng bán {sold} không khớp nhóm 10 cần bán {sellable}"
             )
+        if retained > 0:
+            self.log(f"Giữ lại {retained} VP lẻ trong kho cho lượt sau")
         self.complete()
         return sold
 
