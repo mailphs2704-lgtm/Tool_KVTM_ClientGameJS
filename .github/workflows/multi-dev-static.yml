@@ -161,6 +161,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+
       - name: Build fixed-layout package
         shell: powershell
         run: |
@@ -174,6 +180,7 @@ jobs:
           $required = @(
             (Join-Path $root "Multi\kvtm_multi.py"),
             (Join-Path $root "Multi\kvtm_multi_entry.py"),
+            (Join-Path $root "components\clientjs-auto\worker\auto_worker.py"),
             (Join-Path $root "components\clientjs-auto\worker\clear_stall_worker.py"),
             (Join-Path $root "components\clientjs-auto\workflows\clear_stall\manifest.py"),
             (Join-Path $root "components\clientjs-auto\workflows\clear_stall\workflow.py"),
@@ -202,3 +209,37 @@ jobs:
           }
 
           Write-Host "PACKAGE_SMOKE_OK" -ForegroundColor Green
+
+      - name: Preflight packaged Auto Pro runtime
+        shell: powershell
+        run: |
+          @'
+          import importlib
+          import sys
+          from pathlib import Path
+
+          root = Path('dist/KVTM-ClientJS-Suite-CI').resolve()
+          auto_root = root / 'AUTO_PRO'
+          worker_root = root / 'components' / 'clientjs-auto' / 'worker'
+          sys.path.insert(0, str(worker_root))
+
+          from auto_worker import install_headless_clientjs_runtime
+
+          automation = install_headless_clientjs_runtime(auto_root)
+          adb_controller = importlib.import_module('adb_controller')
+          cv2 = importlib.import_module('cv2')
+          numpy = importlib.import_module('numpy')
+
+          assert hasattr(automation, 'FarmAutomation')
+          assert hasattr(adb_controller, 'ADBController')
+          assert callable(getattr(automation.FarmAutomation, 'start', None))
+          assert getattr(cv2, '__version__', None)
+          assert getattr(numpy, '__version__', None)
+
+          print('PACKAGED_RUNTIME_PREFLIGHT_OK')
+          print('cv2=' + str(cv2.__version__))
+          print('numpy=' + str(numpy.__version__))
+          PY
+          '@ | Set-Content -LiteralPath .\runtime_preflight_ci.py -Encoding UTF8
+          python .\runtime_preflight_ci.py
+          Remove-Item -LiteralPath .\runtime_preflight_ci.py -Force
