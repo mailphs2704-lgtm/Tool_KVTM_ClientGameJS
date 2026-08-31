@@ -48,14 +48,13 @@ class AutoProNavigationAdapter:
         self.stop_event = stop_event
         self.log = logger
         self._popup_guard_thread: threading.Thread | None = None
-        # AUTO PRO methods also consult this controller-owned event directly.
         try:
             setattr(self.controller, "_stop_event", self.stop_event)
         except Exception:
             pass
 
     def start_auto_pro_popup_guard(self) -> bool:
-        """Run AUTO PRO's original event/popup handler in the background."""
+        """Run AUTO PRO's original event/popup task once in the background."""
         method = getattr(self.controller, "eventgame", None)
         if not callable(method):
             self.log("AUTO PRO không có eventgame; bỏ qua popup guard")
@@ -65,20 +64,13 @@ class AutoProNavigationAdapter:
             return True
 
         def runner() -> None:
-            while not self.stop_event.is_set():
-                try:
-                    self._invoke(method, {"stop_event": self.stop_event})
-                except InterruptedError:
-                    return
-                except Exception as exc:
-                    if self.stop_event.is_set():
-                        return
-                    self.log(f"Popup guard Auto Pro tạm dừng: {exc}")
-                    time.sleep(1.0)
-                else:
-                    # Some recovered builds return after one sweep while others
-                    # keep eventgame alive internally. Re-run only when it returns.
-                    time.sleep(0.35)
+            try:
+                self._invoke(method, {"stop_event": self.stop_event})
+            except InterruptedError:
+                return
+            except Exception as exc:
+                if not self.stop_event.is_set():
+                    self.log(f"Popup guard Auto Pro dừng: {exc}")
 
         self._popup_guard_thread = threading.Thread(
             target=runner,
@@ -101,8 +93,6 @@ class AutoProNavigationAdapter:
                 return
 
             clicked = False
-            # Keep only AUTO PRO's account/game-entry actions here. Event/news
-            # popups are deliberately delegated to controller.eventgame().
             try:
                 if self.controller.image_processor.find_image(
                     "tai_khoan", threshold=0.82, click=True
