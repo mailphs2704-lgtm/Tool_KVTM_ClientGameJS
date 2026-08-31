@@ -13,19 +13,6 @@ def emit(event: str, **data) -> None:
     print(json.dumps({"event": event, **data}, ensure_ascii=True), flush=True)
 
 
-def command_reader(stop_event: threading.Event) -> None:
-    for line in sys.stdin:
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        action = str(payload.get("command") or "").strip().lower()
-        if action in {"stop", "pause"}:
-            stop_event.set()
-            emit("probe_stopping", reason="user")
-            return
-
-
 def save_frame(path: Path, frame) -> None:
     import cv2
 
@@ -79,21 +66,16 @@ def main() -> int:
         physical_slot_index,
     )
 
-    stop_event = threading.Event()
-    threading.Thread(
-        target=command_reader,
-        args=(stop_event,),
-        daemon=True,
-    ).start()
-
     work_dir = Path(args.work_dir).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
     report_path = work_dir / "report.json"
     scanner = StallScanner(work_dir / "templates")
     adapter = None
     forward_swipes = 0
+    stop_event = threading.Event()
+    report_lock = threading.RLock()
     report: dict[str, object] = {
-        "version": 3,
+        "version": 4,
         "mode": "read_only_live_probe",
         "profile_id": args.profile_id,
         "profile_name": args.profile_name,
@@ -107,17 +89,44 @@ def main() -> int:
     }
 
     def persist_report() -> None:
-        report_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        with report_lock:
+            report_path.write_text(
+                json.dumps(report, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
     def checkpoint(stage: str, **details) -> None:
-        entry = {"stage": str(stage), "at": time.time(), **details}
-        report["checkpoints"].append(entry)
-        report["last_stage"] = str(stage)
-        persist_report()
+        with report_lock:
+            entry = {"stage": str(stage), "at": time.time(), **details}
+            report["checkpoints"].append(entry)
+            report["last_stage"] = str(stage)
+            persist_report()
         emit("probe_boot", stage=str(stage), **details)
+
+    def command_reader() -> None:
+        for line in sys.stdin:
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            action = str(payload.get("command") or "").strip().lower()
+            if action in {"stop", "pause"}:
+                requested_at = time.time()
+                with report_lock:
+                    report["stop_requested_at"] = requested_at
+                    report["stop_requested_stage"] = str(
+                        report.get("last_stage") or "worker-starting"
+                    )
+                    persist_report()
+                stop_event.set()
+                emit(
+                    "probe_stopping",
+                    reason="user",
+                    stage=str(report.get("stop_requested_stage") or ""),
+                )
+                return
+
+    threading.Thread(target=command_reader, daemon=True).start()
 
     def log(message: str) -> None:
         emit("probe_progress", message=str(message))
@@ -134,9 +143,10 @@ def main() -> int:
             "frame_size": [int(width), int(height)],
             "at": time.time(),
         }
-        report["stages"].append(entry)
-        report["last_stage"] = stage
-        persist_report()
+        with report_lock:
+            report["stages"].append(entry)
+            report["last_stage"] = stage
+            persist_report()
         emit(
             "probe_progress",
             message=f"Da chup trang thai: {stage} ({width}x{height})",
@@ -150,33 +160,61 @@ def main() -> int:
             return None
         return capture_driver(stage, adapter.driver)
 
-    try:
-        # Persist every blocking boundary before entering it. This makes a
-        # stopped probe diagnostically useful even when no AUTO PRO object was
-        # fully constructed yet.
-        checkpoint("loading-auto-pro-runtime")
-        automation_module = install_headless_clientjs_runtime(
-            Path(args.auto_root).resolve()
-        )
-        checkpoint("auto-pro-runtime-loaded")
+    def runtime_heartbeat(done: threading.Event, started: float) -> None:
+        # Loading the recovered 3.11 runtime can be slow on a cold Windows
+        # cache/antivirus scan. Keep Multi visibly alive instead of looking
+        # frozen while the import is legitimately in progress.
+        while not done.wait(5.0):
+            elapsed = int(time.monotonic() - started)
+            emit(
+                "probe_progress",
+                message=f"Dang nap AUTO PRO... {elapsed}s (chua thao tac game)",
+                stage="loading-auto-pro-runtime",
+                elapsed_seconds=elapsed,
+            )
 
-        # Always capture the real GameClientJS window before engine injection.
-        # This is deliberately independent from ADBController/ImageProcessor.
+    try:
+        checkpoint("loading-auto-pro-runtime")
+        load_started = time.monotonic()
+        load_done = threading.Event()
+        threading.Thread(
+            target=runtime_heartbeat,
+            args=(load_done, load_started),
+            daemon=True,
+        ).start()
+        try:
+            automation_module = install_headless_clientjs_runtime(
+                Path(args.auto_root).resolve()
+            )
+        finally:
+            load_done.set()
+        load_seconds = round(time.monotonic() - load_started, 3)
+        checkpoint("auto-pro-runtime-loaded", elapsed_seconds=load_seconds)
+
+        # A stop pressed while the blocking Python import was running must be
+        # honored before touching the game/bridge. Previously it stayed queued
+        # and only surfaced later inside ensure_main_screen(), which made the
+        # stop look like a popup/navigation failure.
+        if stop_event.is_set():
+            raise InterruptedError("Dọn quầy đã được yêu cầu dừng")
+
         checkpoint("raw-window-driver-constructing")
         from pc_driver import PCDriver
         raw_driver = PCDriver(args.pid, reference_size=(1000, 1000))
         checkpoint("raw-window-driver-ready")
         capture_driver("raw-window", raw_driver)
 
-        # Build the Cocos EngineDriver exactly once. ADBController normally
-        # reaches it through uiautomator2.connect("PC:<pid>"). Reusing this
-        # preconnected instance prevents duplicate profile lookup / bridge
-        # injection during FarmAutomation construction.
+        if stop_event.is_set():
+            raise InterruptedError("Dọn quầy đã được yêu cầu dừng")
+
         checkpoint("engine-driver-constructing")
         from engine_driver import EngineDriver
         engine_driver = EngineDriver(args.pid, reference_size=(1000, 1000))
         checkpoint("engine-driver-ready")
         capture_driver("engine-driver", engine_driver)
+
+        if stop_event.is_set():
+            raise InterruptedError("Dọn quầy đã được yêu cầu dừng")
 
         import uiautomator2 as u2
         previous_connect = u2.connect
@@ -207,9 +245,11 @@ def main() -> int:
         checkpoint("controller-ready")
         capture_stage("controller-ready")
 
+        if stop_event.is_set():
+            raise InterruptedError("Dọn quầy đã được yêu cầu dừng")
+
         checkpoint("starting-autopro-popup-guard")
         adapter.start_auto_pro_popup_guard()
-
         checkpoint("waiting-main-screen")
         adapter.ensure_main_screen(timeout=45.0)
         capture_stage("main-screen")
