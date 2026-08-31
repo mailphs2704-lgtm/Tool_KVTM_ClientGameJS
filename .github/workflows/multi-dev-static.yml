@@ -28,6 +28,8 @@ jobs:
         run: |
           python - <<'PY'
           import sys
+          import tempfile
+          import threading
           from pathlib import Path
 
           sys.path.insert(0, str(Path('components/clientjs-auto/workflows').resolve()))
@@ -37,23 +39,28 @@ jobs:
               TransactionManifest,
           )
           from clear_stall.detector import PageScan, StallScanner
+          from clear_stall.workflow import ClearStallRequest, ClearStallWorkflow
 
           def fp(char: str):
               value = (char * 64)[:64]
               phash = (char * 16)[:16]
               return ItemFingerprint(value, phash, 84, 84, '')
 
-          def manifest_for(*groups):
-              manifest = TransactionManifest('profile-A', 2, 2, 999)
+          def add_units(manifest, fingerprint, count):
+              start = len(manifest.items)
+              for index in range(count):
+                  manifest.items.append(PurchasedItem(
+                      fingerprint=fingerprint,
+                      source_page=1,
+                      source_slot=((start + index) % 8) + 1,
+                      requested_quantity=1,
+                      purchased_quantity=1,
+                  ))
+
+          def manifest_for(*groups, profile='profile-A'):
+              manifest = TransactionManifest(profile, 2, 2, 999)
               for fingerprint, count in groups:
-                  for index in range(count):
-                      manifest.items.append(PurchasedItem(
-                          fingerprint=fingerprint,
-                          source_page=1,
-                          source_slot=(index % 8) + 1,
-                          requested_quantity=1,
-                          purchased_quantity=1,
-                      ))
+                  add_units(manifest, fingerprint, count)
               return manifest
 
           a = fp('a')
@@ -104,6 +111,45 @@ jobs:
           assert StallScanner.infer_forward_shift(prev, cur1) == 1
           assert StallScanner.infer_forward_shift(prev, cur2) == 2
           assert StallScanner.infer_forward_shift(prev, same) == 0
+
+          # Persist carryover outside each run folder, reload it on the next run,
+          # and prove one profile can never consume another profile's remainder.
+          with tempfile.TemporaryDirectory() as temp:
+              root = Path(temp)
+
+              def workflow(profile, run_name):
+                  request = ClearStallRequest(
+                      profile_id=profile,
+                      friend_ordinal=2,
+                      stall_id=2,
+                      buy_quantity=8,
+                      max_scan_pages=20,
+                      work_dir=root / profile / run_name,
+                  )
+                  return ClearStallWorkflow(
+                      request,
+                      adapter=None,
+                      stop_event=threading.Event(),
+                      logger=lambda _message: None,
+                  )
+
+              first = workflow('profile-A', 'run-1')
+              first.manifest.items = manifest_for((a, 13)).items
+              first.manifest.record_group_sale(a, 10)
+              first._save_carryover()
+              assert first.carryover_path.is_file()
+
+              second = workflow('profile-A', 'run-2')
+              assert second.manifest.purchased_total == 3
+              add_units(second.manifest, a, 7)
+              assert second.manifest.sellable_total == 10
+              second.manifest.record_group_sale(a, 10)
+              second.manifest.complete()
+              second._save_carryover()
+              assert not second.carryover_path.exists()
+
+              other = workflow('profile-B', 'run-1')
+              assert other.manifest.purchased_total == 0
 
           print('CLEAR_STALL_STATIC_OK')
           PY
