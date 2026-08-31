@@ -156,6 +156,73 @@ def install_clientjs_runtime(auto_root: Path):
     return importlib.import_module("automation")
 
 
+
+def discover_buy_sell_items(automation_module, automation) -> tuple[list[dict], str]:
+    """Find AUTO PRO's own {name, image} catalog without inventing templates."""
+    candidates = []
+    visited = set()
+
+    def inspect_mapping(owner: str, mapping) -> None:
+        try:
+            entries = list(mapping.items())
+        except Exception:
+            return
+        for key, value in entries:
+            identity = id(value)
+            if identity in visited or not isinstance(value, (list, tuple)):
+                continue
+            visited.add(identity)
+            if not value or not all(isinstance(item, dict) for item in value):
+                continue
+            if not all(
+                isinstance(item.get("name"), str)
+                and item.get("name").strip()
+                and isinstance(item.get("image"), str)
+                and item.get("image").strip()
+                for item in value
+            ):
+                continue
+            label = f"{owner}.{key}"
+            lowered = label.lower()
+            score = len(value)
+            if "buy_sell" in lowered or "buysell" in lowered:
+                score += 10000
+            elif "sell" in lowered:
+                score += 3000
+            elif "item" in lowered:
+                score += 1000
+            normalized = [
+                {"name": item["name"].strip(), "image": item["image"].strip()}
+                for item in value
+            ]
+            candidates.append((score, label, normalized))
+
+    inspect_mapping("automation", vars(automation))
+    inspect_mapping("FarmAutomation", vars(type(automation)))
+    inspect_mapping("automation_module", vars(automation_module))
+    for module_name, module in tuple(sys.modules.items()):
+        lowered = str(module_name).lower()
+        if not any(token in lowered for token in ("automation", "gui", "item")):
+            continue
+        try:
+            inspect_mapping(module_name, vars(module))
+        except Exception:
+            continue
+    if not candidates:
+        return [], ""
+    candidates.sort(key=lambda row: (row[0], len(row[2])), reverse=True)
+    _score, source, items = candidates[0]
+    unique = []
+    seen = set()
+    for item in items:
+        signature = (item["name"], item["image"])
+        if signature in seen:
+            continue
+        seen.add(signature)
+        unique.append(item)
+    return unique, source
+
+
 def command_reader(commands: queue.Queue) -> None:
     for line in sys.stdin:
         try:
@@ -382,6 +449,23 @@ def main() -> int:
         # makes runtime patching independent from constructor signatures.
         automation.clear_stall_quantity = clear_stall_values["clear_stall_quantity"]
         automation.clear_stall_max_pages = clear_stall_values["clear_stall_max_pages"]
+        if args.function_id == 170 and getattr(automation, "buy_sell_items", None) is None:
+            discovered_items, catalog_source = discover_buy_sell_items(
+                automation_module, automation
+            )
+            if not discovered_items:
+                raise RuntimeError(
+                    "Không tìm được danh mục {name, image} của Function 170; "
+                    "đã dừng trước khi mua/bán"
+                )
+            automation.buy_sell_items = discovered_items
+            emit(
+                "log",
+                message=(
+                    f"Dọn quầy: nạp {len(discovered_items)} vật phẩm "
+                    f"từ {catalog_source}"
+                ),
+            )
         controller = getattr(automation, "adb", None)
         if controller is not None:
             controller.shop_drag_speed = auto_tuning["shop_drag_speed"]
