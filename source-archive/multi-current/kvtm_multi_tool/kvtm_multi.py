@@ -2012,20 +2012,19 @@ class MultiApp(tk.Tk):
         auto_root = package_root / "AUTO_PRO"
         worker_file = (
             package_root / "components" / "clientjs-auto" /
-            "worker" / "auto_worker.py"
+            "worker" / "clear_stall_worker.py"
         )
         if not worker_file.is_file():
             self._set_clear_stall_checkpoint(
                 profile_id, f"Thiếu worker: {worker_file}"
             )
             return
-        options = {
-            "num_friend_for_bsf": int(job.get("target_friend_ordinal", 1)),
-            "buy_sell_friend_kho_id": int(job.get("target_stall_id", 2)),
-            "clear_stall_quantity": int(job.get("buy_quantity", 8)),
-            "clear_stall_max_pages": int(job.get("max_scan_pages", 10)),
-            "go_friend_home": True,
-        }
+        friend = int(job.get("target_friend_ordinal", 1))
+        stall = int(job.get("target_stall_id", 2))
+        quantity = int(job.get("buy_quantity", 8))
+        pages = int(job.get("max_scan_pages", 10))
+        run_id = time.strftime("%Y%m%d-%H%M%S")
+        work_dir = APP_DIR / "clear-stall" / profile_id / run_id
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             worker = subprocess.Popen(
@@ -2035,14 +2034,11 @@ class MultiApp(tk.Tk):
                     "--pid", str(proc.pid),
                     "--profile-id", str(profile_id),
                     "--profile-name", str(profile.get("name") or profile_id),
-                    "--function-id", "170",
-                    "--options-json", json.dumps(
-                        options, ensure_ascii=True, separators=(",", ":")
-                    ),
-                    "--tuning-json", json.dumps(
-                        self._collect_auto_tuning(),
-                        ensure_ascii=True, separators=(",", ":"),
-                    ),
+                    "--friend-ordinal", str(friend),
+                    "--stall-id", str(stall),
+                    "--quantity", str(quantity),
+                    "--max-pages", str(pages),
+                    "--work-dir", str(work_dir),
                 ],
                 cwd=str(auto_root), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, text=True, encoding="utf-8",
@@ -2050,16 +2046,15 @@ class MultiApp(tk.Tk):
             )
         except Exception as exc:
             self._set_clear_stall_checkpoint(
-                profile_id, f"Lỗi mở Dọn quầy worker: {exc}"
+                profile_id, f"Lỗi mở Dọn quầy worker Python: {exc}"
             )
             return
         self._clear_stall_workers[profile_id] = worker
         self._set_clear_stall_checkpoint(
             profile_id,
             (
-                f"Đang chạy ngay • Nhà bạn số {options['num_friend_for_bsf']} • "
-                f"Quầy {options['buy_sell_friend_kho_id']} • "
-                f"Mua {options['clear_stall_quantity']}"
+                f"Python worker • Nhà bạn số {friend} • Quầy {stall} • "
+                f"Mua {quantity} • Quét tối đa {pages} trang"
             ),
         )
         threading.Thread(
