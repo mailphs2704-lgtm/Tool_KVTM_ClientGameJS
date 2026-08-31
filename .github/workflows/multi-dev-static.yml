@@ -200,7 +200,24 @@ jobs:
               assert partial_item.purchased_quantity == 3
               assert partial_executor.clicks == 3
 
+          probe_path = Path(
+              'components/clientjs-auto/worker/clear_stall_live_probe.py'
+          )
+          probe_source = probe_path.read_text(encoding='utf-8')
+          assert 'StallScanner' in probe_source
+          assert 'AUTO_PRO_STALL_VIEW_COUNT' in probe_source
+          assert '1000x1000' in probe_source
+          for forbidden in (
+              'purchase_listing(',
+              'execute_purchases(',
+              'execute_resale(',
+              'sell_manifest_batch(',
+              'makeBuyItems(',
+          ):
+              assert forbidden not in probe_source, forbidden
+
           print('CLEAR_STALL_STATIC_OK')
+          print('CLEAR_STALL_LIVE_PROBE_READ_ONLY_OK')
           PY
 
   package-smoke:
@@ -223,23 +240,33 @@ jobs:
         run: |
           & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
 
-      - name: Verify carryover survives fixed DEV rebuild
+      - name: Verify runtime data survives fixed DEV rebuild
         shell: powershell
         run: |
           $root = Join-Path $PWD "dist\KVTM-ClientJS-Suite-CI"
-          $marker = Join-Path $root "data-dev\clear-stall\profile-ci\carryover-marker.txt"
-          New-Item -ItemType Directory -Path (Split-Path $marker) -Force | Out-Null
-          Set-Content -LiteralPath $marker -Value "KEEP-CLEAR-STALL" -Encoding ASCII
+          $carryMarker = Join-Path $root "data-dev\clear-stall\profile-ci\carryover-marker.txt"
+          $probeMarker = Join-Path $root "data-dev\clear-stall-probe\profile-ci\probe-marker.txt"
+          New-Item -ItemType Directory -Path (Split-Path $carryMarker) -Force | Out-Null
+          New-Item -ItemType Directory -Path (Split-Path $probeMarker) -Force | Out-Null
+          Set-Content -LiteralPath $carryMarker -Value "KEEP-CLEAR-STALL" -Encoding ASCII
+          Set-Content -LiteralPath $probeMarker -Value "KEEP-LIVE-PROBE" -Encoding ASCII
 
           & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
 
-          if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
+          if (-not (Test-Path -LiteralPath $carryMarker -PathType Leaf)) {
             throw "clear-stall runtime data was lost during fixed DEV rebuild"
           }
-          if ((Get-Content -LiteralPath $marker -Raw).Trim() -ne "KEEP-CLEAR-STALL") {
+          if ((Get-Content -LiteralPath $carryMarker -Raw).Trim() -ne "KEEP-CLEAR-STALL") {
             throw "clear-stall runtime marker changed during rebuild"
           }
+          if (-not (Test-Path -LiteralPath $probeMarker -PathType Leaf)) {
+            throw "clear-stall probe diagnostics were lost during fixed DEV rebuild"
+          }
+          if ((Get-Content -LiteralPath $probeMarker -Raw).Trim() -ne "KEEP-LIVE-PROBE") {
+            throw "clear-stall probe marker changed during rebuild"
+          }
           Write-Host "CLEAR_STALL_REBUILD_PRESERVE_OK" -ForegroundColor Green
+          Write-Host "CLEAR_STALL_PROBE_REBUILD_PRESERVE_OK" -ForegroundColor Green
 
       - name: Verify package contents and privacy
         shell: powershell
@@ -251,6 +278,7 @@ jobs:
             (Join-Path $root "Multi\kvtm_multi_entry.py"),
             (Join-Path $root "components\clientjs-auto\worker\auto_worker.py"),
             (Join-Path $root "components\clientjs-auto\worker\clear_stall_worker.py"),
+            (Join-Path $root "components\clientjs-auto\worker\clear_stall_live_probe.py"),
             (Join-Path $root "components\clientjs-auto\workflows\clear_stall\manifest.py"),
             (Join-Path $root "components\clientjs-auto\workflows\clear_stall\workflow.py"),
             (Join-Path $root "02_START_MULTI_DEV.bat"),
