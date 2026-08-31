@@ -137,19 +137,28 @@ def main() -> int:
     if not isinstance(requested_options, dict):
         emit("worker_error", error="Options JSON phải là object")
         return 2
-    allowed_option_keys = {
+    boolean_option_keys = {
         "Xoa_vp_kc", "open_chest", "auto_quay_he", "auto_nang_kho",
         "thue_tom", "giao_cu", "san_xuat_ngoc", "sx_event_cam",
         "sell_all",
     }
-    # Reject unknown fields and normalize every supported switch to bool.
+    allowed_option_keys = boolean_option_keys | {"skip_items"}
     unknown = set(requested_options) - allowed_option_keys
     if unknown:
         emit("worker_error", error=f"Options không được hỗ trợ: {sorted(unknown)}")
         return 2
+    requested_skip_items = requested_options.get("skip_items", [])
+    if not isinstance(requested_skip_items, list) or not all(
+        isinstance(item, str) and item.strip() for item in requested_skip_items
+    ):
+        emit("worker_error", error="skip_items phải là danh sách tên vật phẩm")
+        return 2
+    skip_items = list(dict.fromkeys(
+        item.strip() for item in requested_skip_items
+    ))
     auto_options = {
         key: bool(requested_options.get(key, False))
-        for key in allowed_option_keys
+        for key in boolean_option_keys
     }
 
     tuning_defaults = {
@@ -240,6 +249,7 @@ def main() -> int:
             args.function_id,
             gui_ref=proxy,
             options=auto_options,
+            skip_items=skip_items or None,
             **constructor_tuning,
         )
         controller = getattr(automation, "adb", None)
@@ -262,7 +272,8 @@ def main() -> int:
             emit(
                 "worker_started", pid=args.pid, profile_id=args.profile_id,
                 profile_name=args.profile_name, function_id=args.function_id,
-                options=auto_options, tuning=auto_tuning,
+                options={**auto_options, "skip_items": skip_items},
+                tuning=auto_tuning,
             )
             automation.start()
         except Exception as exc:
