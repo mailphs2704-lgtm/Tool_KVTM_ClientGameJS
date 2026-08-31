@@ -136,6 +136,15 @@ class AutoProNavigationAdapter:
             self.driver.swipe(633, 546, 540, 540, duration=0.35)
         time.sleep(0.35)
 
+    def swipe_previous_stall_page(self) -> None:
+        self._ensure_running()
+        method = getattr(self.controller, "_scroll_back_shop", None)
+        if callable(method):
+            self._invoke(method, {"stop_event": self.stop_event})
+        else:
+            self.driver.swipe(540, 540, 633, 546, duration=0.35)
+        time.sleep(0.35)
+
     def screenshot(self):
         self._ensure_running()
         return self.driver.screenshot(format="opencv")
