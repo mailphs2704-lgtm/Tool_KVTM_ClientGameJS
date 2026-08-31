@@ -127,6 +127,32 @@ class AutoProNavigationAdapter:
             description="màn hình chính của clone",
         )
 
+    def open_clone_stall_for_sale(self, stall_id: int) -> None:
+        """Open the clone's own stall after return; never reuse friend state."""
+        self._ensure_running()
+        if not self._find_any(("friend_off", "icon_home")):
+            raise RuntimeError("Chưa xác nhận màn hình chính của clone")
+        method, owner_name = self._resolve(self.STALL_METHODS)
+        self.log(
+            f"Mở quầy bán của clone {int(stall_id)} bằng "
+            f"{owner_name}.{method.__name__}"
+        )
+        self._invoke(
+            method,
+            {
+                "kho_id": int(stall_id),
+                "stall_id": int(stall_id),
+                "shop_id": int(stall_id),
+                "buy_sell_friend_kho_id": int(stall_id),
+                "stop_event": self.stop_event,
+            },
+        )
+        self._wait_for_any(
+            ("shop", "kho_ban", "sell_item", "ban_vat_pham"),
+            timeout=30.0,
+            description=f"quầy bán của clone {int(stall_id)}",
+        )
+
     def swipe_next_stall_page(self) -> None:
         self._ensure_running()
         method = getattr(self.controller, "_rollbackItem", None)
