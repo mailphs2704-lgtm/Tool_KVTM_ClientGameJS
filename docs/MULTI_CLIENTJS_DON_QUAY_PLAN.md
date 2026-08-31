@@ -1,0 +1,153 @@
+# Kế hoạch chức năng Dọn quầy ClientJS
+
+## 1. Phạm vi
+
+Dọn quầy là workflow mới của Multi DEV, không ánh xạ sang Function ID hoặc method của AUTO PRO.
+
+Mục tiêu ban đầu:
+
+- Tài khoản clone không mở ClientJS khi chưa đến lịch.
+- Chu kỳ mặc định: 65 phút.
+- Đến lịch, Multi mở đúng profile clone.
+- Worker tự lấy PID hiện tại từ profile ID, kể cả ClientJS vừa reset.
+- Clone đi tới quầy tài khoản chính, xử lý vật phẩm theo cấu hình và bán lại.
+- Hoàn tất thì lưu mốc chạy kế tiếp và có thể đóng client clone.
+
+AUTO PRO chỉ được dùng làm tài liệu tham khảo về capture, nhận diện ảnh, click/swipe, chờ có điều kiện và phục hồi màn hình. Không ghép workflow này vào bytecode `FarmAutomation`.
+
+## 2. Nguyên tắc an toàn
+
+- Mặc định OFF.
+- Không dùng kim cương.
+- Không mua hoặc bán nếu chưa xác nhận đúng tài khoản, đúng quầy và đúng vật phẩm.
+- Mỗi bước thay đổi trạng thái phải được xác nhận bằng ảnh sau thao tác.
+- Không nhận diện chắc chắn thì dừng worker, chụp ảnh chẩn đoán và ghi log.
+- Một profile chỉ có tối đa một worker Dọn quầy.
+- Lệnh phải có tính lặp an toàn: chạy lại sau lỗi không được mua/bán trùng.
+- Không lưu profile đăng nhập trong ZIP đóng gói.
+
+## 3. Kiến trúc dự kiến
+
+```text
+Multi UI
+  -> ClearStallConfigStore
+  -> ClearStallScheduler
+  -> ClearStallWorker (mỗi profile clone)
+  -> ClientSessionResolver (profile ID -> PID/HWND mới nhất)
+  -> Capture/Input adapter hiện có
+  -> ScreenDetector + StallExecutor
+  -> JSONL log + checkpoint
+```
+
+Thư mục dự kiến:
+
+```text
+components/clientjs-auto/workflows/clear_stall/
+  __init__.py
+  config.py
+  scheduler.py
+  worker.py
+  session_resolver.py
+  detector.py
+  executor.py
+  checkpoints.py
+  assets/
+  tests/
+```
+
+## 4. Dữ liệu cấu hình
+
+Mỗi nhiệm vụ cần:
+
+- `job_id`: ID cố định của nhiệm vụ.
+- `clone_profile_id`: profile clone thực hiện.
+- `main_profile_id`: tài khoản chính có quầy cần dọn.
+- `interval_minutes`: mặc định 65.
+- `next_run_at`: thời điểm chạy kế tiếp.
+- `close_client_after_run`: đóng clone sau khi hoàn tất.
+- `item_rules`: danh sách vật phẩm, số lượng và giới hạn giá.
+- `enabled`: mặc định false.
+- `last_checkpoint`: bước cuối đã xác nhận.
+- `last_result`: kết quả gần nhất.
+
+Cấu hình được lưu trong `data-dev`, tách khỏi source và được script build cố định bảo toàn.
+
+## 5. Máy trạng thái
+
+1. `WAITING`: chưa tới lịch, client clone không cần mở.
+2. `LAUNCHING`: mở clone bằng profile ID.
+3. `ATTACHING`: tìm PID/HWND hiện tại và chuẩn hóa kích thước.
+4. `ENTERING_GAME`: chờ màn hình chính có xác nhận.
+5. `OPENING_FRIEND`: mở đúng tài khoản chính.
+6. `OPENING_STALL`: xác nhận đúng quầy.
+7. `SCANNING_ITEMS`: đọc từng ô hàng và đối chiếu rule.
+8. `BUYING`: mua có xác nhận trước/sau.
+9. `RETURNING`: quay về tài khoản clone.
+10. `RESELLING`: đưa đúng vật phẩm lên quầy theo cấu hình.
+11. `VERIFYING`: xác nhận kết quả và ghi checkpoint.
+12. `COMPLETED`: tính `next_run_at`, tùy chọn đóng client.
+13. `PAUSED/ERROR`: dừng an toàn và giữ bằng chứng chẩn đoán.
+
+## 6. Các pha thực hiện
+
+### Pha 1 — UI và schema
+
+- Hoàn thiện form ghép cặp tài khoản chính/clone.
+- Cấu hình chu kỳ, vật phẩm, số lượng, giá và tùy chọn đóng client.
+- Lưu riêng theo job ID.
+- Validation không cho một clone chạy hai job đồng thời.
+
+### Pha 2 — Scheduler và PID
+
+- Scheduler không mở client trước lịch.
+- Mở đúng profile clone khi tới hạn.
+- Resolver tự cập nhật PID/HWND sau reset.
+- Pause/stop không làm mất lịch và checkpoint.
+
+### Pha 3 — Detector
+
+- Chuẩn hóa ảnh ClientJS về hệ tọa độ tham chiếu.
+- Nhận diện màn hình chính, danh sách bạn, quầy, ô vật phẩm và hộp xác nhận.
+- Ghi confidence và ảnh lỗi.
+- Không thao tác nếu confidence dưới ngưỡng.
+
+### Pha 4 — Executor mua hàng
+
+- Đi tới đúng quầy tài khoản chính.
+- Quét ô hàng theo thứ tự ổn định.
+- Chỉ mua vật phẩm khớp rule.
+- Xác nhận số lượng/tồn kho sau mỗi lần mua.
+- Phục hồi được khi popup hoặc mạng chậm.
+
+### Pha 5 — Bán lại
+
+- Quay về clone.
+- Mở quầy, chọn đúng vật phẩm và số lượng.
+- Đặt giá theo rule.
+- Xác nhận item đã xuất hiện trên quầy.
+- Chống bán lặp khi worker khởi động lại.
+
+### Pha 6 — Chạy nhiều tài khoản
+
+- Hàng đợi giới hạn số client mở đồng thời.
+- Worker, log và checkpoint độc lập.
+- UI hiển thị lần chạy tới, bước hiện tại và lỗi từng job.
+- Test reset PID giữa từng trạng thái.
+
+## 7. Tiêu chí nghiệm thu bản đầu
+
+- Một cặp clone/chính chạy hoàn chỉnh trong môi trường test.
+- Client clone không mở trước thời điểm 65 phút.
+- Reset ClientJS giữa phiên vẫn tự bắt PID mới và tiếp tục từ checkpoint an toàn.
+- Không chiếm chuột người dùng nếu adapter nền hỗ trợ thao tác tương ứng.
+- Không dùng KC.
+- Không mua/bán sai vật phẩm trong bộ ảnh kiểm thử.
+- Khi nhận diện thất bại, worker dừng và tạo đủ log + ảnh chẩn đoán.
+- Chạy lặp lại không tạo giao dịch trùng.
+
+## 8. Trạng thái hiện tại
+
+- Tab Dọn quầy đã được thêm vào Multi DEV.
+- Chu kỳ thiết kế mặc định là 65 phút.
+- Chưa có worker và chưa phát sinh thao tác game.
+- Bước triển khai tiếp theo: Pha 1 — schema cấu hình và form ghép cặp tài khoản.
