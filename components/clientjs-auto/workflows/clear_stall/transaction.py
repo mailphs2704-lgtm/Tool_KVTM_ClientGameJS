@@ -65,6 +65,25 @@ class VisualTransactionExecutor:
         self.minimum_screen_change = float(minimum_screen_change)
         self.fingerprint_distance = int(fingerprint_distance)
 
+    def source_listing_matches(self, item: PurchasedItem) -> bool:
+        """Confirm the same VP still occupies the friend-stall slot before clicking."""
+        self._ensure_running()
+        index = int(item.source_slot) - 1
+        if not 0 <= index < len(VISIBLE_SLOT_CENTERS):
+            return False
+        frame = self.driver.screenshot(format="opencv")
+        crop = self._crop_icon(frame, VISIBLE_SLOT_CENTERS[index])
+        if getattr(crop, "size", 0) == 0:
+            return False
+        candidate = ItemFingerprint.from_bgra(
+            crop.tobytes(), crop.shape[1], crop.shape[0], ""
+        )
+        distance = hamming_distance(
+            item.fingerprint.perceptual_hash,
+            candidate.perceptual_hash,
+        )
+        return distance <= self.fingerprint_distance
+
     def purchase_listing(self, item: PurchasedItem) -> VerifiedAction:
         """Buy one friend-stall unit exactly as recovered GoFiendHome does."""
         self._ensure_running()
