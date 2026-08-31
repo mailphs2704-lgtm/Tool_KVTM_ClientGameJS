@@ -9,7 +9,7 @@ from typing import Callable
 
 from .adapter import AutoProNavigationAdapter
 from .detector import DetectedSlot, StallScanner
-from .manifest import PurchasedItem, TransactionManifest
+from .manifest import ItemFingerprint, PurchasedItem, TransactionManifest
 from .transaction import VisualTransactionExecutor
 
 
@@ -192,41 +192,45 @@ class ClearStallWorkflow:
         self,
         executor: VisualTransactionExecutor,
     ) -> int:
-        """Sell complete groups of ten and keep the incomplete VP group."""
+        """Place one own-stall slot for each complete group of ten of one VP type."""
         self.begin_resale()
-        sellable = self.manifest.sellable_total
-        retained = self.manifest.retained_total
-        if sellable <= 0:
+        batches = self.manifest.resale_batches()
+        planned_remainder = self.manifest.planned_remainder_total
+        if not batches:
             self.log(
-                f"Giữ lại {retained} VP lẻ trong kho; chưa đủ nhóm 10 để bán"
+                f"Giữ lại {self.manifest.retained_total} VP trong kho; "
+                "chưa có loại VP nào đủ 10"
             )
             self.complete()
             return 0
 
         self.adapter.open_clone_stall_for_sale(self.request.stall_id)
         sold = 0
-        for item in self.manifest.items:
+        for index, batch in enumerate(batches, start=1):
             self._ensure_running()
-            while item.remaining_to_sell > 0 and sold < sellable:
-                self._checkpoint(
-                    f"SELLING_SOURCE_PAGE_{item.source_page}_SLOT_{item.source_slot}"
-                )
-                executor.sell_manifest_item(item)
-                self.mark_sale_verified(item, 1)
-                sold += 1
-            if sold >= sellable:
-                break
-        if sold != sellable:
+            self._checkpoint(f"SELLING_BATCH_{index}_QTY_{batch.quantity}")
+            executor.sell_manifest_batch(batch.fingerprint, batch.quantity)
+            self.mark_sale_verified(batch.fingerprint, batch.quantity)
+            sold += batch.quantity
+
+        if sold != self.manifest.sellable_total:
             raise RuntimeError(
-                f"Số lượng bán {sold} không khớp nhóm 10 cần bán {sellable}"
+                f"Số lượng bán {sold} không khớp kế hoạch "
+                f"{self.manifest.sellable_total} theo từng loại VP"
             )
-        if retained > 0:
-            self.log(f"Giữ lại {retained} VP lẻ trong kho cho lượt sau")
+        if planned_remainder > 0:
+            self.log(
+                f"Giữ lại {planned_remainder} VP lẻ (<10 theo từng loại) cho lượt sau"
+            )
         self.complete()
         return sold
 
-    def mark_sale_verified(self, item: PurchasedItem, quantity: int) -> None:
-        item.record_sale(quantity)
+    def mark_sale_verified(
+        self,
+        fingerprint: ItemFingerprint,
+        quantity: int,
+    ) -> None:
+        self.manifest.record_group_sale(fingerprint, quantity)
         self.manifest.save(self.manifest_path)
         self._save_carryover()
 
