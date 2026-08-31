@@ -10,10 +10,25 @@ Mục tiêu ban đầu:
 - Chu kỳ mặc định: 65 phút.
 - Đến lịch, Multi mở đúng profile clone.
 - Worker tự lấy PID hiện tại từ profile ID, kể cả ClientJS vừa reset.
-- Clone đi tới quầy tài khoản chính, xử lý vật phẩm theo cấu hình và bán lại.
+- Clone tìm tài khoản chính theo số thứ tự trong danh sách bạn bè, đi tới quầy, xử lý vật phẩm theo cấu hình và bán lại.
+- Tài khoản chính có thể chạy trên máy khác, LDPlayer hoặc không do Multi DEV quản lý PID.
 - Hoàn tất thì lưu mốc chạy kế tiếp và có thể đóng client clone.
 
 AUTO PRO chỉ được dùng làm tài liệu tham khảo về capture, nhận diện ảnh, click/swipe, chờ có điều kiện và phục hồi màn hình. Không ghép workflow này vào bytecode `FarmAutomation`.
+
+### Cơ chế AUTO PRO được tham khảo
+
+Các dấu vết đã xác định trong AUTO PRO:
+
+- Function 170 / `produceItems_170`: **Mua - Bán VP Friend**.
+- Function 4 / `produceItems_4`: **Mua VP 8 Ô - Nhà Bạn**.
+- Function 5 / `produceItems_5`: **Chuyển VPSK**.
+- Method điều hướng: `GoFiendHome`.
+- `num_friend_for_bsf`: số thứ tự bạn bè dùng cho luồng mua/bán.
+- `buy_sell_friend_kho_id`: kho/quầy được chọn trong luồng mua/bán.
+- `go_friend_home`: bật bước đi tới nhà bạn.
+
+Dọn quầy sẽ viết worker mới nhưng tái sử dụng cách điều hướng theo thứ tự bạn bè. Số thứ tự được nhập theo cách người dùng nhìn thấy (dự kiến 1-based); cần trace một lượt Function 170 để chốt phép đổi sang chỉ số nội bộ trước khi viết executor.
 
 ## 2. Nguyên tắc an toàn
 
@@ -61,7 +76,11 @@ Mỗi nhiệm vụ cần:
 
 - `job_id`: ID cố định của nhiệm vụ.
 - `clone_profile_id`: profile clone thực hiện.
-- `main_profile_id`: tài khoản chính có quầy cần dọn.
+- `target_mode`: mặc định `friend_ordinal`.
+- `target_friend_ordinal`: số thứ tự tài khoản chính trong danh sách bạn bè của clone.
+- `target_friend_hint`: tên/ảnh/đặc điểm dùng xác nhận sau khi vào nhà; không dùng để click chính.
+- `target_stall_id`: kho/quầy đích, tham khảo `buy_sell_friend_kho_id`.
+- `main_profile_id`: tùy chọn; chỉ dùng khi acc chính cũng được quản lý bởi Multi, không bắt buộc.
 - `interval_minutes`: mặc định 65.
 - `next_run_at`: thời điểm chạy kế tiếp.
 - `close_client_after_run`: đóng clone sau khi hoàn tất.
@@ -78,7 +97,7 @@ Cấu hình được lưu trong `data-dev`, tách khỏi source và được scr
 2. `LAUNCHING`: mở clone bằng profile ID.
 3. `ATTACHING`: tìm PID/HWND hiện tại và chuẩn hóa kích thước.
 4. `ENTERING_GAME`: chờ màn hình chính có xác nhận.
-5. `OPENING_FRIEND`: mở đúng tài khoản chính.
+5. `OPENING_FRIEND`: mở danh sách bạn, điều hướng tới `target_friend_ordinal` theo cơ chế tham khảo `GoFiendHome`, sau đó xác nhận đúng nhà.
 6. `OPENING_STALL`: xác nhận đúng quầy.
 7. `SCANNING_ITEMS`: đọc từng ô hàng và đối chiếu rule.
 8. `BUYING`: mua có xác nhận trước/sau.
@@ -92,7 +111,9 @@ Cấu hình được lưu trong `data-dev`, tách khỏi source và được scr
 
 ### Pha 1 — UI và schema
 
-- Hoàn thiện form ghép cặp tài khoản chính/clone.
+- Hoàn thiện form chọn profile clone và nhập số thứ tự bạn bè của acc chính.
+- Acc chính không bắt buộc có profile/PID trong Multi DEV.
+- Thêm trường kho/quầy đích và dấu hiệu xác nhận đúng nhà.
 - Cấu hình chu kỳ, vật phẩm, số lượng, giá và tùy chọn đóng client.
 - Lưu riêng theo job ID.
 - Validation không cho một clone chạy hai job đồng thời.
@@ -107,7 +128,8 @@ Cấu hình được lưu trong `data-dev`, tách khỏi source và được scr
 ### Pha 3 — Detector
 
 - Chuẩn hóa ảnh ClientJS về hệ tọa độ tham chiếu.
-- Nhận diện màn hình chính, danh sách bạn, quầy, ô vật phẩm và hộp xác nhận.
+- Nhận diện màn hình chính, danh sách bạn, trạng thái phân trang, đúng nhà, quầy, ô vật phẩm và hộp xác nhận.
+- Sau khi click theo số thứ tự, bắt buộc xác nhận target bằng `target_friend_hint` trước khi mua.
 - Ghi confidence và ảnh lỗi.
 - Không thao tác nếu confidence dưới ngưỡng.
 
@@ -136,7 +158,8 @@ Cấu hình được lưu trong `data-dev`, tách khỏi source và được scr
 
 ## 7. Tiêu chí nghiệm thu bản đầu
 
-- Một cặp clone/chính chạy hoàn chỉnh trong môi trường test.
+- Một clone dọn được quầy acc chính đang chạy trên máy khác hoặc LDPlayer.
+- Thứ tự bạn bè được xác định rõ là 1-based ở UI và chuyển đổi đúng sang chỉ số nội bộ.
 - Client clone không mở trước thời điểm 65 phút.
 - Reset ClientJS giữa phiên vẫn tự bắt PID mới và tiếp tục từ checkpoint an toàn.
 - Không chiếm chuột người dùng nếu adapter nền hỗ trợ thao tác tương ứng.
