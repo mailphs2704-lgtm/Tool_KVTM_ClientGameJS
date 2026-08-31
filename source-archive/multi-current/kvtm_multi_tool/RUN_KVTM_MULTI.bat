@@ -4,13 +4,13 @@ cd /d "%~dp0"
 
 where py >nul 2>nul
 if %errorlevel%==0 (
-  py -3 kvtm_multi.py
+  py -3 kvtm_multi_entry.py
   goto :done
 )
 
 where python >nul 2>nul
 if %errorlevel%==0 (
-  python kvtm_multi.py
+  python kvtm_multi_entry.py
   goto :done
 )
 
