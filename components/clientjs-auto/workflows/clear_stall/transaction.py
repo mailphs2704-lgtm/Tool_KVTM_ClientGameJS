@@ -6,7 +6,12 @@ import threading
 import time
 from typing import Any, Callable
 
-from .detector import ICON_HALF_HEIGHT, ICON_HALF_WIDTH, VISIBLE_SLOT_CENTERS
+from .detector import (
+    FRIEND_PURCHASE_CLICK_CENTERS,
+    ICON_HALF_HEIGHT,
+    ICON_HALF_WIDTH,
+    VISIBLE_SLOT_CENTERS,
+)
 from .manifest import (
     ItemFingerprint,
     PurchasedItem,
@@ -300,9 +305,9 @@ class VisualTransactionExecutor:
     @staticmethod
     def _slot_center(slot: int) -> tuple[int, int]:
         index = int(slot) - 1
-        if not 0 <= index < len(VISIBLE_SLOT_CENTERS):
+        if not 0 <= index < len(FRIEND_PURCHASE_CLICK_CENTERS):
             raise ValueError(f"Ô vật phẩm không hợp lệ: {slot}")
-        return VISIBLE_SLOT_CENTERS[index]
+        return FRIEND_PURCHASE_CLICK_CENTERS[index]
 
     @staticmethod
     def _crop_icon(frame, center: tuple[int, int]):
