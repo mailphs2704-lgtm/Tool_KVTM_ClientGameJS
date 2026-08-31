@@ -239,7 +239,6 @@ jobs:
           print('PACKAGED_RUNTIME_PREFLIGHT_OK')
           print('cv2=' + str(cv2.__version__))
           print('numpy=' + str(numpy.__version__))
-          PY
           '@ | Set-Content -LiteralPath .\runtime_preflight_ci.py -Encoding UTF8
           python .\runtime_preflight_ci.py
           Remove-Item -LiteralPath .\runtime_preflight_ci.py -Force
