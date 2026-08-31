@@ -14,6 +14,7 @@ $OutputRoot = Join-Path $DistRoot $OutputName
 $PreserveRoot = Join-Path $DistRoot (".kvtm-dev-data-" + [guid]::NewGuid().ToString("N"))
 $PreservedFiles = @{}
 $PreservedClearStall = $false
+$PreservedClearStallProbe = $false
 New-Item -ItemType Directory -Path $DistRoot -Force | Out-Null
 
 function Test-GitLfsPointer {
@@ -95,12 +96,8 @@ function Resolve-AutoProLfsRuntime {
     Write-Host "Git LFS runtime VERIFIED: all tracked files are real objects" -ForegroundColor Green
 }
 
-# The recovered AUTO PRO runtime is intentionally tracked with Git LFS. Never
-# allow pointer text files to be copied into a distributable package.
 Resolve-AutoProLfsRuntime
 
-# Preserve isolated DEV data before replacing the fixed package. Prefer the
-# current fixed folder, then the newest older DEV package, then APPDATA.
 $DataCandidates = @()
 $CurrentData = Join-Path $OutputRoot "data-dev"
 if (Test-Path -LiteralPath $CurrentData -PathType Container) {
@@ -135,14 +132,19 @@ foreach ($name in @("profiles.json", "settings.json")) {
     }
 }
 
-# Carryover fingerprints reference templates under the fixed current output
-# path, so preserve only the current package's clear-stall runtime tree. Never
-# borrow it from another package or APPDATA instance.
+# Preserve only runtime data owned by the current fixed DEV package. These
+# folders are restored after ZIP creation and therefore never enter the ZIP.
 $CurrentClearStall = Join-Path $CurrentData "clear-stall"
 if (Test-Path -LiteralPath $CurrentClearStall -PathType Container) {
     $PreservedClearStallPath = Join-Path $PreserveRoot "clear-stall"
     Copy-Item -LiteralPath $CurrentClearStall -Destination $PreservedClearStallPath -Recurse -Force
     $PreservedClearStall = $true
+}
+$CurrentClearStallProbe = Join-Path $CurrentData "clear-stall-probe"
+if (Test-Path -LiteralPath $CurrentClearStallProbe -PathType Container) {
+    $PreservedClearStallProbePath = Join-Path $PreserveRoot "clear-stall-probe"
+    Copy-Item -LiteralPath $CurrentClearStallProbe -Destination $PreservedClearStallProbePath -Recurse -Force
+    $PreservedClearStallProbe = $true
 }
 
 foreach ($required in @(
@@ -159,6 +161,7 @@ foreach ($required in @(
     (Join-Path $ClientJsAutoSource "worker\runtime_probe.py"),
     (Join-Path $ClientJsAutoSource "worker\auto_worker.py"),
     (Join-Path $ClientJsAutoSource "worker\clear_stall_worker.py"),
+    (Join-Path $ClientJsAutoSource "worker\clear_stall_live_probe.py"),
     (Join-Path $ClientJsAutoSource "workflows\clear_stall\manifest.py"),
     (Join-Path $ClientJsAutoSource "workflows\clear_stall\workflow.py")
 )) {
@@ -178,8 +181,6 @@ $AutoOut = Join-Path $OutputRoot "AUTO_PRO"
 $MultiOut = Join-Path $OutputRoot "Multi"
 New-Item -ItemType Directory -Path $AutoOut, $MultiOut -Force | Out-Null
 
-# Copy the complete recovered runtime. Do not exclude *.pyc: these files are
-# the actual AUTO PRO source modules, not disposable cache files.
 Copy-Item -Path (Join-Path $AutoSource "*") -Destination $AutoOut -Recurse -Force
 Copy-Item -Path (Join-Path $MultiSource "*") -Destination $MultiOut -Recurse -Force
 
@@ -237,6 +238,7 @@ $checks = @(
     (Join-Path $ClientJsAutoOut "worker\runtime_probe.py"),
     (Join-Path $ClientJsAutoOut "worker\auto_worker.py"),
     (Join-Path $ClientJsAutoOut "worker\clear_stall_worker.py"),
+    (Join-Path $ClientJsAutoOut "worker\clear_stall_live_probe.py"),
     (Join-Path $ClientJsAutoOut "workflows\clear_stall\manifest.py"),
     (Join-Path $ClientJsAutoOut "workflows\clear_stall\workflow.py")
 )
@@ -255,8 +257,6 @@ if (Test-Path -LiteralPath $ZipPath) {
 }
 Compress-Archive -LiteralPath $OutputRoot -DestinationPath $ZipPath -CompressionLevel Optimal
 
-# Restore local account/runtime data only after ZIP creation so it is never
-# embedded in the distributable archive.
 $DevDataOut = Join-Path $OutputRoot "data-dev"
 New-Item -ItemType Directory -Path $DevDataOut -Force | Out-Null
 foreach ($name in @("profiles.json", "settings.json")) {
@@ -269,13 +269,17 @@ if ($PreservedClearStall) {
     $preserved = Join-Path $PreserveRoot "clear-stall"
     Copy-Item -LiteralPath $preserved -Destination (Join-Path $DevDataOut "clear-stall") -Recurse -Force
 }
+if ($PreservedClearStallProbe) {
+    $preserved = Join-Path $PreserveRoot "clear-stall-probe"
+    Copy-Item -LiteralPath $preserved -Destination (Join-Path $DevDataOut "clear-stall-probe") -Recurse -Force
+}
 Remove-Item -LiteralPath $PreserveRoot -Recurse -Force
 
 Write-Host "PACKAGE OK" -ForegroundColor Green
 Write-Host "Folder: $OutputRoot"
 Write-Host "ZIP:    $ZipPath"
 Write-Host "runtime/pyc VERIFIED: real LFS objects, not pointer text" -ForegroundColor Green
-Write-Host "clear_stall VERIFIED: entrypoint, worker, manifest, workflow" -ForegroundColor Green
+Write-Host "clear_stall VERIFIED: entrypoint, worker, live probe, manifest, workflow" -ForegroundColor Green
 if ($PreservedFiles.Count -gt 0) {
     foreach ($name in $PreservedFiles.Keys) {
         Write-Host ("DATA KEPT: {0} <- {1}" -f $name, $PreservedFiles[$name]) -ForegroundColor Cyan
@@ -285,5 +289,8 @@ if ($PreservedFiles.Count -gt 0) {
 }
 if ($PreservedClearStall) {
     Write-Host "DATA KEPT: clear-stall carryover/templates" -ForegroundColor Cyan
+}
+if ($PreservedClearStallProbe) {
+    Write-Host "DATA KEPT: clear-stall-probe screenshots/reports" -ForegroundColor Cyan
 }
 Write-Host "FIXED DEV: use this same folder for every build" -ForegroundColor Cyan
