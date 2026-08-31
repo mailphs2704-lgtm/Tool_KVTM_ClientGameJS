@@ -340,6 +340,17 @@ def main() -> int:
             controller.shop_drag_speed = auto_tuning["shop_drag_speed"]
             controller.clear_stall_quantity = clear_stall_values["clear_stall_quantity"]
             controller.clear_stall_max_pages = clear_stall_values["clear_stall_max_pages"]
+        if args.function_id == 170:
+            # Function 170 already owns the purchase -> return -> resale flow.
+            # Bind the new per-clone controls to the counters it reads so the
+            # run is not limited to the legacy first eight visible slots.
+            quantity = clear_stall_values["clear_stall_quantity"]
+            scan_pages = clear_stall_values["clear_stall_max_pages"]
+            automation.max_sell_times = quantity
+            automation.swipe_count = scan_pages
+            if controller is not None:
+                controller.max_sell_times = quantity
+                controller.swipe_count = scan_pages
     except Exception as exc:
         emit(
             "worker_error",
