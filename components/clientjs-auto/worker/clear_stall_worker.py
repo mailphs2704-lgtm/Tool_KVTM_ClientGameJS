@@ -9,6 +9,7 @@ import threading
 import time
 import traceback
 
+
 def emit(event: str, **data) -> None:
     print(json.dumps({"event": event, **data}, ensure_ascii=True), flush=True)
 
@@ -145,7 +146,11 @@ def main() -> int:
             workflow="clear_stall_python",
         )
 
-        outcome: dict[str, object] = {"done": False, "error": None}
+        outcome: dict[str, object] = {
+            "done": False,
+            "error": None,
+            "stopped": False,
+        }
 
         def run_workflow() -> None:
             try:
@@ -155,6 +160,13 @@ def main() -> int:
                 sold = workflow.execute_resale(executor)
                 outcome["bought"] = bought
                 outcome["sold"] = sold
+            except InterruptedError as exc:
+                outcome["stopped"] = True
+                outcome["error"] = exc
+                try:
+                    workflow.fail(exc)
+                except Exception:
+                    pass
             except Exception as exc:
                 outcome["error"] = exc
                 try:
@@ -192,6 +204,14 @@ def main() -> int:
                 )
         task.join(timeout=3.0)
         error = outcome.get("error")
+        if bool(outcome.get("stopped")):
+            emit(
+                "worker_stopped",
+                profile_id=args.profile_id,
+                workflow="clear_stall_python",
+                reason="user",
+            )
+            return 0
         if error is not None:
             emit(
                 "worker_error",
@@ -209,6 +229,7 @@ def main() -> int:
             workflow="clear_stall_python",
             bought=int(outcome.get("bought") or 0),
             sold=int(outcome.get("sold") or 0),
+            retained=int(workflow.manifest.retained_total),
         )
         return 0
     except Exception as exc:
