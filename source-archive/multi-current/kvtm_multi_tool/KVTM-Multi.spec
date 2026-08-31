@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['kvtm_multi.py'],
+    ['kvtm_multi_entry.py'],
     pathex=[],
     binaries=[],
     datas=[],
