@@ -26,6 +26,10 @@
         "goDownLast",
         "Tuychon",
         "GoFiendHome"
+      ],
+      "delete_items": [
+        "Táo Sấy",
+        "Vải Vàng"
       ]
     },
     {
@@ -52,6 +56,11 @@
         "goDownLast",
         "Tuychon",
         "GoFiendHome"
+      ],
+      "delete_items": [
+        "Trà Đá",
+        "Vải Vàng",
+        "Nước Hoa Hồng"
       ]
     }
   ]
