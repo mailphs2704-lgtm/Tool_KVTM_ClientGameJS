@@ -50,8 +50,10 @@ class AutoProNavigationAdapter:
 
     def ensure_main_screen(self, timeout: float = 180.0) -> None:
         """Wait through ClientJS login/intermediate popups before navigation."""
-        deadline = time.monotonic() + float(timeout)
+        started = time.monotonic()
+        deadline = started + float(timeout)
         last_progress = 0.0
+        last_back = 0.0
         while time.monotonic() < deadline:
             self._ensure_running()
             if self._find_any(("friend_off", "icon_home")):
@@ -92,6 +94,24 @@ class AutoProNavigationAdapter:
                     pass
 
             now = time.monotonic()
+            # Unknown event/news popups may have no template in older AUTO
+            # assets. After the game has had time to load, use one controlled
+            # back action at most every five seconds to dismiss the top modal.
+            if (
+                not clicked
+                and now - started >= 12.0
+                and now - last_back >= 5.0
+            ):
+                press_back = getattr(self.controller, "press_back", None)
+                if callable(press_back):
+                    try:
+                        self._invoke(
+                            press_back, {"stop_event": self.stop_event}
+                        )
+                        self.log("Đã gửi Back để đóng popup chưa có template")
+                        last_back = now
+                    except Exception:
+                        pass
             if now - last_progress >= 5.0:
                 remaining = max(0, int(deadline - now))
                 self.log(f"Đang chờ màn hình chính ClientJS • còn {remaining}s")
