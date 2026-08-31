@@ -1,4 +1,4 @@
-name: Multi DEV static checks
+name: Multi DEV checks
 
 on:
   push:
@@ -153,3 +153,52 @@ jobs:
 
           print('CLEAR_STALL_STATIC_OK')
           PY
+
+  package-smoke:
+    needs: clear-stall-static
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build fixed-layout package
+        shell: powershell
+        run: |
+          & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
+
+      - name: Verify package contents and privacy
+        shell: powershell
+        run: |
+          $root = Join-Path $PWD "dist\KVTM-ClientJS-Suite-CI"
+          $zip = "$root.zip"
+          $required = @(
+            (Join-Path $root "Multi\kvtm_multi.py"),
+            (Join-Path $root "Multi\kvtm_multi_entry.py"),
+            (Join-Path $root "components\clientjs-auto\worker\clear_stall_worker.py"),
+            (Join-Path $root "components\clientjs-auto\workflows\clear_stall\manifest.py"),
+            (Join-Path $root "components\clientjs-auto\workflows\clear_stall\workflow.py"),
+            (Join-Path $root "02_START_MULTI_DEV.bat"),
+            $zip
+          )
+          foreach ($item in $required) {
+            if (-not (Test-Path -LiteralPath $item)) {
+              throw "Missing package item: $item"
+            }
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            $bad = @($archive.Entries | Where-Object {
+              $_.FullName -match '(^|/)(data-dev|auto-logs|clear-stall)(/|$)' -or
+              $_.FullName -match '(^|/)(profiles|settings)\.json$'
+            })
+            if ($bad.Count -gt 0) {
+              throw "Private/runtime data leaked into ZIP: $($bad.FullName -join ', ')"
+            }
+          }
+          finally {
+            $archive.Dispose()
+          }
+
+          Write-Host "PACKAGE_SMOKE_OK" -ForegroundColor Green
