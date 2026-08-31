@@ -15,7 +15,7 @@ from .detector import (
     VISIBLE_STALL_SLOTS,
 )
 from .manifest import ItemFingerprint, PurchasedItem, TransactionManifest
-from .transaction import VisualTransactionExecutor
+from .transaction import NoEmptyStallSlot, VisualTransactionExecutor
 
 
 @dataclass(frozen=True)
@@ -204,7 +204,8 @@ class ClearStallWorkflow:
                 f"BUYING_VIEW_{item.source_page}_SLOT_{item.source_slot}"
             )
             executor.purchase_listing(item)
-            # One confirmed source listing counts as one configured VP unit.
+            # Recovered GoFiendHome counts one successful direct click as one
+            # purchased unit when the warehouse-full marker is absent.
             self.mark_purchase_verified(
                 item,
                 inventory_before=purchased,
@@ -256,23 +257,37 @@ class ClearStallWorkflow:
 
         self.adapter.open_clone_stall_for_sale(self.request.stall_id)
         sold = 0
+        deferred = False
         for index, batch in enumerate(batches, start=1):
             self._ensure_running()
             self._checkpoint(f"SELLING_BATCH_{index}_QTY_{batch.quantity}")
-            executor.sell_manifest_batch(batch.fingerprint, batch.quantity)
+            try:
+                executor.sell_manifest_batch(batch.fingerprint, batch.quantity)
+            except NoEmptyStallSlot:
+                deferred = True
+                self.log(
+                    f"Quầy clone đã hết ô trống sau khi bán {sold} VP; "
+                    f"giữ lại {self.manifest.retained_total} VP cho lượt sau"
+                )
+                break
             self.mark_sale_verified(batch.fingerprint, batch.quantity)
             sold += batch.quantity
 
-        if sold != self.manifest.sellable_total:
+        if not deferred and sold != self.manifest.sellable_total:
             raise RuntimeError(
                 f"Số lượng bán {sold} không khớp kế hoạch "
                 f"{self.manifest.sellable_total} theo từng loại VP"
             )
-        if planned_remainder > 0:
+        if deferred:
+            self.log(
+                f"Hoàn thành phiên với {self.manifest.retained_total} VP chưa treo "
+                "do quầy clone không còn ô trống"
+            )
+        elif planned_remainder > 0:
             self.log(
                 f"Giữ lại {planned_remainder} VP lẻ (<10 theo từng loại) cho lượt sau"
             )
-        self.complete()
+        self.complete(allow_deferred=deferred)
         return sold
 
     def mark_sale_verified(
@@ -284,11 +299,11 @@ class ClearStallWorkflow:
         self.manifest.save(self.manifest_path)
         self._save_carryover()
 
-    def complete(self) -> None:
-        self.manifest.complete()
+    def complete(self, *, allow_deferred: bool = False) -> None:
+        self.manifest.complete(allow_deferred=allow_deferred)
         self.manifest.save(self.manifest_path)
         self._save_carryover()
-        self._checkpoint("COMPLETED")
+        self._checkpoint("COMPLETED_DEFERRED" if allow_deferred else "COMPLETED")
 
     def fail(self, error: Exception) -> None:
         self.manifest.fail(error)
