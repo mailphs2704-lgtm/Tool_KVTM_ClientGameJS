@@ -39,6 +39,26 @@ class ItemFingerprint:
             template_file=str(template_file),
         )
 
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "ItemFingerprint":
+        if not isinstance(payload, dict):
+            raise ValueError("Fingerprint carryover không hợp lệ")
+        sha256 = str(payload.get("sha256") or "")
+        perceptual_hash = str(payload.get("perceptual_hash") or "")
+        width = int(payload.get("width") or 0)
+        height = int(payload.get("height") or 0)
+        if len(sha256) != 64 or len(perceptual_hash) != 16:
+            raise ValueError("Fingerprint carryover thiếu mã nhận dạng")
+        if width <= 0 or height <= 0:
+            raise ValueError("Fingerprint carryover thiếu kích thước")
+        return cls(
+            sha256=sha256,
+            perceptual_hash=perceptual_hash,
+            width=width,
+            height=height,
+            template_file=str(payload.get("template_file") or ""),
+        )
+
 
 @dataclass
 class PurchasedItem:
@@ -50,6 +70,26 @@ class PurchasedItem:
     inventory_after: int | None = None
     purchased_quantity: int = 0
     sold_quantity: int = 0
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "PurchasedItem":
+        if not isinstance(payload, dict):
+            raise ValueError("Vật phẩm carryover không hợp lệ")
+        item = cls(
+            fingerprint=ItemFingerprint.from_dict(payload.get("fingerprint") or {}),
+            source_page=max(1, int(payload.get("source_page") or 1)),
+            source_slot=max(1, int(payload.get("source_slot") or 1)),
+            requested_quantity=max(1, int(payload.get("requested_quantity") or 1)),
+            inventory_before=None,
+            inventory_after=None,
+            purchased_quantity=max(0, int(payload.get("purchased_quantity") or 0)),
+            sold_quantity=max(0, int(payload.get("sold_quantity") or 0)),
+        )
+        if item.purchased_quantity <= 0:
+            raise ValueError("Carryover không có số lượng đã mua")
+        if item.sold_quantity > item.purchased_quantity:
+            raise ValueError("Carryover có số lượng đã bán vượt số đã mua")
+        return item
 
     def record_purchase(self, before: int, after: int) -> None:
         before_value, after_value = int(before), int(after)
@@ -71,6 +111,18 @@ class PurchasedItem:
         if value <= 0 or value > self.remaining_to_sell:
             raise RuntimeError("Số lượng bán không khớp manifest giao dịch")
         self.sold_quantity += value
+
+    def carryover_copy(self) -> "PurchasedItem | None":
+        remaining = self.remaining_to_sell
+        if remaining <= 0:
+            return None
+        return PurchasedItem(
+            fingerprint=self.fingerprint,
+            source_page=self.source_page,
+            source_slot=self.source_slot,
+            requested_quantity=remaining,
+            purchased_quantity=remaining,
+        )
 
 
 @dataclass
