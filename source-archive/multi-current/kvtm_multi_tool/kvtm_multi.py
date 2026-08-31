@@ -460,6 +460,12 @@ def load_settings() -> dict:
     quay_he_profiles = (
         raw_quay_he_profiles if isinstance(raw_quay_he_profiles, dict) else {}
     )
+    raw_nang_kho_profiles = (
+        saved.get("auto_nang_kho_profiles", {}) if isinstance(saved, dict) else {}
+    )
+    nang_kho_profiles = (
+        raw_nang_kho_profiles if isinstance(raw_nang_kho_profiles, dict) else {}
+    )
     tuning = dict(DEFAULT_AUTO_TUNING)
     if isinstance(raw_tuning, dict):
         for key, default in DEFAULT_AUTO_TUNING.items():
@@ -480,6 +486,7 @@ def load_settings() -> dict:
         "auto_tuning": tuning,
         "auto_delete_profiles": delete_profiles,
         "auto_quay_he_profiles": quay_he_profiles,
+        "auto_nang_kho_profiles": nang_kho_profiles,
     }
 
 
@@ -579,7 +586,7 @@ class MultiApp(tk.Tk):
         # Fixed-height layout keeps controls, account center and AUTO visible
         # without a vertical scrollbar on a normal 1080p desktop.
         width = min(820, work_w)
-        height = min(850, work_h)
+        height = min(790, work_h)
         x = primary["left"] + max(0, (work_w - width) // 2)
         y = primary["top"] + max(0, (work_h - height) // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
@@ -702,7 +709,7 @@ class MultiApp(tk.Tk):
         )
         style.configure(
             "Status.TLabel", background="#e8eef7", foreground="#4d5d75",
-            padding=(12, 7), font=("Segoe UI", 9),
+            padding=(12, 4), font=("Segoe UI", 9),
         )
         style.configure(
             "Auto.TLabelframe", background="#ffffff", bordercolor="#bfd1e8",
@@ -948,7 +955,7 @@ class MultiApp(tk.Tk):
             option_key: tk.BooleanVar(value=False)
             for option_key in optional_keys.values()
         }
-        for key, label in feature_tabs[3:]:
+        for key, label in feature_tabs[4:]:
             feature_frame = self.auto_feature_tabs[key]
             option_key = optional_keys[key]
             ttk.Label(
@@ -966,6 +973,78 @@ class MultiApp(tk.Tk):
                 text="Mặc định OFF • Chỉ chạy khi được bật trước lúc Bắt đầu.",
                 style="AutoValue.TLabel", anchor="w",
             ).pack(fill="x", padx=8)
+
+        nang_kho_tab = self.auto_feature_tabs["upgrade_storage"]
+        nang_kho_header = ttk.Frame(nang_kho_tab, style="Detail.TFrame")
+        nang_kho_header.pack(fill="x", padx=8, pady=(3, 0))
+        ttk.Label(
+            nang_kho_header, text="TỰ ĐỘNG NÂNG KHO", style="AutoKey.TLabel"
+        ).pack(side="left")
+        self.auto_nang_kho_context = tk.StringVar(value="Chọn tài khoản để cấu hình")
+        ttk.Label(
+            nang_kho_header, textvariable=self.auto_nang_kho_context,
+            style="AutoValue.TLabel", anchor="e",
+        ).pack(side="right", fill="x", expand=True, padx=(18, 0))
+        ttk.Separator(nang_kho_tab, orient="horizontal").pack(
+            fill="x", padx=8, pady=(6, 6)
+        )
+        nang_kho_body = ttk.Frame(nang_kho_tab, style="Detail.TFrame")
+        nang_kho_body.pack(fill="x", padx=8)
+        self.auto_nang_kho_enabled = tk.BooleanVar(value=False)
+        self.auto_nang_kho_enabled_button = self._make_toggle_button(
+            nang_kho_body, "Bật tự động Nâng kho",
+            self.auto_nang_kho_enabled, self._save_auto_nang_kho_config,
+        )
+        self.auto_nang_kho_enabled_button.grid(
+            row=0, column=0, sticky="w", padx=(0, 12), pady=(0, 6)
+        )
+        self.auto_nang_kho_type = tk.StringVar(value="Kho 1 & 2")
+        self.auto_nang_kho_type_buttons = {}
+        type_box = ttk.Frame(nang_kho_body, style="Detail.TFrame")
+        type_box.grid(row=0, column=1, columnspan=4, sticky="w", pady=(0, 6))
+        for column, kho_type in enumerate(("Kho 1", "Kho 2", "Kho 1 & 2", "Max Kho")):
+            button = tk.Button(
+                type_box, text=kho_type, relief="flat", borderwidth=0,
+                highlightthickness=1, font=("Segoe UI Semibold", 9),
+                cursor="hand2", padx=10, pady=5,
+                command=lambda value=kho_type: self._select_auto_nang_kho_type(value),
+            )
+            button.grid(row=0, column=column, padx=(0, 4))
+            self.auto_nang_kho_type_buttons[kho_type] = button
+        ttk.Label(
+            nang_kho_body, text="Kiểm tra lại sau (giờ):",
+            style="AutoValue.TLabel",
+        ).grid(row=1, column=0, sticky="w", padx=(0, 8))
+        self.auto_nang_kho_hours = tk.IntVar(value=2)
+        self.auto_nang_kho_hours_spin = ttk.Spinbox(
+            nang_kho_body, from_=1, to=168, width=6,
+            textvariable=self.auto_nang_kho_hours,
+            command=self._save_auto_nang_kho_config,
+        )
+        self.auto_nang_kho_hours_spin.grid(row=1, column=1, sticky="w", padx=(0, 12))
+        self.auto_nang_kho_balance = tk.BooleanVar(value=True)
+        self.auto_nang_kho_balance_button = self._make_toggle_button(
+            nang_kho_body, "Cân bằng VP nâng kho",
+            self.auto_nang_kho_balance, self._save_auto_nang_kho_config,
+        )
+        self.auto_nang_kho_balance_button.grid(
+            row=1, column=2, sticky="w", padx=(0, 8)
+        )
+        self.auto_nang_kho_kc = tk.BooleanVar(value=False)
+        self.auto_nang_kho_kc_button = self._make_toggle_button(
+            nang_kho_body, "Dùng KC khi full quầy",
+            self.auto_nang_kho_kc, self._save_auto_nang_kho_config,
+        )
+        self.auto_nang_kho_kc_button.grid(row=1, column=3, sticky="w")
+        self.auto_nang_kho_note = tk.StringVar(
+            value="Mặc định OFF • KC chỉ dùng khi bạn chủ động bật."
+        )
+        ttk.Label(
+            nang_kho_tab, textvariable=self.auto_nang_kho_note,
+            style="AutoValue.TLabel", anchor="w",
+        ).pack(fill="x", padx=8, pady=(5, 0))
+        self._auto_nang_kho_refreshing = False
+        self._redraw_auto_nang_kho_types()
 
         quay_he_tab = self.auto_feature_tabs["summer_spin"]
         quay_he_header = ttk.Frame(quay_he_tab, style="Detail.TFrame")
@@ -1163,6 +1242,107 @@ class MultiApp(tk.Tk):
             for key, default in DEFAULT_AUTO_TUNING.items()
         }
 
+    def _redraw_auto_nang_kho_types(self) -> None:
+        selected = self.auto_nang_kho_type.get()
+        for value, button in self.auto_nang_kho_type_buttons.items():
+            active = value == selected
+            button.configure(
+                background="#2f80ed" if active else "#edf2f8",
+                foreground="#ffffff" if active else "#34445f",
+                activebackground="#246fd0" if active else "#dfe8f4",
+                activeforeground="#ffffff" if active else "#1768c4",
+                highlightbackground="#2f80ed" if active else "#d5dfec",
+                highlightcolor="#2f80ed",
+            )
+
+    def _select_auto_nang_kho_type(self, value: str) -> None:
+        if value not in {"Kho 1", "Kho 2", "Kho 1 & 2", "Max Kho"}:
+            return
+        self.auto_nang_kho_type.set(value)
+        self._redraw_auto_nang_kho_types()
+        self._save_auto_nang_kho_config()
+
+    def _refresh_auto_nang_kho_panel(self) -> None:
+        if not hasattr(self, "auto_nang_kho_enabled_button"):
+            return
+        self._auto_nang_kho_refreshing = True
+        try:
+            profile_id = self._active_profile_id
+            if not profile_id:
+                ids = self.selected_ids()
+                profile_id = ids[0] if len(ids) == 1 else None
+            profile = next(
+                (p for p in self.profiles if p.get("id") == profile_id), None
+            )
+            state = "normal" if profile else "disabled"
+            for widget in (
+                self.auto_nang_kho_enabled_button,
+                self.auto_nang_kho_hours_spin,
+                self.auto_nang_kho_balance_button,
+                self.auto_nang_kho_kc_button,
+                *self.auto_nang_kho_type_buttons.values(),
+            ):
+                widget.configure(state=state)
+            if not profile:
+                self.auto_nang_kho_enabled.set(False)
+                self.auto_nang_kho_type.set("Kho 1 & 2")
+                self.auto_nang_kho_hours.set(2)
+                self.auto_nang_kho_balance.set(True)
+                self.auto_nang_kho_kc.set(False)
+                self.auto_nang_kho_context.set("Chọn tài khoản để cấu hình")
+                self._redraw_auto_nang_kho_types()
+                return
+            profiles_cfg = self.settings.setdefault("auto_nang_kho_profiles", {})
+            saved_cfg = profiles_cfg.get(profile_id, {})
+            if not isinstance(saved_cfg, dict):
+                saved_cfg = {}
+            kho_type = str(saved_cfg.get("type", "Kho 1 & 2"))
+            if kho_type not in {"Kho 1", "Kho 2", "Kho 1 & 2", "Max Kho"}:
+                kho_type = "Kho 1 & 2"
+            try:
+                hours = max(1, min(168, int(saved_cfg.get("hours", 2))))
+            except (TypeError, ValueError):
+                hours = 2
+            self.auto_nang_kho_enabled.set(bool(saved_cfg.get("enabled", False)))
+            self.auto_nang_kho_type.set(kho_type)
+            self.auto_nang_kho_hours.set(hours)
+            self.auto_nang_kho_balance.set(bool(saved_cfg.get("balance", True)))
+            self.auto_nang_kho_kc.set(bool(saved_cfg.get("use_kc", False)))
+            self.auto_nang_kho_context.set(str(profile.get("name") or profile_id))
+            self.auto_nang_kho_note.set(
+                "Mặc định OFF • KC chỉ dùng khi bạn chủ động bật."
+            )
+            self._redraw_auto_nang_kho_types()
+        finally:
+            self._auto_nang_kho_refreshing = False
+
+    def _save_auto_nang_kho_config(self) -> None:
+        if getattr(self, "_auto_nang_kho_refreshing", False):
+            return
+        profile_id = self._active_profile_id
+        if not profile_id:
+            ids = self.selected_ids()
+            profile_id = ids[0] if len(ids) == 1 else None
+        if not profile_id:
+            return
+        try:
+            hours = max(1, min(168, int(self.auto_nang_kho_hours.get())))
+        except (tk.TclError, TypeError, ValueError):
+            hours = 2
+        self.auto_nang_kho_hours.set(hours)
+        profiles_cfg = self.settings.setdefault("auto_nang_kho_profiles", {})
+        profiles_cfg[profile_id] = {
+            "enabled": bool(self.auto_nang_kho_enabled.get()),
+            "type": self.auto_nang_kho_type.get(),
+            "hours": hours,
+            "balance": bool(self.auto_nang_kho_balance.get()),
+            "use_kc": bool(self.auto_nang_kho_kc.get()),
+        }
+        save_settings(self.settings)
+        self.auto_nang_kho_note.set(
+            f"Đã lưu riêng • {self.auto_nang_kho_type.get()} • kiểm tra sau {hours} giờ"
+        )
+
     def _refresh_auto_quay_he_panel(self) -> None:
         if not hasattr(self, "auto_quay_he_enabled_button"):
             return
@@ -1319,6 +1499,10 @@ class MultiApp(tk.Tk):
             "auto_quay_he": False,
             "quay_he_count": 1,
             "auto_nang_kho": False,
+            "auto_nang_kho_type": "Kho 1 & 2",
+            "auto_nang_kho_time_hours": 2,
+            "auto_nang_kho_balance": True,
+            "kc_nang_kho": False,
             "thue_tom": False,
             "giao_cu": False,
             "san_xuat_ngoc": False,
@@ -1337,7 +1521,7 @@ class MultiApp(tk.Tk):
         for option_key, variable in getattr(
             self, "auto_optional_features", {}
         ).items():
-            if option_key not in {"Xoa_vp_kc", "auto_quay_he"}:
+            if option_key not in {"Xoa_vp_kc", "auto_quay_he", "auto_nang_kho"}:
                 options[option_key] = bool(variable.get())
 
         if profile_id:
@@ -1353,6 +1537,28 @@ class MultiApp(tk.Tk):
                     count = 1
                 options["auto_quay_he"] = bool(saved_cfg.get("enabled", False))
                 options["quay_he_count"] = count
+
+        if profile_id:
+            profiles_cfg = self.settings.get("auto_nang_kho_profiles", {})
+            saved_cfg = (
+                profiles_cfg.get(profile_id, {})
+                if isinstance(profiles_cfg, dict) else {}
+            )
+            if isinstance(saved_cfg, dict):
+                kho_type = str(saved_cfg.get("type", "Kho 1 & 2"))
+                if kho_type not in {"Kho 1", "Kho 2", "Kho 1 & 2", "Max Kho"}:
+                    kho_type = "Kho 1 & 2"
+                try:
+                    hours = max(1, min(168, int(saved_cfg.get("hours", 2))))
+                except (TypeError, ValueError):
+                    hours = 2
+                options["auto_nang_kho"] = bool(saved_cfg.get("enabled", False))
+                options["auto_nang_kho_type"] = kho_type
+                options["auto_nang_kho_time_hours"] = hours
+                options["auto_nang_kho_balance"] = bool(
+                    saved_cfg.get("balance", True)
+                )
+                options["kc_nang_kho"] = bool(saved_cfg.get("use_kc", False))
 
         if profile_id and function_spec:
             function_key = str(function_spec.get("key") or "")
@@ -1906,6 +2112,7 @@ class MultiApp(tk.Tk):
         self._refresh_auto_target()
         self._refresh_auto_delete_panel()
         self._refresh_auto_quay_he_panel()
+        self._refresh_auto_nang_kho_panel()
 
     def _show_account_details(self, profile_id: str | None) -> None:
         profile = next((p for p in self.profiles if p.get("id") == profile_id), None)
