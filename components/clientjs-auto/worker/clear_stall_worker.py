@@ -70,8 +70,23 @@ def main() -> int:
 
     workflow = None
     try:
+        emit(
+            "worker_boot",
+            pid=args.pid,
+            profile_id=args.profile_id,
+            profile_name=args.profile_name,
+            workflow="clear_stall_python",
+            stage="loading_auto_pro_runtime",
+        )
         automation_module = install_clientjs_runtime(
             Path(args.auto_root).resolve()
+        )
+        emit(
+            "worker_boot",
+            pid=args.pid,
+            profile_id=args.profile_id,
+            workflow="clear_stall_python",
+            stage="constructing_controller",
         )
         # Function 136 is used only to construct AUTO PRO's controller and
         # image library. automation.start()/produceItems_* is never called.
@@ -81,6 +96,13 @@ def main() -> int:
             gui_ref=GuiProxy(),
             options={},
             skip_items=[],
+        )
+        emit(
+            "worker_boot",
+            pid=args.pid,
+            profile_id=args.profile_id,
+            workflow="clear_stall_python",
+            stage="controller_ready",
         )
         adapter = AutoProNavigationAdapter(
             automation, stop_event=stop_event, logger=log
