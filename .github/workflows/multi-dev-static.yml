@@ -1,0 +1,109 @@
+name: Multi DEV static checks
+
+on:
+  push:
+    branches:
+      - develop/multi-auto-dev
+  workflow_dispatch:
+
+jobs:
+  clear-stall-static:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile Python sources
+        run: |
+          python -m compileall -q \
+            components/clientjs-auto \
+            source-archive/multi-current/kvtm_multi_tool
+
+      - name: Verify clear-stall manifest rules
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, str(Path('components/clientjs-auto/workflows').resolve()))
+          from clear_stall.manifest import (
+              ItemFingerprint,
+              PurchasedItem,
+              TransactionManifest,
+          )
+          from clear_stall.detector import PageScan, StallScanner
+
+          def fp(char: str):
+              value = (char * 64)[:64]
+              phash = (char * 16)[:16]
+              return ItemFingerprint(value, phash, 84, 84, '')
+
+          def manifest_for(*groups):
+              manifest = TransactionManifest('profile-A', 2, 2, 999)
+              for fingerprint, count in groups:
+                  for index in range(count):
+                      manifest.items.append(PurchasedItem(
+                          fingerprint=fingerprint,
+                          source_page=1,
+                          source_slot=(index % 8) + 1,
+                          requested_quantity=1,
+                          purchased_quantity=1,
+                      ))
+              return manifest
+
+          a = fp('a')
+          b = fp('b')
+
+          m = manifest_for((a, 7))
+          assert m.sellable_total == 0
+          assert m.planned_remainder_total == 7
+          assert len(m.resale_batches()) == 0
+
+          m = manifest_for((a, 10))
+          assert m.sellable_total == 10
+          assert len(m.resale_batches()) == 1
+          m.record_group_sale(a, 10)
+          m.complete()
+          assert m.retained_total == 0
+
+          m = manifest_for((a, 13))
+          assert m.sellable_total == 10
+          assert m.planned_remainder_total == 3
+          m.record_group_sale(a, 10)
+          m.complete()
+          assert m.retained_total == 3
+
+          m = manifest_for((a, 20))
+          assert m.sellable_total == 20
+          assert len(m.resale_batches()) == 2
+
+          # Different VP types must never be combined into one ten-unit batch.
+          m = manifest_for((a, 6), (b, 4))
+          assert m.purchased_total == 10
+          assert m.sellable_total == 0
+          assert len(m.resale_batches()) == 0
+
+          m = manifest_for((a, 10), (b, 9))
+          assert m.sellable_total == 10
+          assert m.planned_remainder_total == 9
+
+          # Carryover 3 + a later 7 of the same VP must become one batch of 10.
+          m = manifest_for((a, 3), (a, 7))
+          assert m.sellable_total == 10
+          assert len(m.resale_batches()) == 1
+
+          prev = PageScan(1, (), tuple('abcdefgh'), 'p1')
+          cur1 = PageScan(2, (), tuple('bcdefghi'), 'p2')
+          cur2 = PageScan(2, (), tuple('cdefghij'), 'p3')
+          same = PageScan(2, (), tuple('abcdefgh'), 'p4')
+          assert StallScanner.infer_forward_shift(prev, cur1) == 1
+          assert StallScanner.infer_forward_shift(prev, cur2) == 2
+          assert StallScanner.infer_forward_shift(prev, same) == 0
+
+          print('CLEAR_STALL_STATIC_OK')
+          PY
