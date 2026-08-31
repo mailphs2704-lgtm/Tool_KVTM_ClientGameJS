@@ -94,9 +94,6 @@ class AutoProNavigationAdapter:
                     pass
 
             now = time.monotonic()
-            # Unknown event/news popups may have no template in older AUTO
-            # assets. After the game has had time to load, use one controlled
-            # back action at most every five seconds to dismiss the top modal.
             if (
                 not clicked
                 and now - started >= 12.0
@@ -133,27 +130,37 @@ class AutoProNavigationAdapter:
             setattr(owner, "buy_sell_friend_kho_id", stall)
             setattr(owner, "go_friend_home", True)
 
-    def go_to_friend_home(self, friend_ordinal: int) -> None:
+    def go_to_friend_home(self, friend_ordinal: int, *, verify: bool = True) -> None:
+        """Navigate only; recovered GoFiendHome must never buy during discovery."""
         self._ensure_running()
+        friend = int(friend_ordinal)
         method, owner_name = self._resolve(self.FRIEND_METHODS)
-        self.log(f"Đi tới nhà bạn số {int(friend_ordinal)} bằng {owner_name}.{method.__name__}")
+        self.log(
+            f"Đi tới đúng nhà bạn số {friend} bằng "
+            f"{owner_name}.{method.__name__} (visit-only)"
+        )
         self._invoke(
             method,
             {
-                "friend_ordinal": int(friend_ordinal),
-                "friend_index": int(friend_ordinal),
-                "num_friend": int(friend_ordinal),
-                "num_friend_for_bsf": int(friend_ordinal),
+                "friend_ordinal": friend,
+                "friend_index": friend,
+                "num_friend": friend,
+                "num_friend_for_bsf": friend,
+                "specific_friend_pos": friend,
+                "items": [],
+                "purchase_limit": 0,
+                "visit_only": True,
                 "stop_event": self.stop_event,
             },
         )
-        self._wait_for_any(
-            ("friend_home", "icon_home", "kho_ban", "shop_friend"),
-            timeout=45.0,
-            description="nhà bạn",
-        )
+        if verify:
+            self._wait_for_any(
+                ("friend_home", "icon_home", "kho_ban", "shop_friend"),
+                timeout=45.0,
+                description="nhà bạn",
+            )
 
-    def open_target_stall(self, stall_id: int) -> None:
+    def open_target_stall(self, stall_id: int, *, verify: bool = True) -> None:
         self._ensure_running()
         method, owner_name = self._resolve(self.STALL_METHODS)
         self.log(f"Mở quầy {int(stall_id)} bằng {owner_name}.{method.__name__}")
@@ -167,11 +174,12 @@ class AutoProNavigationAdapter:
                 "stop_event": self.stop_event,
             },
         )
-        self._wait_for_any(
-            ("shop", "shop_friend", "kho_ban", "buy_item"),
-            timeout=30.0,
-            description=f"quầy {int(stall_id)}",
-        )
+        if verify:
+            self._wait_for_any(
+                ("shop", "shop_friend", "kho_ban", "buy_item"),
+                timeout=30.0,
+                description=f"quầy {int(stall_id)}",
+            )
 
     def return_to_clone_home(self) -> None:
         self._ensure_running()
