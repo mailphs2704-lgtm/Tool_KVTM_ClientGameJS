@@ -48,6 +48,59 @@ class AutoProNavigationAdapter:
         self.stop_event = stop_event
         self.log = logger
 
+    def ensure_main_screen(self, timeout: float = 180.0) -> None:
+        """Wait through ClientJS login/intermediate popups before navigation."""
+        deadline = time.monotonic() + float(timeout)
+        last_progress = 0.0
+        while time.monotonic() < deadline:
+            self._ensure_running()
+            if self._find_any(("friend_off", "icon_home")):
+                self.log("Đã xác nhận màn hình chính ClientJS")
+                return
+
+            clicked = False
+            for name in ("close_game", "close", "dong", "huy"):
+                try:
+                    if self.controller.image_processor.find_image(
+                        name, threshold=0.80, click=True
+                    ):
+                        self.log(f"Đã đóng popup: {name}")
+                        clicked = True
+                        break
+                except Exception:
+                    continue
+            if not clicked:
+                try:
+                    if self.controller.image_processor.find_image(
+                        "tai_khoan", threshold=0.82, click=True
+                    ):
+                        self.driver.click(984, 341)
+                        self.log("Đã chọn tài khoản ClientJS")
+                        clicked = True
+                    elif self.controller.image_processor.find_image(
+                        "tai_khoan_on", threshold=0.82, click=False
+                    ):
+                        self.driver.click(981, 338)
+                        self.log("Đã chọn tài khoản đang online")
+                        clicked = True
+                    elif self.controller.image_processor.find_image(
+                        "icon_game", threshold=0.80, click=True
+                    ):
+                        self.log("Đã mở game từ màn hình trung gian")
+                        clicked = True
+                except Exception:
+                    pass
+
+            now = time.monotonic()
+            if now - last_progress >= 5.0:
+                remaining = max(0, int(deadline - now))
+                self.log(f"Đang chờ màn hình chính ClientJS • còn {remaining}s")
+                last_progress = now
+            time.sleep(0.7 if clicked else 1.0)
+        raise RuntimeError(
+            f"Không nhận được màn hình chính ClientJS sau {timeout:.0f}s"
+        )
+
     def configure_target(self, friend_ordinal: int, stall_id: int) -> None:
         friend = int(friend_ordinal)
         stall = int(stall_id)
