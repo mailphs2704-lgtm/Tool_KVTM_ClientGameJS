@@ -8,6 +8,9 @@ import time
 from typing import Any
 
 
+RESALE_BATCH_SIZE = 10
+
+
 @dataclass(frozen=True)
 class ItemFingerprint:
     """Stable identity derived from the item icon captured at the source stall."""
@@ -89,6 +92,16 @@ class TransactionManifest:
     def sold_total(self) -> int:
         return sum(item.sold_quantity for item in self.items)
 
+    @property
+    def sellable_total(self) -> int:
+        """Only complete groups of ten VP may be placed back on the stall."""
+        return (self.purchased_total // RESALE_BATCH_SIZE) * RESALE_BATCH_SIZE
+
+    @property
+    def retained_total(self) -> int:
+        """Keep the incomplete group in inventory for a later clear-stall run."""
+        return self.purchased_total - self.sellable_total
+
     def add_item(self, item: PurchasedItem) -> None:
         if self.state not in {"CREATED", "BUYING"}:
             raise RuntimeError("Không thể thêm vật phẩm sau giai đoạn mua")
@@ -103,8 +116,10 @@ class TransactionManifest:
         self.state = "RESELLING"
 
     def complete(self) -> None:
-        if self.sold_total != self.purchased_total:
-            raise RuntimeError("Chưa bán lại đủ số lượng đã mua")
+        if self.sold_total != self.sellable_total:
+            raise RuntimeError(
+                "Chưa bán lại đủ số lượng theo nhóm 10 VP đã xác nhận"
+            )
         self.state = "COMPLETED"
 
     def fail(self, error: Any) -> None:
