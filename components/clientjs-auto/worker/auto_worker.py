@@ -147,7 +147,11 @@ def main() -> int:
         "auto_nang_kho_balance", "kc_nang_kho",
     }
     allowed_option_keys = (
-        boolean_option_keys | {"skip_items", "quay_he_count"} | upgrade_option_keys
+        boolean_option_keys | {
+            "skip_items", "quay_he_count", "num_friend_for_bsf",
+            "buy_sell_friend_kho_id", "clear_stall_quantity",
+            "clear_stall_max_pages", "go_friend_home",
+        } | upgrade_option_keys
     )
     unknown = set(requested_options) - allowed_option_keys
     if unknown:
@@ -195,6 +199,26 @@ def main() -> int:
         key: bool(requested_options.get(key, False))
         for key in boolean_option_keys
     }
+    clear_stall_limits = {
+        "num_friend_for_bsf": (1, 500, 1),
+        "buy_sell_friend_kho_id": (1, 4, 2),
+        "clear_stall_quantity": (1, 999, 8),
+        "clear_stall_max_pages": (1, 50, 10),
+    }
+    clear_stall_values = {}
+    try:
+        for key, (minimum, maximum, default) in clear_stall_limits.items():
+            value = int(requested_options.get(key, default))
+            if not minimum <= value <= maximum:
+                raise ValueError(f"{key} phải từ {minimum} đến {maximum}")
+            clear_stall_values[key] = value
+    except (TypeError, ValueError) as exc:
+        emit("worker_error", error=f"Cấu hình Dọn quầy không hợp lệ: {exc}")
+        return 2
+    auto_options.update(clear_stall_values)
+    auto_options["go_friend_home"] = bool(
+        requested_options.get("go_friend_home", False)
+    )
     auto_options.update({
         "quay_he_count": quay_he_count,
         "auto_nang_kho_type": auto_nang_kho_type,
@@ -264,7 +288,7 @@ def main() -> int:
         emit("worker_error", error=f"Thông số tốc độ không hợp lệ: {exc}")
         return 2
 
-    allowed_function_ids = {136, 318}
+    allowed_function_ids = {136, 170, 318}
     if args.function_id not in allowed_function_ids:
         emit(
             "worker_error",
@@ -286,6 +310,13 @@ def main() -> int:
             key: value for key, value in auto_tuning.items()
             if key != "shop_drag_speed"
         }
+        clear_stall_constructor = {}
+        if args.function_id == 170:
+            clear_stall_constructor = {
+                "num_friend_for_bsf": clear_stall_values["num_friend_for_bsf"],
+                "buy_sell_friend_kho_id": clear_stall_values["buy_sell_friend_kho_id"],
+                "go_friend_home": auto_options["go_friend_home"],
+            }
         automation = automation_class(
             f"PC:{args.pid}",
             args.function_id,
@@ -296,11 +327,19 @@ def main() -> int:
             auto_nang_kho_time_hours=auto_nang_kho_time_hours,
             auto_nang_kho_balance=auto_nang_kho_balance,
             kc_nang_kho=kc_nang_kho,
+            **clear_stall_constructor,
             **constructor_tuning,
         )
+        # The new Dọn quầy wrapper owns these limits. Recovered Function 170
+        # can read them when supported; keeping them on both objects also
+        # makes runtime patching independent from constructor signatures.
+        automation.clear_stall_quantity = clear_stall_values["clear_stall_quantity"]
+        automation.clear_stall_max_pages = clear_stall_values["clear_stall_max_pages"]
         controller = getattr(automation, "adb", None)
         if controller is not None:
             controller.shop_drag_speed = auto_tuning["shop_drag_speed"]
+            controller.clear_stall_quantity = clear_stall_values["clear_stall_quantity"]
+            controller.clear_stall_max_pages = clear_stall_values["clear_stall_max_pages"]
     except Exception as exc:
         emit(
             "worker_error",
