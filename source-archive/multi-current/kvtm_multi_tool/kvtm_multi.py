@@ -579,7 +579,7 @@ class MultiApp(tk.Tk):
         # Fixed-height layout keeps controls, account center and AUTO visible
         # without a vertical scrollbar on a normal 1080p desktop.
         width = min(820, work_w)
-        height = min(900, work_h)
+        height = min(850, work_h)
         x = primary["left"] + max(0, (work_w - width) // 2)
         y = primary["top"] + max(0, (work_h - height) // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
@@ -750,14 +750,6 @@ class MultiApp(tk.Tk):
         )
         style.configure("Sash", sashthickness=6, background="#dbe3ef")
 
-        header = ttk.Frame(self, padding=(18, 13), style="Header.TFrame")
-        header.pack(fill="x")
-        ttk.Label(header, text="KVTM MULTI", style="Title.TLabel").pack(side="left")
-        ttk.Label(
-            header, text="Quản lý ClientJS và AUTO tập trung",
-            style="Subtitle.TLabel",
-        ).pack(side="left", padx=(18, 0), pady=(5, 0))
-
         # The control/account center has a fixed height and no scrollbar.
         # AUTO controls remain directly below it and are always visible.
         body = ttk.Frame(self, style="App.TFrame", height=520)
@@ -857,6 +849,42 @@ class MultiApp(tk.Tk):
         self.note = tk.StringVar(value="Sẵn sàng")
         ttk.Label(self, textvariable=self.note, style="Status.TLabel").pack(fill="x")
 
+    def _make_toggle_button(
+        self, parent, label: str, variable: tk.BooleanVar, command=None
+    ) -> tk.Button:
+        """Create a flat state button used instead of native square checkboxes."""
+        button = tk.Button(
+            parent, relief="flat", borderwidth=0, highlightthickness=1,
+            font=("Segoe UI Semibold", 9), cursor="hand2",
+            padx=11, pady=5, anchor="w",
+        )
+
+        def redraw(*_args) -> None:
+            enabled = bool(variable.get())
+            button.configure(
+                text=("✓  " if enabled else "＋  ") + label,
+                background="#2f80ed" if enabled else "#edf2f8",
+                foreground="#ffffff" if enabled else "#34445f",
+                activebackground="#246fd0" if enabled else "#dfe8f4",
+                activeforeground="#ffffff" if enabled else "#1768c4",
+                highlightbackground="#2f80ed" if enabled else "#d5dfec",
+                highlightcolor="#2f80ed",
+            )
+
+        def toggle() -> None:
+            variable.set(not bool(variable.get()))
+            if command:
+                command()
+
+        button.configure(command=toggle)
+        variable.trace_add("write", redraw)
+        redraw()
+        return button
+
+    def _select_auto_function(self, function_name: str) -> None:
+        self.auto_function.set(function_name)
+        self._refresh_auto_delete_panel()
+
     def _build_auto_panel(self) -> None:
         """Build the ClientJS AUTO control surface below the account workspace."""
         # Keep AUTO controls outside the scrollable account workspace so the
@@ -929,10 +957,9 @@ class MultiApp(tk.Tk):
             ttk.Separator(feature_frame, orient="horizontal").pack(
                 fill="x", padx=8, pady=(7, 8)
             )
-            ttk.Checkbutton(
-                feature_frame, text=f"Bật {label}",
-                variable=self.auto_optional_features[option_key],
-                style="AutoOption.TCheckbutton",
+            self._make_toggle_button(
+                feature_frame, f"Bật {label}",
+                self.auto_optional_features[option_key],
             ).pack(anchor="w", padx=8, pady=(2, 5))
             ttk.Label(
                 feature_frame,
@@ -957,11 +984,10 @@ class MultiApp(tk.Tk):
         quay_he_body = ttk.Frame(quay_he_tab, style="Detail.TFrame")
         quay_he_body.pack(fill="x", padx=8)
         self.auto_quay_he_enabled = tk.BooleanVar(value=False)
-        self.auto_quay_he_enabled_button = ttk.Checkbutton(
-            quay_he_body, text="Bật tự động Quay Hề",
-            variable=self.auto_quay_he_enabled,
-            command=self._save_auto_quay_he_config,
-            style="AutoOption.TCheckbutton",
+        self.auto_quay_he_enabled_button = self._make_toggle_button(
+            quay_he_body, "Bật tự động Quay Hề",
+            self.auto_quay_he_enabled,
+            self._save_auto_quay_he_config,
         )
         self.auto_quay_he_enabled_button.pack(side="left", padx=(0, 30))
         ttk.Label(
@@ -1009,11 +1035,10 @@ class MultiApp(tk.Tk):
         delete_body = ttk.Frame(delete_tab, style="Detail.TFrame")
         delete_body.pack(fill="x", padx=8)
         self.auto_delete_enabled = tk.BooleanVar(value=False)
-        self.auto_delete_enabled_button = ttk.Checkbutton(
-            delete_body, text="Bật Xóa VP bằng KC",
-            variable=self.auto_delete_enabled,
-            command=self._save_auto_delete_config,
-            style="AutoOption.TCheckbutton",
+        self.auto_delete_enabled_button = self._make_toggle_button(
+            delete_body, "Bật Xóa VP bằng KC",
+            self.auto_delete_enabled,
+            self._save_auto_delete_config,
         )
         self.auto_delete_enabled_button.pack(side="left", anchor="n", padx=(0, 24))
         self.auto_delete_items_frame = ttk.Frame(
@@ -1041,16 +1066,28 @@ class MultiApp(tk.Tk):
         function_box.grid(row=0, column=0, sticky="ew", padx=(0, 12))
         ttk.Label(function_box, text="CHỨC NĂNG", style="AutoKey.TLabel").pack(anchor="w")
         self.auto_function = tk.StringVar(value=self._auto_function_names[0])
-        self.auto_function_combo = ttk.Combobox(
+        self.auto_function_button = tk.Menubutton(
             function_box, textvariable=self.auto_function,
-            values=self._auto_function_names, state="readonly", height=8,
+            background="#ffffff", foreground="#263653",
+            activebackground="#e8f1ff", activeforeground="#1768c4",
+            relief="flat", borderwidth=0, highlightthickness=1,
+            highlightbackground="#c7d3e3", highlightcolor="#2f80ed",
+            font=("Segoe UI Semibold", 10), anchor="w",
+            cursor="hand2", padx=11, pady=7, indicatoron=True,
         )
-        self.auto_function_combo.pack(fill="x", pady=(4, 0))
-        self.auto_function_combo.bind(
-            "<<ComboboxSelected>>",
-            lambda _event: self._refresh_auto_delete_panel(),
-            add="+",
+        function_menu = tk.Menu(
+            self.auto_function_button, tearoff=False,
+            background="#ffffff", foreground="#263653",
+            activebackground="#2f80ed", activeforeground="#ffffff",
+            relief="flat", borderwidth=1, font=("Segoe UI", 10),
         )
+        for function_name in self._auto_function_names:
+            function_menu.add_command(
+                label=function_name,
+                command=lambda selected=function_name: self._select_auto_function(selected),
+            )
+        self.auto_function_button.configure(menu=function_menu)
+        self.auto_function_button.pack(fill="x", pady=(4, 0))
 
         target_box = ttk.Frame(main_tab, style="Detail.TFrame")
         target_box.grid(row=0, column=1, sticky="ew", padx=(0, 12))
@@ -1100,11 +1137,9 @@ class MultiApp(tk.Tk):
             ("produce_feed", "Sản xuất cám"),
             ("sell_all_scratch_items", "Bán hết VP cào"),
         )):
-            ttk.Checkbutton(
-                quick_options, text=label,
-                variable=self.auto_quick_options[key],
-                style="AutoOption.TCheckbutton",
-            ).grid(row=0, column=column, sticky="w", padx=(0, 18))
+            self._make_toggle_button(
+                quick_options, label, self.auto_quick_options[key]
+            ).grid(row=0, column=column, sticky="w", padx=(0, 8))
 
         action_row = ttk.Frame(main_tab, style="Detail.TFrame")
         action_row.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 0))
@@ -1255,11 +1290,10 @@ class MultiApp(tk.Tk):
             for item in items:
                 variable = tk.BooleanVar(value=item in selected)
                 self.auto_delete_item_vars[item] = variable
-                ttk.Checkbutton(
-                    self.auto_delete_items_frame, text=item,
-                    variable=variable, command=self._save_auto_delete_config,
-                    style="AutoOption.TCheckbutton",
-                ).pack(side="left", padx=(0, 20))
+                self._make_toggle_button(
+                    self.auto_delete_items_frame, item, variable,
+                    self._save_auto_delete_config,
+                ).pack(side="left", padx=(0, 8))
             self.auto_delete_note.set(
                 "Mặc định OFF • Không chọn VP = xóa tất cả VP của chức năng."
             )
@@ -1844,8 +1878,8 @@ class MultiApp(tk.Tk):
             box, columns=("name", "pid"), show=("tree", "headings"),
             selectmode="browse", style="Account.Treeview", height=4,
         )
-        tree.heading("#0", text="Chọn")
-        tree.column("#0", width=54, minwidth=54, stretch=False, anchor="center")
+        tree.heading("#0", text="LỰA CHỌN")
+        tree.column("#0", width=98, minwidth=98, stretch=False, anchor="center")
         tree.heading("name", text="Tên client")
         tree.column("name", width=230, anchor="w")
         tree.heading("pid", text="PID")
@@ -1877,7 +1911,10 @@ class MultiApp(tk.Tk):
                 self._checked_profiles.discard(profile_id)
             else:
                 self._checked_profiles.add(profile_id)
-            tree.item(profile_id, text="☑" if profile_id in self._checked_profiles else "☐")
+            tree.item(
+                profile_id,
+                text="✓ ĐÃ CHỌN" if profile_id in self._checked_profiles else "＋ CHỌN",
+            )
         self._show_account_details(profile_id)
         self._refresh_auto_target()
         self._refresh_auto_delete_panel()
@@ -1943,7 +1980,10 @@ class MultiApp(tk.Tk):
             target = self.online_tree if alive else self.offline_tree
             target.insert(
                 "", "end", iid=profile_id,
-                text="☑" if profile_id in self._checked_profiles else "☐",
+                text=(
+                    "✓ ĐÃ CHỌN"
+                    if profile_id in self._checked_profiles else "＋ CHỌN"
+                ),
                 values=(profile.get("name", "Chưa đặt tên"), proc.pid if alive else "—"),
                 tags=("online" if alive else "offline",),
             )
