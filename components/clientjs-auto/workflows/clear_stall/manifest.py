@@ -169,12 +169,10 @@ class TransactionManifest:
         """Group only exact perceptual hashes; false merging is worse than deferring."""
         ordered: list[tuple[ItemFingerprint, list[PurchasedItem]]] = []
         by_key: dict[str, list[PurchasedItem]] = {}
-        representatives: dict[str, ItemFingerprint] = {}
         for item in self.items:
             key = item.fingerprint.group_key
             if key not in by_key:
                 by_key[key] = []
-                representatives[key] = item.fingerprint
                 ordered.append((item.fingerprint, by_key[key]))
             by_key[key].append(item)
         return ordered
@@ -250,12 +248,15 @@ class TransactionManifest:
         if remaining:
             raise RuntimeError("Không phân bổ hết số lượng đã bán vào manifest")
 
-    def complete(self) -> None:
-        if self.sold_total != self.sellable_total:
+    def complete(self, *, allow_deferred: bool = False) -> None:
+        """Complete normally, or defer unsold batches when own stall has no room."""
+        if not allow_deferred and self.sold_total != self.sellable_total:
             raise RuntimeError(
                 "Chưa bán lại đủ các lô 10 VP đã xác nhận theo từng loại"
             )
-        self.state = "COMPLETED"
+        if self.sold_total > self.sellable_total:
+            raise RuntimeError("Số VP đã bán vượt kế hoạch manifest")
+        self.state = "COMPLETED_DEFERRED" if allow_deferred else "COMPLETED"
 
     def fail(self, error: Any) -> None:
         self.state = "FAILED"
