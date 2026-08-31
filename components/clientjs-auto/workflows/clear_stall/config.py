@@ -20,6 +20,8 @@ class ClearStallJob:
     target_mode: str
     target_friend_ordinal: int
     target_stall_id: int
+    buy_quantity: int
+    max_scan_pages: int
     interval_minutes: int
     next_run_at: float
     close_client_after_run: bool
@@ -70,7 +72,7 @@ def normalize_job(
     if not enabled:
         next_run_at = 0
     return ClearStallJob(
-        schema_version=1,
+        schema_version=2,
         job_id=str(raw.get("job_id") or f"clear-stall-{profile_id}"),
         clone_profile_id=profile_id,
         target_mode="friend_ordinal",
@@ -86,6 +88,8 @@ def normalize_job(
             MIN_STALL_ID,
             MAX_STALL_ID,
         ),
+        buy_quantity=_bounded_int(raw.get("buy_quantity", 8), 8, 1, 999),
+        max_scan_pages=_bounded_int(raw.get("max_scan_pages", 10), 10, 1, 50),
         interval_minutes=interval,
         next_run_at=next_run_at,
         close_client_after_run=bool(raw.get("close_client_after_run", True)),
