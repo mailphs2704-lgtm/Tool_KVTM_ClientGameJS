@@ -1,17 +1,21 @@
 # KVTM AI Session Coordination
 
 > Tài liệu điều phối bắt buộc cho mọi phiên AI làm việc trên repository này.
-> Đọc toàn bộ file trước khi sửa code. Cập nhật phần trạng thái của mình trước khi kết thúc một mốc công việc.
+> Đọc toàn bộ file trước khi sửa code. Cập nhật trạng thái/handoff trước khi kết thúc một mốc công việc.
 
 ## Mục tiêu chung
 
 Xây `KVTM-ClientJS-Suite` gồm Multi, ClientJS Workspace và Auto chạy nền ổn định. Workspace có thể thu nhỏ xuống taskbar mà ClientJS và Auto vẫn tiếp tục chạy. Mọi thao tác thử nghiệm phải chỉ tác động tới client thuộc bộ DEV hiện tại.
 
+Tài liệu chi tiết cho migration máy phụ + runtime updater:
+
+- `docs/SECONDARY_MACHINE_RUNTIME_UPDATE.md`
+
 ## Phân nhánh và quyền sở hữu
 
 | Phiên | Nhánh làm việc | Phạm vi sở hữu chính | Không tự ý sửa |
 |---|---|---|---|
-| AUTO/Multi | `develop/multi-auto-dev` | Logic Auto, workflow Dọn quầy, Multi hiện tại, profile/session, worker và probe | `components/workspace/**`, `KVTM_WORKSPACE_CONTROL.bat` |
+| AUTO/Multi | `develop/multi-auto-dev` | Logic Auto, workflow Dọn quầy, Multi hiện tại, profile/session, worker/probe, migration máy phụ, runtime updater | `components/workspace/**`, `KVTM_WORKSPACE_CONTROL.bat` |
 | Workspace | `develop/clientjs-workspace` | Workspace host, Live View, attach/detach, capture lifecycle, Control Center Workspace | Logic nghiệp vụ Auto/Dọn quầy đang được phiên AUTO sửa |
 
 Hai phiên không push trực tiếp vào nhánh của nhau. Không force-push, không rebase nhánh đã chia sẻ và không sửa lịch sử Git.
@@ -50,22 +54,47 @@ Workspace không sở hữu vòng đời Auto. Auto không phụ thuộc việc 
 4. Ghi SHA nguồn khi lấy thay đổi từ nhánh bên kia.
 5. Dùng `merge --no-commit` hoặc `cherry-pick` có chọn lọc trên nhánh tích hợp; không merge mù toàn nhánh.
 6. Nếu cùng cần sửa một file dùng chung, một phiên hoàn tất và commit trước; phiên còn lại lấy commit đó rồi mới tiếp tục.
-7. Không coi build thành công là runtime PASS. Chỉ ghi PASS khi có output kiểm thử trên Windows của người dùng.
+7. Không coi build thành công là runtime PASS. Chỉ ghi PASS cho hành vi Windows khi có output/live evidence phù hợp.
+8. Không upload/commit secret, `.kvtm`, raw `profiles.json`, plaintext launch args, token, cookie hoặc password.
 
 ## Trạng thái phiên AUTO/Multi
 
 - Nhánh chính: `develop/multi-auto-dev`.
-- HEAD nhánh chính quan sát khi bắt đầu mốc chuyển máy: `e58d03a`.
-- Nhánh triển khai cô lập hiện tại: `feature/secondary-machine-migration`.
-- Chủ sở hữu cập nhật: phiên AI đang làm Auto/Multi.
-- Trạng thái: `IN_PROGRESS` — bổ sung luồng chuyển profile sang máy phụ, chẩn đoán môi trường và cài dependency; chưa ghi runtime PASS.
-- Mốc vừa hoàn thành: thêm module mới, không sửa `kvtm_multi.py`, driver/capture/bootstrap Dọn quầy hay Workspace. Export giải DPAPI trên máy nguồn trong bộ nhớ rồi mã hóa portable; Import xác thực HMAC, mã hóa lại DPAPI cho Windows user máy đích và backup profile trước khi ghi. Machine diagnostic kiểm tra Git/Git LFS/Python 3.11 x64/VC++ x86+x64/ZingPlay/GameClientJS/game data/DEV runtime; các dependency có package ổn định được cài qua WinGet.
-- File mốc này: `tools/KVTM_PROFILE_TRANSFER.ps1`, `tools/KVTM_PROFILE_VERIFY.ps1`, `tools/KVTM_MACHINE_SETUP.ps1`, `KVTM_MACHINE_TRANSFER_CONTROL.bat`, `KVTM_SECONDARY_BOOTSTRAP.ps1`, `.gitignore`.
-- Interface Workspace thay đổi: không.
-- Test: static review/compare Git; chưa có PowerShell/Windows runtime verification. Không gọi PASS trước khi người dùng chạy export/diagnostic/import trên Windows.
-- Next: đưa feature về `develop/multi-auto-dev` bằng fast-forward nếu nhánh chính chưa thay đổi; người dùng pull máy chính, chạy `KVTM_MACHINE_TRANSFER_CONTROL.bat` -> Export và diagnostic. Sau đó chạy bootstrap/diagnostic trên máy phụ rồi Import, gửi output verify nếu có lỗi.
-- DO_NOT_TOUCH: `components/workspace/**`, `KVTM_WORKSPACE_CONTROL.bat`; không thay đổi logic Dọn quầy/capture/driver trong mốc chuyển máy này.
-- Yêu cầu với phiên Workspace: không cần merge; feature chuyển máy không đổi interface Workspace/capture.
+- Chủ sở hữu cập nhật: phiên AI làm Auto/Multi.
+- Trạng thái: `IN_PROGRESS / READY_FOR_NEXT_LIVE_TEST`.
+- Migration máy phụ: hoạt động. Main đã export 13 profile; máy phụ đã import. Người dùng mở ít nhất 1 profile và xác nhận vào thẳng game, không đăng nhập lại.
+- Máy phụ: Git/Git LFS/Python 3.11 x64/VC++ x86+x64/ZingPlay/GameClientJS/game data đã có diagnostic `ENVIRONMENT_READY` trong các lần kiểm chứng trước.
+- GitHub bridge: `[8]` gửi SAFE diagnostic lên branch `machine-sync/cry-pc`; `[9]` pull/deps/LFS/build DEV runtime. Không upload profile/transfer file.
+- Runtime updater UI: nút `Cập nhật DEV` đã có trong `BẢNG ĐIỀU KHIỂN`. Người dùng đã xác nhận `giao diện pass` sau bootstrap gần nhất: vị trí nút đúng và chữ tiếng Việt không còn lỗi mojibake.
+- Runtime updater code mốc chính: `4806e433591b8623126e11c6e13e6ac1adec5808` (`Make staged runtime activation robust`).
+- UI/text fix: `28209c3ab6a53cf90cbb232beecc646928571fa0`.
+- PS5.1 branch detection fix: `01690a565c4fcf904d802e1c2d5f359ca3173a2e`.
+- CI cho `4806e433...`: FULL PASS.
+  - `Multi DEV checks`: `clear-stall-static` PASS, `package-smoke` PASS.
+  - `Secondary machine checks`: toàn bộ PowerShell/Python parse, PS5.1 regression, bridge/updater safety, transfer crypto, diagnostic và ignore checks PASS.
+- Evidence live gần nhất trước bootstrap cuối: repo source `28209c3`, runtime `01690a5`, updater UI/hook FOUND. Sau đó user chạy `[9]` và báo `pass`, rồi báo `giao diện pass`. Chưa có `[8]` mới sau `giao diện pass`, vì vậy không tự suy đoán runtime SHA hiện tại.
+- Known issue đã xử lý: source có thể lên commit mới nhưng runtime vẫn cũ do watcher activation. `4806e433...` làm activation robust hơn và hỗ trợ updater self-update/retry/process tracking.
+- **NEXT bắt buộc:** test một vòng update hoàn toàn bằng nút `Cập nhật DEV`, không dùng `[9]`. Có thể dùng commit tài liệu mới nhất làm target harmless. Sau update, đóng/mở Multi, chạy `[8]`, chỉ chốt FULL PASS khi `head == runtime_source_head`, updater UI/hook FOUND, `RESULT=ENVIRONMENT_READY` và profile vẫn hoạt động.
+- Nếu `[8]` cho source HEAD mới nhưng `runtime_source_head` cũ: activation là PARTIAL/FAIL; debug staging/status/watcher, không dùng `[9]` như giải pháp lâu dài.
+- File chính của luồng này:
+  - `tools/KVTM_PROFILE_TRANSFER.ps1`
+  - `tools/KVTM_PROFILE_VERIFY.ps1`
+  - `tools/KVTM_MACHINE_SETUP.ps1`
+  - `tools/KVTM_GITHUB_BRIDGE.ps1`
+  - `tools/KVTM_RUNTIME_UPDATE.ps1`
+  - `KVTM_MACHINE_TRANSFER_CONTROL.bat`
+  - `KVTM_SECONDARY_BOOTSTRAP.ps1`
+  - `packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1`
+  - `source-archive/multi-current/kvtm_multi_tool/runtime_update_ui.py`
+- DO_NOT_TOUCH cho task updater/migration: `components/workspace/**`, `KVTM_WORKSPACE_CONTROL.bat`; không thay đổi capture/driver/Dọn quầy nếu không cần cho lỗi updater.
+
+## Quy trình máy phụ nhanh
+
+- `[7]`: verify profile/DPAPI READ-ONLY.
+- `[8]`: gửi report an toàn lên GitHub.
+- `[9]`: bootstrap/update khẩn cấp; mục tiêu cuối cùng là không cần dùng thường xuyên sau khi updater UI được live-verified.
+- Mở DEV runtime: `dist\KVTM-ClientJS-Suite-Multi-DEV\02_START_MULTI_DEV.bat`.
+- Khi user nói `đã gửi` sau `[8]`, đọc `machine-sync/cry-pc:machine-reports/CRY-PC/LATEST.txt` trước khi kết luận.
 
 ## Trạng thái phiên Workspace
 
@@ -88,7 +117,8 @@ Thêm bản ghi mới lên đầu bảng. Không sửa hoặc xóa lịch sử c
 
 | Thời gian UTC | Từ phiên | Đến phiên | Commit | Nội dung / hành động cần làm |
 |---|---|---|---|---|
-| 2026-09-01 | AUTO/Multi | Workspace | `feature/secondary-machine-migration` | Thêm riêng luồng chuyển máy/profile + machine setup. Không sửa `kvtm_multi.py`, capture, driver hoặc Workspace; Workspace không cần merge. Chưa runtime PASS trên Windows. |
+| 2026-09-01 | AUTO/Multi | AUTO/Multi phiên kế tiếp | `4806e433`, `28209c3`, docs hiện tại | Migration máy phụ + GitHub bridge + runtime updater đã vào DEV. UI vị trí/chữ được user báo PASS. CI `4806e433` FULL PASS. Việc còn lại: live test 1 vòng chỉ bằng nút `Cập nhật DEV`, sau đó `[8]` xác minh `head == runtime_source_head`; không dùng `[9]` để che lỗi activation. Đọc `docs/SECONDARY_MACHINE_RUNTIME_UPDATE.md`. |
+| 2026-09-01 | AUTO/Multi | Workspace | `feature/secondary-machine-migration` | Thêm riêng luồng chuyển máy/profile + machine setup. Không sửa `kvtm_multi.py`, capture, driver hoặc Workspace; Workspace không cần merge. |
 | 2026-09-01 | AUTO/Multi | Workspace | `cf32eb0`, `70a5cc3` | SAFE Step 1 chỉ thay `ai-don-quay/step1_probe.py` và `KVTM_DON_QUAY_SAFE.bat`. Bổ sung identity fallback qua `running_clients.json` còn mới <=30 giây do Multi DEV publish; không đổi interface capture/driver/bootstrap và Workspace không cần merge. |
 | 2026-09-01 | Workspace | AUTO/Multi | `addc02f` | Đã tách nhánh Workspace. Không yêu cầu merge. Xin giữ ổn định interface capture theo PID/HWND và báo SHA khi thay đổi. |
 | 2026-09-01 | AUTO/Multi | Workspace | `a5b4310` | HEAD AUTO/Multi được quan sát khi tạo tài liệu; Workspace chưa lấy các thay đổi sau nền `f10d773`. Cần review diff trước khi đồng bộ. |
@@ -107,7 +137,7 @@ NEXT: hành động tiếp theo
 DO_NOT_TOUCH: file/phạm vi tạm khóa
 ```
 
-## Điều kiện tích hợp
+## Điều kiện tích hợp Workspace
 
 Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 
@@ -118,3 +148,10 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Mở lại Workspace không đen hình, không sai tỷ lệ.
 - Không chiếm chuột thật khi Auto chạy.
 - Logs không chứa secret, cookie, session hoặc launch arguments đã giải mã.
+
+## Cách tương tác với người dùng cho phiên AI tiếp theo
+
+- Hướng dẫn ngắn, từng bước một.
+- Ưu tiên command copy/paste chính xác.
+- Không đưa 5-10 bước cùng lúc nếu chỉ cần một bước để lấy evidence tiếp theo.
+- PASS/PARTIAL/FAIL chỉ theo log/CI/live evidence thật; không tự điền số liệu chưa thấy.
