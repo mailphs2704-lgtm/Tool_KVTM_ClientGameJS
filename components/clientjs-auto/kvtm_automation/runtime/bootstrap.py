@@ -3,10 +3,26 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import shutil
+import struct
 import sys
 
 
 _VENDOR_VERSION = "2"
+_SUPPORTED_PYTHON = (3, 11)
+
+
+def _require_supported_python() -> None:
+    """Fail fast before loading CPython-3.11 native image extensions."""
+
+    current = tuple(sys.version_info[:2])
+    if current != _SUPPORTED_PYTHON:
+        raise RuntimeError(
+            "Dọn quầy clean yêu cầu CPython 3.11 x64; "
+            f"đang chạy Python {current[0]}.{current[1]} ({sys.executable}). "
+            "Không nạp native extension cp311 bằng Python 3.12/3.13."
+        )
+    if struct.calcsize("P") * 8 != 64:
+        raise RuntimeError("Dọn quầy clean yêu cầu CPython 3.11 64-bit")
 
 
 def _vendor_root() -> Path:
@@ -66,21 +82,14 @@ def _materialize_vendor(auto_root: Path, vendor: Path) -> None:
             f"{pure_root} / {native_root}"
         )
 
-    # A partial cache must never survive a failed materialization. The cache is
-    # runtime-only and intentionally lives outside the repository/package.
     if vendor.exists():
         shutil.rmtree(vendor, ignore_errors=True)
     vendor.mkdir(parents=True, exist_ok=True)
 
-    # NumPy: Python package from runtime/pyc + native extensions from _internal.
     _copy_tree(pure_root / "numpy", vendor / "numpy")
     _copy_tree(native_root / "numpy", vendor / "numpy")
     _copy_tree(native_root / "numpy.libs", vendor / "numpy.libs")
-
-    # OpenCV: the PyInstaller extraction already contains a complete cv2 package.
     _copy_tree(native_root / "cv2", vendor / "cv2")
-
-    # Pillow: Python package + native imaging extensions.
     _copy_tree(pure_root / "PIL", vendor / "PIL")
     _copy_tree(native_root / "PIL", vendor / "PIL")
 
@@ -91,13 +100,9 @@ def _materialize_vendor(auto_root: Path, vendor: Path) -> None:
 
 
 def install_binary_dependencies(auto_root: Path) -> None:
-    """Expose clean third-party dependencies without AUTO PRO business logic.
+    """Expose clean third-party dependencies without AUTO PRO business logic."""
 
-    Only NumPy/OpenCV/Pillow are materialized into a LOCALAPPDATA runtime cache.
-    AUTO PRO's runtime/pyc and _internal roots are never added to sys.path, so
-    automation.pyc, adb_controller.pyc and other recovered business modules are
-    not part of the Dọn quầy execution path.
-    """
+    _require_supported_python()
 
     root = Path(auto_root).resolve()
     internal = root / "_internal"
@@ -108,8 +113,6 @@ def install_binary_dependencies(auto_root: Path) -> None:
     if not _vendor_is_ready(vendor):
         _materialize_vendor(root, vendor)
 
-    # The isolated vendor must win over arbitrary site-packages so Python code
-    # and native extensions always come from the same recovered build.
     vendor_text = str(vendor)
     if vendor_text in sys.path:
         sys.path.remove(vendor_text)
@@ -121,8 +124,6 @@ def install_binary_dependencies(auto_root: Path) -> None:
             vendor / "cv2",
             vendor / "numpy.libs",
             vendor / "PIL",
-            # Runtime DLLs such as VCRUNTIME may live here. This is a DLL search
-            # directory only and is never a Python module search path.
             internal,
         )
         handles = getattr(install_binary_dependencies, "_dll_handles", None)
@@ -139,8 +140,6 @@ def install_binary_dependencies(auto_root: Path) -> None:
             except OSError:
                 continue
 
-    # NumPy must initialize before cv2 because OpenCV imports
-    # numpy.core.multiarray while loading its native extension.
     import numpy  # noqa: F401
     import cv2  # noqa: F401
     from PIL import Image  # noqa: F401
