@@ -265,7 +265,7 @@ New-Item -ItemType Directory -Path $NativeOut -Force | Out-Null
 Copy-Item -Path (Join-Path $PatchSource "native\*") -Destination $NativeOut -Force
 
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "README.txt") -Destination $OutputRoot
-foreach ($name in @("01_BUILD_BRIDGE.bat", "02_START_MULTI.bat", "02_START_MULTI_DEV.bat", "03_START_AUTO.bat", "04_BUILD_MULTI_EXE.bat", "05_IMPORT_PROFILES_TO_DEV.ps1")) {
+foreach ($name in @("01_BUILD_BRIDGE.bat", "02_START_MULTI.bat", "02_START_MULTI_DEV.bat", "START_MULTI_DEV_SILENT.ps1", "03_START_AUTO.bat", "04_BUILD_MULTI_EXE.bat", "05_IMPORT_PROFILES_TO_DEV.ps1")) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $OutputRoot
 }
 
