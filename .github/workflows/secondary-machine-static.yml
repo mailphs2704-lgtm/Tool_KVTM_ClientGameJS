@@ -47,6 +47,19 @@ jobs:
           }
           if ($failed) { throw 'PowerShell parse check failed' }
 
+      - name: Regression test PowerShell 5.1 JSON arrays
+        shell: powershell
+        run: |
+          $json = '[{"id":"1"},{"id":"2"},{"id":"3"}]'
+          [object[]]$items = ($json | ConvertFrom-Json)
+          if ($items.Count -ne 3) {
+            throw "Top-level JSON array count regression: expected 3, got $($items.Count)"
+          }
+          if ([string]$items[1].id -ne '2') {
+            throw 'Top-level JSON array item access regression'
+          }
+          Write-Host 'POWERSHELL_JSON_ARRAY_REGRESSION_OK' -ForegroundColor Green
+
       - name: Run read-only machine diagnostic
         shell: powershell
         run: |
