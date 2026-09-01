@@ -24,11 +24,11 @@ def _configure_console() -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Follow the KVTM DEV clear-stall probe activity log."
+        description="Follow the KVTM DEV clear-stall DLL probe activity log."
     )
     parser.add_argument("--log", required=True)
     parser.add_argument("--done", required=True)
-    parser.add_argument("--title", default="KVTM DEV - Clear Stall Probe")
+    parser.add_argument("--title", default="KVTM DEV - Clear Stall DLL Probe")
     return parser
 
 
@@ -37,7 +37,8 @@ def _print_header(title: str, log_path: Path) -> None:
     print(line)
     print(title)
     print(f"LOG: {log_path}")
-    print("Cửa sổ này chỉ hiển thị log. Đóng CMD không dừng probe đang chạy.")
+    print("CMD này mở ngay khi bấm probe và theo dõi UI/PID/DLL/worker.")
+    print("Đóng CMD không làm dừng probe; dùng nút Dừng trong Multi để dừng.")
     print(line)
     print(flush=True)
 
@@ -72,8 +73,14 @@ def main() -> int:
             print(f"[console] Lỗi đọc log: {exc}", flush=True)
 
         if done_path.exists() and idle_after_done >= 4:
-            print("\n[console] Probe đã kết thúc. Cửa sổ sẽ đóng sau 2 giây.", flush=True)
-            time.sleep(2.0)
+            print("\n" + "=" * 78)
+            print("Probe đã kết thúc. Giữ cửa sổ này để đọc/chụp log.")
+            print("Nhấn ENTER để đóng CMD.")
+            print("=" * 78, flush=True)
+            try:
+                input()
+            except (EOFError, KeyboardInterrupt):
+                pass
             return 0
         time.sleep(0.25)
 
