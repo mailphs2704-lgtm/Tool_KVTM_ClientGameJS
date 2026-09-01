@@ -54,17 +54,18 @@ Workspace không sở hữu vòng đời Auto. Auto không phụ thuộc việc 
 
 ## Trạng thái phiên AUTO/Multi
 
-- Nhánh: `develop/multi-auto-dev`
-- HEAD quan sát gần nhất: `70a5cc3`
+- Nhánh chính: `develop/multi-auto-dev`.
+- HEAD nhánh chính quan sát khi bắt đầu mốc chuyển máy: `e58d03a`.
+- Nhánh triển khai cô lập hiện tại: `feature/secondary-machine-migration`.
 - Chủ sở hữu cập nhật: phiên AI đang làm Auto/Multi.
-- Trạng thái: `IN_PROGRESS` — đang xây Dọn quầy theo từng bước, kế thừa luồng AUTO chính đang chạy được.
-- Mốc vừa hoàn thành: Step 1 SAFE identity fallback dùng `profiles.json`; nếu thiếu profile thì chỉ nhận `running_clients.json` còn mới <=30 giây do chính Multi DEV publish, sau đó xác minh PID vẫn là `GameClientJS.exe`.
-- File phiên AUTO/Multi vừa thay đổi: `ai-don-quay/step1_probe.py`, `KVTM_DON_QUAY_SAFE.bat`.
-- Interface Workspace thay đổi: không. Không sửa driver/capture/bootstrap dùng chung và không sửa phạm vi Workspace.
-- Test: chưa ghi PASS runtime; đang chờ người dùng chạy Step 1 trên Windows. Build/CI không được tính là runtime PASS.
-- Next: người dùng cập nhật đúng 2 file SAFE rồi mở Multi DEV, chạy `KVTM_DON_QUAY_SAFE.bat` Step 1; nếu upload diagnostics thành công thì đọc branch `diagnostics/clear-stall` và chỉ khi capture PASS mới làm Step 2.
-- DO_NOT_TOUCH: `components/workspace/**`, `KVTM_WORKSPACE_CONTROL.bat`; không sửa file dùng chung nếu chưa có handoff mới.
-- Yêu cầu với phiên Workspace: không sửa logic Auto hoặc workflow Dọn quầy; chưa cần lấy hai commit SAFE này vì không thay interface Workspace.
+- Trạng thái: `IN_PROGRESS` — bổ sung luồng chuyển profile sang máy phụ, chẩn đoán môi trường và cài dependency; chưa ghi runtime PASS.
+- Mốc vừa hoàn thành: thêm module mới, không sửa `kvtm_multi.py`, driver/capture/bootstrap Dọn quầy hay Workspace. Export giải DPAPI trên máy nguồn trong bộ nhớ rồi mã hóa portable; Import xác thực HMAC, mã hóa lại DPAPI cho Windows user máy đích và backup profile trước khi ghi. Machine diagnostic kiểm tra Git/Git LFS/Python 3.11 x64/VC++ x86+x64/ZingPlay/GameClientJS/game data/DEV runtime; các dependency có package ổn định được cài qua WinGet.
+- File mốc này: `tools/KVTM_PROFILE_TRANSFER.ps1`, `tools/KVTM_PROFILE_VERIFY.ps1`, `tools/KVTM_MACHINE_SETUP.ps1`, `KVTM_MACHINE_TRANSFER_CONTROL.bat`, `KVTM_SECONDARY_BOOTSTRAP.ps1`, `.gitignore`.
+- Interface Workspace thay đổi: không.
+- Test: static review/compare Git; chưa có PowerShell/Windows runtime verification. Không gọi PASS trước khi người dùng chạy export/diagnostic/import trên Windows.
+- Next: đưa feature về `develop/multi-auto-dev` bằng fast-forward nếu nhánh chính chưa thay đổi; người dùng pull máy chính, chạy `KVTM_MACHINE_TRANSFER_CONTROL.bat` -> Export và diagnostic. Sau đó chạy bootstrap/diagnostic trên máy phụ rồi Import, gửi output verify nếu có lỗi.
+- DO_NOT_TOUCH: `components/workspace/**`, `KVTM_WORKSPACE_CONTROL.bat`; không thay đổi logic Dọn quầy/capture/driver trong mốc chuyển máy này.
+- Yêu cầu với phiên Workspace: không cần merge; feature chuyển máy không đổi interface Workspace/capture.
 
 ## Trạng thái phiên Workspace
 
@@ -87,6 +88,7 @@ Thêm bản ghi mới lên đầu bảng. Không sửa hoặc xóa lịch sử c
 
 | Thời gian UTC | Từ phiên | Đến phiên | Commit | Nội dung / hành động cần làm |
 |---|---|---|---|---|
+| 2026-09-01 | AUTO/Multi | Workspace | `feature/secondary-machine-migration` | Thêm riêng luồng chuyển máy/profile + machine setup. Không sửa `kvtm_multi.py`, capture, driver hoặc Workspace; Workspace không cần merge. Chưa runtime PASS trên Windows. |
 | 2026-09-01 | AUTO/Multi | Workspace | `cf32eb0`, `70a5cc3` | SAFE Step 1 chỉ thay `ai-don-quay/step1_probe.py` và `KVTM_DON_QUAY_SAFE.bat`. Bổ sung identity fallback qua `running_clients.json` còn mới <=30 giây do Multi DEV publish; không đổi interface capture/driver/bootstrap và Workspace không cần merge. |
 | 2026-09-01 | Workspace | AUTO/Multi | `addc02f` | Đã tách nhánh Workspace. Không yêu cầu merge. Xin giữ ổn định interface capture theo PID/HWND và báo SHA khi thay đổi. |
 | 2026-09-01 | AUTO/Multi | Workspace | `a5b4310` | HEAD AUTO/Multi được quan sát khi tạo tài liệu; Workspace chưa lấy các thay đổi sau nền `f10d773`. Cần review diff trước khi đồng bộ. |
