@@ -63,7 +63,7 @@ _PARKED_WINDOWS: dict[int, tuple[int, int, int, int]] = {}
 
 
 def park_client_window(hwnd: int) -> bool:
-    """Keep ClientJS top-level/rendering while leaving only a 4px edge on desktop."""
+    """Keep ClientJS top-level/rendering while leaving a 32px render-keepalive strip on desktop."""
     user32 = ctypes.windll.user32
     rect = wintypes.RECT()
     if not user32.IsWindow(hwnd) or not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
@@ -76,7 +76,7 @@ def park_client_window(hwnd: int) -> bool:
     virtual_width = user32.GetSystemMetrics(78) # SM_CXVIRTUALSCREEN
     width = max(1, rect.right - rect.left)
     height = max(1, rect.bottom - rect.top)
-    parked_x = virtual_left + virtual_width - 4
+    parked_x = virtual_left + virtual_width - 32
     flags = 0x0010 | 0x0200  # SWP_NOACTIVATE | SWP_NOOWNERZORDER
     return bool(user32.SetWindowPos(hwnd, 1, parked_x, virtual_top, width, height, flags))
 
