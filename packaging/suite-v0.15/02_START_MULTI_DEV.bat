@@ -1,22 +1,22 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+set "PACKAGE_DIR=%~dp0"
+set "MULTI_DIR=%~dp0Multi"
 set "KVTM_MULTI_APP_DIR=%~dp0data-dev"
 set "KVTM_MULTI_INSTANCE_NAME=KVTM Multi DEV"
 set "KVTM_MULTI_ISOLATED=1"
 if not exist "%KVTM_MULTI_APP_DIR%" mkdir "%KVTM_MULTI_APP_DIR%"
-cd /d "%~dp0Multi"
-if not exist "kvtm_multi_dev_host.py" (
+if not exist "%MULTI_DIR%\kvtm_multi_dev_host.py" (
   echo [LOI] Thieu Multi\kvtm_multi_dev_host.py
   pause
   goto :done
 )
-if not exist "kvtm_multi_dev_entry.py" (
+if not exist "%MULTI_DIR%\kvtm_multi_dev_entry.py" (
   echo [LOI] Thieu Multi\kvtm_multi_dev_entry.py
   pause
   goto :done
 )
-if not exist "clear_stall_probe_console.py" (
+if not exist "%MULTI_DIR%\clear_stall_probe_console.py" (
   echo [LOI] Thieu Multi\clear_stall_probe_console.py
   pause
   goto :done
@@ -49,8 +49,16 @@ for /f "delims=" %%V in ('%KVTM_PYTHON% -c "import struct,sys; print(sys.version
 echo [KVTM DEV] Python=%KVTM_PYTHON_INFO%
 echo [KVTM DEV] Starting ONE resident host: image runtime -^> Multi UI -^> probe thread
 
-%KVTM_PYTHON% kvtm_multi_dev_host.py
+pushd "%MULTI_DIR%"
 if errorlevel 1 (
+  echo [LOI] Khong mo duoc thu muc Multi: %MULTI_DIR%
+  pause
+  goto :done
+)
+%KVTM_PYTHON% "%MULTI_DIR%\kvtm_multi_dev_host.py"
+set "KVTM_HOST_RC=%ERRORLEVEL%"
+popd
+if not "%KVTM_HOST_RC%"=="0" (
   echo [LOI] Multi DEV resident host exited with an error.
   pause
 )
