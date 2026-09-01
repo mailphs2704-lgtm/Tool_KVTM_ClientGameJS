@@ -2,6 +2,38 @@
   "schema_version": 1,
   "functions": [
     {
+      "key": "produce_6_tinh_dau_hh_6_vai_vang_8_tao_say",
+      "label": "6 Tinh Dầu Hoa Hồng + 6 Vải Vàng + 8 Táo Sấy",
+      "auto_pro_function_id": 98,
+      "entrypoint": "FarmAutomation.produceItems_98",
+      "enabled_for_test": true,
+      "required_auto_modules": [
+        "automation",
+        "adb_controller",
+        "image_processor",
+        "engine_driver",
+        "pc_driver",
+        "adaptive_cv",
+        "clientjs_auto_patch"
+      ],
+      "required_methods": [
+        "plantTrees",
+        "makeItems",
+        "harvestTrees",
+        "sellItems_98",
+        "openGame",
+        "goUp",
+        "goDownLast",
+        "Tuychon",
+        "GoFiendHome"
+      ],
+      "delete_items": [
+        "Tinh Dầu Hoa Hồng",
+        "Vải Vàng",
+        "Táo Sấy"
+      ]
+    },
+    {
       "key": "produce_9_vai_vang_9_tao_say",
       "label": "9 Vải Vàng + 9 Táo Sấy",
       "auto_pro_function_id": 136,
