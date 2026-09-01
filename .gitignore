@@ -36,3 +36,9 @@ data-machine-sync/
 !source-archive/auto-pro-reference/_internal/**
 !source-archive/auto-pro-reference/platform-tools/
 !source-archive/auto-pro-reference/platform-tools/**
+
+# Local MSVC outputs for the DEV OpenGL capture bridge. Source remains tracked.
+test-candidates/auto-pro-clientjs-temp/bin/
+test-candidates/auto-pro-clientjs-temp/*.obj
+test-candidates/auto-pro-clientjs-temp/*.exp
+test-candidates/auto-pro-clientjs-temp/*.lib
