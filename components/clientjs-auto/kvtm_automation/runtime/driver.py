@@ -4,9 +4,10 @@ from dataclasses import dataclass
 import importlib
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, Callable
 
 from .bootstrap import install_binary_dependencies
+from .cocos_bridge import CocosBridgeDriver
 
 
 @dataclass(frozen=True)
@@ -17,50 +18,58 @@ class DriverBundle:
 
 
 class ClientJSDriverFactory:
-    """Construct the clean PC/engine bridge without AUTO PRO automation.pyc."""
+    """Construct ClientJS drivers for clean automation.
+
+    Transaction-capable clean automation always uses :class:`CocosBridgeDriver`,
+    which talks directly to ``kvtm_bridge.dll``. The plain Windows driver is
+    retained only as a read-only diagnostic fallback and never carries Dọn quầy
+    touches.
+    """
 
     def __init__(self, component_root: Path, auto_root: Path) -> None:
         self.component_root = Path(component_root).resolve()
         self.auto_root = Path(auto_root).resolve()
 
-    def _bridge_root(self) -> Path:
+    def _pc_driver_root(self) -> Path:
         candidates = (
             self.component_root / "bridge",
             self.auto_root,
         )
         for root in candidates:
-            if (
-                (root / "pc_driver.py").is_file()
-                and (root / "engine_driver.py").is_file()
-                and (root / "adaptive_cv.py").is_file()
-            ):
+            if (root / "pc_driver.py").is_file():
                 return root
-        raise RuntimeError(
-            "Thiếu bridge source sạch (pc_driver.py/engine_driver.py/adaptive_cv.py)"
-        )
+        raise RuntimeError("Thiếu pc_driver.py cho diagnostic capture")
 
-    def _load_bridge_modules(self) -> tuple[Any, Any, Path]:
+    def _load_pc_driver(self) -> tuple[Any, Path]:
         install_binary_dependencies(self.auto_root)
-        root = self._bridge_root()
+        root = self._pc_driver_root()
         text = str(root)
         if text not in sys.path:
             sys.path.insert(0, text)
-        pc_driver = importlib.import_module("pc_driver")
-        engine_driver = importlib.import_module("engine_driver")
-        return pc_driver, engine_driver, root
+        return importlib.import_module("pc_driver"), root
 
     def raw(self, pid: int) -> DriverBundle:
-        pc_driver, _engine_driver, root = self._load_bridge_modules()
+        pc_driver, root = self._load_pc_driver()
         return DriverBundle(
             driver=pc_driver.PCDriver(int(pid), reference_size=(1000, 1000)),
             bridge_root=root,
-            mode="pc-window",
+            mode="pc-window-diagnostic",
         )
 
-    def engine(self, pid: int) -> DriverBundle:
-        _pc_driver, engine_driver, root = self._load_bridge_modules()
+    def engine(
+        self,
+        pid: int,
+        *,
+        logger: Callable[[str], None] | None = None,
+    ) -> DriverBundle:
+        install_binary_dependencies(self.auto_root)
         return DriverBundle(
-            driver=engine_driver.EngineDriver(int(pid), reference_size=(1000, 1000)),
-            bridge_root=root,
-            mode="cocos-engine",
+            driver=CocosBridgeDriver(
+                int(pid),
+                self.auto_root,
+                reference_size=(1000, 1000),
+                logger=logger,
+            ),
+            bridge_root=self.auto_root / "bin",
+            mode="cocos-dll-direct",
         )
