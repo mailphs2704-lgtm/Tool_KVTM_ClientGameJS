@@ -6,10 +6,10 @@ title KVTM WORKSPACE DEV - CONTROL CENTER
 
 set "EXPECTED_BRANCH=develop/clientjs-workspace"
 set "WORKSPACE=components\workspace\kvtm_workspace.py"
-set "DRIVER_DIR=test-candidates\auto-pro-clientjs-temp"
 set "LOG_DIR=data-workspace"
 set "MAIN_DEV_ROOT=%USERPROFILE%\Desktop\Tool_KVTM_Multi_DEV"
 set "DIST=%MAIN_DEV_ROOT%\dist\KVTM-ClientJS-Suite-Multi-DEV"
+set "DRIVER_DIR=%DIST%\AUTO_PRO"
 
 :menu
 cls
