@@ -8,7 +8,8 @@ set "EXPECTED_BRANCH=develop/multi-auto-dev"
 set "DIST=dist\KVTM-ClientJS-Suite-Multi-DEV"
 set "STEP1=components\clientjs-auto\worker\clear_stall_step1_probe.py"
 set "STEP1_OUT=%DIST%\data-dev\clear-stall-step1"
-set "BUILD_SCRIPT=packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1"
+set "RESULT_BRANCH=diagnostics/clear-stall"
+set "RESULT_WT=%TEMP%\KVTM_DEV_DIAGNOSTICS_WORKTREE"
 
 :menu
 cls
@@ -18,28 +19,30 @@ for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "CUR_BRANCH=
 for /f "delims=" %%H in ('git rev-parse --short HEAD 2^>nul') do set "CUR_HEAD=%%H"
 echo ===============================================================================
 echo  KVTM MULTI DEV - CONTROL CENTER
-echo  MOT CUA SO DUY NHAT. Chi dung cho Tool_KVTM_Multi_DEV.
-echo  Khong dieu khien GameClientJS cua bo cu.
+echo  MOT CUA SO DUY NHAT. Khong can go lenh CMD dai nua.
+echo  Client cu dang chay AUTO se KHONG bi test DEV cham vao.
 echo ===============================================================================
 echo  Repo   : %CD%
 echo  Branch : %CUR_BRANCH%
 echo  HEAD   : %CUR_HEAD%
 echo -------------------------------------------------------------------------------
 echo  [1] Cap nhat source DEV
-echo  [2] Build package DEV thu cong
-echo  [3] Mo Multi DEV  ^(tu build neu package cu/thieu^)
-echo  [4] Don quay - BUOC HIEN TAI: STEP 1 capture bang luong AUTO chinh
-echo      ^(tu build neu package cu/thieu^)
-echo  [5] Mo thu muc ket qua STEP 1
+echo  [2] Mo Multi DEV               ^(tu dong sync file DEV^)
+echo  [3] Don quay - BUOC HIEN TAI   ^(STEP 1 - capture bang AUTO chinh^)
+echo      Sau test se TU GUI log + anh len GitHub cho ChatGPT doc.
+echo  [4] Gui lai ket qua gan nhat len GitHub
+echo  [5] Mo thu muc ket qua
+echo  [9] Full rebuild package        ^(CHI dung khi ChatGPT yeu cau^)
 echo  [0] Thoat
 echo -------------------------------------------------------------------------------
 set "CHOICE="
 set /p "CHOICE=Chon: "
 if "%CHOICE%"=="1" goto update
-if "%CHOICE%"=="2" goto build
-if "%CHOICE%"=="3" goto startmulti
-if "%CHOICE%"=="4" goto step1
+if "%CHOICE%"=="2" goto startmulti
+if "%CHOICE%"=="3" goto step1
+if "%CHOICE%"=="4" goto upload_latest
 if "%CHOICE%"=="5" goto openstep1
+if "%CHOICE%"=="9" goto fullbuild
 if "%CHOICE%"=="0" goto end
 goto menu
 
@@ -53,51 +56,6 @@ echo        Can dung: %EXPECTED_BRANCH%
 echo.
 exit /b 1
 
-:do_build
-echo.
-echo [DEV] Dang build/cap nhat fixed package DEV...
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\%BUILD_SCRIPT%"
-if errorlevel 1 (
-  echo.
-  echo [LOI] Build package DEV that bai.
-  exit /b 1
-)
-if not exist "%DIST%\Multi\kvtm_multi_dev_host.py" (
-  echo [LOI] Build xong nhung van thieu Multi\kvtm_multi_dev_host.py
-  exit /b 1
-)
-if not exist "%DIST%\.source-head.txt" (
-  echo [LOI] Build xong nhung thieu .source-head.txt
-  exit /b 1
-)
-echo [OK] Package DEV da dong bo voi source hien tai.
-exit /b 0
-
-:ensure_package
-call :guard_branch
-if errorlevel 1 exit /b 1
-set "REPO_HEAD="
-set "PACKAGE_HEAD="
-for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "REPO_HEAD=%%H"
-if exist "%DIST%\.source-head.txt" set /p "PACKAGE_HEAD="<"%DIST%\.source-head.txt"
-set "NEED_BUILD=0"
-if not exist "%DIST%\02_START_MULTI_DEV.bat" set "NEED_BUILD=1"
-if not exist "%DIST%\AUTO_PRO\local_launcher.py" set "NEED_BUILD=1"
-if not exist "%DIST%\Multi\kvtm_multi.py" set "NEED_BUILD=1"
-if not exist "%DIST%\Multi\kvtm_multi_dev_entry.py" set "NEED_BUILD=1"
-if not exist "%DIST%\Multi\kvtm_multi_dev_host.py" set "NEED_BUILD=1"
-if not exist "%DIST%\Multi\clear_stall_probe_console.py" set "NEED_BUILD=1"
-if not exist "%DIST%\components\clientjs-auto\worker\clear_stall_step1_probe.py" set "NEED_BUILD=1"
-if not defined PACKAGE_HEAD set "NEED_BUILD=1"
-if /I not "%PACKAGE_HEAD%"=="%REPO_HEAD%" set "NEED_BUILD=1"
-if "%NEED_BUILD%"=="0" (
-  echo [OK] Package DEV da dung HEAD hien tai.
-  exit /b 0
-)
-echo [DEV] Package dang cu/thieu. Control Center se tu build mot lan.
-call :do_build
-exit /b %ERRORLEVEL%
-
 :update
 call :guard_branch
 if errorlevel 1 (
@@ -105,8 +63,8 @@ if errorlevel 1 (
   goto menu
 )
 cls
-echo [DEV] Cap nhat source tren branch %EXPECTED_BRANCH%...
-echo [DEV] Tat auto-gc/maintenance de tranh prompt unlink pack file.
+echo [DEV] Cap nhat source %EXPECTED_BRANCH%...
+echo [DEV] Da tat auto-gc/maintenance trong lenh pull de tranh prompt pack.idx.
 git -c gc.auto=0 -c maintenance.auto=false pull --ff-only origin %EXPECTED_BRANCH%
 if errorlevel 1 (
   echo.
@@ -124,27 +82,50 @@ if errorlevel 1 (
 echo.
 git rev-parse --short HEAD
 echo [OK] Source DEV da cap nhat.
-echo [INFO] Khi chon [3] hoac [4], package se tu build neu can.
+echo [INFO] Tu gio [2] va [3] tu sync file can thiet vao dist.
 pause
 goto menu
 
-:build
+:sync_dev
 call :guard_branch
-if errorlevel 1 (
-  pause
-  goto menu
+if errorlevel 1 exit /b 1
+if not exist "%DIST%\AUTO_PRO\local_launcher.py" (
+  echo [LOI] Package goc chua co AUTO_PRO. Can Full rebuild [9] mot lan.
+  exit /b 1
 )
-cls
-call :do_build
-pause
-goto menu
+if not exist "%DIST%\Multi" mkdir "%DIST%\Multi" >nul 2>&1
+if not exist "%DIST%\components\clientjs-auto" mkdir "%DIST%\components\clientjs-auto" >nul 2>&1
+echo [DEV] Sync Multi source -^> dist...
+robocopy "source-archive\multi-current\kvtm_multi_tool" "%DIST%\Multi" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP >nul
+if errorlevel 8 exit /b 1
+echo [DEV] Sync ClientJS AUTO component -^> dist...
+robocopy "components\clientjs-auto" "%DIST%\components\clientjs-auto" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP >nul
+if errorlevel 8 exit /b 1
+copy /Y "packaging\suite-v0.15\02_START_MULTI_DEV.bat" "%DIST%\02_START_MULTI_DEV.bat" >nul
+for %%F in (adaptive_cv.py clientjs_auto_patch.py engine_driver.py pc_driver.py) do (
+  if exist "test-candidates\auto-pro-clientjs-temp\%%F" copy /Y "test-candidates\auto-pro-clientjs-temp\%%F" "%DIST%\AUTO_PRO\%%F" >nul
+)
+if not exist "%DIST%\Multi\kvtm_multi_dev_host.py" (
+  echo [LOI] Sync xong van thieu Multi\kvtm_multi_dev_host.py
+  exit /b 1
+)
+if not exist "%DIST%\Multi\kvtm_multi_dev_entry.py" (
+  echo [LOI] Sync xong van thieu Multi\kvtm_multi_dev_entry.py
+  exit /b 1
+)
+if not exist "%STEP1%" (
+  echo [LOI] Source thieu %STEP1%
+  exit /b 1
+)
+echo [OK] DEV runtime da sync. data-dev/profile khong bi xoa.
+exit /b 0
 
 :startmulti
 cls
-call :ensure_package
+call :sync_dev
 if errorlevel 1 (
   echo.
-  echo [STOP] Khong mo Multi vi package chua hop le.
+  echo [STOP] Khong mo Multi vi sync DEV that bai.
   pause
   goto menu
 )
@@ -158,23 +139,19 @@ goto menu
 
 :step1
 cls
-call :ensure_package
+call :sync_dev
 if errorlevel 1 (
   echo.
-  echo [STOP] Khong test STEP 1 vi package chua hop le.
+  echo [STOP] Khong test STEP 1 vi sync DEV that bai.
   pause
   goto menu
 )
 echo ===============================================================================
 echo  DON QUAY - STEP 1 ONLY
-echo  Muc tieu: dung dung bootstrap AUTO chinh, match CHI client Multi DEV, chup 1 anh.
-echo  KHONG click, KHONG swipe, KHONG mua/ban, KHONG dung vao client bo cu.
+echo  Dung DUNG bootstrap AUTO chinh.
+echo  Chi match GameClientJS thuoc profiles Multi DEV.
+echo  KHONG click, KHONG swipe, KHONG mua/ban, KHONG dung client bo cu.
 echo ===============================================================================
-if not exist "%STEP1%" (
-  echo [LOI] Thieu %STEP1%
-  pause
-  goto menu
-)
 py -3.11 -c "import sys,struct; assert sys.version_info[:2]==(3,11) and struct.calcsize('P')*8==64" >nul 2>&1
 if errorlevel 1 (
   echo [LOI] Can CPython 3.11 x64.
@@ -183,28 +160,122 @@ if errorlevel 1 (
   goto menu
 )
 if not exist "%STEP1_OUT%" mkdir "%STEP1_OUT%" >nul 2>&1
+del /q "%STEP1_OUT%\latest-console.log" >nul 2>&1
 echo [DEV] Bat dau STEP 1...
 echo.
-py -3.11 "%STEP1%" --auto-root "%DIST%\AUTO_PRO" --work-dir "%STEP1_OUT%"
-set "RC=%ERRORLEVEL%"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Continue'; ^& py -3.11 '%STEP1%' --auto-root '%DIST%\AUTO_PRO' --work-dir '%STEP1_OUT%' 2^>^&1 ^| Tee-Object -FilePath '%STEP1_OUT%\latest-console.log'; exit $LASTEXITCODE"
+set "STEP_RC=%ERRORLEVEL%"
+>"%STEP1_OUT%\latest-result-code.txt" echo %STEP_RC%
 echo.
-if "%RC%"=="0" (
+if "%STEP_RC%"=="0" (
   echo ===============================================================================
-  echo  [PASS] STEP 1 hoan tat. Hay gui output CMD + anh trong:
-  echo         %STEP1_OUT%
+  echo  [PASS] STEP 1 local PASS.
   echo ===============================================================================
 ) else (
   echo ===============================================================================
   echo  [FAIL] STEP 1 dung tai day. KHONG chay buoc khac.
-  echo         Gui nguyen output cua cua so nay cho ChatGPT.
   echo ===============================================================================
+)
+echo [DEV] Dang gui ket qua len GitHub branch %RESULT_BRANCH%...
+call :upload_results
+if errorlevel 1 (
+  echo [CANH BAO] Upload that bai. Ket qua local van con; co the chon [4] de gui lai.
+) else (
+  echo [OK] Da gui ket qua. ChatGPT co the doc truc tiep tren GitHub.
 )
 pause
 goto menu
 
+:upload_latest
+cls
+call :upload_results
+if errorlevel 1 (
+  echo.
+  echo [LOI] Gui ket qua that bai.
+) else (
+  echo.
+  echo [OK] Da gui ket qua gan nhat len GitHub.
+)
+pause
+goto menu
+
+:upload_results
+if not exist "%STEP1_OUT%\latest-console.log" (
+  echo [LOI] Chua co latest-console.log. Hay chay [3] truoc.
+  exit /b 1
+)
+for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%T"
+set "RUN_REL=diagnostics\clear-stall\runs\%STAMP%"
+set "RUN_DIR=%RESULT_WT%\%RUN_REL%"
+if exist "%RESULT_WT%" (
+  git worktree remove --force "%RESULT_WT%" >nul 2>&1
+  rmdir /s /q "%RESULT_WT%" >nul 2>&1
+)
+git worktree prune >nul 2>&1
+git fetch origin "%RESULT_BRANCH%" >nul 2>&1
+git rev-parse --verify "refs/remotes/origin/%RESULT_BRANCH%" >nul 2>&1
+if errorlevel 1 (
+  git worktree add --detach "%RESULT_WT%" HEAD >nul 2>&1
+) else (
+  git worktree add --detach "%RESULT_WT%" "origin/%RESULT_BRANCH%" >nul 2>&1
+)
+if errorlevel 1 (
+  echo [LOI] Khong tao duoc diagnostics worktree.
+  exit /b 1
+)
+mkdir "%RUN_DIR%" >nul 2>&1
+copy /Y "%STEP1_OUT%\latest-console.log" "%RUN_DIR%\console.log" >nul
+if exist "%STEP1_OUT%\latest-result-code.txt" copy /Y "%STEP1_OUT%\latest-result-code.txt" "%RUN_DIR%\result-code.txt" >nul
+for %%F in ("%STEP1_OUT%\step1-auto-main-capture-pid-*.png") do (
+  if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\%%~nxF" >nul
+)
+for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "SOURCE_HEAD=%%H"
+for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "SOURCE_BRANCH=%%B"
+(
+  echo step=1
+  echo timestamp=%STAMP%
+  echo source_branch=%SOURCE_BRANCH%
+  echo source_head=%SOURCE_HEAD%
+  echo result_branch=%RESULT_BRANCH%
+  echo note=Only allowlisted diagnostics uploaded. No profiles/settings/secrets.
+)>"%RUN_DIR%\metadata.txt"
+if not exist "%RESULT_WT%\diagnostics\clear-stall" mkdir "%RESULT_WT%\diagnostics\clear-stall" >nul 2>&1
+>"%RESULT_WT%\diagnostics\clear-stall\LATEST.txt" echo %RUN_REL:\=/%
+git -C "%RESULT_WT%" config user.name "KVTM DEV Diagnostics" >nul
+git -C "%RESULT_WT%" config user.email "kvtm-dev-diagnostics@local" >nul
+git -C "%RESULT_WT%" add diagnostics/clear-stall
+git -C "%RESULT_WT%" commit -m "Add clear stall step 1 diagnostics %STAMP%" >nul 2>&1
+if errorlevel 1 (
+  echo [LOI] Khong tao duoc diagnostics commit.
+  git worktree remove --force "%RESULT_WT%" >nul 2>&1
+  exit /b 1
+)
+git -C "%RESULT_WT%" push origin HEAD:refs/heads/%RESULT_BRANCH%
+set "PUSH_RC=%ERRORLEVEL%"
+git worktree remove --force "%RESULT_WT%" >nul 2>&1
+git worktree prune >nul 2>&1
+if not "%PUSH_RC%"=="0" exit /b 1
+echo [GIT] branch=%RESULT_BRANCH%
+echo [GIT] latest=%RUN_REL:\=/%
+exit /b 0
+
 :openstep1
 if not exist "%STEP1_OUT%" mkdir "%STEP1_OUT%" >nul 2>&1
 start "" explorer "%CD%\%STEP1_OUT%"
+goto menu
+
+:fullbuild
+cls
+echo ===============================================================================
+echo  FULL REBUILD - CHI DUNG KHI CHATGPT YEU CAU
+echo  Trong giai doan DEV hang ngay, [2] va [3] chi sync file, nhanh va an toan hon.
+echo ===============================================================================
+set "KVTM_SOURCE_HEAD="
+for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "KVTM_SOURCE_HEAD=%%H"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1"
+echo.
+echo [INFO] Neu builder bao loi package stamp, dung [2]/[3] de tiep tuc DEV; khong xoa data-dev.
+pause
 goto menu
 
 :end
