@@ -66,10 +66,23 @@ goto pause_menu
 call :guard
 if errorlevel 1 goto pause_menu
 call :ensure_package
+if errorlevel 1 (
+  echo [FAIL] Runtime Multi DEV chinh chua san sang. Khong mo Multi.
+  goto pause_menu
+)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%DIST%\START_MULTI_DEV_SILENT.ps1"
+if errorlevel 1 (
+  echo [FAIL] Khong mo duoc Multi DEV chinh. Gui output tren cho ChatGPT.
+  goto pause_menu
+)
+echo [PASS] Multi DEV chinh da chay nen, khong giu CMD rieng.
+goto pause_menu
+
+:ensure_package
 if not exist "%MAIN_DEV_ROOT%\.git" (
   echo [FAIL] Khong tim thay repo Multi DEV chinh:
   echo        %MAIN_DEV_ROOT%
-  echo Hay dong bo/mở Multi chinh truoc; Workspace khong tu build Multi cu.
+  echo Hay dong bo Multi chinh truoc; Workspace khong tu build Multi cu.
   exit /b 1
 )
 if not exist "%DIST%\START_MULTI_DEV_SILENT.ps1" (
@@ -94,7 +107,7 @@ if errorlevel 1 (
   py -0p
   goto pause_menu
 )
-set "PYTHONPATH=%CD%\%DRIVER_DIR%;%CD%\components\workspace"
+set "PYTHONPATH=%DRIVER_DIR%;%CD%\components\workspace"
 start "KVTM GAME WORKSPACE" /D "%CD%" cmd /k py -3.11 "%WORKSPACE%"
 echo [OK] Da mo Workspace. Multi/ClientJS/AUTO la tien trinh doc lap.
 goto pause_menu
