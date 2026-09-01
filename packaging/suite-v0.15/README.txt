@@ -25,17 +25,25 @@ Kien truc Dọn quầy clean:
 - data-dev, profiles/settings, clear-stall va clear-stall-probe khong nam trong ZIP.
 - Rebuild fixed DEV giu lai profiles/settings, carryover Dọn quầy va anh/report probe.
 
+Runtime anh Dọn quầy:
+- 02_START_MULTI_DEV.bat chay Multi\prepare_clear_stall_runtime.py TRUOC khi mo giao dien Multi.
+- Prewarm materialize/cache rieng NumPy/OpenCV/Pillow va import kiem tra truoc.
+- Launcher in heartbeat moi 5 giay neu runtime anh dang chuan bi lau.
+- Neu prewarm loi, Multi DEV KHONG mo nua voi runtime dang do; cua so launcher giu loi de chan doan.
+- Khi Multi DEV da mo, probe chi can ket noi DLL, CAPTURE va navigation; khong con copy vendor lan dau trong luc dang probe.
+
 Thu tu chay DEV:
 1. Pull branch develop/multi-auto-dev.
 2. Build package bang BUILD_FULL_PACKAGE.ps1.
 3. Mo dist\KVTM-ClientJS-Suite-Multi-DEV\02_START_MULTI_DEV.bat.
-4. Chon mot clone trong Multi DEV. Neu chi co mot clone dang chay, DEV co the tu nhan clone do.
-5. Mo tab AUTO CLIENTJS > Dọn quầy.
-6. Dat Ban be so va Kho VP dung muc tieu.
-7. Bam "Kiem tra Don quay" truoc khi chay giao dich that.
+4. Cho launcher bao [CLEAN RUNTIME] READY, sau do Multi DEV se tu mo.
+5. Chon mot clone trong Multi DEV. Neu chi co mot clone dang chay, DEV co the tu nhan clone do.
+6. Mo tab AUTO CLIENTJS > Dọn quầy.
+7. Dat Ban be so va Kho VP dung muc tieu.
+8. Bam "Kiem tra Don quay" truoc khi chay giao dich that.
 
 MULTI DEV ENTRYPOINT:
-- 02_START_MULTI_DEV.bat chay Multi\kvtm_multi_dev_entry.py.
+- 02_START_MULTI_DEV.bat prewarm runtime anh, sau do chay Multi\kvtm_multi_dev_entry.py.
 - DEV tam khoa tu dong kich hoat lich Dọn quầy that trong luc live-verify.
 - Clone dang mo binh thuong KHONG bi xem la mot clear-stall worker dang ban.
 - Nut Kiem tra chi bi khoa khi AUTO chinh, Dọn quầy that hoac mot probe khac dang chiem ClientJS.
@@ -45,7 +53,7 @@ Nut KIEM TRA DON QUAY:
 - CMD diagnostic mo NGAY KHI bam nut, truoc khi khoi dong worker.
 - Log tu UI/profile/PID cho toi DLL PING/inject/CAPTURE va tung stage cua probe.
 - Probe su dung KVAutomation Python clean + Cocos DLL bridge truc tiep.
-- Thu tu bridge: PID -> PING pipe -> inject DLL neu can -> PING PASS -> CAPTURE KCAP -> navigation.
+- Thu tu bridge: PID -> PING pipe -> inject DLL neu can -> PING PASS -> image runtime ready -> CAPTURE KCAP -> navigation.
 - Chi dieu huong den nha ban + quay muc tieu.
 - Bat buoc screenshot ClientJS dung 1000x1000.
 - Quet 4 view de phu dung 20 o quay.
