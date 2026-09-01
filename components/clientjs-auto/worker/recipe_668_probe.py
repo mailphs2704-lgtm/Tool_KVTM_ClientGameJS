@@ -15,6 +15,8 @@ METHODS = (
     "harvestTrees",
     "sellItems_10",
     "sellItems_318",
+    "produceItems_97",
+    "produceItems_98",
     "produceItems_136",
     "produceItems_318",
 )
@@ -123,7 +125,7 @@ def main() -> int:
             owners.append(owner_report(f"adb_controller.{name}", value))
 
     payload = {
-        "probe": "recipe_6_tinh_dau_6_vai_vang_8_tao_say_v2",
+        "probe": "recipe_6_tinh_dau_6_vai_vang_8_tao_say_v4",
         "read_only": True,
         "game_input_sent": False,
         "produce_entrypoints": produce_methods,
@@ -135,7 +137,7 @@ def main() -> int:
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    print("RECIPE 6-6-8 READ-ONLY PROBE V3 COMPLETE")
+    print("RECIPE 6-6-8 READ-ONLY PROBE V4 COMPLETE")
     print(f"Report: {output}")
     print(f"produce_entrypoints={len(produce_methods)}")
     for row in candidate_reports[:20]:
