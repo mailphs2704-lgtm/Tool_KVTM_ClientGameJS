@@ -4,7 +4,9 @@ param(
     [string]$Mode,
 
     [string]$ProfileFile = "",
-    [string]$TransferFile = ""
+    [string]$TransferFile = "",
+    [switch]$IncludeSettings,
+    [switch]$ImportSettings
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,11 +30,11 @@ function Read-PasswordText {
 
 function Join-ThreeBytes {
     param([byte[]]$First, [byte[]]$Second, [byte[]]$Third)
-    $result = New-Object byte[] ($First.Length + $Second.Length + $Third.Length)
+    $result = [byte[]]::new($First.Length + $Second.Length + $Third.Length)
     [Array]::Copy($First, 0, $result, 0, $First.Length)
     [Array]::Copy($Second, 0, $result, $First.Length, $Second.Length)
     [Array]::Copy($Third, 0, $result, $First.Length + $Second.Length, $Third.Length)
-    return $result
+    return ,$result
 }
 
 function Test-BytesEqual {
@@ -46,14 +48,17 @@ function Test-BytesEqual {
 function Get-KeyMaterial {
     param([string]$Password, [byte[]]$Salt, [int]$Count)
     $kdf = [Security.Cryptography.Rfc2898DeriveBytes]::new($Password, $Salt, $Count)
-    try { return $kdf.GetBytes(64) }
+    try {
+        $material = $kdf.GetBytes(64)
+        return ,$material
+    }
     finally { $kdf.Dispose() }
 }
 
 function Get-SplitKeys {
     param([byte[]]$Material)
-    $enc = New-Object byte[] 32
-    $mac = New-Object byte[] 32
+    $enc = [byte[]]::new(32)
+    $mac = [byte[]]::new(32)
     [Array]::Copy($Material, 0, $enc, 0, 32)
     [Array]::Copy($Material, 32, $mac, 0, 32)
     return [pscustomobject]@{ Enc = $enc; Mac = $mac }
@@ -61,8 +66,8 @@ function Get-SplitKeys {
 
 function Protect-PortablePayload {
     param([string]$PlainText, [string]$Password)
-    $salt = New-Object byte[] 32
-    $iv = New-Object byte[] 16
+    $salt = [byte[]]::new(32)
+    $iv = [byte[]]::new(16)
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($salt); $rng.GetBytes($iv) }
     finally { $rng.Dispose() }
@@ -173,12 +178,17 @@ if ($Mode -eq "Export") {
             updated_at = [string]$profile.updated_at; secret_args = $secretArgs
         })
     }
+
     $settingsText = $null
-    $settingsPath = Join-Path (Split-Path -Parent $ProfileFile) "settings.json"
-    if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
-        $settingsText = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8
-        try { $null = $settingsText | ConvertFrom-Json } catch { $settingsText = $null }
+    if ($IncludeSettings) {
+        $settingsPath = Join-Path (Split-Path -Parent $ProfileFile) "settings.json"
+        if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
+            $settingsText = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8
+            try { $null = $settingsText | ConvertFrom-Json }
+            catch { throw "IncludeSettings duoc yeu cau nhung settings.json khong hop le." }
+        }
     }
+
     $payloadObject = [pscustomobject]@{
         schema_version = 1; created_at = (Get-Date).ToString("o")
         source_machine = $env:COMPUTERNAME; profile_count = $portableProfiles.Count
@@ -193,9 +203,11 @@ if ($Mode -eq "Export") {
     $envelope = Protect-PortablePayload $payload $password
     $envelope | Add-Member -NotePropertyName created_at -NotePropertyValue (Get-Date).ToString("o")
     $envelope | Add-Member -NotePropertyName profile_count -NotePropertyValue $portableProfiles.Count
+    $envelope | Add-Member -NotePropertyName includes_settings -NotePropertyValue ([bool]$IncludeSettings)
     [IO.File]::WriteAllText($TransferFile, (ConvertTo-Json -InputObject $envelope -Depth 10), $Utf8NoBom)
     Write-Host "PROFILE TRANSFER EXPORT OK" -ForegroundColor Green
     Write-Host "Profiles: $($portableProfiles.Count)"
+    Write-Host "Settings included: $([bool]$IncludeSettings)"
     Write-Host "File: $TransferFile"
     Write-Host "Secret plaintext chi ton tai trong bo nho trong luc export; file tren dia da duoc ma hoa + HMAC." -ForegroundColor Cyan
     exit 0
@@ -239,16 +251,21 @@ if ($check.Count -ne $outProfiles.Count) {
     throw "File profiles tam khong hop le; khong ghi de profile active."
 }
 Move-Item -LiteralPath $temp -Destination $destination -Force
-if (-not [string]::IsNullOrWhiteSpace([string]$payload.settings_text)) {
+
+$settingsImported = $false
+if ($ImportSettings -and -not [string]::IsNullOrWhiteSpace([string]$payload.settings_text)) {
     $settingsPath = Join-Path $dataRoot "settings.json"
     Backup-FileSafe $settingsPath (Join-Path $dataRoot "profile-backups") "settings-before-machine-import"
     [IO.File]::WriteAllText($settingsPath, [string]$payload.settings_text, $Utf8NoBom)
+    $settingsImported = $true
 }
+
 Write-Host "PROFILE TRANSFER IMPORT OK" -ForegroundColor Green
 Write-Host "Profiles: $($outProfiles.Count)"
 Write-Host "Destination: $destination"
 Write-Host "Client paths rewritten: $rewrittenClient"
 Write-Host "Game paths rewritten: $rewrittenGame"
+Write-Host "Settings imported: $settingsImported"
 if (-not $localClient) { Write-Host "[CANH BAO] Chua tim thay GameClientJS.exe local. Hay cai ZingPlay truoc khi mo profile." -ForegroundColor Yellow }
 if (-not (Test-Path -LiteralPath $localGame -PathType Container)) { Write-Host "[CANH BAO] Chua tim thay game data KVTM local. Mo/cai Sky Garden tren ZingPlay mot lan truoc khi launch." -ForegroundColor Yellow }
 Write-Host "Tat ca secret da duoc DPAPI ma hoa lai cho Windows user hien tai." -ForegroundColor Cyan
