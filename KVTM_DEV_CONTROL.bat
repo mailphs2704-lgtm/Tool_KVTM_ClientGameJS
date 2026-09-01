@@ -32,6 +32,7 @@ echo  [3] Don quay - BUOC HIEN TAI   ^(STEP 1 - capture bang AUTO chinh^)
 echo      Sau test se TU GUI log + anh len GitHub cho ChatGPT doc.
 echo  [4] Gui lai ket qua gan nhat len GitHub
 echo  [5] Mo thu muc ket qua
+echo  [6] Kiem tra profile/login READ-ONLY
 echo  [9] Full rebuild package        ^(CHI dung khi ChatGPT yeu cau^)
 echo  [0] Thoat
 echo -------------------------------------------------------------------------------
@@ -42,6 +43,7 @@ if "%CHOICE%"=="2" goto startmulti
 if "%CHOICE%"=="3" goto step1
 if "%CHOICE%"=="4" goto upload_latest
 if "%CHOICE%"=="5" goto openstep1
+if "%CHOICE%"=="6" goto profile_diagnostic
 if "%CHOICE%"=="9" goto fullbuild
 if "%CHOICE%"=="0" goto end
 goto menu
