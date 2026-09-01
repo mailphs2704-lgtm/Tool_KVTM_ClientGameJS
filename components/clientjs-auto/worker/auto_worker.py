@@ -459,7 +459,7 @@ def main() -> int:
         emit("worker_error", error=f"Thông số tốc độ không hợp lệ: {exc}")
         return 2
 
-    allowed_function_ids = {136, 170, 318}
+    allowed_function_ids = {98, 136, 170, 318}
     if args.function_id not in allowed_function_ids:
         emit(
             "worker_error",
