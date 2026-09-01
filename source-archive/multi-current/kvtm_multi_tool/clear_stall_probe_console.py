@@ -1,9 +1,25 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import os
 from pathlib import Path
 import sys
 import time
+
+
+def _configure_console() -> None:
+    if os.name == "nt":
+        try:
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+            ctypes.windll.kernel32.SetConsoleCP(65001)
+        except Exception:
+            pass
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -21,12 +37,13 @@ def _print_header(title: str, log_path: Path) -> None:
     print(line)
     print(title)
     print(f"LOG: {log_path}")
-    print("Cua so nay chi hien log. Dong cua so khong dung probe dang chay.")
+    print("Cửa sổ này chỉ hiển thị log. Đóng CMD không dừng probe đang chạy.")
     print(line)
     print(flush=True)
 
 
 def main() -> int:
+    _configure_console()
     args = _parser().parse_args()
     log_path = Path(args.log).resolve()
     done_path = Path(args.done).resolve()
@@ -52,10 +69,10 @@ def main() -> int:
             elif done_path.exists():
                 idle_after_done += 1
         except (OSError, ValueError) as exc:
-            print(f"[console] Loi doc log: {exc}", flush=True)
+            print(f"[console] Lỗi đọc log: {exc}", flush=True)
 
         if done_path.exists() and idle_after_done >= 4:
-            print("\n[console] Probe da ket thuc. Cua so se dong sau 2 giay.", flush=True)
+            print("\n[console] Probe đã kết thúc. Cửa sổ sẽ đóng sau 2 giây.", flush=True)
             time.sleep(2.0)
             return 0
         time.sleep(0.25)
