@@ -10,11 +10,12 @@ echo ===========================================================================
 echo  KVTM - MACHINE TRANSFER CONTROL
 echo ===============================================================================
 echo  [1] Xuat profile DEV de chuyen may   ^(ma hoa, mac dinh ra Desktop^)
-echo  [2] Nhap profile .kvtm vao may nay   ^(backup truoc khi ghi^)
+echo  [2] Nhap profile .kvtm vao may nay   ^(backup + DPAPI re-bind^)
 echo  [3] Chan doan moi truong may          ^(READ-ONLY^)
 echo  [4] Chan doan + cai PM con thieu      ^(WinGet^)
 echo  [5] Mo trang Sky Garden/ZingPlay chinh thuc
 echo  [6] Bootstrap may phu + build runtime ^(dung tren may phu^)
+echo  [7] Xac minh profile/DPAPI READ-ONLY
 echo  [0] Thoat
 echo -------------------------------------------------------------------------------
 set "CHOICE="
@@ -25,6 +26,7 @@ if "%CHOICE%"=="3" goto diagnose
 if "%CHOICE%"=="4" goto install
 if "%CHOICE%"=="5" goto zingplay
 if "%CHOICE%"=="6" goto bootstrap
+if "%CHOICE%"=="7" goto verify_profile
 if "%CHOICE%"=="0" goto end
 goto menu
 
@@ -61,9 +63,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_PROFILE_TRANSF
 if errorlevel 1 (
   echo.
   echo [FAIL] Import that bai. Profile cu duoc giu nguyen neu chua qua buoc ghi an toan.
+  pause
+  goto menu
+)
+echo.
+echo [VERIFY] Kiem tra DPAPI va duong dan sau import...
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_PROFILE_VERIFY.ps1"
+set "VERIFY_RC=%ERRORLEVEL%"
+echo.
+if "%VERIFY_RC%"=="0" (
+  echo [PASS] Import + DPAPI + launch paths READY.
+) else if "%VERIFY_RC%"=="3" (
+  echo [PARTIAL PASS] DPAPI READY, nhung ZingPlay/game path chua san sang.
 ) else (
-  echo.
-  echo [PASS] Da import va DPAPI ma hoa lai secret cho Windows user may nay.
+  echo [FAIL] Profile sau import chua dat DPAPI verify.
 )
 pause
 goto menu
@@ -96,7 +109,7 @@ goto menu
 cls
 echo ===============================================================================
 echo  BOOTSTRAP MAY PHU
- echo  Se dam bao dependencies, pull dung branch, git lfs pull va build DEV runtime.
+echo  Se dam bao dependencies, pull dung branch, git lfs pull va build DEV runtime.
 echo  Repo private co the mo cua so dang nhap GitHub khi clone/pull.
 echo ===============================================================================
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\KVTM_SECONDARY_BOOTSTRAP.ps1" -TargetDirectory "%CD%" -BuildRuntime -OpenZingPlayPage
@@ -107,6 +120,13 @@ if errorlevel 1 (
   echo.
   echo [PASS] Bootstrap hoan tat.
 )
+pause
+goto menu
+
+:verify_profile
+cls
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_PROFILE_VERIFY.ps1"
+echo.
 pause
 goto menu
 
