@@ -11,9 +11,15 @@ Thu muc fixed DEV sau build:
   dist\KVTM-ClientJS-Suite-Multi-DEV\
   dist\KVTM-ClientJS-Suite-Multi-DEV.zip
 
-Luu y runtime:
-- Dọn quầy clean KHONG thuc thi automation.pyc / adb_controller.pyc / FarmAutomation.
-- AUTO_PRO legacy van duoc dong goi chi cho cac chuc nang AUTO khac va lam tai lieu/asset tham chieu.
+Kien truc Dọn quầy clean:
+- Dọn quầy KHONG thuc thi automation.pyc / adb_controller.pyc / FarmAutomation.
+- Python clean giao tiep truc tiep voi ClientJS/Cocos qua AUTO_PRO\bin\kvtm_bridge.dll.
+- kvtm_loader.exe chi dung de inject kvtm_bridge.dll vao dung PID GameClientJS khi named pipe chua san sang.
+- Transport DLL dung named pipe \\.\pipe\KVTM-Cocos-<pid> voi PING/CAPTURE/DOWN/MOVE/UP.
+- CAPTURE doc shared memory Local\KVTM-Capture-<pid> (KCAP); format hien tai BGRA8 top-down = 2.
+- components\clientjs-auto\kvtm_automation\runtime\cocos_bridge.py la Python transport chinh thuc.
+- engine_driver.py/pc_driver.py chi con phuc vu cac chuc nang legacy/diagnostic khac, khong nam tren execution path Dọn quầy clean.
+- AUTO_PRO legacy van duoc dong goi cho cac chuc nang AUTO khac va lam tai lieu/asset tham chieu.
 - Repo dung Git LFS cho runtime/pyc va _internal cua AUTO_PRO legacy.
 - BUILD_FULL_PACKAGE.ps1 tu kiem tra Git LFS pointer truoc khi dong goi.
 - data-dev, profiles/settings, clear-stall va clear-stall-probe khong nam trong ZIP.
@@ -36,28 +42,27 @@ MULTI DEV ENTRYPOINT:
 - Production entrypoint kvtm_multi_entry.py van giu scheduler/lifecycle that rieng biet.
 
 Nut KIEM TRA DON QUAY:
-- Tu mo clone neu clone chua chay.
-- Dung KVAutomation Python clean + ClientJS bridge.
+- CMD diagnostic mo NGAY KHI bam nut, truoc khi khoi dong worker.
+- Log tu UI/profile/PID cho toi DLL PING/inject/CAPTURE va tung stage cua probe.
+- Probe su dung KVAutomation Python clean + Cocos DLL bridge truc tiep.
+- Thu tu bridge: PID -> PING pipe -> inject DLL neu can -> PING PASS -> CAPTURE KCAP -> navigation.
 - Chi dieu huong den nha ban + quay muc tieu.
 - Bat buoc screenshot ClientJS dung 1000x1000.
 - Quet 4 view de phu dung 20 o quay.
 - KHONG goi mua VP.
 - KHONG goi ban/treo VP.
 - KHONG ghi carryover giao dich.
-- Luu view-01.png .. view-04.png, templates, report.json va activity.log.
+- Luu view-01.png .. view-04.png, templates va report.json.
 - Sau khi worker ket thuc, clone duoc dong theo lifecycle DEV.
 
 CMD LOG REALTIME:
-- Khi bam Kiem tra Dọn quầy, Multi DEV mo mot cua so CMD rieng.
-- CMD hien stage, progress, error/PASS va JSON raw cua probe theo thoi gian thuc.
+- CMD hien UI lifecycle, PID, DLL path, pipe, PING/inject, CAPTURE, stage, progress, error/PASS va JSON raw.
 - Dong CMD khong dung worker probe.
-- CMD tu dong dong sau khi probe ket thuc.
-- Ban ghi day du duoc luu tai activity.log trong cung thu muc report.
+- Sau khi probe ket thuc CMD GIU NGUYEN va cho bam ENTER de dong.
+- Ban ghi live duoc luu trong data-dev\clear-stall-probe\<profile-id>\dev-live-<timestamp>\activity.log.
+- report.json va anh probe nam trong thu muc run timestamp cua worker; activity.log se ghi ro report_dir.
 
-Du lieu probe nam trong:
-  data-dev\clear-stall-probe\<profile-id>\<timestamp>\
-
-Neu probe loi, gui activity.log + report.json + tat ca stage-*.png/view-*.png.
+Neu probe loi, gui activity.log + report.json + tat ca stage-*.png/view-*.png neu co.
 Neu probe PASS, gui report.json va 4 anh view cho buoc doi chieu toa do/nhan dang cuoi cung truoc khi bat giao dich that.
 
 Dọn quay that van chay FIFO toan cuc trong production: mot clone xong va dong hoan toan moi den clone tiep theo.
