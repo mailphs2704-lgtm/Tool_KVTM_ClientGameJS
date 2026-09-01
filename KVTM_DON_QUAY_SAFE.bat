@@ -5,7 +5,7 @@ cd /d "%~dp0"
 title KVTM DON QUAY - SAFE COEXIST MODE
 
 set "DIST=dist\KVTM-ClientJS-Suite-Multi-DEV"
-set "STEP1=components\clientjs-auto\worker\clear_stall_step1_probe.py"
+set "STEP1=ai-don-quay\step1_probe.py"
 set "SAFE_ROOT=%DIST%\data-dev\ai-don-quay-stepwise"
 set "LATEST_FILE=%SAFE_ROOT%\LATEST_RUN.txt"
 set "RESULT_BRANCH=diagnostics/clear-stall"
@@ -28,7 +28,7 @@ echo  SAFE GUARANTEE:
 echo   - KHONG git pull / reset / clean / checkout / restore
 echo   - KHONG build package / robocopy / sync Multi
 echo   - KHONG xoa file untracked hay workspace cua phien AI khac
-echo   - Chi ghi ket qua vao data-dev\ai-don-quay-stepwise
+echo   - Chi dung source rieng ai-don-quay\ va output ai-don-quay-stepwise\
 echo   - Upload GitHub bang temporary clone ngoai thu muc DEV
 echo -------------------------------------------------------------------------------
 echo  [1] Chay DON QUAY - BUOC HIEN TAI: STEP 1 capture bang AUTO chinh
@@ -47,7 +47,7 @@ goto menu
 
 :preflight
 if not exist "%STEP1%" (
-  echo [STOP] Thieu source Step 1: %STEP1%
+  echo [STOP] Thieu source Step 1 rieng: %STEP1%
   exit /b 1
 )
 if not exist "%DIST%\AUTO_PRO\local_launcher.py" (
@@ -99,6 +99,7 @@ for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "SOURCE_BRAN
   echo source_branch=%SOURCE_BRANCH%
   echo source_head=%SOURCE_HEAD%
   echo safe_mode=coexist
+  echo source_scope=ai-don-quay
   echo note=No pull/build/sync/reset/clean/worktree used by this BAT.
 )>"%RUN_DIR%\metadata.txt"
 echo.
