@@ -16,6 +16,8 @@ echo  [4] Chan doan + cai PM con thieu      ^(WinGet^)
 echo  [5] Mo trang Sky Garden/ZingPlay chinh thuc
 echo  [6] Bootstrap may phu + build runtime ^(dung tren may phu^)
 echo  [7] Xac minh profile/DPAPI READ-ONLY
+echo  [8] Gui report may phu len GitHub     ^(SAFE TXT ONLY^)
+echo  [9] Nhan cap nhat DEV tu GitHub       ^(pull + deps + LFS + build^)
 echo  [0] Thoat
 echo -------------------------------------------------------------------------------
 set "CHOICE="
@@ -27,6 +29,8 @@ if "%CHOICE%"=="4" goto install
 if "%CHOICE%"=="5" goto zingplay
 if "%CHOICE%"=="6" goto bootstrap
 if "%CHOICE%"=="7" goto verify_profile
+if "%CHOICE%"=="8" goto github_send
+if "%CHOICE%"=="9" goto github_update
 if "%CHOICE%"=="0" goto end
 goto menu
 
@@ -127,6 +131,42 @@ goto menu
 cls
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_PROFILE_VERIFY.ps1"
 echo.
+pause
+goto menu
+
+:github_send
+cls
+echo ===============================================================================
+echo  GUI REPORT MAY PHU LEN GITHUB
+echo  Chi upload diagnostic TXT da whitelist len branch machine-sync rieng.
+echo  KHONG upload .kvtm, profiles.json, password, token, cookie hay secret.
+echo ===============================================================================
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_GITHUB_BRIDGE.ps1" -Mode SendReport
+if errorlevel 1 (
+  echo.
+  echo [FAIL] Chua gui duoc report. Khong co profile/transfer file nao bi upload.
+) else (
+  echo.
+  echo [PASS] Report an toan da len GitHub. Chi can nhan ChatGPT: da gui report may phu.
+)
+pause
+goto menu
+
+:github_update
+cls
+echo ===============================================================================
+echo  NHAN CAP NHAT DEV TU GITHUB
+echo  Pull develop/multi-auto-dev + cai dependency + Git LFS + build runtime.
+echo  Neu da co data-dev/profile, builder hien tai se bao toan data DEV.
+echo ===============================================================================
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_GITHUB_BRIDGE.ps1" -Mode UpdateDev
+if errorlevel 1 (
+  echo.
+  echo [FAIL] Update DEV chua hoan tat. Chon [8] de gui report moi cho ChatGPT.
+) else (
+  echo.
+  echo [PASS] DEV da cap nhat va build xong.
+)
 pause
 goto menu
 
