@@ -28,3 +28,7 @@ class InventoryFull(TransactionError):
 
 class NoEmptyStallSlot(TransactionError):
     """The clone has no empty own-stall slot for another batch of ten VP."""
+
+
+class InsufficientBatch(TransactionError):
+    """The selected VP exists but the game does not expose an active x10 sale option."""
