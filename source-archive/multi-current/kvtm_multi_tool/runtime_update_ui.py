@@ -70,6 +70,32 @@ def _repair_mojibake(value: object) -> str:
     return repaired if after < before else text
 
 
+def _read_runtime_stamp(package_root: Path) -> str:
+    try:
+        return (package_root / ".source-head.txt").read_text(
+            encoding="ascii"
+        ).strip()
+    except Exception:
+        return ""
+
+
+def _read_repo_head(repo_root: Path | None) -> str:
+    if repo_root is None:
+        return ""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            timeout=10,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def install_runtime_update_ui(app) -> None:
     """Install a one-click staged updater inside the existing control panel.
 
@@ -207,6 +233,17 @@ def install_runtime_update_ui(app) -> None:
     existing = _read_status(status_path)
     if str(existing.get("state") or ""):
         redraw(existing)
+
+    # A previous "activated" status belongs to the runtime stamp, not forever
+    # to the repository. Control Center [1] may pull source before Multi opens;
+    # keep the button enabled whenever runtime and repo HEAD differ.
+    runtime_stamp = _read_runtime_stamp(package_root)
+    repo_head = _read_repo_head(repo_root)
+    if repo_head and runtime_stamp != repo_head:
+        button.configure(text="Cập nhật DEV", state="normal")
+        show_note(
+            "Source DEV mới hơn runtime; bấm Cập nhật DEV để build và kích hoạt."
+        )
 
     print(
         "[KVTM DEV] Runtime updater UI READY "
