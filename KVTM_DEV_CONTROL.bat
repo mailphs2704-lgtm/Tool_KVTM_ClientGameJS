@@ -264,6 +264,27 @@ if not exist "%STEP1_OUT%" mkdir "%STEP1_OUT%" >nul 2>&1
 start "" explorer "%CD%\%STEP1_OUT%"
 goto menu
 
+:profile_diagnostic
+cls
+echo ===============================================================================
+echo  PROFILE/LOGIN DIAGNOSTIC - READ ONLY
+echo  Khong in secret. Khong sua profiles.json, backup hoac session.
+echo ===============================================================================
+if not exist "KVTM_PROFILE_DIAGNOSTIC.ps1" (
+  echo [LOI] Thieu KVTM_PROFILE_DIAGNOSTIC.ps1
+  pause
+  goto menu
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\KVTM_PROFILE_DIAGNOSTIC.ps1"
+if errorlevel 1 (
+  echo [FAIL] Kiem tra profile that bai. Gui nguyen output nay cho ChatGPT.
+) else (
+  echo [PASS] Da tao bao cao read-only.
+  start "" explorer "%CD%\data-profile-diagnostic"
+)
+pause
+goto menu
+
 :fullbuild
 cls
 echo ===============================================================================
