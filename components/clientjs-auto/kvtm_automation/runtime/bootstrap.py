@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import struct
 import sys
+from typing import Callable
 
 
 _VENDOR_VERSION = "2"
@@ -99,8 +100,24 @@ def _materialize_vendor(auto_root: Path, vendor: Path) -> None:
     )
 
 
-def install_binary_dependencies(auto_root: Path) -> None:
-    """Expose clean third-party dependencies without AUTO PRO business logic."""
+def install_binary_dependencies(
+    auto_root: Path,
+    *,
+    logger: Callable[[str], None] | None = None,
+) -> None:
+    """Expose clean third-party dependencies without AUTO PRO business logic.
+
+    ``logger`` is deliberately optional so package/build preflight stays simple,
+    while live workers can report exactly which native import is in progress.
+    """
+
+    def log(message: str) -> None:
+        if logger is None:
+            return
+        try:
+            logger(str(message))
+        except Exception:
+            pass
 
     _require_supported_python()
 
@@ -111,7 +128,10 @@ def install_binary_dependencies(auto_root: Path) -> None:
 
     vendor = _vendor_root()
     if not _vendor_is_ready(vendor):
+        log(f"Thư viện ảnh: dựng vendor cache tại {vendor}")
         _materialize_vendor(root, vendor)
+    else:
+        log(f"Thư viện ảnh: vendor cache sẵn sàng tại {vendor}")
 
     vendor_text = str(vendor)
     if vendor_text in sys.path:
@@ -140,6 +160,14 @@ def install_binary_dependencies(auto_root: Path) -> None:
             except OSError:
                 continue
 
+    log("Thư viện ảnh: import numpy...")
     import numpy  # noqa: F401
+    log(f"Thư viện ảnh: numpy READY {getattr(numpy, '__version__', '?')}")
+
+    log("Thư viện ảnh: import cv2...")
     import cv2  # noqa: F401
+    log(f"Thư viện ảnh: cv2 READY {getattr(cv2, '__version__', '?')}")
+
+    log("Thư viện ảnh: import PIL...")
     from PIL import Image  # noqa: F401
+    log("Thư viện ảnh: PIL READY")
