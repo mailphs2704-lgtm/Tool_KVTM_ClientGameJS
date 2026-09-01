@@ -29,13 +29,36 @@ if ($existing.Count -gt 0) {
     exit 0
 }
 
-$python = (& py -3.11 -c "import struct,sys; assert sys.version_info[:2]==(3,11) and struct.calcsize('P')*8==64; print(sys.executable)" 2>$null | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($python)) {
-    throw "CPython 3.11 x64 not found."
+$python = $null
+$candidates = New-Object System.Collections.Generic.List[string]
+$knownUserPython = Join-Path $env:LOCALAPPDATA "Programs\\Python\\Python311\\python.exe"
+if (Test-Path -LiteralPath $knownUserPython -PathType Leaf) {
+    $candidates.Add($knownUserPython)
 }
-$python = $python.Trim()
-if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
-    throw "Python executable not found: $python"
+$pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
+if ($null -ne $pythonCommand -and -not [string]::IsNullOrWhiteSpace($pythonCommand.Source)) {
+    $candidates.Add($pythonCommand.Source)
+}
+$pyCommand = Get-Command py.exe -ErrorAction SilentlyContinue
+if ($null -ne $pyCommand) {
+    try {
+        $resolved = (& $pyCommand.Source "-3.11" "-c" "import sys;print(sys.executable)" 2>$null | Select-Object -First 1)
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($resolved)) {
+            $candidates.Add($resolved.Trim())
+        }
+    }
+    catch { }
+}
+foreach ($candidate in @($candidates | Select-Object -Unique)) {
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+    & $candidate -c "import struct,sys;raise SystemExit(0 if sys.version_info[:2]==(3,11) and struct.calcsize('P')*8==64 else 2)" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $python = $candidate
+        break
+    }
+}
+if ([string]::IsNullOrWhiteSpace($python)) {
+    throw "CPython 3.11 x64 not found in LocalAppData, py.exe or PATH."
 }
 
 New-Item -ItemType Directory -Path $DataRoot, $LogRoot -Force | Out-Null
