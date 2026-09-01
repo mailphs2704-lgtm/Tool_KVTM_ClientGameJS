@@ -24,28 +24,28 @@ if not exist "prepare_clear_stall_runtime.py" (
 
 set "KVTM_PYTHON="
 where py >nul 2>nul
-if %errorlevel%==0 (
-  py -3.11 -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3,11) else 1)" >nul 2>nul
-  if %errorlevel%==0 set "KVTM_PYTHON=py -3.11"
+if not errorlevel 1 (
+  py -3.11 -c "import struct,sys; raise SystemExit(0 if sys.version_info[:2] == (3,11) and struct.calcsize('P')*8 == 64 else 1)" >nul 2>nul
+  if not errorlevel 1 set "KVTM_PYTHON=py -3.11"
 )
 
 if not defined KVTM_PYTHON (
   where python >nul 2>nul
-  if %errorlevel%==0 (
-    python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3,11) else 1)" >nul 2>nul
-    if %errorlevel%==0 set "KVTM_PYTHON=python"
+  if not errorlevel 1 (
+    python -c "import struct,sys; raise SystemExit(0 if sys.version_info[:2] == (3,11) and struct.calcsize('P')*8 == 64 else 1)" >nul 2>nul
+    if not errorlevel 1 set "KVTM_PYTHON=python"
   )
 )
 
 if not defined KVTM_PYTHON (
-  echo [LOI] Dọn quầy clean cần CPython 3.11 x64.
-  echo [LOI] Runtime ảnh AUTO_PRO hiện dùng native extension cp311; Python 3.12/3.13 không được phép chạy Multi DEV.
-  echo [GOI Y] Kiem tra bang: py -0p
+  echo [LOI] Don quay clean can CPython 3.11 x64.
+  echo [LOI] Runtime anh AUTO_PRO dung native extension cp311; Python 3.12/3.13 khong duoc phep chay Multi DEV.
+  echo [GOI Y] Kiem tra cac Python da cai bang: py -0p
   pause
   goto :done
 )
 
-for /f "delims=" %%V in ('%KVTM_PYTHON% -c "import platform,sys; print(sys.version.split()[0] + ' ' + platform.architecture()[0])"') do set "KVTM_PYTHON_INFO=%%V"
+for /f "delims=" %%V in ('%KVTM_PYTHON% -c "import struct,sys; print(sys.version.split()[0] + ' ' + str(struct.calcsize('P')*8) + '-bit')"') do set "KVTM_PYTHON_INFO=%%V"
 echo [KVTM DEV] Python=%KVTM_PYTHON_INFO%
 
 echo [KVTM DEV] Prewarming clean Don quay runtime...
