@@ -51,9 +51,8 @@ class BuyingActions:
         """Click the same source listing until target is met or it disappears.
 
         `on_unit` is called immediately after every verified click so the
-        workflow can atomically persist manifest/carryover state. A crash can
-        therefore lose at most the action currently being verified, not an
-        entire purchase batch.
+        workflow can atomically persist manifest/carryover state. A stop request
+        received after the click is honored only after that unit is accounted.
         """
         target = max(0, int(maximum))
         bought = 0
@@ -62,7 +61,7 @@ class BuyingActions:
             if not self.listing_matches(observation):
                 break
             self.vision.driver.click(*observation.click_center)
-            self.waiter.sleep(0.50)
+            self.waiter.settle(0.50)
             if self.vision.find(
                 "x",
                 threshold=0.82,
