@@ -149,13 +149,19 @@ class StallActions:
         for _ in range(max(0, int(current_view) - 1)):
             self.previous_view()
 
-    def scan_view(self, view: int, template_dir: Path) -> tuple[StallSlotObservation, ...]:
-        """Capture only the newly exposed physical positions for one shop view."""
+    def scan_view(
+        self,
+        view: int,
+        template_dir: Path,
+        *,
+        frame: Any | None = None,
+    ) -> tuple[StallSlotObservation, ...]:
+        """Capture only newly exposed physical positions for one shop view."""
         import cv2
 
         self.context.ensure_running()
-        frame = self.vision.frame()
-        height, width = frame.shape[:2]
+        source = self.vision.frame() if frame is None else frame
+        height, width = source.shape[:2]
         if width < 800 or height < 750:
             raise RuntimeError(f"Khung ClientJS không hợp lệ: {width}x{height}")
         template_dir = Path(template_dir)
@@ -163,7 +169,7 @@ class StallActions:
         observations: list[StallSlotObservation] = []
         for local_slot in self.new_local_slots(view):
             cx, cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
-            icon = frame[
+            icon = source[
                 cy - ICON_HALF_HEIGHT : cy + ICON_HALF_HEIGHT,
                 cx - ICON_HALF_WIDTH : cx + ICON_HALF_WIDTH,
             ].copy()
@@ -187,15 +193,31 @@ class StallActions:
             )
         return tuple(observations)
 
-    def scan_all_20(self, template_dir: Path) -> tuple[StallSlotObservation, ...]:
+    def scan_all_20(
+        self,
+        template_dir: Path,
+        *,
+        capture_dir: Path | None = None,
+    ) -> tuple[StallSlotObservation, ...]:
+        import cv2
+
+        capture_root = Path(capture_dir) if capture_dir is not None else None
+        if capture_root is not None:
+            capture_root.mkdir(parents=True, exist_ok=True)
         found: list[StallSlotObservation] = []
         for view in range(1, STALL_VIEW_COUNT + 1):
             self.context.ensure_running()
             self.context.stage(f"scan-stall-view-{view}")
-            current = self.scan_view(view, template_dir)
+            frame = self.vision.frame()
+            if capture_root is not None:
+                target = capture_root / f"view-{view:02d}.png"
+                if not cv2.imwrite(str(target), frame):
+                    raise RuntimeError(f"Không lưu được ảnh chẩn đoán: {target}")
+            current = self.scan_view(view, template_dir, frame=frame)
             found.extend(current)
+            covered = min(TOTAL_STALL_SLOTS, 8 + (view - 1) * STALL_SHIFT)
             self.context.log(
-                f"Quầy view {view}/4: {len(current)} ô mới có VP"
+                f"Quầy view {view}/4: {len(current)} ô mới có VP • phủ {covered}/20 ô"
             )
             if view < STALL_VIEW_COUNT:
                 self.next_view()
