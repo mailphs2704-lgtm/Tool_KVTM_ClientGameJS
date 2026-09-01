@@ -1,0 +1,66 @@
+name: Secondary machine checks
+
+on:
+  push:
+    branches:
+      - feature/secondary-machine-migration
+      - develop/multi-auto-dev
+    paths:
+      - 'tools/KVTM_PROFILE_TRANSFER.ps1'
+      - 'tools/KVTM_PROFILE_VERIFY.ps1'
+      - 'tools/KVTM_MACHINE_SETUP.ps1'
+      - 'KVTM_SECONDARY_BOOTSTRAP.ps1'
+      - 'KVTM_MACHINE_TRANSFER_CONTROL.bat'
+      - '.github/workflows/secondary-machine-static.yml'
+  workflow_dispatch:
+
+jobs:
+  powershell-static:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse migration PowerShell
+        shell: powershell
+        run: |
+          $files = @(
+            '.\tools\KVTM_PROFILE_TRANSFER.ps1',
+            '.\tools\KVTM_PROFILE_VERIFY.ps1',
+            '.\tools\KVTM_MACHINE_SETUP.ps1',
+            '.\KVTM_SECONDARY_BOOTSTRAP.ps1'
+          )
+          $failed = $false
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file), [ref]$tokens, [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $failed = $true
+              Write-Host "PARSE FAIL: $file" -ForegroundColor Red
+              $errors | ForEach-Object { Write-Host $_.Message -ForegroundColor Red }
+            } else {
+              Write-Host "PARSE OK: $file" -ForegroundColor Green
+            }
+          }
+          if ($failed) { throw 'PowerShell parse check failed' }
+
+      - name: Run read-only machine diagnostic
+        shell: powershell
+        run: |
+          & .\tools\KVTM_MACHINE_SETUP.ps1
+          $latest = Get-Content .\data-machine-diagnostic\LATEST.txt -Raw
+          if (-not (Test-Path -LiteralPath $latest.Trim() -PathType Leaf)) {
+            throw 'Machine diagnostic did not produce its report'
+          }
+          Write-Host 'MACHINE_DIAGNOSTIC_EXECUTION_OK' -ForegroundColor Green
+
+      - name: Ensure transfer artifacts are ignored
+        shell: powershell
+        run: |
+          if (-not (Select-String -Path .\.gitignore -Pattern '^\*\.kvtm$' -Quiet)) {
+            throw '*.kvtm is not ignored'
+          }
+          Write-Host 'TRANSFER_ARTIFACT_IGNORE_OK' -ForegroundColor Green
