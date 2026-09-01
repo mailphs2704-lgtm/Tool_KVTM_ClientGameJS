@@ -55,8 +55,13 @@ if not exist "%DIST%\AUTO_PRO\local_launcher.py" (
   echo        SAFE MODE se KHONG tu build de tranh cham workspace phien AI khac.
   exit /b 1
 )
-if not exist "%DIST%\data-dev\profiles.json" (
-  echo [STOP] Thieu profiles.json cua Multi DEV.
+set "HAS_DEV_IDENTITY=0"
+if exist "%DIST%\data-dev\profiles.json" set "HAS_DEV_IDENTITY=1"
+if exist "%DIST%\data-dev\running_clients.json" set "HAS_DEV_IDENTITY=1"
+if "%HAS_DEV_IDENTITY%"=="0" (
+  echo [STOP] Khong co nguon dinh danh Multi DEV an toan.
+  echo        Can co profiles.json HOAC running_clients.json trong data-dev.
+  echo        Hay mo Multi DEV truoc; SAFE MODE se khong copy profile tu noi khac.
   exit /b 1
 )
 py -3.11 -c "import sys,struct; raise SystemExit(0 if sys.version_info[:2]==(3,11) and struct.calcsize('P')*8==64 else 1)" >nul 2>&1
