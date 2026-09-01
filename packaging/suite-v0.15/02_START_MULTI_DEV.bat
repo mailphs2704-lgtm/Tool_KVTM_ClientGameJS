@@ -6,6 +6,11 @@ set "KVTM_MULTI_INSTANCE_NAME=KVTM Multi DEV"
 set "KVTM_MULTI_ISOLATED=1"
 if not exist "%KVTM_MULTI_APP_DIR%" mkdir "%KVTM_MULTI_APP_DIR%"
 cd /d "%~dp0Multi"
+if not exist "kvtm_multi_dev_host.py" (
+  echo [LOI] Thieu Multi\kvtm_multi_dev_host.py
+  pause
+  goto :done
+)
 if not exist "kvtm_multi_dev_entry.py" (
   echo [LOI] Thieu Multi\kvtm_multi_dev_entry.py
   pause
@@ -42,11 +47,11 @@ if not defined KVTM_PYTHON (
 
 for /f "delims=" %%V in ('%KVTM_PYTHON% -c "import struct,sys; print(sys.version.split()[0] + ' ' + str(struct.calcsize('P')*8) + '-bit')"') do set "KVTM_PYTHON_INFO=%%V"
 echo [KVTM DEV] Python=%KVTM_PYTHON_INFO%
-echo [KVTM DEV] Starting ONE resident Python process for image runtime + Multi + probe...
+echo [KVTM DEV] Starting ONE resident host: image runtime -^> Multi UI -^> probe thread
 
-%KVTM_PYTHON% kvtm_multi_dev_entry.py
+%KVTM_PYTHON% kvtm_multi_dev_host.py
 if errorlevel 1 (
-  echo [LOI] Multi DEV resident runtime exited with an error.
+  echo [LOI] Multi DEV resident host exited with an error.
   pause
 )
 
