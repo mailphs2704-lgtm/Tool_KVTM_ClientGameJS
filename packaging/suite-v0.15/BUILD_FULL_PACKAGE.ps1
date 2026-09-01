@@ -9,6 +9,7 @@ $AutoSource = Join-Path $RepoRoot "source-archive\auto-pro-reference"
 $MultiSource = Join-Path $RepoRoot "source-archive\multi-current\kvtm_multi_tool"
 $PatchSource = Join-Path $RepoRoot "test-candidates\auto-pro-clientjs-temp"
 $ClientJsAutoSource = Join-Path $RepoRoot "components\clientjs-auto"
+$CleanAutoSource = Join-Path $ClientJsAutoSource "kvtm_automation"
 $DistRoot = Join-Path $RepoRoot "dist"
 $OutputRoot = Join-Path $DistRoot $OutputName
 $PreserveRoot = Join-Path $DistRoot (".kvtm-dev-data-" + [guid]::NewGuid().ToString("N"))
@@ -27,7 +28,6 @@ function Test-GitLfsPointer {
     if ($item.Length -gt 1024) {
         return $false
     }
-
     $stream = [System.IO.File]::OpenRead($Path)
     try {
         $length = [Math]::Min(200, [int]$stream.Length)
@@ -61,14 +61,11 @@ function Resolve-AutoProLfsRuntime {
     if ($pointers.Count -eq 0) {
         return
     }
-
     Write-Host ("Git LFS: found {0} runtime pointers; resolving real objects..." -f $pointers.Count) -ForegroundColor Yellow
-
     $gitCommand = Get-Command git -ErrorAction SilentlyContinue
     if ($null -eq $gitCommand) {
         throw "AUTO PRO runtime still contains Git LFS pointers and git is unavailable."
     }
-
     Push-Location $RepoRoot
     try {
         & git lfs version | Out-Null
@@ -83,7 +80,6 @@ function Resolve-AutoProLfsRuntime {
     finally {
         Pop-Location
     }
-
     $remaining = @(Get-GitLfsPointers -Root $AutoSource)
     if ($remaining.Count -gt 0) {
         $sample = ($remaining | Select-Object -First 12 | ForEach-Object { $_.FullName }) -join "`n  - "
@@ -92,8 +88,27 @@ function Resolve-AutoProLfsRuntime {
             $remaining.Count, $sample
         )
     }
-
     Write-Host "Git LFS runtime VERIFIED: all tracked files are real objects" -ForegroundColor Green
+}
+
+function Assert-CleanClearStallWorker {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $source = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    foreach ($token in @(
+        "from auto_worker import",
+        "import auto_worker",
+        "FarmAutomation",
+        "ADBController",
+        "install_headless_clientjs_runtime",
+        "automation.pyc",
+        "adb_controller.pyc",
+        "runtime/pyc"
+    )) {
+        if ($source.Contains($token)) {
+            throw "Clean Dọn quầy worker contains forbidden legacy runtime token '$token': $Path"
+        }
+    }
 }
 
 Resolve-AutoProLfsRuntime
@@ -132,8 +147,9 @@ foreach ($name in @("profiles.json", "settings.json")) {
     }
 }
 
-# Preserve only runtime data owned by the current fixed DEV package. These
-# folders are restored after ZIP creation and therefore never enter the ZIP.
+# Preserve profile-owned workflow state/diagnostics only from the fixed DEV
+# folder. Restoration happens after ZIP creation, so no private runtime data is
+# shipped in the distributable archive.
 $CurrentClearStall = Join-Path $CurrentData "clear-stall"
 if (Test-Path -LiteralPath $CurrentClearStall -PathType Container) {
     $PreservedClearStallPath = Join-Path $PreserveRoot "clear-stall"
@@ -147,6 +163,10 @@ if (Test-Path -LiteralPath $CurrentClearStallProbe -PathType Container) {
     $PreservedClearStallProbe = $true
 }
 
+$ClearStallWorker = Join-Path $ClientJsAutoSource "worker\clear_stall_worker.py"
+$ClearStallProbe = Join-Path $ClientJsAutoSource "worker\clear_stall_live_probe.py"
+$CleanWorkflow = Join-Path $CleanAutoSource "workflows\clear_stall"
+
 foreach ($required in @(
     (Join-Path $AutoSource "local_launcher.py"),
     (Join-Path $AutoSource "runtime\pyc\gui_base.pyc"),
@@ -157,13 +177,31 @@ foreach ($required in @(
     (Join-Path $MultiSource "kvtm_multi.py"),
     (Join-Path $MultiSource "kvtm_multi_entry.py"),
     (Join-Path $PatchSource "clientjs_auto_patch.py"),
+    (Join-Path $PatchSource "pc_driver.py"),
+    (Join-Path $PatchSource "engine_driver.py"),
     (Join-Path $ClientJsAutoSource "catalog\functions.json"),
     (Join-Path $ClientJsAutoSource "worker\runtime_probe.py"),
     (Join-Path $ClientJsAutoSource "worker\auto_worker.py"),
-    (Join-Path $ClientJsAutoSource "worker\clear_stall_worker.py"),
-    (Join-Path $ClientJsAutoSource "worker\clear_stall_live_probe.py"),
-    (Join-Path $ClientJsAutoSource "workflows\clear_stall\manifest.py"),
-    (Join-Path $ClientJsAutoSource "workflows\clear_stall\workflow.py")
+    (Join-Path $ClientJsAutoSource "worker\clean_worker_support.py"),
+    $ClearStallWorker,
+    $ClearStallProbe,
+    (Join-Path $CleanAutoSource "automation.py"),
+    (Join-Path $CleanAutoSource "context.py"),
+    (Join-Path $CleanAutoSource "models.py"),
+    (Join-Path $CleanAutoSource "runtime\bootstrap.py"),
+    (Join-Path $CleanAutoSource "runtime\driver.py"),
+    (Join-Path $CleanAutoSource "runtime\vision.py"),
+    (Join-Path $CleanAutoSource "actions\popup.py"),
+    (Join-Path $CleanAutoSource "actions\navigation.py"),
+    (Join-Path $CleanAutoSource "actions\stall.py"),
+    (Join-Path $CleanAutoSource "actions\buying.py"),
+    (Join-Path $CleanAutoSource "actions\inventory.py"),
+    (Join-Path $CleanAutoSource "actions\selling.py"),
+    (Join-Path $CleanWorkflow "config.py"),
+    (Join-Path $CleanWorkflow "manifest.py"),
+    (Join-Path $CleanWorkflow "state.py"),
+    (Join-Path $CleanWorkflow "result.py"),
+    (Join-Path $CleanWorkflow "workflow.py")
 )) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Missing required repository file: $required"
@@ -172,6 +210,8 @@ foreach ($required in @(
         throw "Required file is still a Git LFS pointer: $required"
     }
 }
+Assert-CleanClearStallWorker -Path $ClearStallWorker
+Assert-CleanClearStallWorker -Path $ClearStallProbe
 
 if (Test-Path -LiteralPath $OutputRoot) {
     Remove-Item -LiteralPath $OutputRoot -Recurse -Force
@@ -180,7 +220,6 @@ if (Test-Path -LiteralPath $OutputRoot) {
 $AutoOut = Join-Path $OutputRoot "AUTO_PRO"
 $MultiOut = Join-Path $OutputRoot "Multi"
 New-Item -ItemType Directory -Path $AutoOut, $MultiOut -Force | Out-Null
-
 Copy-Item -Path (Join-Path $AutoSource "*") -Destination $AutoOut -Recurse -Force
 Copy-Item -Path (Join-Path $MultiSource "*") -Destination $MultiOut -Recurse -Force
 
@@ -225,6 +264,7 @@ foreach ($name in @("01_BUILD_BRIDGE.bat", "02_START_MULTI.bat", "02_START_MULTI
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $OutputRoot
 }
 
+$PackagedClean = Join-Path $ClientJsAutoOut "kvtm_automation"
 $checks = @(
     (Join-Path $AutoOut "runtime\pyc\gui_base.pyc"),
     (Join-Path $AutoOut "runtime\pyc\gui.pyc"),
@@ -232,15 +272,23 @@ $checks = @(
     (Join-Path $AutoOut "runtime\pyc\uiautomator2\__init__.pyc"),
     (Join-Path $AutoOut "_internal\cv2\cv2.pyd"),
     (Join-Path $AutoOut "clientjs_auto_patch.py"),
+    (Join-Path $AutoOut "pc_driver.py"),
+    (Join-Path $AutoOut "engine_driver.py"),
     (Join-Path $MultiOut "kvtm_multi.py"),
     (Join-Path $MultiOut "kvtm_multi_entry.py"),
     (Join-Path $ClientJsAutoOut "catalog\functions.json"),
     (Join-Path $ClientJsAutoOut "worker\runtime_probe.py"),
     (Join-Path $ClientJsAutoOut "worker\auto_worker.py"),
+    (Join-Path $ClientJsAutoOut "worker\clean_worker_support.py"),
     (Join-Path $ClientJsAutoOut "worker\clear_stall_worker.py"),
     (Join-Path $ClientJsAutoOut "worker\clear_stall_live_probe.py"),
-    (Join-Path $ClientJsAutoOut "workflows\clear_stall\manifest.py"),
-    (Join-Path $ClientJsAutoOut "workflows\clear_stall\workflow.py")
+    (Join-Path $PackagedClean "automation.py"),
+    (Join-Path $PackagedClean "runtime\bootstrap.py"),
+    (Join-Path $PackagedClean "actions\navigation.py"),
+    (Join-Path $PackagedClean "actions\stall.py"),
+    (Join-Path $PackagedClean "workflows\clear_stall\manifest.py"),
+    (Join-Path $PackagedClean "workflows\clear_stall\state.py"),
+    (Join-Path $PackagedClean "workflows\clear_stall\workflow.py")
 )
 foreach ($file in $checks) {
     if (-not (Test-Path -LiteralPath $file)) {
@@ -250,6 +298,8 @@ foreach ($file in $checks) {
         throw "Package contains Git LFS pointer instead of real data: $file"
     }
 }
+Assert-CleanClearStallWorker -Path (Join-Path $ClientJsAutoOut "worker\clear_stall_worker.py")
+Assert-CleanClearStallWorker -Path (Join-Path $ClientJsAutoOut "worker\clear_stall_live_probe.py")
 
 $ZipPath = "$OutputRoot.zip"
 if (Test-Path -LiteralPath $ZipPath) {
@@ -266,20 +316,19 @@ foreach ($name in @("profiles.json", "settings.json")) {
     }
 }
 if ($PreservedClearStall) {
-    $preserved = Join-Path $PreserveRoot "clear-stall"
-    Copy-Item -LiteralPath $preserved -Destination (Join-Path $DevDataOut "clear-stall") -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $PreserveRoot "clear-stall") -Destination (Join-Path $DevDataOut "clear-stall") -Recurse -Force
 }
 if ($PreservedClearStallProbe) {
-    $preserved = Join-Path $PreserveRoot "clear-stall-probe"
-    Copy-Item -LiteralPath $preserved -Destination (Join-Path $DevDataOut "clear-stall-probe") -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $PreserveRoot "clear-stall-probe") -Destination (Join-Path $DevDataOut "clear-stall-probe") -Recurse -Force
 }
 Remove-Item -LiteralPath $PreserveRoot -Recurse -Force
 
 Write-Host "PACKAGE OK" -ForegroundColor Green
 Write-Host "Folder: $OutputRoot"
 Write-Host "ZIP:    $ZipPath"
-Write-Host "runtime/pyc VERIFIED: real LFS objects, not pointer text" -ForegroundColor Green
-Write-Host "clear_stall VERIFIED: entrypoint, worker, live probe, manifest, workflow" -ForegroundColor Green
+Write-Host "Legacy AUTO PRO runtime kept only for other suite features/reference." -ForegroundColor DarkGray
+Write-Host "Dọn quầy CLEAN VERIFIED: no legacy pyc execution dependency" -ForegroundColor Green
+Write-Host "Dọn quầy CLEAN VERIFIED: KVAutomation + 4 views / 20 physical slots" -ForegroundColor Green
 if ($PreservedFiles.Count -gt 0) {
     foreach ($name in $PreservedFiles.Keys) {
         Write-Host ("DATA KEPT: {0} <- {1}" -f $name, $PreservedFiles[$name]) -ForegroundColor Cyan
@@ -288,7 +337,7 @@ if ($PreservedFiles.Count -gt 0) {
     Write-Host "DATA: no existing profile/settings found; data-dev created empty" -ForegroundColor Yellow
 }
 if ($PreservedClearStall) {
-    Write-Host "DATA KEPT: clear-stall carryover/templates" -ForegroundColor Cyan
+    Write-Host "DATA KEPT: clear-stall state/carryover/templates/runs" -ForegroundColor Cyan
 }
 if ($PreservedClearStallProbe) {
     Write-Host "DATA KEPT: clear-stall-probe screenshots/reports" -ForegroundColor Cyan
