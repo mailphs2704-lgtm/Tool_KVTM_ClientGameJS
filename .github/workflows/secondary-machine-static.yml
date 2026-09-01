@@ -65,7 +65,8 @@ jobs:
       - name: Regression test PowerShell 5.1 Git wrapper scope
         shell: powershell
         run: |
-          [string]$nativeGit = (Get-Command git.exe -CommandType Application).Source
+          $gitCommand = Get-Command git.exe -CommandType Application | Select-Object -First 1
+          [string]$nativeGit = $gitCommand.Source
           if ([string]::IsNullOrWhiteSpace($nativeGit)) { throw 'git.exe missing on runner' }
           $global:KvtmGitExeCompatTest = $nativeGit
           function global:git {
