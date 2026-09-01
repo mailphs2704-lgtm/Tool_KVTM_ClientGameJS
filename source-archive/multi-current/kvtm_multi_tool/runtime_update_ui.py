@@ -18,23 +18,6 @@ def _find_repo_root(package_root: Path) -> Path | None:
     return None
 
 
-def _find_controls(widget):
-    try:
-        if str(widget.cget("text")) == "BẢNG ĐIỀU KHIỂN":
-            return widget
-    except Exception:
-        pass
-    try:
-        children = widget.winfo_children()
-    except Exception:
-        return None
-    for child in children:
-        found = _find_controls(child)
-        if found is not None:
-            return found
-    return None
-
-
 def _read_status(path: Path) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8-sig"))
@@ -43,20 +26,16 @@ def _read_status(path: Path) -> dict:
 
 
 def install_runtime_update_ui(app) -> None:
-    """Add a one-click staged updater to the DEV control panel.
+    """Install an always-visible one-click staged updater in Multi DEV.
 
-    Updating while Multi is open is safe: source is pulled and a sibling runtime
-    is built while the current process keeps using its already loaded files. The
-    updater activates the staged runtime automatically after the current Multi
-    process exits, avoiding in-process Python/DLL hot replacement.
+    Source is pulled and a sibling runtime is built while the current process
+    keeps using its already-loaded Python/native modules. If Multi is running,
+    activation is deferred until the process exits; no in-process DLL hot swap
+    is attempted.
     """
 
     package_root = Path(__file__).resolve().parent.parent
     repo_root = _find_repo_root(package_root)
-    controls = _find_controls(app)
-    if controls is None:
-        return
-
     status_path = package_root / "data-dev" / "runtime-update-status.json"
     update_script = (
         repo_root / "tools" / "KVTM_RUNTIME_UPDATE.ps1" if repo_root else None
@@ -87,9 +66,7 @@ def install_runtime_update_ui(app) -> None:
             button.configure(text="✓ Đã tải • chờ đóng", state="disabled")
         elif current == "activated":
             button.configure(text="✓ Đã cập nhật", state="disabled")
-        elif current == "no_update":
-            button.configure(text="Cập nhật DEV", state="normal")
-        elif current == "error":
+        elif current in {"no_update", "error"}:
             button.configure(text="Cập nhật DEV", state="normal")
 
     def poll() -> None:
@@ -145,15 +122,25 @@ def install_runtime_update_ui(app) -> None:
             return
         app.after(300, poll)
 
+    # Do not depend on the internal control-panel layout. A root-level button
+    # stays visible even when the panel is refactored, resized, or packed
+    # differently on another machine.
     button = ttk.Button(
-        controls,
+        app,
         text="Cập nhật DEV",
         command=start_update,
         style="Action.TButton",
     )
-    button.grid(row=1, column=3, sticky="ew", padx=4, pady=4)
+    button.place(relx=1.0, x=-14, y=14, anchor="ne")
+    button.lift()
     app.runtime_update_button = button
 
     existing = _read_status(status_path)
     if str(existing.get("state") or "") == "pending_restart":
         redraw(existing)
+
+    print(
+        "[KVTM DEV] Runtime updater UI READY "
+        f"repo={'FOUND' if repo_root else 'MISSING'}",
+        flush=True,
+    )
