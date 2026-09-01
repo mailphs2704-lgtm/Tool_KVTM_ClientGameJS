@@ -18,38 +18,59 @@ APP_TITLE = "KVTM Game Workspace"
 TARGET_FPS = 20.0
 RUNNING_MAP_MAX_AGE_SECONDS = 30.0
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEV_RUNNING_MAP = (
-    REPO_ROOT / "dist" / "KVTM-ClientJS-Suite-Multi-DEV" /
-    "data-dev" / "running_clients.json"
+_RUNTIME_RELATIVE = Path(
+    "dist/KVTM-ClientJS-Suite-Multi-DEV/data-dev/running_clients.json"
+)
+DEV_RUNNING_MAP_CANDIDATES = tuple(
+    path for path in (
+        (
+            Path(os.environ["KVTM_MULTI_DEV_ROOT"]) / _RUNTIME_RELATIVE
+            if os.environ.get("KVTM_MULTI_DEV_ROOT")
+            else None
+        ),
+        REPO_ROOT.parent / "Tool_KVTM_Multi_DEV" / _RUNTIME_RELATIVE,
+        REPO_ROOT / _RUNTIME_RELATIVE,
+    )
+    if path is not None
 )
 
 
 def load_dev_client_allowlist() -> tuple[dict[int, dict], str]:
-    """Read the secret-free PID/profile map published by Multi DEV."""
-    try:
-        age = time.time() - DEV_RUNNING_MAP.stat().st_mtime
-        if age < 0 or age > RUNNING_MAP_MAX_AGE_SECONDS:
-            return {}, f"running_clients.json đã cũ ({max(0, int(age))} giây)"
-        payload = json.loads(DEV_RUNNING_MAP.read_text(encoding="utf-8-sig"))
-        if int(payload.get("version", 0)) != 1:
-            return {}, "running_clients.json sai phiên bản"
-        allowed: dict[int, dict] = {}
-        for row in payload.get("clients", []):
-            if not isinstance(row, dict):
+    """Read the secret-free PID/profile map published by authoritative Multi DEV."""
+    reasons = []
+    for running_map in DEV_RUNNING_MAP_CANDIDATES:
+        try:
+            age = time.time() - running_map.stat().st_mtime
+            if age < 0 or age > RUNNING_MAP_MAX_AGE_SECONDS:
+                reasons.append(
+                    f"{running_map.parent.parent.name}: cũ {max(0, int(age))} giây"
+                )
                 continue
-            pid = int(row.get("pid", 0))
-            profile_id = str(row.get("profile_id") or "").strip()
-            if pid <= 0 or not profile_id:
+            payload = json.loads(running_map.read_text(encoding="utf-8-sig"))
+            if int(payload.get("version", 0)) != 1:
+                reasons.append(f"{running_map.parent.parent.name}: sai phiên bản")
                 continue
-            allowed[pid] = {
-                "profile_id": profile_id,
-                "name": str(row.get("name") or f"PID {pid}"),
-            }
-        return allowed, f"allowlist DEV: {len(allowed)} profile"
-    except FileNotFoundError:
-        return {}, "Chưa có running_clients.json từ Multi DEV"
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-        return {}, f"Không đọc được allowlist DEV: {exc}"
+            allowed: dict[int, dict] = {}
+            for row in payload.get("clients", []):
+                if not isinstance(row, dict):
+                    continue
+                pid = int(row.get("pid", 0))
+                profile_id = str(row.get("profile_id") or "").strip()
+                if pid <= 0 or not profile_id:
+                    continue
+                allowed[pid] = {
+                    "profile_id": profile_id,
+                    "name": str(row.get("name") or f"PID {pid}"),
+                }
+            return (
+                allowed,
+                f"allowlist DEV: {len(allowed)} profile • {running_map.parent}",
+            )
+        except FileNotFoundError:
+            reasons.append(f"{running_map.parent.parent.name}: chưa có map")
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            reasons.append(f"{running_map.parent.parent.name}: lỗi {exc}")
+    return {}, "Không có allowlist DEV mới • " + "; ".join(reasons)
 
 
 def enumerate_game_windows(allowed: dict[int, dict]) -> list[dict]:
