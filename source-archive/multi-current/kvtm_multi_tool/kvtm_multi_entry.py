@@ -11,6 +11,8 @@ import kvtm_multi as core
 
 
 CLEAR_STALL_REQUIRED_VIEWS = 4
+CLEAR_STALL_VERIFIED_FRIEND_MAX = 7
+CLEAR_STALL_RESALE_STORAGE_MAX = 5
 
 
 class MultiApp(core.MultiApp):
@@ -21,6 +23,7 @@ class MultiApp(core.MultiApp):
         self._clear_stall_probe_workers = {}
         self._clear_stall_probe_starting = set()
         self._clear_stall_probe_terminal = {}
+        self._normalize_clear_stall_controls()
 
         action_row = self.auto_clear_stall_start_button.master
         self.auto_clear_stall_probe_button = core.ttk.Button(
@@ -30,6 +33,41 @@ class MultiApp(core.MultiApp):
             command=self._start_clear_stall_probe,
         )
         self.auto_clear_stall_probe_button.pack(side="left", padx=(8, 0))
+
+    def _normalize_clear_stall_controls(self) -> None:
+        """Translate historical UI names/ranges to the clean workflow contract."""
+        if hasattr(self, "auto_clear_stall_friend_spin"):
+            self.auto_clear_stall_friend_spin.configure(
+                from_=1, to=CLEAR_STALL_VERIFIED_FRIEND_MAX
+            )
+        if hasattr(self, "auto_clear_stall_stall_spin"):
+            self.auto_clear_stall_stall_spin.configure(
+                from_=1, to=CLEAR_STALL_RESALE_STORAGE_MAX
+            )
+        if hasattr(self, "auto_clear_stall_pages_spin"):
+            self.auto_clear_stall_pages_spin.configure(
+                from_=CLEAR_STALL_REQUIRED_VIEWS,
+                to=CLEAR_STALL_REQUIRED_VIEWS,
+            )
+
+        # Core keeps backward-compatible widget names. Only visible labels are
+        # translated here; settings/CLI migration remains lossless.
+        try:
+            body = self.auto_clear_stall_start_button.master.master
+            replacements = {
+                "Quầy:": "Kho VP:",
+                "Quét tối đa:": "Quét quầy:",
+                "trang": "4 view / 20 ô",
+            }
+            for widget in body.winfo_children():
+                try:
+                    text = str(widget.cget("text"))
+                except Exception:
+                    continue
+                if text in replacements:
+                    widget.configure(text=replacements[text])
+        except Exception:
+            pass
 
     def _clear_stall_busy(self) -> bool:
         """Only one Dọn quầy/probe clone may own ClientJS automation at a time."""
@@ -86,34 +124,48 @@ class MultiApp(core.MultiApp):
         self.after(500, self.refresh)
 
     def _save_clear_stall_config(self) -> None:
-        """Enforce close-after-run and the four views required to cover 20 slots."""
-        if hasattr(self, "auto_clear_stall_close"):
-            self.auto_clear_stall_close.set(True)
-        if hasattr(self, "auto_clear_stall_pages"):
-            try:
-                pages = int(self.auto_clear_stall_pages.get())
-            except Exception:
-                pages = CLEAR_STALL_REQUIRED_VIEWS
-            self.auto_clear_stall_pages.set(max(CLEAR_STALL_REQUIRED_VIEWS, pages))
+        """Persist the clean Dọn quầy contract through the legacy settings schema."""
+        if getattr(self, "_clear_stall_refreshing", False):
+            return
+        try:
+            friend = max(
+                1,
+                min(
+                    CLEAR_STALL_VERIFIED_FRIEND_MAX,
+                    int(self.auto_clear_stall_friend.get()),
+                ),
+            )
+        except Exception:
+            friend = 1
+        try:
+            storage = max(
+                1,
+                min(
+                    CLEAR_STALL_RESALE_STORAGE_MAX,
+                    int(self.auto_clear_stall_stall.get()),
+                ),
+            )
+        except Exception:
+            storage = 2
+
+        self.auto_clear_stall_friend.set(friend)
+        self.auto_clear_stall_stall.set(storage)
+        self.auto_clear_stall_pages.set(CLEAR_STALL_REQUIRED_VIEWS)
+        self.auto_clear_stall_close.set(True)
+
+        # Core persists the historical keys; immediately overwrite the fields
+        # whose old validation had different semantics/ranges.
         super()._save_clear_stall_config()
         profile_id, profile = self._clear_stall_profile()
         if not profile_id or not profile:
             return
         job = self._clear_stall_job(profile_id)
-        changed = False
-        if job and not bool(job.get("close_client_after_run", False)):
-            job["close_client_after_run"] = True
-            changed = True
-        try:
-            pages = int(job.get("max_scan_pages", CLEAR_STALL_REQUIRED_VIEWS) or 0)
-        except (TypeError, ValueError):
-            pages = CLEAR_STALL_REQUIRED_VIEWS
-        if pages < CLEAR_STALL_REQUIRED_VIEWS:
-            job["max_scan_pages"] = CLEAR_STALL_REQUIRED_VIEWS
-            changed = True
-        if changed:
-            self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
-            core.save_settings(self.settings)
+        job["target_friend_ordinal"] = friend
+        job["target_stall_id"] = storage
+        job["max_scan_pages"] = CLEAR_STALL_REQUIRED_VIEWS
+        job["close_client_after_run"] = True
+        self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+        core.save_settings(self.settings)
 
     def _start_clear_stall(
         self, profile_id: str | None = None, scheduled: bool = False
@@ -152,7 +204,7 @@ class MultiApp(core.MultiApp):
                 )
 
     def _start_clear_stall_probe(self) -> None:
-        """Open the selected clone and scan four stall views without buying/selling."""
+        """Open the selected clone and scan four stall views without transactions."""
         self._save_clear_stall_config()
         profile_id, profile = self._clear_stall_profile()
         if not profile_id or not profile:
@@ -217,8 +269,20 @@ class MultiApp(core.MultiApp):
             self.auto_clear_stall_status.set(f"Thiếu probe worker: {worker_file}")
             return
 
-        friend = int(job.get("target_friend_ordinal", 1))
-        stall = int(job.get("target_stall_id", 2))
+        friend = max(
+            1,
+            min(
+                CLEAR_STALL_VERIFIED_FRIEND_MAX,
+                int(job.get("target_friend_ordinal", 1) or 1),
+            ),
+        )
+        storage = max(
+            1,
+            min(
+                CLEAR_STALL_RESALE_STORAGE_MAX,
+                int(job.get("target_stall_id", 2) or 2),
+            ),
+        )
         run_id = time.strftime("%Y%m%d-%H%M%S")
         work_dir = core.APP_DIR / "clear-stall-probe" / profile_id / run_id
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -232,7 +296,7 @@ class MultiApp(core.MultiApp):
                     "--profile-id", str(profile_id),
                     "--profile-name", str(profile.get("name") or profile_id),
                     "--friend-ordinal", str(friend),
-                    "--stall-id", str(stall),
+                    "--stall-id", str(storage),
                     "--work-dir", str(work_dir),
                 ],
                 cwd=str(auto_root),
@@ -254,7 +318,7 @@ class MultiApp(core.MultiApp):
         self._clear_stall_probe_terminal.pop(profile_id, None)
         self._clear_stall_probe_starting.discard(profile_id)
         self.auto_clear_stall_status.set(
-            f"Kiểm tra chỉ đọc • Nhà bạn {friend} • Quầy {stall}"
+            f"Kiểm tra chỉ đọc • Nhà bạn {friend} • Kho VP {storage}"
         )
         threading.Thread(
             target=self._read_clear_stall_probe_worker,
@@ -308,10 +372,12 @@ class MultiApp(core.MultiApp):
         if event == "probe_boot":
             stage = str(payload.get("stage") or "")
             labels = {
-                "importing_runtime": "Kiểm tra: đang nạp runtime",
-                "loading_auto_pro_runtime": "Kiểm tra: đang nạp AUTO PRO",
-                "constructing_controller": "Kiểm tra: đang kết nối ClientJS",
-                "controller_ready": "Kiểm tra: đã kết nối ClientJS",
+                "clean-runtime-start": "Kiểm tra: nạp runtime sạch",
+                "raw-window-connecting": "Kiểm tra: kết nối cửa sổ ClientJS",
+                "clientjs-engine-connecting": "Kiểm tra: kết nối engine ClientJS",
+                "waiting-main-screen": "Kiểm tra: xử popup/màn hình farm",
+                "navigating-friend": "Kiểm tra: đang sang nhà bạn",
+                "opening-friend-stall": "Kiểm tra: đang mở quầy 20 ô",
             }
             if profile_id == self._active_profile_id:
                 self.auto_clear_stall_status.set(labels.get(stage, f"Kiểm tra: {stage}"))
@@ -426,6 +492,19 @@ class MultiApp(core.MultiApp):
         profile_id = str(payload.get("profile_id") or "")
         event = str(payload.get("event") or "")
 
+        if event == "worker_boot":
+            stage = str(payload.get("stage") or "")
+            labels = {
+                "process_started": "Worker Dọn quầy sạch đã khởi động",
+                "clean_runtime_importing": "Đang nạp runtime Python sạch",
+                "clientjs_engine_connecting": "Đang kết nối engine ClientJS",
+                "clientjs_engine_ready": "Đã kết nối engine ClientJS",
+            }
+            self._set_clear_stall_checkpoint(
+                profile_id, labels.get(stage, f"Khởi tạo: {stage}")
+            )
+            return
+
         if event == "worker_stopped":
             self._rearm_clear_stall_after_failure(
                 profile_id,
@@ -466,6 +545,10 @@ class MultiApp(core.MultiApp):
                 "bought": bought,
                 "sold": sold,
                 "retained": retained,
+                "deferred": bool(payload.get("deferred", False)),
+                "inventory_full": bool(payload.get("inventory_full", False)),
+                "source_empty": bool(payload.get("source_empty", False)),
+                "state": str(payload.get("state") or "COMPLETED"),
             }
             self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
             core.save_settings(self.settings)
@@ -527,23 +610,45 @@ class MultiApp(core.MultiApp):
         if not hasattr(self, "auto_clear_stall_status"):
             return
 
-        if hasattr(self, "auto_clear_stall_close"):
-            self.auto_clear_stall_close.set(True)
-        if hasattr(self, "auto_clear_stall_close_button"):
-            self.auto_clear_stall_close_button.configure(state="disabled")
-        if hasattr(self, "auto_clear_stall_pages"):
-            try:
-                pages = int(self.auto_clear_stall_pages.get())
-            except Exception:
-                pages = CLEAR_STALL_REQUIRED_VIEWS
-            self.auto_clear_stall_pages.set(max(CLEAR_STALL_REQUIRED_VIEWS, pages))
-        if hasattr(self, "auto_clear_stall_pages_spin"):
-            try:
-                self.auto_clear_stall_pages_spin.configure(
-                    from_=CLEAR_STALL_REQUIRED_VIEWS
-                )
-            except Exception:
-                pass
+        self._normalize_clear_stall_controls()
+        self._clear_stall_refreshing = True
+        try:
+            if hasattr(self, "auto_clear_stall_close"):
+                self.auto_clear_stall_close.set(True)
+            if hasattr(self, "auto_clear_stall_close_button"):
+                self.auto_clear_stall_close_button.configure(state="disabled")
+            if hasattr(self, "auto_clear_stall_pages"):
+                self.auto_clear_stall_pages.set(CLEAR_STALL_REQUIRED_VIEWS)
+            if hasattr(self, "auto_clear_stall_pages_spin"):
+                self.auto_clear_stall_pages_spin.configure(state="disabled")
+
+            profile_id, profile = self._clear_stall_profile()
+            if profile_id and profile:
+                job = self._clear_stall_job(profile_id)
+                try:
+                    friend = max(
+                        1,
+                        min(
+                            CLEAR_STALL_VERIFIED_FRIEND_MAX,
+                            int(job.get("target_friend_ordinal", 1) or 1),
+                        ),
+                    )
+                except Exception:
+                    friend = 1
+                try:
+                    storage = max(
+                        1,
+                        min(
+                            CLEAR_STALL_RESALE_STORAGE_MAX,
+                            int(job.get("target_stall_id", 2) or 2),
+                        ),
+                    )
+                except Exception:
+                    storage = 2
+                self.auto_clear_stall_friend.set(friend)
+                self.auto_clear_stall_stall.set(storage)
+        finally:
+            self._clear_stall_refreshing = False
 
         profile_id, profile = self._clear_stall_profile()
         main_auto_busy = False
@@ -563,15 +668,31 @@ class MultiApp(core.MultiApp):
             return
         job = self._clear_stall_job(profile_id)
         changed = False
-        if job and not bool(job.get("close_client_after_run", False)):
-            job["close_client_after_run"] = True
+        normalized_friend = max(
+            1,
+            min(
+                CLEAR_STALL_VERIFIED_FRIEND_MAX,
+                int(job.get("target_friend_ordinal", 1) or 1),
+            ),
+        )
+        normalized_storage = max(
+            1,
+            min(
+                CLEAR_STALL_RESALE_STORAGE_MAX,
+                int(job.get("target_stall_id", 2) or 2),
+            ),
+        )
+        if int(job.get("target_friend_ordinal", normalized_friend) or normalized_friend) != normalized_friend:
+            job["target_friend_ordinal"] = normalized_friend
             changed = True
-        try:
-            pages = int(job.get("max_scan_pages", CLEAR_STALL_REQUIRED_VIEWS) or 0)
-        except (TypeError, ValueError):
-            pages = CLEAR_STALL_REQUIRED_VIEWS
-        if pages < CLEAR_STALL_REQUIRED_VIEWS:
+        if int(job.get("target_stall_id", normalized_storage) or normalized_storage) != normalized_storage:
+            job["target_stall_id"] = normalized_storage
+            changed = True
+        if int(job.get("max_scan_pages", CLEAR_STALL_REQUIRED_VIEWS) or CLEAR_STALL_REQUIRED_VIEWS) != CLEAR_STALL_REQUIRED_VIEWS:
             job["max_scan_pages"] = CLEAR_STALL_REQUIRED_VIEWS
+            changed = True
+        if not bool(job.get("close_client_after_run", False)):
+            job["close_client_after_run"] = True
             changed = True
         if changed:
             self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
