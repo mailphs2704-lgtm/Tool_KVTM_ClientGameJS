@@ -187,9 +187,13 @@ function Invoke-Update {
 
     Write-UpdateStatus -State "checking" -Message "Đang kiểm tra cập nhật GitHub/local DEV..."
 
-    [string]$currentBranch = (& $git -C $RepoRoot branch --show-current | Select-Object -First 1)
-    if ($LASTEXITCODE -ne 0 -or $currentBranch.Trim() -ne $Branch) {
-        throw "Repo phải ở branch $Branch trước khi update runtime."
+    # Windows PowerShell 5.1 can leave a stale LASTEXITCODE when native output
+    # is piped through Select-Object. Capture native output and exit code first.
+    [object[]]$branchOutput = @(& $git -C $RepoRoot branch --show-current 2>$null)
+    $branchExit = $LASTEXITCODE
+    [string]$currentBranch = ($branchOutput | Select-Object -First 1)
+    if ($branchExit -ne 0 -or [string]::IsNullOrWhiteSpace($currentBranch) -or $currentBranch.Trim() -ne $Branch) {
+        throw "Repo phải ở branch $Branch trước khi update runtime. detected='$($currentBranch.Trim())' git_exit=$branchExit"
     }
 
     [object[]]$dirty = @(& $git -C $RepoRoot status --porcelain)
