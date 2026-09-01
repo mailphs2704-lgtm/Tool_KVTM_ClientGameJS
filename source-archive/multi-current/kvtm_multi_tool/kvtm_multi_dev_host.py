@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import ctypes
 from pathlib import Path
 import struct
 import sys
@@ -88,6 +88,16 @@ def _load_resident_runtime(component_root: Path, auto_root: Path) -> None:
     )
 
 
+def _configure_dpi() -> None:
+    try:
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+    except Exception:
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            pass
+
+
 def main() -> int:
     try:
         _check_python()
@@ -97,8 +107,9 @@ def main() -> int:
                 f"Thiếu package runtime: component={component_root} auto={auto_root}"
             )
 
+        # This is the ONLY native image import for the DEV lifetime. The process
+        # stays alive afterwards and becomes the Multi UI + probe runtime.
         _load_resident_runtime(component_root, auto_root)
-        os.environ["KVTM_DEV_RESIDENT_IMAGE_RUNTIME"] = "1"
 
         multi_text = str(multi_root)
         if multi_text not in sys.path:
@@ -107,7 +118,9 @@ def main() -> int:
         print("[KVTM DEV] Resident host: importing Multi UI AFTER runtime READY...", flush=True)
         import kvtm_multi_dev_entry
 
-        return int(kvtm_multi_dev_entry.main())
+        _configure_dpi()
+        kvtm_multi_dev_entry.MultiDevApp().mainloop()
+        return 0
     except Exception as exc:
         print(
             f"[KVTM DEV] RESIDENT HOST FAILED: {type(exc).__name__}: {exc}",
