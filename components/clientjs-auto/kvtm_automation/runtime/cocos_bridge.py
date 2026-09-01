@@ -11,6 +11,8 @@ import threading
 import time
 from typing import Callable
 
+from . import window_capture
+
 
 _GESTURE_LOCK = threading.RLock()
 
@@ -48,14 +50,14 @@ class _TouchProxy:
 
 
 class CocosBridgeDriver:
-    """Clean ClientJS driver that talks directly to kvtm_bridge.dll.
+    """Clean ClientJS driver backed by ``kvtm_bridge.dll``.
 
-    The native bridge exposes one named pipe per GameClientJS PID:
-    ``\\\\.\\pipe\\KVTM-Cocos-<pid>``. Commands are PING, CAPTURE,
-    DOWN, MOVE and UP. CAPTURE returns metadata for a KCAP shared-memory frame.
+    Touch input always travels through the Cocos named-pipe bridge. Capture is
+    capability-driven: bridge builds advertising ``CAPTURE1`` use KCAP shared
+    memory; older bridge builds (the same ones the working AUTO supports) use a
+    clean Win32 ``PrintWindow`` capture fallback while touches remain in-DLL.
 
-    No AUTO PRO Python bytecode and no legacy engine_driver.py are used here.
-    Only the compiled bridge binaries are retained as the transport into Cocos.
+    No AUTO PRO business bytecode and no legacy ``engine_driver.py`` are used.
     """
 
     HEADER_FORMAT = "<4s9IQ"
@@ -82,6 +84,9 @@ class CocosBridgeDriver:
         self.loader_path = self.bin_root / "kvtm_loader.exe"
         self.bridge_path = self.bin_root / "kvtm_bridge.dll"
         self.touch = _TouchProxy(self)
+        self.ping_response = ""
+        self.shared_capture_supported = False
+        self._capture_mode_logged = False
         self._configure_kernel32()
         self.ensure_bridge()
 
@@ -161,8 +166,13 @@ class CocosBridgeDriver:
             time.sleep(0.01)
         raise ctypes.WinError(last_error)
 
+    def _remember_ping(self, response: str) -> str:
+        self.ping_response = str(response)
+        self.shared_capture_supported = "CAPTURE1" in self.ping_response.upper().split()
+        return self.ping_response
+
     def ping(self, timeout_ms: int = 300) -> str:
-        return self._pipe("PING\n", timeout_ms)
+        return self._remember_ping(self._pipe("PING\n", timeout_ms))
 
     def ensure_bridge(self) -> None:
         self._log(f"DLL bridge: PID={self.pid}")
@@ -176,6 +186,10 @@ class CocosBridgeDriver:
         try:
             response = self.ping(180)
             self._log(f"DLL bridge: PING sẵn sàng -> {response}")
+            self._log(
+                "DLL bridge: capture capability="
+                + ("CAPTURE1" if self.shared_capture_supported else "legacy-window-fallback")
+            )
             return
         except Exception as exc:
             self._log(f"DLL bridge: PING chưa sẵn sàng -> {exc}")
@@ -203,6 +217,10 @@ class CocosBridgeDriver:
             try:
                 response = self.ping(180)
                 self._log(f"DLL bridge: PING PASS lần {attempt} -> {response}")
+                self._log(
+                    "DLL bridge: capture capability="
+                    + ("CAPTURE1" if self.shared_capture_supported else "legacy-window-fallback")
+                )
                 return
             except Exception as exc:
                 last_error = exc
@@ -284,7 +302,7 @@ class CocosBridgeDriver:
                 self.kernel32.UnmapViewOfFile(view)
             self.kernel32.CloseHandle(handle)
 
-    def screenshot(self, format: str | None = None):
+    def _shared_screenshot(self, format: str | None = None):
         raw, width, height, pixel_format = self._capture_shared_bgra()
         if format == "opencv":
             import cv2
@@ -316,6 +334,33 @@ class CocosBridgeDriver:
         if image.size != self.reference_size:
             image = image.resize(self.reference_size, Image.Resampling.LANCZOS)
         return image
+
+    def screenshot(self, format: str | None = None):
+        """Capture using DLL when supported, otherwise mirror working AUTO fallback."""
+
+        if self.shared_capture_supported:
+            try:
+                if not self._capture_mode_logged:
+                    self._log("Capture: dùng DLL shared-memory CAPTURE1")
+                    self._capture_mode_logged = True
+                return self._shared_screenshot(format=format)
+            except Exception as exc:
+                self._log(
+                    "Capture: DLL CAPTURE1 lỗi; chuyển Win32 fallback như AUTO chính -> "
+                    f"{type(exc).__name__}: {exc}"
+                )
+
+        if not self._capture_mode_logged:
+            self._log(
+                "Capture: DLL hiện tại không quảng bá CAPTURE1; "
+                "dùng Win32 PrintWindow fallback như AUTO chính"
+            )
+            self._capture_mode_logged = True
+        return window_capture.screenshot(
+            self.pid,
+            reference_size=self.reference_size,
+            format=format,
+        )
 
     def _validate_point(self, x: float, y: float) -> tuple[float, float]:
         x, y = float(x), float(y)
@@ -407,6 +452,12 @@ class CocosBridgeDriver:
             "pid": self.pid,
             "platform": "clientjs-cocos-dll",
             "pipe": self.pipe_name,
+            "ping": self.ping_response,
+            "captureMode": (
+                "dll-shared-memory"
+                if self.shared_capture_supported
+                else "win32-fallback"
+            ),
         }
 
     def app_current(self) -> dict:
