@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 from ..context import AutomationContext
-from ..errors import NoEmptyStallSlot, TransactionError
+from ..errors import InsufficientBatch, NoEmptyStallSlot, TransactionError
 from ..models import VisualFingerprint
 from ..runtime.vision import VisionEngine
 from ..runtime.wait import Waiter
@@ -81,9 +81,8 @@ class SellingActions:
             self._cancel_dialog()
             raise TransactionError("VP không mở được màn hình đặt bán") from exc
 
-        # AUTO PRO did not pass an explicit threshold for sl10; observed ClientJS
-        # traces score around 0.64, so use a conservative recovered-compatible
-        # threshold rather than the overly strict 0.82 from the first wrapper.
+        # AUTO PRO only sells when the x10 option is available. Missing x10 is
+        # therefore a normal deferred remainder, not a fatal workflow error.
         sl10 = None
         deadline = time.monotonic() + 2.5
         while time.monotonic() < deadline:
@@ -94,7 +93,7 @@ class SellingActions:
             self.waiter.sleep(0.20)
         if sl10 is None:
             self._cancel_dialog()
-            raise TransactionError("Loại VP hiện không đủ 10 để treo bán")
+            raise InsufficientBatch("Loại VP hiện không đủ 10 để treo bán")
 
         before = self.vision.frame()[330:760, 180:820].copy()
         self.vision.driver.click(*self.PLACE_BUTTON)
