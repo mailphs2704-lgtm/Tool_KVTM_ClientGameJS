@@ -12,34 +12,26 @@ Add-Type -AssemblyName System.Security
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $DefaultProfile = Join-Path $RepoRoot "dist\KVTM-ClientJS-Suite-Multi-DEV\data-dev\profiles.json"
-$DefaultDataRoot = Split-Path -Parent $DefaultProfile
 $Entropy = [System.Text.Encoding]::UTF8.GetBytes("KVTM-MULTI-v1")
 $Iterations = 200000
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Read-PasswordText {
     param([string]$Prompt)
     $secure = Read-Host $Prompt -AsSecureString
     $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-    try {
-        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
-    }
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
     finally {
-        if ($ptr -ne [IntPtr]::Zero) {
-            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
-        }
+        if ($ptr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
     }
 }
 
-function Join-Bytes {
-    param([byte[][]]$Parts)
-    $length = 0
-    foreach ($part in $Parts) { $length += $part.Length }
-    $result = New-Object byte[] $length
-    $offset = 0
-    foreach ($part in $Parts) {
-        [Array]::Copy($part, 0, $result, $offset, $part.Length)
-        $offset += $part.Length
-    }
+function Join-ThreeBytes {
+    param([byte[]]$First, [byte[]]$Second, [byte[]]$Third)
+    $result = New-Object byte[] ($First.Length + $Second.Length + $Third.Length)
+    [Array]::Copy($First, 0, $result, 0, $First.Length)
+    [Array]::Copy($Second, 0, $result, $First.Length, $Second.Length)
+    [Array]::Copy($Third, 0, $result, $First.Length + $Second.Length, $Third.Length)
     return $result
 }
 
@@ -47,9 +39,7 @@ function Test-BytesEqual {
     param([byte[]]$Left, [byte[]]$Right)
     if ($Left.Length -ne $Right.Length) { return $false }
     $diff = 0
-    for ($i = 0; $i -lt $Left.Length; $i++) {
-        $diff = $diff -bor ($Left[$i] -bxor $Right[$i])
-    }
+    for ($i = 0; $i -lt $Left.Length; $i++) { $diff = $diff -bor ($Left[$i] -bxor $Right[$i]) }
     return ($diff -eq 0)
 }
 
@@ -60,13 +50,13 @@ function Get-KeyMaterial {
     finally { $kdf.Dispose() }
 }
 
-function Split-KeyMaterial {
+function Get-SplitKeys {
     param([byte[]]$Material)
     $enc = New-Object byte[] 32
     $mac = New-Object byte[] 32
     [Array]::Copy($Material, 0, $enc, 0, 32)
     [Array]::Copy($Material, 32, $mac, 0, 32)
-    return @($enc, $mac)
+    return [pscustomobject]@{ Enc = $enc; Mac = $mac }
 }
 
 function Protect-PortablePayload {
@@ -74,42 +64,28 @@ function Protect-PortablePayload {
     $salt = New-Object byte[] 32
     $iv = New-Object byte[] 16
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-    try {
-        $rng.GetBytes($salt)
-        $rng.GetBytes($iv)
-    }
+    try { $rng.GetBytes($salt); $rng.GetBytes($iv) }
     finally { $rng.Dispose() }
-
-    $material = Get-KeyMaterial $Password $salt $Iterations
-    $keys = Split-KeyMaterial $material
-    $encKey = [byte[]]$keys[0]
-    $macKey = [byte[]]$keys[1]
+    $keys = Get-SplitKeys (Get-KeyMaterial $Password $salt $Iterations)
     $plainBytes = [Text.Encoding]::UTF8.GetBytes($PlainText)
-
     $aes = [Security.Cryptography.Aes]::Create()
-    $aes.KeySize = 256
-    $aes.BlockSize = 128
+    $aes.KeySize = 256; $aes.BlockSize = 128
     $aes.Mode = [Security.Cryptography.CipherMode]::CBC
     $aes.Padding = [Security.Cryptography.PaddingMode]::PKCS7
-    $aes.Key = $encKey
-    $aes.IV = $iv
+    $aes.Key = [byte[]]$keys.Enc; $aes.IV = $iv
     try {
         $transform = $aes.CreateEncryptor()
         try { $cipher = $transform.TransformFinalBlock($plainBytes, 0, $plainBytes.Length) }
         finally { $transform.Dispose() }
     }
     finally { $aes.Dispose() }
-
-    $authBytes = Join-Bytes @($salt, $iv, $cipher)
-    $hmac = New-Object Security.Cryptography.HMACSHA256($macKey)
+    $authBytes = Join-ThreeBytes $salt $iv $cipher
+    $hmac = New-Object Security.Cryptography.HMACSHA256([byte[]]$keys.Mac)
     try { $mac = $hmac.ComputeHash($authBytes) }
     finally { $hmac.Dispose() }
-
     return [pscustomobject]@{
-        format = "KVTM_PROFILE_TRANSFER"
-        version = 1
-        crypto = "AES-256-CBC+HMAC-SHA256"
-        kdf = "PBKDF2-HMAC-SHA1"
+        format = "KVTM_PROFILE_TRANSFER"; version = 1
+        crypto = "AES-256-CBC+HMAC-SHA256"; kdf = "PBKDF2-HMAC-SHA1"
         iterations = $Iterations
         salt_b64 = [Convert]::ToBase64String($salt)
         iv_b64 = [Convert]::ToBase64String($iv)
@@ -120,36 +96,24 @@ function Protect-PortablePayload {
 
 function Unprotect-PortablePayload {
     param([object]$Envelope, [string]$Password)
-    if ($Envelope.format -ne "KVTM_PROFILE_TRANSFER" -or [int]$Envelope.version -ne 1) {
-        throw "File transfer khong dung dinh dang KVTM_PROFILE_TRANSFER v1."
-    }
+    if ($Envelope.format -ne "KVTM_PROFILE_TRANSFER" -or [int]$Envelope.version -ne 1) { throw "File transfer khong dung dinh dang KVTM_PROFILE_TRANSFER v1." }
     $salt = [Convert]::FromBase64String([string]$Envelope.salt_b64)
     $iv = [Convert]::FromBase64String([string]$Envelope.iv_b64)
     $cipher = [Convert]::FromBase64String([string]$Envelope.cipher_b64)
     $expectedMac = [Convert]::FromBase64String([string]$Envelope.mac_b64)
     $count = [int]$Envelope.iterations
     if ($count -lt 100000) { throw "KDF iterations khong hop le." }
-
-    $material = Get-KeyMaterial $Password $salt $count
-    $keys = Split-KeyMaterial $material
-    $encKey = [byte[]]$keys[0]
-    $macKey = [byte[]]$keys[1]
-
-    $authBytes = Join-Bytes @($salt, $iv, $cipher)
-    $hmac = New-Object Security.Cryptography.HMACSHA256($macKey)
+    $keys = Get-SplitKeys (Get-KeyMaterial $Password $salt $count)
+    $authBytes = Join-ThreeBytes $salt $iv $cipher
+    $hmac = New-Object Security.Cryptography.HMACSHA256([byte[]]$keys.Mac)
     try { $actualMac = $hmac.ComputeHash($authBytes) }
     finally { $hmac.Dispose() }
-    if (-not (Test-BytesEqual $actualMac $expectedMac)) {
-        throw "Sai mat khau hoac file transfer da bi thay doi."
-    }
-
+    if (-not (Test-BytesEqual $actualMac $expectedMac)) { throw "Sai mat khau hoac file transfer da bi thay doi." }
     $aes = [Security.Cryptography.Aes]::Create()
-    $aes.KeySize = 256
-    $aes.BlockSize = 128
+    $aes.KeySize = 256; $aes.BlockSize = 128
     $aes.Mode = [Security.Cryptography.CipherMode]::CBC
     $aes.Padding = [Security.Cryptography.PaddingMode]::PKCS7
-    $aes.Key = $encKey
-    $aes.IV = $iv
+    $aes.Key = [byte[]]$keys.Enc; $aes.IV = $iv
     try {
         $transform = $aes.CreateDecryptor()
         try { $plain = $transform.TransformFinalBlock($cipher, 0, $cipher.Length) }
@@ -162,27 +126,23 @@ function Unprotect-PortablePayload {
 function Unprotect-DpapiSecret {
     param([string]$Value)
     $cipher = [Convert]::FromBase64String($Value)
-    $plain = [Security.Cryptography.ProtectedData]::Unprotect(
-        $cipher, $Entropy, [Security.Cryptography.DataProtectionScope]::CurrentUser
-    )
+    $plain = [Security.Cryptography.ProtectedData]::Unprotect($cipher, $Entropy, [Security.Cryptography.DataProtectionScope]::CurrentUser)
     return [Text.Encoding]::UTF8.GetString($plain)
 }
 
 function Protect-DpapiSecret {
     param([string]$Value)
     $plain = [Text.Encoding]::UTF8.GetBytes($Value)
-    $cipher = [Security.Cryptography.ProtectedData]::Protect(
-        $plain, $Entropy, [Security.Cryptography.DataProtectionScope]::CurrentUser
-    )
+    $cipher = [Security.Cryptography.ProtectedData]::Protect($plain, $Entropy, [Security.Cryptography.DataProtectionScope]::CurrentUser)
     return [Convert]::ToBase64String($cipher)
 }
 
 function Find-LocalClient {
-    $candidates = @(
-        (Join-Path $env:ProgramFiles "ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe"),
-        (if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} "ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe" })
-    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-    return ($candidates | Select-Object -First 1)
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if ($env:ProgramFiles) { $candidates.Add((Join-Path $env:ProgramFiles "ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")) }
+    if (${env:ProgramFiles(x86)}) { $candidates.Add((Join-Path ${env:ProgramFiles(x86)} "ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")) }
+    foreach ($candidate in $candidates) { if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate } }
+    return $null
 }
 
 function Backup-FileSafe {
@@ -193,70 +153,47 @@ function Backup-FileSafe {
     Copy-Item -LiteralPath $Path -Destination (Join-Path $BackupDirectory "$Prefix-$stamp.json") -Force
 }
 
-if ([string]::IsNullOrWhiteSpace($ProfileFile)) {
-    $ProfileFile = $DefaultProfile
-}
+if ([string]::IsNullOrWhiteSpace($ProfileFile)) { $ProfileFile = $DefaultProfile }
 
 if ($Mode -eq "Export") {
-    if (-not (Test-Path -LiteralPath $ProfileFile -PathType Leaf)) {
-        throw "Khong tim thay profiles.json active: $ProfileFile"
-    }
+    if (-not (Test-Path -LiteralPath $ProfileFile -PathType Leaf)) { throw "Khong tim thay profiles.json active: $ProfileFile" }
     $profiles = @(Get-Content -LiteralPath $ProfileFile -Raw -Encoding UTF8 | ConvertFrom-Json)
     if ($profiles.Count -eq 0) { throw "profiles.json khong co profile." }
-
     $portableProfiles = New-Object System.Collections.Generic.List[object]
     foreach ($profile in $profiles) {
-        if ([string]::IsNullOrWhiteSpace([string]$profile.id) -or [string]::IsNullOrWhiteSpace([string]$profile.secret)) {
-            throw "Profile thieu id/secret; dung export de tranh mat login."
-        }
+        if ([string]::IsNullOrWhiteSpace([string]$profile.id) -or [string]::IsNullOrWhiteSpace([string]$profile.secret)) { throw "Profile thieu id/secret; dung export de tranh mat login." }
         try {
             $secretText = Unprotect-DpapiSecret ([string]$profile.secret)
             $secretArgs = @($secretText | ConvertFrom-Json)
         }
-        catch {
-            throw "Khong giai ma duoc DPAPI cho profile '$($profile.name)'. Hay export tren dung Windows user da luu profile. Chi tiet: $($_.Exception.Message)"
-        }
+        catch { throw "Khong giai ma duoc DPAPI cho profile '$($profile.name)'. Hay export tren dung Windows user da luu profile. Chi tiet: $($_.Exception.Message)" }
         $portableProfiles.Add([pscustomobject]@{
-            id = [string]$profile.id
-            name = [string]$profile.name
-            client = [string]$profile.client
-            game_dir = [string]$profile.game_dir
-            updated_at = [string]$profile.updated_at
-            secret_args = $secretArgs
+            id = [string]$profile.id; name = [string]$profile.name
+            client = [string]$profile.client; game_dir = [string]$profile.game_dir
+            updated_at = [string]$profile.updated_at; secret_args = $secretArgs
         })
     }
-
     $settingsText = $null
     $settingsPath = Join-Path (Split-Path -Parent $ProfileFile) "settings.json"
     if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
         $settingsText = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8
-        try { $null = $settingsText | ConvertFrom-Json }
-        catch { $settingsText = $null }
+        try { $null = $settingsText | ConvertFrom-Json } catch { $settingsText = $null }
     }
-
-    $payload = [pscustomobject]@{
-        schema_version = 1
-        created_at = (Get-Date).ToString("o")
-        source_machine = $env:COMPUTERNAME
-        profile_count = $portableProfiles.Count
-        profiles = @($portableProfiles)
-        settings_text = $settingsText
-    } | ConvertTo-Json -Depth 30 -Compress
-
+    $payloadObject = [pscustomobject]@{
+        schema_version = 1; created_at = (Get-Date).ToString("o")
+        source_machine = $env:COMPUTERNAME; profile_count = $portableProfiles.Count
+        profiles = @($portableProfiles); settings_text = $settingsText
+    }
+    $payload = ConvertTo-Json -InputObject $payloadObject -Depth 30 -Compress
     $password = Read-PasswordText "Nhap mat khau cho file chuyen may (toi thieu 10 ky tu)"
     if ($password.Length -lt 10) { throw "Mat khau phai co it nhat 10 ky tu." }
     $confirm = Read-PasswordText "Nhap lai mat khau"
     if ($password -cne $confirm) { throw "Hai mat khau khong khop." }
-
-    if ([string]::IsNullOrWhiteSpace($TransferFile)) {
-        $TransferFile = Join-Path ([Environment]::GetFolderPath("Desktop")) ("KVTM-PROFILES-TRANSFER-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".kvtm")
-    }
+    if ([string]::IsNullOrWhiteSpace($TransferFile)) { $TransferFile = Join-Path ([Environment]::GetFolderPath("Desktop")) ("KVTM-PROFILES-TRANSFER-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".kvtm") }
     $envelope = Protect-PortablePayload $payload $password
     $envelope | Add-Member -NotePropertyName created_at -NotePropertyValue (Get-Date).ToString("o")
     $envelope | Add-Member -NotePropertyName profile_count -NotePropertyValue $portableProfiles.Count
-    $json = $envelope | ConvertTo-Json -Depth 10
-    [IO.File]::WriteAllText($TransferFile, $json, (New-Object Text.UTF8Encoding($false)))
-
+    [IO.File]::WriteAllText($TransferFile, (ConvertTo-Json -InputObject $envelope -Depth 10), $Utf8NoBom)
     Write-Host "PROFILE TRANSFER EXPORT OK" -ForegroundColor Green
     Write-Host "Profiles: $($portableProfiles.Count)"
     Write-Host "File: $TransferFile"
@@ -264,82 +201,54 @@ if ($Mode -eq "Export") {
     exit 0
 }
 
-if (-not (Test-Path -LiteralPath $TransferFile -PathType Leaf)) {
-    if ([string]::IsNullOrWhiteSpace($TransferFile)) {
-        throw "Import can -TransferFile duong dan den file .kvtm."
-    }
-    throw "Khong tim thay file transfer: $TransferFile"
-}
-
+if ([string]::IsNullOrWhiteSpace($TransferFile)) { throw "Import can -TransferFile duong dan den file .kvtm." }
+if (-not (Test-Path -LiteralPath $TransferFile -PathType Leaf)) { throw "Khong tim thay file transfer: $TransferFile" }
 $envelope = Get-Content -LiteralPath $TransferFile -Raw -Encoding UTF8 | ConvertFrom-Json
 $password = Read-PasswordText "Nhap mat khau file chuyen may"
-$payloadText = Unprotect-PortablePayload $envelope $password
-$payload = $payloadText | ConvertFrom-Json
+$payload = (Unprotect-PortablePayload $envelope $password) | ConvertFrom-Json
 $incoming = @($payload.profiles)
 if ($incoming.Count -eq 0) { throw "File transfer khong co profile." }
 if ([int]$payload.profile_count -ne $incoming.Count) { throw "Profile count trong payload khong khop." }
-
 $localClient = Find-LocalClient
 $localGame = Join-Path $env:APPDATA "VNG Corporation\ZingPlay\zpp\24\game"
-$rewrittenClient = 0
-$rewrittenGame = 0
+$rewrittenClient = 0; $rewrittenGame = 0
 $outProfiles = New-Object System.Collections.Generic.List[object]
 foreach ($profile in $incoming) {
-    $secretJson = @($profile.secret_args) | ConvertTo-Json -Depth 30 -Compress
+    $secretJson = ConvertTo-Json -InputObject @($profile.secret_args) -Depth 30 -Compress
     $dpapi = Protect-DpapiSecret $secretJson
-    if ((Unprotect-DpapiSecret $dpapi) -cne $secretJson) {
-        throw "DPAPI round-trip fail cho profile '$($profile.name)'."
-    }
-
+    if ((Unprotect-DpapiSecret $dpapi) -cne $secretJson) { throw "DPAPI round-trip fail cho profile '$($profile.name)'." }
     $clientPath = [string]$profile.client
-    if ((-not (Test-Path -LiteralPath $clientPath -PathType Leaf)) -and $localClient) {
-        $clientPath = $localClient
-        $rewrittenClient++
-    }
+    if ((-not (Test-Path -LiteralPath $clientPath -PathType Leaf)) -and $localClient) { $clientPath = $localClient; $rewrittenClient++ }
     $gamePath = [string]$profile.game_dir
-    if ((-not (Test-Path -LiteralPath $gamePath -PathType Container)) -and (Test-Path -LiteralPath $localGame -PathType Container)) {
-        $gamePath = $localGame
-        $rewrittenGame++
-    }
-
+    if ((-not (Test-Path -LiteralPath $gamePath -PathType Container)) -and (Test-Path -LiteralPath $localGame -PathType Container)) { $gamePath = $localGame; $rewrittenGame++ }
     $outProfiles.Add([pscustomobject]@{
-        id = [string]$profile.id
-        name = [string]$profile.name
-        client = $clientPath
-        game_dir = $gamePath
-        secret = $dpapi
+        id = [string]$profile.id; name = [string]$profile.name
+        client = $clientPath; game_dir = $gamePath; secret = $dpapi
         updated_at = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     })
 }
-
 $destination = $ProfileFile
 $dataRoot = Split-Path -Parent $destination
 New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
 Backup-FileSafe $destination (Join-Path $dataRoot "profile-backups") "profiles-before-machine-import"
 $temp = "$destination.transfer.tmp"
-$outProfiles | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $temp -Encoding UTF8
+[IO.File]::WriteAllText($temp, (ConvertTo-Json -InputObject @($outProfiles) -Depth 20), $Utf8NoBom)
 $check = @(Get-Content -LiteralPath $temp -Raw -Encoding UTF8 | ConvertFrom-Json)
 if ($check.Count -ne $outProfiles.Count) {
     Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
     throw "File profiles tam khong hop le; khong ghi de profile active."
 }
 Move-Item -LiteralPath $temp -Destination $destination -Force
-
 if (-not [string]::IsNullOrWhiteSpace([string]$payload.settings_text)) {
     $settingsPath = Join-Path $dataRoot "settings.json"
     Backup-FileSafe $settingsPath (Join-Path $dataRoot "profile-backups") "settings-before-machine-import"
-    [IO.File]::WriteAllText($settingsPath, [string]$payload.settings_text, (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText($settingsPath, [string]$payload.settings_text, $Utf8NoBom)
 }
-
 Write-Host "PROFILE TRANSFER IMPORT OK" -ForegroundColor Green
 Write-Host "Profiles: $($outProfiles.Count)"
 Write-Host "Destination: $destination"
 Write-Host "Client paths rewritten: $rewrittenClient"
 Write-Host "Game paths rewritten: $rewrittenGame"
-if (-not $localClient) {
-    Write-Host "[CANH BAO] Chua tim thay GameClientJS.exe local. Hay cai ZingPlay truoc khi mo profile." -ForegroundColor Yellow
-}
-if (-not (Test-Path -LiteralPath $localGame -PathType Container)) {
-    Write-Host "[CANH BAO] Chua tim thay game data KVTM local. Mo/cai Sky Garden tren ZingPlay mot lan truoc khi launch." -ForegroundColor Yellow
-}
+if (-not $localClient) { Write-Host "[CANH BAO] Chua tim thay GameClientJS.exe local. Hay cai ZingPlay truoc khi mo profile." -ForegroundColor Yellow }
+if (-not (Test-Path -LiteralPath $localGame -PathType Container)) { Write-Host "[CANH BAO] Chua tim thay game data KVTM local. Mo/cai Sky Garden tren ZingPlay mot lan truoc khi launch." -ForegroundColor Yellow }
 Write-Host "Tat ca secret da duoc DPAPI ma hoa lai cho Windows user hien tai." -ForegroundColor Cyan
