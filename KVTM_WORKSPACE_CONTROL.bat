@@ -8,8 +8,8 @@ set "EXPECTED_BRANCH=develop/clientjs-workspace"
 set "WORKSPACE=components\workspace\kvtm_workspace.py"
 set "DRIVER_DIR=test-candidates\auto-pro-clientjs-temp"
 set "LOG_DIR=data-workspace"
-set "DIST=dist\KVTM-ClientJS-Suite-Multi-DEV"
-set "BUILD_SCRIPT=packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1"
+set "MAIN_DEV_ROOT=%USERPROFILE%\Desktop\Tool_KVTM_Multi_DEV"
+set "DIST=%MAIN_DEV_ROOT%\dist\KVTM-ClientJS-Suite-Multi-DEV"
 
 :menu
 cls
@@ -66,44 +66,19 @@ goto pause_menu
 call :guard
 if errorlevel 1 goto pause_menu
 call :ensure_package
-if errorlevel 1 (
-  echo [FAIL] Package Multi DEV chua san sang. Khong mo Multi.
-  goto pause_menu
-)
-start "KVTM MULTI DEV" /D "%DIST%" cmd /k call "02_START_MULTI_DEV.bat"
-echo [OK] Da gui lenh mo Multi DEV.
-goto pause_menu
-
-:ensure_package
-set "REPO_HEAD="
-set "PACKAGE_HEAD="
-for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "REPO_HEAD=%%H"
-if exist "%DIST%\.source-head.txt" set /p "PACKAGE_HEAD="<"%DIST%\.source-head.txt"
-set "NEED_BUILD=0"
-if not exist "%DIST%\02_START_MULTI_DEV.bat" set "NEED_BUILD=1"
-if not exist "%DIST%\AUTO_PRO\local_launcher.py" set "NEED_BUILD=1"
-if not exist "%DIST%\Multi\kvtm_multi.py" set "NEED_BUILD=1"
-if not defined PACKAGE_HEAD set "NEED_BUILD=1"
-if /I not "%PACKAGE_HEAD%"=="%REPO_HEAD%" set "NEED_BUILD=1"
-if "%NEED_BUILD%"=="0" (
-  echo [PASS] Package Multi DEV da dung HEAD hien tai.
-  exit /b 0
-)
-echo [INFO] Package Multi DEV chua co/cu. Dang tu build mot lan...
-if not exist "%BUILD_SCRIPT%" (
-  echo [FAIL] Thieu build script: %BUILD_SCRIPT%
+if not exist "%MAIN_DEV_ROOT%\.git" (
+  echo [FAIL] Khong tim thay repo Multi DEV chinh:
+  echo        %MAIN_DEV_ROOT%
+  echo Hay dong bo/mở Multi chinh truoc; Workspace khong tu build Multi cu.
   exit /b 1
 )
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\%BUILD_SCRIPT%"
-if errorlevel 1 (
-  echo [FAIL] Build package Multi DEV that bai.
+if not exist "%DIST%\START_MULTI_DEV_SILENT.ps1" (
+  echo [FAIL] Runtime Multi DEV chinh chua san sang:
+  echo        %DIST%
   exit /b 1
 )
-if not exist "%DIST%\02_START_MULTI_DEV.bat" (
-  echo [FAIL] Build xong nhung thieu 02_START_MULTI_DEV.bat.
-  exit /b 1
-)
-echo [PASS] Package Multi DEV da build xong.
+if not exist "%DIST%\data-dev" mkdir "%DIST%\data-dev" >nul 2>&1
+echo [PASS] Da tim thay runtime Multi DEV chinh.
 exit /b 0
 
 :workspace
