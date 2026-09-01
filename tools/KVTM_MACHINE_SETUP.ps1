@@ -48,8 +48,10 @@ function Resolve-Python311 {
     $py = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($py -and $py.Source) {
         try {
-            $resolved = (& $py.Source -3.11 -c "import sys;print(sys.executable)" 2>$null | Select-Object -First 1)
-            if ($LASTEXITCODE -eq 0 -and $resolved) { $candidates.Add($resolved.Trim()) }
+            [object[]]$resolvedOutput = @(& $py.Source -3.11 -c "import sys;print(sys.executable)" 2>$null)
+            $resolvedExit = $LASTEXITCODE
+            [string]$resolved = ($resolvedOutput | Select-Object -First 1)
+            if ($resolvedExit -eq 0 -and -not [string]::IsNullOrWhiteSpace($resolved)) { $candidates.Add($resolved.Trim()) }
         }
         catch { }
     }
@@ -66,12 +68,25 @@ function Resolve-Python311 {
 
 function Test-VCRuntime {
     param([ValidateSet("x86", "x64")][string]$Arch)
-    $path = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\$Arch"
-    try {
-        $item = Get-ItemProperty -LiteralPath $path -ErrorAction Stop
-        return ([int]$item.Installed -eq 1)
+
+    # On 64-bit Windows, the x86 VC runtime can be exposed through WOW6432Node
+    # depending on installer/registry view. Probe both views so diagnostics do
+    # not report a false MISSING after a successful WinGet install.
+    $paths = @(
+        "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\$Arch"
+    )
+    if ($Arch -eq "x86") {
+        $paths += "HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86"
     }
-    catch { return $false }
+
+    foreach ($path in $paths) {
+        try {
+            $item = Get-ItemProperty -LiteralPath $path -ErrorAction Stop
+            if ([int]$item.Installed -eq 1) { return $true }
+        }
+        catch { }
+    }
+    return $false
 }
 
 function Find-GameClient {
@@ -107,10 +122,20 @@ function Get-State {
     $lfsOk = $false
     $lfsVersion = ""
     if ($git) {
-        try { $gitVersion = (& $git --version 2>$null | Select-Object -First 1) } catch { }
         try {
-            $lfsVersion = (& $git lfs version 2>$null | Select-Object -First 1)
-            $lfsOk = ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($lfsVersion))
+            [object[]]$gitVersionOutput = @(& $git --version 2>$null)
+            $gitVersionExit = $LASTEXITCODE
+            if ($gitVersionExit -eq 0) { $gitVersion = [string]($gitVersionOutput | Select-Object -First 1) }
+        }
+        catch { }
+        try {
+            # PowerShell 5.1 can corrupt $LASTEXITCODE when a native command is
+            # piped directly into Select-Object. Capture output first, capture
+            # the native exit code immediately, then select the first line.
+            [object[]]$lfsOutput = @(& $git lfs version 2>$null)
+            $lfsExit = $LASTEXITCODE
+            $lfsVersion = [string]($lfsOutput | Select-Object -First 1)
+            $lfsOk = ($lfsExit -eq 0 -and -not [string]::IsNullOrWhiteSpace($lfsVersion))
         }
         catch { }
     }
@@ -120,8 +145,14 @@ function Get-State {
     $branch = "NOT_A_GIT_REPO"; $head = ""; $dirty = "unknown"
     if ($git -and (Test-Path -LiteralPath (Join-Path $RepoRoot ".git"))) {
         try {
-            $branch = (& $git -C $RepoRoot branch --show-current 2>$null | Select-Object -First 1)
-            $head = (& $git -C $RepoRoot rev-parse --short HEAD 2>$null | Select-Object -First 1)
+            [object[]]$branchOutput = @(& $git -C $RepoRoot branch --show-current 2>$null)
+            $branchExit = $LASTEXITCODE
+            if ($branchExit -eq 0) { $branch = [string]($branchOutput | Select-Object -First 1) }
+
+            [object[]]$headOutput = @(& $git -C $RepoRoot rev-parse --short HEAD 2>$null)
+            $headExit = $LASTEXITCODE
+            if ($headExit -eq 0) { $head = [string]($headOutput | Select-Object -First 1) }
+
             $porcelain = @(& $git -C $RepoRoot status --porcelain 2>$null)
             $dirty = if ($porcelain.Count -eq 0) { "clean" } else { "dirty" }
         }
