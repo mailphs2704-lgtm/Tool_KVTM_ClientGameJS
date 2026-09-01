@@ -35,66 +35,6 @@ DEV_RUNNING_MAP_CANDIDATES = tuple(
 )
 
 
-class MONITORINFO(ctypes.Structure):
-    _fields_ = [
-        ("cbSize", wintypes.DWORD),
-        ("rcMonitor", wintypes.RECT),
-        ("rcWork", wintypes.RECT),
-        ("dwFlags", wintypes.DWORD),
-    ]
-
-
-def enumerate_monitors() -> list[dict]:
-    monitors = []
-    callback_type = ctypes.WINFUNCTYPE(
-        wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC,
-        ctypes.POINTER(wintypes.RECT), wintypes.LPARAM,
-    )
-
-    @callback_type
-    def callback(handle, _hdc, _rect, _data):
-        info = MONITORINFO()
-        info.cbSize = ctypes.sizeof(info)
-        if ctypes.windll.user32.GetMonitorInfoW(handle, ctypes.byref(info)):
-            monitors.append({
-                "primary": bool(info.dwFlags & 1),
-                "left": int(info.rcWork.left),
-                "top": int(info.rcWork.top),
-                "right": int(info.rcWork.right),
-                "bottom": int(info.rcWork.bottom),
-            })
-        return True
-
-    ctypes.windll.user32.EnumDisplayMonitors(0, None, callback, 0)
-    return monitors
-
-
-def resize_client_area(hwnd: int, width: int = 1000, height: int = 1000) -> tuple[int, int]:
-    user32 = ctypes.windll.user32
-    rect = wintypes.RECT(0, 0, int(width), int(height))
-    style = user32.GetWindowLongW(hwnd, -16)
-    ex_style = user32.GetWindowLongW(hwnd, -20)
-    adjusted = False
-    adjust_for_dpi = getattr(user32, "AdjustWindowRectExForDpi", None)
-    if adjust_for_dpi:
-        dpi = user32.GetDpiForWindow(hwnd)
-        adjusted = bool(
-            adjust_for_dpi(ctypes.byref(rect), style, False, ex_style, dpi)
-        )
-    if not adjusted:
-        user32.AdjustWindowRectEx(ctypes.byref(rect), style, False, ex_style)
-    return rect.right - rect.left, rect.bottom - rect.top
-
-
-def move_client_to_monitor(hwnd: int, monitor: dict) -> None:
-    user32 = ctypes.windll.user32
-    user32.ShowWindow(hwnd, 9)
-    user32.SetWindowPos(
-        hwnd, 0, monitor["left"], monitor["top"], 0, 0,
-        0x0001 | 0x0004 | 0x0010 | 0x0040,
-    )
-
-
 def load_dev_client_allowlist() -> tuple[dict[int, dict], str]:
     """Read the secret-free PID/profile map published by authoritative Multi DEV."""
     reasons = []
@@ -221,6 +161,11 @@ class DeviceView(ttk.Frame):
         super().__init__(owner)
         self.device = device
         self.worker = CaptureWorker(device["pid"], device["hwnd"])
+        self.attached = False
+        self.original_parent = None
+        self.original_style = None
+        self.original_ex_style = None
+        self.original_rect = None
         self.latest = None
         self.pixel_buffer = None
         self.pixel_size = 0
@@ -231,19 +176,24 @@ class DeviceView(ttk.Frame):
             text=f"{device['name']} • PID {device['pid']}",
             anchor="w",
         ).pack(side="left", fill="x", expand=True, padx=6, pady=3)
-        ttk.Button(
-            self.header, text="Desktop", command=self.show_desktop
-        ).pack(side="right", padx=4)
-        ttk.Button(
-            self.header, text="Màn ảo", command=self.show_virtual
-        ).pack(side="right", padx=4)
+        self.detach_button = ttk.Button(
+            self.header, text="Tách ra Desktop", command=self.detach_from_workspace
+        )
+        self.detach_button.pack(side="right", padx=4)
+        self.detach_button.configure(state="disabled")
+        self.attach_button = ttk.Button(
+            self.header, text="Gắn vào Workspace", command=self.attach_to_workspace
+        )
+        self.attach_button.pack(side="right", padx=4)
         self.canvas = tk.Canvas(self, background="black", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.status = tk.StringVar(value="Đang kết nối capture...")
         ttk.Label(self, textvariable=self.status, anchor="center").pack(fill="x")
         self.canvas.bind("<Expose>", lambda _event: self.paint())
+        self.canvas.bind("<Configure>", lambda _event: self._layout_attached())
 
     def set_live(self, enabled: bool):
+        enabled = bool(enabled and not self.attached)
         if enabled:
             self.worker.enabled.set()
         else:
@@ -267,7 +217,7 @@ class DeviceView(ttk.Frame):
             self.paint()
 
     def paint(self):
-        if not self.latest or not self.canvas.winfo_exists():
+        if self.attached or not self.latest or not self.canvas.winfo_exists():
             return
         pixels, width, height, source = self.latest
         target_w = max(1, self.canvas.winfo_width())
@@ -295,39 +245,83 @@ class DeviceView(ttk.Frame):
                 ctypes.windll.user32.ReleaseDC(self.canvas.winfo_id(), dc)
         self.status.set(f"{source} • {width}×{height} • Live View {int(TARGET_FPS)} FPS")
 
-    def _move_to_monitor(self, *, primary: bool):
-        monitors = enumerate_monitors()
-        monitor = next(
-            (item for item in monitors if item["primary"] is primary), None
-        )
-        if monitor is None:
-            kind = "màn hình chính" if primary else "màn hình phụ/ảo"
-            messagebox.showwarning(APP_TITLE, f"Không tìm thấy {kind} ở chế độ Extend.")
+    def _layout_attached(self):
+        if not self.attached:
             return
-        hwnd = self.device["hwnd"]
-        move_client_to_monitor(hwnd, monitor)
-        self.status.set("Đang chờ Windows đổi DPI...")
-        self.after(400, lambda: self._finish_monitor_move(monitor, primary))
-
-    def _finish_monitor_move(self, monitor: dict, primary: bool):
-        hwnd = self.device["hwnd"]
+        hwnd = int(self.device["hwnd"])
         if not ctypes.windll.user32.IsWindow(hwnd):
             return
-        outer_w, outer_h = resize_client_area(hwnd, 1000, 1000)
+        width = max(1, self.canvas.winfo_width())
+        height = max(1, self.canvas.winfo_height())
         ctypes.windll.user32.SetWindowPos(
-            hwnd, 0, monitor["left"], monitor["top"], outer_w, outer_h,
+            hwnd, 0, 0, 0, width, height,
             0x0004 | 0x0010 | 0x0040,
         )
-        kind = "Desktop" if primary else "màn hình ảo"
-        self.status.set(f"Đã chuyển sang {kind} • vùng game 1000×1000")
 
-    def show_virtual(self):
-        self._move_to_monitor(primary=False)
+    def attach_to_workspace(self):
+        if self.attached:
+            return
+        user32 = ctypes.windll.user32
+        hwnd = int(self.device["hwnd"])
+        if not user32.IsWindow(hwnd):
+            messagebox.showerror(APP_TITLE, "Client DEV không còn chạy.")
+            return
+        self.canvas.update_idletasks()
+        rect = wintypes.RECT()
+        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            messagebox.showerror(APP_TITLE, "Không đọc được vị trí cửa sổ ClientJS.")
+            return
+        self.original_parent = int(user32.GetParent(hwnd) or 0)
+        self.original_style = int(user32.GetWindowLongW(hwnd, -16))
+        self.original_ex_style = int(user32.GetWindowLongW(hwnd, -20))
+        self.original_rect = (
+            int(rect.left), int(rect.top),
+            int(rect.right - rect.left), int(rect.bottom - rect.top),
+        )
+        child_style = (self.original_style & ~0x80000000) | 0x40000000 | 0x10000000
+        user32.SetLastError(0)
+        user32.SetWindowLongW(hwnd, -16, child_style)
+        user32.SetParent(hwnd, self.canvas.winfo_id())
+        if int(user32.GetParent(hwnd) or 0) != int(self.canvas.winfo_id()):
+            user32.SetWindowLongW(hwnd, -16, self.original_style)
+            messagebox.showerror(
+                APP_TITLE,
+                "Windows từ chối gắn ClientJS vào Workspace; đã giữ nguyên cửa sổ.",
+            )
+            return
+        self.attached = True
+        self.worker.enabled.clear()
+        self._layout_attached()
+        self.attach_button.configure(state="disabled")
+        self.detach_button.configure(state="normal")
+        self.status.set("Đã gắn ClientJS thật vào Workspace • AUTO vẫn theo PID")
 
-    def show_desktop(self):
-        self._move_to_monitor(primary=True)
+    def detach_from_workspace(self):
+        if not self.attached:
+            return
+        user32 = ctypes.windll.user32
+        hwnd = int(self.device["hwnd"])
+        if not user32.IsWindow(hwnd):
+            self.attached = False
+            return
+        user32.SetParent(hwnd, int(self.original_parent or 0))
+        if self.original_style is not None:
+            user32.SetWindowLongW(hwnd, -16, int(self.original_style))
+        if self.original_ex_style is not None:
+            user32.SetWindowLongW(hwnd, -20, int(self.original_ex_style))
+        left, top, width, height = self.original_rect or (0, 0, 1000, 1000)
+        user32.SetWindowPos(
+            hwnd, 0, left, top, width, height,
+            0x0004 | 0x0010 | 0x0020 | 0x0040,
+        )
+        self.attached = False
+        self.attach_button.configure(state="normal")
+        self.detach_button.configure(state="disabled")
+        self.status.set("Đã trả ClientJS về Desktop")
+        self.worker.enabled.set()
 
     def close(self):
+        self.detach_from_workspace()
         self.worker.close()
 
 
