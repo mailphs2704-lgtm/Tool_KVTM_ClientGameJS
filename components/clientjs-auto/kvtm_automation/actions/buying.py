@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from ..context import AutomationContext
 from ..errors import InventoryFull
 from ..models import StallSlotObservation, VisualFingerprint, hamming_distance
@@ -44,11 +46,14 @@ class BuyingActions:
         observation: StallSlotObservation,
         *,
         maximum: int,
+        on_unit: Callable[[int], None] | None = None,
     ) -> int:
         """Click the same source listing until target is met or it disappears.
 
-        Recovered AUTO PRO has no buy-confirm dialog here. It sleeps 0.5s,
-        checks `x` in a fixed warehouse-full region, and then counts one unit.
+        `on_unit` is called immediately after every verified click so the
+        workflow can atomically persist manifest/carryover state. A crash can
+        therefore lose at most the action currently being verified, not an
+        entire purchase batch.
         """
         target = max(0, int(maximum))
         bought = 0
@@ -65,6 +70,8 @@ class BuyingActions:
             ) is not None:
                 raise InventoryFull("Kho clone đã đầy trong lúc mua VP")
             bought += 1
+            if on_unit is not None:
+                on_unit(bought)
             self.context.log(
                 f"Mua VP ô vật lý {observation.physical_slot}: "
                 f"{bought}/{target} click đã xác nhận"
