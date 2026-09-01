@@ -14,7 +14,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $DefaultProfile = Join-Path $RepoRoot "dist\KVTM-ClientJS-Suite-Multi-DEV\data-dev\profiles.json"
 $Entropy = [System.Text.Encoding]::UTF8.GetBytes("KVTM-MULTI-v1")
 $Iterations = 200000
-$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 function Read-PasswordText {
     param([string]$Prompt)
@@ -45,7 +45,7 @@ function Test-BytesEqual {
 
 function Get-KeyMaterial {
     param([string]$Password, [byte[]]$Salt, [int]$Count)
-    $kdf = New-Object Security.Cryptography.Rfc2898DeriveBytes($Password, $Salt, $Count)
+    $kdf = [Security.Cryptography.Rfc2898DeriveBytes]::new($Password, $Salt, $Count)
     try { return $kdf.GetBytes(64) }
     finally { $kdf.Dispose() }
 }
@@ -80,7 +80,7 @@ function Protect-PortablePayload {
     }
     finally { $aes.Dispose() }
     $authBytes = Join-ThreeBytes $salt $iv $cipher
-    $hmac = New-Object Security.Cryptography.HMACSHA256([byte[]]$keys.Mac)
+    $hmac = [Security.Cryptography.HMACSHA256]::new([byte[]]$keys.Mac)
     try { $mac = $hmac.ComputeHash($authBytes) }
     finally { $hmac.Dispose() }
     return [pscustomobject]@{
@@ -105,7 +105,7 @@ function Unprotect-PortablePayload {
     if ($count -lt 100000) { throw "KDF iterations khong hop le." }
     $keys = Get-SplitKeys (Get-KeyMaterial $Password $salt $count)
     $authBytes = Join-ThreeBytes $salt $iv $cipher
-    $hmac = New-Object Security.Cryptography.HMACSHA256([byte[]]$keys.Mac)
+    $hmac = [Security.Cryptography.HMACSHA256]::new([byte[]]$keys.Mac)
     try { $actualMac = $hmac.ComputeHash($authBytes) }
     finally { $hmac.Dispose() }
     if (-not (Test-BytesEqual $actualMac $expectedMac)) { throw "Sai mat khau hoac file transfer da bi thay doi." }
