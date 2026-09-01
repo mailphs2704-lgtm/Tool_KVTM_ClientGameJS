@@ -1,0 +1,279 @@
+from __future__ import annotations
+
+import ctypes
+from ctypes import wintypes
+import os
+import queue
+import threading
+import time
+import tkinter as tk
+from tkinter import ttk
+
+from pc_driver import BITMAPINFO, capture_bgra, capture_shared_bgra
+
+
+APP_TITLE = "KVTM Game Workspace"
+TARGET_FPS = 20.0
+
+
+def enumerate_game_windows() -> list[dict]:
+    """Return visible top-level GameClientJS windows without changing them."""
+    user32 = ctypes.windll.user32
+    rows: list[dict] = []
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    @callback_type
+    def callback(hwnd, _lparam):
+        if not user32.IsWindow(hwnd):
+            return True
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        length = user32.GetWindowTextLengthW(hwnd)
+        title = ctypes.create_unicode_buffer(max(1, length + 1))
+        user32.GetWindowTextW(hwnd, title, len(title))
+        class_name = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, class_name, len(class_name))
+        text = title.value.strip()
+        cls = class_name.value.strip()
+        if text and ("Khu Vườn Trên Mây" in text or "GameClientJS" in text or cls == "GLFW30"):
+            rows.append({"hwnd": int(hwnd), "pid": int(pid.value), "title": text})
+        return True
+
+    user32.EnumWindows(callback, 0)
+    unique: dict[int, dict] = {}
+    for row in rows:
+        unique.setdefault(row["pid"], row)
+    return sorted(unique.values(), key=lambda item: (item["title"], item["pid"]))
+
+
+class CaptureWorker:
+    def __init__(self, pid: int, hwnd: int):
+        self.pid = pid
+        self.hwnd = hwnd
+        self.frames: queue.Queue = queue.Queue(maxsize=1)
+        self.stop_event = threading.Event()
+        self.enabled = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        while not self.stop_event.is_set():
+            if not self.enabled.wait(0.25):
+                continue
+            started = time.monotonic()
+            try:
+                raw, width, height = capture_shared_bgra(self.pid, timeout_ms=750)
+                source = "OpenGL"
+            except Exception:
+                try:
+                    raw, width, height = capture_bgra(self.hwnd)
+                    source = "HWND"
+                except Exception:
+                    self.stop_event.wait(0.2)
+                    continue
+            frame = (raw, int(width), int(height), source)
+            try:
+                self.frames.put_nowait(frame)
+            except queue.Full:
+                try:
+                    self.frames.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    self.frames.put_nowait(frame)
+                except queue.Full:
+                    pass
+            self.stop_event.wait(max(0.0, 1.0 / TARGET_FPS - (time.monotonic() - started)))
+
+    def close(self):
+        self.enabled.clear()
+        self.stop_event.set()
+
+
+class DeviceView(ttk.Frame):
+    def __init__(self, owner, device: dict):
+        super().__init__(owner)
+        self.device = device
+        self.worker = CaptureWorker(device["pid"], device["hwnd"])
+        self.latest = None
+        self.pixel_buffer = None
+        self.pixel_size = 0
+        self.header = ttk.Frame(self)
+        self.header.pack(fill="x")
+        ttk.Label(
+            self.header,
+            text=f"{device['title']} • PID {device['pid']}",
+            anchor="w",
+        ).pack(side="left", fill="x", expand=True, padx=6, pady=3)
+        ttk.Button(self.header, text="Desktop", command=self.show_desktop).pack(side="right", padx=4)
+        self.canvas = tk.Canvas(self, background="black", highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.status = tk.StringVar(value="Đang kết nối capture...")
+        ttk.Label(self, textvariable=self.status, anchor="center").pack(fill="x")
+        self.canvas.bind("<Expose>", lambda _event: self.paint())
+
+    def set_live(self, enabled: bool):
+        if enabled:
+            self.worker.enabled.set()
+        else:
+            self.worker.enabled.clear()
+
+    def poll(self):
+        newest = None
+        try:
+            while True:
+                newest = self.worker.frames.get_nowait()
+        except queue.Empty:
+            pass
+        if newest:
+            raw, width, height, source = newest
+            size = len(raw)
+            if self.pixel_buffer is None or self.pixel_size != size:
+                self.pixel_buffer = ctypes.create_string_buffer(size)
+                self.pixel_size = size
+            ctypes.memmove(self.pixel_buffer, raw, size)
+            self.latest = (self.pixel_buffer, width, height, source)
+            self.paint()
+
+    def paint(self):
+        if not self.latest or not self.canvas.winfo_exists():
+            return
+        pixels, width, height, source = self.latest
+        target_w = max(1, self.canvas.winfo_width())
+        target_h = max(1, self.canvas.winfo_height())
+        scale = min(target_w / width, target_h / height)
+        draw_w, draw_h = max(1, int(width * scale)), max(1, int(height * scale))
+        left, top = (target_w - draw_w) // 2, (target_h - draw_h) // 2
+        info = BITMAPINFO()
+        info.bmiHeader.biSize = ctypes.sizeof(info.bmiHeader)
+        info.bmiHeader.biWidth = width
+        info.bmiHeader.biHeight = -height
+        info.bmiHeader.biPlanes = 1
+        info.bmiHeader.biBitCount = 32
+        info.bmiHeader.biCompression = 0
+        dc = ctypes.windll.user32.GetDC(self.canvas.winfo_id())
+        if dc:
+            try:
+                ctypes.windll.gdi32.SetStretchBltMode(dc, 4)
+                ctypes.windll.gdi32.StretchDIBits(
+                    dc, left, top, draw_w, draw_h,
+                    0, 0, width, height,
+                    pixels, ctypes.byref(info), 0, 0x00CC0020,
+                )
+            finally:
+                ctypes.windll.user32.ReleaseDC(self.canvas.winfo_id(), dc)
+        self.status.set(f"{source} • {width}×{height} • Live View {int(TARGET_FPS)} FPS")
+
+    def show_desktop(self):
+        hwnd = self.device["hwnd"]
+        user32 = ctypes.windll.user32
+        user32.ShowWindow(hwnd, 9)
+        user32.SetForegroundWindow(hwnd)
+
+    def close(self):
+        self.worker.close()
+
+
+class WorkspaceApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(APP_TITLE)
+        self.geometry("1180x760")
+        self.minsize(640, 420)
+        self.views: list[DeviceView] = []
+        self.devices: list[dict] = []
+        self.mode = tk.StringVar(value="All")
+        self.status = tk.StringVar(value="Sẵn sàng")
+        self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.after(50, self.refresh_devices)
+        self.after(50, self._tick)
+
+    def _build_ui(self):
+        bar = ttk.Frame(self)
+        bar.pack(fill="x", padx=8, pady=6)
+        ttk.Label(bar, text="Workspace mặc định", font=("Segoe UI", 10, "bold")).pack(side="left")
+        ttk.Label(bar, text="ClientJS và AUTO vẫn chạy khi Workspace thu nhỏ").pack(side="left", padx=12)
+        ttk.Button(bar, text="Làm mới", command=self.refresh_devices).pack(side="right")
+        self.selector = ttk.Combobox(bar, textvariable=self.mode, state="readonly", width=24)
+        self.selector.pack(side="right", padx=6)
+        self.selector.bind("<<ComboboxSelected>>", lambda _event: self.render_views())
+        ttk.Label(bar, text="Device").pack(side="right")
+        self.body = ttk.Frame(self)
+        self.body.pack(fill="both", expand=True, padx=8, pady=(0, 6))
+        ttk.Label(self, textvariable=self.status, anchor="w").pack(fill="x", padx=8, pady=(0, 5))
+
+    def refresh_devices(self):
+        try:
+            devices = enumerate_game_windows()
+        except Exception as exc:
+            self.status.set(f"Không thể dò ClientJS: {exc}")
+            return
+        signature = [(d["pid"], d["hwnd"]) for d in devices]
+        if signature == [(d["pid"], d["hwnd"]) for d in self.devices]:
+            return
+        self.devices = devices
+        values = ["All"] + [f"{d['title']} | PID {d['pid']}" for d in devices]
+        self.selector.configure(values=values)
+        if self.mode.get() not in values:
+            self.mode.set("All")
+        self.render_views()
+
+    def render_views(self):
+        for view in self.views:
+            view.close()
+            view.destroy()
+        self.views.clear()
+        selected = self.devices
+        if self.mode.get() != "All":
+            try:
+                pid = int(self.mode.get().rsplit("PID ", 1)[1])
+                selected = [d for d in self.devices if d["pid"] == pid]
+            except (IndexError, ValueError):
+                selected = []
+        if not selected:
+            ttk.Label(self.body, text="Chưa có GameClientJS đang chạy", anchor="center").pack(fill="both", expand=True)
+            self.status.set("0 Device")
+            return
+        columns = 1 if len(selected) == 1 else 2
+        for index, device in enumerate(selected):
+            view = DeviceView(self.body, device)
+            view.grid(row=index // columns, column=index % columns, sticky="nsew", padx=2, pady=2)
+            self.views.append(view)
+        for column in range(columns):
+            self.body.columnconfigure(column, weight=1, uniform="device")
+        for row in range((len(selected) + columns - 1) // columns):
+            self.body.rowconfigure(row, weight=1, uniform="device")
+        self.status.set(f"{len(selected)} Device • Capture nền độc lập với AUTO")
+
+    def _is_visible(self) -> bool:
+        return self.state() != "iconic" and bool(self.winfo_viewable())
+
+    def _tick(self):
+        visible = self._is_visible()
+        for view in tuple(self.views):
+            view.set_live(visible)
+            if visible:
+                view.poll()
+        self.after(50 if visible else 500, self._tick)
+
+    def close(self):
+        for view in self.views:
+            view.close()
+        self.destroy()
+
+
+def main() -> int:
+    if os.name != "nt":
+        print("KVTM Workspace chỉ chạy trên Windows.")
+        return 1
+    try:
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+    except Exception:
+        pass
+    WorkspaceApp().mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
