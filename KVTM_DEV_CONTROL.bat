@@ -26,7 +26,7 @@ echo  Repo   : %CD%
 echo  Branch : %CUR_BRANCH%
 echo  HEAD   : %CUR_HEAD%
 echo -------------------------------------------------------------------------------
-echo  [1] Cap nhat source DEV
+echo  [1] Cap nhat source + build runtime DEV
 echo  [2] Mo Multi DEV nen           ^(tu dong sync, khong hien CMD^)
 echo  [3] Don quay - BUOC HIEN TAI   ^(STEP 1 - capture bang AUTO chinh^)
 echo      Sau test se TU GUI log + anh len GitHub cho ChatGPT doc.
@@ -82,9 +82,18 @@ if errorlevel 1 (
   goto menu
 )
 echo.
+echo [DEV] Dang build runtime co dinh; data-dev/profile duoc bao toan...
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\packaging\suite-v0.15\BUILD_FULL_PACKAGE_PS51.ps1" -OutputName "KVTM-ClientJS-Suite-Multi-DEV"
+if errorlevel 1 (
+  echo.
+  echo [LOI] Build runtime that bai. Hay dong Multi va tat ca ClientJS roi chay lai [1].
+  pause
+  goto menu
+)
+echo.
 git rev-parse --short HEAD
-echo [OK] Source DEV da cap nhat.
-echo [INFO] Tu gio [2] va [3] tu sync file can thiet vao dist.
+echo [PASS] Source va runtime DEV da cap nhat cung HEAD.
+echo [INFO] Co the chon [2] de mo Multi ngay.
 pause
 goto menu
 
