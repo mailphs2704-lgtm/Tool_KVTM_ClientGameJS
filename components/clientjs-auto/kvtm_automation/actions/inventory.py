@@ -9,8 +9,9 @@ from ..runtime.wait import Waiter
 
 
 class InventoryActions:
-    """Select AUTO PRO storage categories and locate one exact VP in inventory."""
+    """Select the clone storage category and locate one exact VP in inventory."""
 
+    # AUTO_PRO_REFERENCE: recovered sellItems geometry at 1000x1000.
     STORAGE_ZONE = (380, 277, 125, 453)
     INVENTORY_ZONE = (14, 345, 397, 379)
     STORAGE = {
@@ -32,18 +33,21 @@ class InventoryActions:
         self.waiter = waiter
 
     def select_storage(self, storage_id: int) -> None:
+        """Select one verified storage tab; detection alone is never success."""
         storage = int(storage_id)
         if storage not in self.STORAGE:
             raise ValueError("Kho bán phải trong khoảng 1..5")
         template, fallback = self.STORAGE[storage]
-        if self.vision.find(
+        match = self.vision.find(
             template,
             threshold=0.82,
             zone=self.STORAGE_ZONE,
-        ) is None:
-            # Exact fallback points recovered from ADBController.sellItems.
+            click=True,
+        )
+        if match is None:
+            # AUTO_PRO_REFERENCE: exact fallback points from sellItems.
             self.vision.driver.click(*fallback)
-            self.waiter.sleep(0.40)
+        self.waiter.sleep(0.40)
         self.context.log(f"Đã chọn kho bán {storage} ({template})")
 
     def find_fingerprint(
