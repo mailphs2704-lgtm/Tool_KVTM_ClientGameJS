@@ -27,7 +27,7 @@ echo  Branch : %CUR_BRANCH%
 echo  HEAD   : %CUR_HEAD%
 echo -------------------------------------------------------------------------------
 echo  [1] Cap nhat source DEV
-echo  [2] Mo Multi DEV               ^(tu dong sync file DEV^)
+echo  [2] Mo Multi DEV nen           ^(tu dong sync, khong hien CMD^)
 echo  [3] Don quay - BUOC HIEN TAI   ^(STEP 1 - capture bang AUTO chinh^)
 echo      Sau test se TU GUI log + anh len GitHub cho ChatGPT doc.
 echo  [4] Gui lai ket qua gan nhat len GitHub
@@ -104,6 +104,7 @@ echo [DEV] Sync ClientJS AUTO component -^> dist...
 robocopy "components\clientjs-auto" "%DIST%\components\clientjs-auto" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 exit /b 1
 copy /Y "packaging\suite-v0.15\02_START_MULTI_DEV.bat" "%DIST%\02_START_MULTI_DEV.bat" >nul
+copy /Y "packaging\suite-v0.15\START_MULTI_DEV_SILENT.ps1" "%DIST%\START_MULTI_DEV_SILENT.ps1" >nul
 for %%F in (adaptive_cv.py clientjs_auto_patch.py engine_driver.py pc_driver.py) do (
   if exist "test-candidates\auto-pro-clientjs-temp\%%F" copy /Y "test-candidates\auto-pro-clientjs-temp\%%F" "%DIST%\AUTO_PRO\%%F" >nul
 )
@@ -132,12 +133,17 @@ if errorlevel 1 (
   goto menu
 )
 echo.
-echo [DEV] Dang mo Multi DEV...
-call "%DIST%\02_START_MULTI_DEV.bat"
-echo.
-echo [INFO] Multi DEV da dong hoac launcher da ket thuc.
-pause
-goto menu
+echo [DEV] Dang mo Multi DEV nen, khong hien CMD...
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\%DIST%\START_MULTI_DEV_SILENT.ps1"
+if errorlevel 1 (
+  echo.
+  echo [FAIL] Khong mo duoc Multi DEV nen. Gui output nay cho ChatGPT.
+  pause
+  goto menu
+)
+echo [PASS] Multi DEV da chay nen. Control Center se tu dong dong.
+timeout /t 2 /nobreak >nul
+goto end
 
 :step1
 cls
