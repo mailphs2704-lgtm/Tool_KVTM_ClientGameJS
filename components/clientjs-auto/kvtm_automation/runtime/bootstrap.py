@@ -120,6 +120,10 @@ def install_binary_dependencies(
             pass
 
     _require_supported_python()
+    log(
+        "Thư viện ảnh: process "
+        f"Python={sys.version.split()[0]} exe={sys.executable} cwd={Path.cwd()}"
+    )
 
     root = Path(auto_root).resolve()
     internal = root / "_internal"
