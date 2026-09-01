@@ -107,9 +107,13 @@ if errorlevel 1 (
   py -0p
   goto pause_menu
 )
-set "PYTHONPATH=%DRIVER_DIR%;%CD%\components\workspace"
-start "KVTM GAME WORKSPACE" /D "%CD%" cmd /k py -3.11 "%WORKSPACE%"
-echo [OK] Da mo Workspace. Multi/ClientJS/AUTO la tien trinh doc lap.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\components\workspace\START_WORKSPACE_SILENT.ps1"
+if errorlevel 1 (
+  echo [FAIL] Khong mo duoc Workspace nen. Gui output tren cho ChatGPT.
+  goto pause_menu
+)
+echo [PASS] Workspace da chay nen, khong giu CMD rieng.
+echo [INFO] Multi/ClientJS/AUTO la tien trinh doc lap.
 goto pause_menu
 
 :test1
