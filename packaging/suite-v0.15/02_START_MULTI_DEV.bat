@@ -16,11 +16,6 @@ if not exist "clear_stall_probe_console.py" (
   pause
   goto :done
 )
-if not exist "prepare_clear_stall_runtime.py" (
-  echo [LOI] Thieu Multi\prepare_clear_stall_runtime.py
-  pause
-  goto :done
-)
 
 set "KVTM_PYTHON="
 where py >nul 2>nul
@@ -47,16 +42,13 @@ if not defined KVTM_PYTHON (
 
 for /f "delims=" %%V in ('%KVTM_PYTHON% -c "import struct,sys; print(sys.version.split()[0] + ' ' + str(struct.calcsize('P')*8) + '-bit')"') do set "KVTM_PYTHON_INFO=%%V"
 echo [KVTM DEV] Python=%KVTM_PYTHON_INFO%
-
-echo [KVTM DEV] Prewarming clean Don quay runtime...
-%KVTM_PYTHON% prepare_clear_stall_runtime.py
-if errorlevel 1 (
-  echo [LOI] Clean Don quay runtime prewarm FAILED. Multi DEV will not start.
-  pause
-  goto :done
-)
+echo [KVTM DEV] Starting ONE resident Python process for image runtime + Multi + probe...
 
 %KVTM_PYTHON% kvtm_multi_dev_entry.py
+if errorlevel 1 (
+  echo [LOI] Multi DEV resident runtime exited with an error.
+  pause
+)
 
 :done
 endlocal
