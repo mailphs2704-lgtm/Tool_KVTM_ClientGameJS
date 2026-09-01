@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import subprocess
 import threading
 import time
 import tkinter as tk
@@ -32,6 +33,16 @@ DEV_RUNNING_MAP_CANDIDATES = tuple(
         REPO_ROOT / _RUNTIME_RELATIVE,
     )
     if path is not None
+)
+
+MAIN_DEV_ROOT = (
+    Path(os.environ["KVTM_MULTI_DEV_ROOT"])
+    if os.environ.get("KVTM_MULTI_DEV_ROOT")
+    else REPO_ROOT.parent / "Tool_KVTM_Multi_DEV"
+)
+BRIDGE_BIN = (
+    MAIN_DEV_ROOT / "dist" / "KVTM-ClientJS-Suite-Multi-DEV" /
+    "AUTO_PRO" / "bin"
 )
 
 
@@ -119,10 +130,40 @@ class CaptureWorker:
         self.frames: queue.Queue = queue.Queue(maxsize=1)
         self.stop_event = threading.Event()
         self.enabled = threading.Event()
+        self.shared_error = ""
+        self.bridge_state = "Chưa kiểm tra bridge"
+        self.bridge_attempted = False
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
+    def _try_inject_bridge(self):
+        if self.bridge_attempted:
+            return
+        self.bridge_attempted = True
+        loader = BRIDGE_BIN / "kvtm_loader.exe"
+        bridge = BRIDGE_BIN / "kvtm_bridge.dll"
+        if not loader.is_file() or not bridge.is_file():
+            self.bridge_state = "Thiếu kvtm_loader.exe/kvtm_bridge.dll"
+            return
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            result = subprocess.run(
+                [str(loader), str(self.pid), str(bridge)],
+                capture_output=True, text=True, errors="replace",
+                creationflags=flags, timeout=15,
+            )
+            if result.returncode == 0:
+                self.bridge_state = "Đã inject bridge; đang chờ OpenGL pipe"
+            else:
+                detail = (result.stderr or result.stdout or "").strip()
+                self.bridge_state = (
+                    f"Loader rc={result.returncode}: {detail}"[:220]
+                )
+        except Exception as exc:
+            self.bridge_state = f"Inject lỗi: {exc}"[:220]
+
     def _run(self):
+        shared_failures = 0
         while not self.stop_event.is_set():
             if not self.enabled.wait(0.25):
                 continue
@@ -130,7 +171,14 @@ class CaptureWorker:
             try:
                 raw, width, height = capture_shared_bgra(self.pid, timeout_ms=750)
                 source = "OpenGL"
-            except Exception:
+                shared_failures = 0
+                self.shared_error = ""
+                self.bridge_state = "OpenGL shared capture READY"
+            except Exception as exc:
+                shared_failures += 1
+                self.shared_error = str(exc)[:220]
+                if shared_failures >= 2:
+                    self._try_inject_bridge()
                 try:
                     raw, width, height = capture_bgra(self.hwnd)
                     source = "HWND"
@@ -161,11 +209,6 @@ class DeviceView(ttk.Frame):
         super().__init__(owner)
         self.device = device
         self.worker = CaptureWorker(device["pid"], device["hwnd"])
-        self.attached = False
-        self.original_parent = None
-        self.original_style = None
-        self.original_ex_style = None
-        self.original_rect = None
         self.latest = None
         self.pixel_buffer = None
         self.pixel_size = 0
@@ -176,24 +219,16 @@ class DeviceView(ttk.Frame):
             text=f"{device['name']} • PID {device['pid']}",
             anchor="w",
         ).pack(side="left", fill="x", expand=True, padx=6, pady=3)
-        self.detach_button = ttk.Button(
-            self.header, text="Tách ra Desktop", command=self.detach_from_workspace
-        )
-        self.detach_button.pack(side="right", padx=4)
-        self.detach_button.configure(state="disabled")
-        self.attach_button = ttk.Button(
-            self.header, text="Gắn vào Workspace", command=self.attach_to_workspace
-        )
-        self.attach_button.pack(side="right", padx=4)
+        ttk.Button(
+            self.header, text="Hiện Client", command=self.show_client
+        ).pack(side="right", padx=4)
         self.canvas = tk.Canvas(self, background="black", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.status = tk.StringVar(value="Đang kết nối capture...")
         ttk.Label(self, textvariable=self.status, anchor="center").pack(fill="x")
         self.canvas.bind("<Expose>", lambda _event: self.paint())
-        self.canvas.bind("<Configure>", lambda _event: self._layout_attached())
 
     def set_live(self, enabled: bool):
-        enabled = bool(enabled and not self.attached)
         if enabled:
             self.worker.enabled.set()
         else:
@@ -217,7 +252,7 @@ class DeviceView(ttk.Frame):
             self.paint()
 
     def paint(self):
-        if self.attached or not self.latest or not self.canvas.winfo_exists():
+        if not self.latest or not self.canvas.winfo_exists():
             return
         pixels, width, height, source = self.latest
         target_w = max(1, self.canvas.winfo_width())
@@ -243,97 +278,24 @@ class DeviceView(ttk.Frame):
                 )
             finally:
                 ctypes.windll.user32.ReleaseDC(self.canvas.winfo_id(), dc)
-        self.status.set(f"{source} • {width}×{height} • Live View {int(TARGET_FPS)} FPS")
-
-    def _layout_attached(self):
-        if not self.attached:
-            return
-        hwnd = int(self.device["hwnd"])
-        if not ctypes.windll.user32.IsWindow(hwnd):
-            return
-        width = max(1, self.canvas.winfo_width())
-        height = max(1, self.canvas.winfo_height())
-        ctypes.windll.user32.SetWindowPos(
-            hwnd, 0, 0, 0, width, height,
-            0x0004 | 0x0010 | 0x0040,
+        if source == "OpenGL":
+            detail = "OpenGL shared • AUTO/Workspace cùng PID"
+        else:
+            detail = f"HWND fallback • {self.worker.bridge_state}"
+        self.status.set(
+            f"{detail} • {width}×{height} • Live View {int(TARGET_FPS)} FPS"
         )
 
-    def attach_to_workspace(self):
-        if self.attached:
-            return
-        user32 = ctypes.windll.user32
-        user32.GetParent.argtypes = [wintypes.HWND]
-        user32.GetParent.restype = wintypes.HWND
-        user32.SetParent.argtypes = [wintypes.HWND, wintypes.HWND]
-        user32.SetParent.restype = wintypes.HWND
-        user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
-        user32.GetWindowLongW.restype = wintypes.LONG
-        user32.SetWindowLongW.argtypes = [
-            wintypes.HWND, ctypes.c_int, wintypes.LONG,
-        ]
-        user32.SetWindowLongW.restype = wintypes.LONG
+    def show_client(self):
         hwnd = int(self.device["hwnd"])
-        self.status.set("Đang gắn ClientJS vào Workspace...")
-        self.update_idletasks()
+        user32 = ctypes.windll.user32
         if not user32.IsWindow(hwnd):
             messagebox.showerror(APP_TITLE, "Client DEV không còn chạy.")
             return
-        self.canvas.update_idletasks()
-        rect = wintypes.RECT()
-        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
-            messagebox.showerror(APP_TITLE, "Không đọc được vị trí cửa sổ ClientJS.")
-            return
-        self.original_parent = int(user32.GetParent(hwnd) or 0)
-        self.original_style = int(user32.GetWindowLongW(hwnd, -16))
-        self.original_ex_style = int(user32.GetWindowLongW(hwnd, -20))
-        self.original_rect = (
-            int(rect.left), int(rect.top),
-            int(rect.right - rect.left), int(rect.bottom - rect.top),
-        )
-        child_style = (self.original_style & ~0x80000000) | 0x40000000 | 0x10000000
-        ctypes.windll.kernel32.SetLastError(0)
-        user32.SetWindowLongW(hwnd, -16, child_style)
-        user32.SetParent(hwnd, self.canvas.winfo_id())
-        if int(user32.GetParent(hwnd) or 0) != int(self.canvas.winfo_id()):
-            user32.SetWindowLongW(hwnd, -16, self.original_style)
-            messagebox.showerror(
-                APP_TITLE,
-                "Windows từ chối gắn ClientJS vào Workspace; đã giữ nguyên cửa sổ.",
-            )
-            return
-        self.attached = True
-        self.worker.enabled.clear()
-        self._layout_attached()
-        self.attach_button.configure(state="disabled")
-        self.detach_button.configure(state="normal")
-        self.status.set("Đã gắn ClientJS thật vào Workspace • AUTO vẫn theo PID")
-
-    def detach_from_workspace(self):
-        if not self.attached:
-            return
-        user32 = ctypes.windll.user32
-        hwnd = int(self.device["hwnd"])
-        if not user32.IsWindow(hwnd):
-            self.attached = False
-            return
-        user32.SetParent(hwnd, int(self.original_parent or 0))
-        if self.original_style is not None:
-            user32.SetWindowLongW(hwnd, -16, int(self.original_style))
-        if self.original_ex_style is not None:
-            user32.SetWindowLongW(hwnd, -20, int(self.original_ex_style))
-        left, top, width, height = self.original_rect or (0, 0, 1000, 1000)
-        user32.SetWindowPos(
-            hwnd, 0, left, top, width, height,
-            0x0004 | 0x0010 | 0x0020 | 0x0040,
-        )
-        self.attached = False
-        self.attach_button.configure(state="normal")
-        self.detach_button.configure(state="disabled")
-        self.status.set("Đã trả ClientJS về Desktop")
-        self.worker.enabled.set()
+        user32.ShowWindow(hwnd, 9)
+        user32.SetForegroundWindow(hwnd)
 
     def close(self):
-        self.detach_from_workspace()
         self.worker.close()
 
 
