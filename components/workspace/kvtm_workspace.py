@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+import json
 import os
+from pathlib import Path
 import queue
 import threading
 import time
@@ -14,10 +16,44 @@ from pc_driver import BITMAPINFO, capture_bgra, capture_shared_bgra
 
 APP_TITLE = "KVTM Game Workspace"
 TARGET_FPS = 20.0
+RUNNING_MAP_MAX_AGE_SECONDS = 30.0
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEV_RUNNING_MAP = (
+    REPO_ROOT / "dist" / "KVTM-ClientJS-Suite-Multi-DEV" /
+    "data-dev" / "running_clients.json"
+)
 
 
-def enumerate_game_windows() -> list[dict]:
-    """Return visible top-level GameClientJS windows without changing them."""
+def load_dev_client_allowlist() -> tuple[dict[int, dict], str]:
+    """Read the secret-free PID/profile map published by Multi DEV."""
+    try:
+        age = time.time() - DEV_RUNNING_MAP.stat().st_mtime
+        if age < 0 or age > RUNNING_MAP_MAX_AGE_SECONDS:
+            return {}, f"running_clients.json đã cũ ({max(0, int(age))} giây)"
+        payload = json.loads(DEV_RUNNING_MAP.read_text(encoding="utf-8-sig"))
+        if int(payload.get("version", 0)) != 1:
+            return {}, "running_clients.json sai phiên bản"
+        allowed: dict[int, dict] = {}
+        for row in payload.get("clients", []):
+            if not isinstance(row, dict):
+                continue
+            pid = int(row.get("pid", 0))
+            profile_id = str(row.get("profile_id") or "").strip()
+            if pid <= 0 or not profile_id:
+                continue
+            allowed[pid] = {
+                "profile_id": profile_id,
+                "name": str(row.get("name") or f"PID {pid}"),
+            }
+        return allowed, f"allowlist DEV: {len(allowed)} profile"
+    except FileNotFoundError:
+        return {}, "Chưa có running_clients.json từ Multi DEV"
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        return {}, f"Không đọc được allowlist DEV: {exc}"
+
+
+def enumerate_game_windows(allowed: dict[int, dict]) -> list[dict]:
+    """Return only GameClientJS windows authorized by the fresh DEV PID map."""
     user32 = ctypes.windll.user32
     rows: list[dict] = []
     callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -35,8 +71,17 @@ def enumerate_game_windows() -> list[dict]:
         user32.GetClassNameW(hwnd, class_name, len(class_name))
         text = title.value.strip()
         cls = class_name.value.strip()
-        if text and ("Khu Vườn Trên Mây" in text or "GameClientJS" in text or cls == "GLFW30"):
-            rows.append({"hwnd": int(hwnd), "pid": int(pid.value), "title": text})
+        identity = allowed.get(int(pid.value))
+        if identity and text and (
+            "Khu Vườn Trên Mây" in text or "GameClientJS" in text or cls == "GLFW30"
+        ):
+            rows.append({
+                "hwnd": int(hwnd),
+                "pid": int(pid.value),
+                "profile_id": identity["profile_id"],
+                "name": identity["name"],
+                "title": text,
+            })
         return True
 
     user32.EnumWindows(callback, 0)
@@ -102,7 +147,7 @@ class DeviceView(ttk.Frame):
         self.header.pack(fill="x")
         ttk.Label(
             self.header,
-            text=f"{device['title']} • PID {device['pid']}",
+            text=f"{device['name']} • PID {device['pid']}",
             anchor="w",
         ).pack(side="left", fill="x", expand=True, padx=6, pady=3)
         ttk.Button(self.header, text="Desktop", command=self.show_desktop).pack(side="right", padx=4)
@@ -184,6 +229,7 @@ class WorkspaceApp(tk.Tk):
         self.devices: list[dict] = []
         self.mode = tk.StringVar(value="All")
         self.status = tk.StringVar(value="Sẵn sàng")
+        self.identity_status = "Chưa đọc allowlist DEV"
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.after(50, self.refresh_devices)
@@ -205,15 +251,18 @@ class WorkspaceApp(tk.Tk):
 
     def refresh_devices(self):
         try:
-            devices = enumerate_game_windows()
+            allowed, self.identity_status = load_dev_client_allowlist()
+            devices = enumerate_game_windows(allowed)
         except Exception as exc:
-            self.status.set(f"Không thể dò ClientJS: {exc}")
+            self.status.set(f"Không thể dò ClientJS DEV: {exc}")
             return
         signature = [(d["pid"], d["hwnd"]) for d in devices]
         if signature == [(d["pid"], d["hwnd"]) for d in self.devices]:
+            if not devices:
+                self.status.set(f"0 Device • {self.identity_status}")
             return
         self.devices = devices
-        values = ["All"] + [f"{d['title']} | PID {d['pid']}" for d in devices]
+        values = ["All"] + [f"{d['name']} | PID {d['pid']}" for d in devices]
         self.selector.configure(values=values)
         if self.mode.get() not in values:
             self.mode.set("All")
@@ -233,7 +282,7 @@ class WorkspaceApp(tk.Tk):
                 selected = []
         if not selected:
             ttk.Label(self.body, text="Chưa có GameClientJS đang chạy", anchor="center").pack(fill="both", expand=True)
-            self.status.set("0 Device")
+            self.status.set(f"0 Device • {self.identity_status}")
             return
         columns = 1 if len(selected) == 1 else 2
         for index, device in enumerate(selected):
@@ -244,7 +293,9 @@ class WorkspaceApp(tk.Tk):
             self.body.columnconfigure(column, weight=1, uniform="device")
         for row in range((len(selected) + columns - 1) // columns):
             self.body.rowconfigure(row, weight=1, uniform="device")
-        self.status.set(f"{len(selected)} Device • Capture nền độc lập với AUTO")
+        self.status.set(
+            f"{len(selected)} Device DEV • Capture nền độc lập với AUTO"
+        )
 
     def _is_visible(self) -> bool:
         return self.state() != "iconic" and bool(self.winfo_viewable())
