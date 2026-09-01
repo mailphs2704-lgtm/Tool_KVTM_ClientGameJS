@@ -40,12 +40,15 @@ class KVAutomation:
             context.auto_root,
         )
         if driver is None:
-            context.stage("clientjs-engine-connecting")
-            bundle = self.driver_factory.engine(context.pid)
+            context.stage("clientjs-dll-bridge-connecting")
+            bundle = self.driver_factory.engine(
+                context.pid,
+                logger=context.log,
+            )
             self.driver = bundle.driver
             self.bridge_root = bundle.bridge_root
             self.bridge_mode = bundle.mode
-            context.stage("clientjs-engine-ready")
+            context.stage("clientjs-dll-bridge-ready")
         else:
             self.driver = driver
             self.bridge_root = Path(".")
