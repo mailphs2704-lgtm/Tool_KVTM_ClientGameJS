@@ -15,9 +15,8 @@ class MultiDevApp(production.MultiApp):
     """DEV-only shell for safe clear-stall live verification.
 
     Production scheduling remains implemented in kvtm_multi_entry.MultiApp.
-    This subclass deliberately suppresses automatic clear-stall scheduling while
-    a feature is being live-verified and adds a detached console that mirrors
-    probe activity without becoming part of the probe execution path.
+    DEV suppresses transaction-capable scheduling and opens a diagnostic CMD as
+    soon as the probe button is clicked, before clone/worker/DLL initialization.
     """
 
     def _build_auto_panel(self) -> None:
@@ -33,7 +32,7 @@ class MultiDevApp(production.MultiApp):
         self.after(1000, self._poll_clear_stall_schedule)
 
     def _clear_stall_profile(self) -> tuple[str | None, dict | None]:
-        """Resolve the selected profile, falling back to one running clone in DEV."""
+        """Resolve selected profile, or the only running clone in DEV."""
         profile_id, profile = super()._clear_stall_profile()
         if profile_id and profile:
             return profile_id, profile
@@ -92,6 +91,130 @@ class MultiDevApp(production.MultiApp):
             )
         )
 
+    def _new_live_log_paths(self, profile_id: str) -> tuple[Path, Path]:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        root = core.APP_DIR / "clear-stall-probe" / profile_id / f"dev-live-{stamp}"
+        root.mkdir(parents=True, exist_ok=True)
+        return root / "activity.log", root / ".probe-console-done"
+
+    def _append_probe_log(self, profile_id: str, message: str) -> None:
+        paths = self._clear_stall_probe_log_paths.get(profile_id)
+        if not paths:
+            return
+        try:
+            with paths[0].open("a", encoding="utf-8", errors="replace") as stream:
+                stream.write(f"[{time.strftime('%H:%M:%S')}] UI     {message}\n")
+                stream.flush()
+        except OSError:
+            pass
+
+    def _open_probe_log_console_paths(
+        self, profile_id: str, paths: tuple[Path, Path]
+    ) -> None:
+        if os.name != "nt":
+            return
+        log_path, done_path = paths
+        try:
+            done_path.unlink(missing_ok=True)
+            log_path.touch(exist_ok=True)
+        except OSError:
+            return
+
+        helper = core.TOOL_DIR / "clear_stall_probe_console.py"
+        if not helper.is_file():
+            # The launcher guard should prevent this, but record it if possible.
+            self._append_probe_log(profile_id, f"ERROR thiếu console helper: {helper}")
+            return
+        title = f"KVTM DEV - Don quay DLL probe - {profile_id[:8]}"
+        command = subprocess.list2cmdline(
+            [
+                core.sys.executable,
+                str(helper),
+                "--log",
+                str(log_path),
+                "--done",
+                str(done_path),
+                "--title",
+                title,
+            ]
+        )
+        try:
+            console = subprocess.Popen(
+                ["cmd.exe", "/c", command],
+                cwd=str(core.TOOL_DIR),
+                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010),
+            )
+        except OSError as exc:
+            self._append_probe_log(profile_id, f"ERROR không mở được CMD: {exc}")
+            return
+        self._clear_stall_probe_log_consoles[profile_id] = console
+
+    def _prepare_probe_console(self, profile_id: str, profile: dict | None) -> None:
+        paths = self._new_live_log_paths(profile_id)
+        self._clear_stall_probe_log_paths[profile_id] = paths
+        self._open_probe_log_console_paths(profile_id, paths)
+        self._append_probe_log(profile_id, "BUTTON ✓ Kiểm tra Dọn quầy")
+        if profile:
+            self._append_probe_log(
+                profile_id,
+                f"profile={profile.get('name') or profile_id} id={profile_id}",
+            )
+        proc = self.processes.get(profile_id)
+        try:
+            pid = int(proc.pid) if proc and proc.poll() is None else None
+        except Exception:
+            pid = None
+        self._append_probe_log(profile_id, f"clone_pid_before_start={pid}")
+
+    def _mark_probe_console_done(self, profile_id: str, reason: str) -> None:
+        paths = self._clear_stall_probe_log_paths.get(profile_id)
+        if not paths:
+            return
+        self._append_probe_log(profile_id, reason)
+        try:
+            paths[1].write_text("done\n", encoding="ascii")
+        except OSError:
+            pass
+
+    def _start_clear_stall_probe(self) -> None:
+        """Open CMD immediately, then execute the production read-only probe."""
+        profile_id, profile = self._clear_stall_profile()
+        log_profile_id = str(profile_id or "unresolved-profile")
+        self._prepare_probe_console(log_profile_id, profile)
+        if not profile_id or not profile:
+            self._mark_probe_console_done(
+                log_profile_id,
+                "ERROR không xác định được đúng một clone/profile để probe",
+            )
+            core.messagebox.showinfo(core.APP_NAME, "Hãy chọn một tài khoản clone.")
+            return
+
+        self._append_probe_log(profile_id, "gọi production probe lifecycle")
+        try:
+            super()._start_clear_stall_probe()
+        except Exception as exc:
+            self._mark_probe_console_done(
+                profile_id, f"ERROR exception trước worker: {type(exc).__name__}: {exc}"
+            )
+            raise
+
+        proc = self.processes.get(profile_id)
+        try:
+            pid = int(proc.pid) if proc and proc.poll() is None else None
+        except Exception:
+            pid = None
+        starting = profile_id in getattr(self, "_clear_stall_probe_starting", set())
+        worker = getattr(self, "_clear_stall_probe_workers", {}).get(profile_id)
+        self._append_probe_log(
+            profile_id,
+            f"lifecycle_return pid={pid} starting={starting} worker_alive={self._worker_alive(worker)}",
+        )
+        if not starting and not self._worker_alive(worker):
+            self._mark_probe_console_done(
+                profile_id,
+                "Probe không vào trạng thái starting/worker; xem thông báo UI phía trên",
+            )
+
     @staticmethod
     def _extract_work_dir(worker) -> Path | None:
         args = getattr(worker, "args", None)
@@ -145,52 +268,28 @@ class MultiDevApp(production.MultiApp):
                 summary += f" • {message}"
         return f"[{stamp}] {summary}\n[{stamp}] RAW    {raw_line}\n"
 
-    def _open_probe_log_console(self, profile_id: str, worker) -> None:
-        paths = self._probe_log_paths_for_worker(profile_id, worker)
-        if paths is None or os.name != "nt":
-            return
-        log_path, done_path = paths
-        try:
-            done_path.unlink(missing_ok=True)
-            log_path.touch(exist_ok=True)
-        except OSError:
-            return
-
-        helper = core.TOOL_DIR / "clear_stall_probe_console.py"
-        if not helper.is_file():
-            return
-        title = f"KVTM DEV - Don quay probe - {profile_id[:8]}"
-        command = subprocess.list2cmdline(
-            [
-                core.sys.executable,
-                str(helper),
-                "--log",
-                str(log_path),
-                "--done",
-                str(done_path),
-                "--title",
-                title,
-            ]
-        )
-        try:
-            console = subprocess.Popen(
-                ["cmd.exe", "/c", command],
-                cwd=str(core.TOOL_DIR),
-                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010),
-            )
-        except OSError:
-            return
-        self._clear_stall_probe_log_consoles[profile_id] = console
-
     def _launch_clear_stall_probe_worker(self, profile_id: str) -> None:
-        """Launch the production read-only probe, then attach a DEV log console."""
+        """Launch production probe and attach it to the already-visible DEV CMD."""
+        proc = self.processes.get(profile_id)
+        self._append_probe_log(
+            profile_id,
+            f"2500ms callback: launch worker pid={getattr(proc, 'pid', None)}",
+        )
         super()._launch_clear_stall_probe_worker(profile_id)
         worker = getattr(self, "_clear_stall_probe_workers", {}).get(profile_id)
         if self._worker_alive(worker):
-            self._open_probe_log_console(profile_id, worker)
+            work_dir = self._extract_work_dir(worker)
+            self._append_probe_log(
+                profile_id,
+                f"worker_started pid={getattr(worker, 'pid', None)} report_dir={work_dir}",
+            )
+        else:
+            self._mark_probe_console_done(
+                profile_id, "ERROR worker không sống sau launch callback"
+            )
 
     def _read_clear_stall_probe_worker(self, profile_id: str, worker) -> None:
-        """Mirror worker JSON to activity.log while preserving UI event handling."""
+        """Mirror worker JSON to the CMD activity log and preserve UI events."""
         paths = self._probe_log_paths_for_worker(profile_id, worker)
         log_path = paths[0] if paths else None
         done_path = paths[1] if paths else None
@@ -200,10 +299,13 @@ class MultiDevApp(production.MultiApp):
                 log_stream = log_path.open("a", encoding="utf-8", errors="replace")
                 log_stream.write(
                     "\n" + "=" * 78 + "\n"
-                    + f"KVTM DEV CLEAR STALL PROBE • profile={profile_id}\n"
-                    + f"started={time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    + f"KVTM DEV CLEAR STALL DLL PROBE • profile={profile_id}\n"
+                    + f"worker_started={time.strftime('%Y-%m-%d %H:%M:%S')}\n"
                     + "=" * 78 + "\n"
                 )
+                work_dir = self._extract_work_dir(worker)
+                if work_dir is not None:
+                    log_stream.write(f"report_dir={work_dir}\n")
                 log_stream.flush()
 
             if worker.stdout:
