@@ -40,10 +40,23 @@ MAIN_DEV_ROOT = (
     if os.environ.get("KVTM_MULTI_DEV_ROOT")
     else REPO_ROOT.parent / "Tool_KVTM_Multi_DEV"
 )
-BRIDGE_BIN = (
-    MAIN_DEV_ROOT / "dist" / "KVTM-ClientJS-Suite-Multi-DEV" /
-    "AUTO_PRO" / "bin"
+MAIN_RUNTIME_ROOT = (
+    MAIN_DEV_ROOT / "dist" / "KVTM-ClientJS-Suite-Multi-DEV"
 )
+BRIDGE_DIR_CANDIDATES = (
+    MAIN_RUNTIME_ROOT / "Multi" / "bin",
+    MAIN_RUNTIME_ROOT / "Multi",
+    MAIN_RUNTIME_ROOT / "AUTO_PRO" / "bin",
+)
+
+
+def find_bridge_files() -> tuple[Path, Path] | None:
+    for folder in BRIDGE_DIR_CANDIDATES:
+        loader = folder / "kvtm_loader.exe"
+        bridge = folder / "kvtm_bridge.dll"
+        if loader.is_file() and bridge.is_file():
+            return loader, bridge
+    return None
 
 
 def load_dev_client_allowlist() -> tuple[dict[int, dict], str]:
@@ -140,11 +153,12 @@ class CaptureWorker:
         if self.bridge_attempted:
             return
         self.bridge_attempted = True
-        loader = BRIDGE_BIN / "kvtm_loader.exe"
-        bridge = BRIDGE_BIN / "kvtm_bridge.dll"
-        if not loader.is_file() or not bridge.is_file():
-            self.bridge_state = "Thiếu kvtm_loader.exe/kvtm_bridge.dll"
+        files = find_bridge_files()
+        if not files:
+            searched = ", ".join(str(path) for path in BRIDGE_DIR_CANDIDATES)
+            self.bridge_state = f"Thiếu bridge; đã tìm: {searched}"[:220]
             return
+        loader, bridge = files
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             result = subprocess.run(
@@ -153,7 +167,9 @@ class CaptureWorker:
                 creationflags=flags, timeout=15,
             )
             if result.returncode == 0:
-                self.bridge_state = "Đã inject bridge; đang chờ OpenGL pipe"
+                self.bridge_state = (
+                    f"Đã inject {bridge.parent}; đang chờ OpenGL pipe"
+                )
             else:
                 detail = (result.stderr or result.stdout or "").strip()
                 self.bridge_state = (
@@ -281,7 +297,10 @@ class DeviceView(ttk.Frame):
         if source == "OpenGL":
             detail = "OpenGL shared • AUTO/Workspace cùng PID"
         else:
-            detail = f"HWND fallback • {self.worker.bridge_state}"
+            pipe_error = self.worker.shared_error or "chưa có lỗi pipe"
+            detail = (
+                f"HWND fallback • {self.worker.bridge_state} • pipe={pipe_error}"
+            )
         self.status.set(
             f"{detail} • {width}×{height} • Live View {int(TARGET_FPS)} FPS"
         )
