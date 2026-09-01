@@ -20,7 +20,9 @@ _STATE_MESSAGES = {
 
 def _find_repo_root(package_root: Path) -> Path | None:
     for candidate in (package_root, *package_root.parents):
-        if (candidate / ".git").is_dir() and (
+        # A normal clone has a .git directory, while a linked Git worktree has
+        # a .git file. Both are valid repository roots for the runtime updater.
+        if (candidate / ".git").exists() and (
             candidate / "tools" / "KVTM_RUNTIME_UPDATE.ps1"
         ).is_file():
             return candidate
