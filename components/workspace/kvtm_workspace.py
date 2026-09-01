@@ -9,7 +9,7 @@ import queue
 import threading
 import time
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from pc_driver import BITMAPINFO, capture_bgra, capture_shared_bgra
 
@@ -33,6 +33,66 @@ DEV_RUNNING_MAP_CANDIDATES = tuple(
     )
     if path is not None
 )
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", wintypes.RECT),
+        ("rcWork", wintypes.RECT),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
+def enumerate_monitors() -> list[dict]:
+    monitors = []
+    callback_type = ctypes.WINFUNCTYPE(
+        wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC,
+        ctypes.POINTER(wintypes.RECT), wintypes.LPARAM,
+    )
+
+    @callback_type
+    def callback(handle, _hdc, _rect, _data):
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(info)
+        if ctypes.windll.user32.GetMonitorInfoW(handle, ctypes.byref(info)):
+            monitors.append({
+                "primary": bool(info.dwFlags & 1),
+                "left": int(info.rcWork.left),
+                "top": int(info.rcWork.top),
+                "right": int(info.rcWork.right),
+                "bottom": int(info.rcWork.bottom),
+            })
+        return True
+
+    ctypes.windll.user32.EnumDisplayMonitors(0, None, callback, 0)
+    return monitors
+
+
+def resize_client_area(hwnd: int, width: int = 1000, height: int = 1000) -> tuple[int, int]:
+    user32 = ctypes.windll.user32
+    rect = wintypes.RECT(0, 0, int(width), int(height))
+    style = user32.GetWindowLongW(hwnd, -16)
+    ex_style = user32.GetWindowLongW(hwnd, -20)
+    adjusted = False
+    adjust_for_dpi = getattr(user32, "AdjustWindowRectExForDpi", None)
+    if adjust_for_dpi:
+        dpi = user32.GetDpiForWindow(hwnd)
+        adjusted = bool(
+            adjust_for_dpi(ctypes.byref(rect), style, False, ex_style, dpi)
+        )
+    if not adjusted:
+        user32.AdjustWindowRectEx(ctypes.byref(rect), style, False, ex_style)
+    return rect.right - rect.left, rect.bottom - rect.top
+
+
+def move_client_to_monitor(hwnd: int, monitor: dict) -> None:
+    user32 = ctypes.windll.user32
+    user32.ShowWindow(hwnd, 9)
+    user32.SetWindowPos(
+        hwnd, 0, monitor["left"], monitor["top"], 0, 0,
+        0x0001 | 0x0004 | 0x0010 | 0x0040,
+    )
 
 
 def load_dev_client_allowlist() -> tuple[dict[int, dict], str]:
@@ -171,7 +231,12 @@ class DeviceView(ttk.Frame):
             text=f"{device['name']} • PID {device['pid']}",
             anchor="w",
         ).pack(side="left", fill="x", expand=True, padx=6, pady=3)
-        ttk.Button(self.header, text="Desktop", command=self.show_desktop).pack(side="right", padx=4)
+        ttk.Button(
+            self.header, text="Desktop", command=self.show_desktop
+        ).pack(side="right", padx=4)
+        ttk.Button(
+            self.header, text="Màn ảo", command=self.show_virtual
+        ).pack(side="right", padx=4)
         self.canvas = tk.Canvas(self, background="black", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.status = tk.StringVar(value="Đang kết nối capture...")
@@ -230,11 +295,37 @@ class DeviceView(ttk.Frame):
                 ctypes.windll.user32.ReleaseDC(self.canvas.winfo_id(), dc)
         self.status.set(f"{source} • {width}×{height} • Live View {int(TARGET_FPS)} FPS")
 
-    def show_desktop(self):
+    def _move_to_monitor(self, *, primary: bool):
+        monitors = enumerate_monitors()
+        monitor = next(
+            (item for item in monitors if item["primary"] is primary), None
+        )
+        if monitor is None:
+            kind = "màn hình chính" if primary else "màn hình phụ/ảo"
+            messagebox.showwarning(APP_TITLE, f"Không tìm thấy {kind} ở chế độ Extend.")
+            return
         hwnd = self.device["hwnd"]
-        user32 = ctypes.windll.user32
-        user32.ShowWindow(hwnd, 9)
-        user32.SetForegroundWindow(hwnd)
+        move_client_to_monitor(hwnd, monitor)
+        self.status.set("Đang chờ Windows đổi DPI...")
+        self.after(400, lambda: self._finish_monitor_move(monitor, primary))
+
+    def _finish_monitor_move(self, monitor: dict, primary: bool):
+        hwnd = self.device["hwnd"]
+        if not ctypes.windll.user32.IsWindow(hwnd):
+            return
+        outer_w, outer_h = resize_client_area(hwnd, 1000, 1000)
+        ctypes.windll.user32.SetWindowPos(
+            hwnd, 0, monitor["left"], monitor["top"], outer_w, outer_h,
+            0x0004 | 0x0010 | 0x0040,
+        )
+        kind = "Desktop" if primary else "màn hình ảo"
+        self.status.set(f"Đã chuyển sang {kind} • vùng game 1000×1000")
+
+    def show_virtual(self):
+        self._move_to_monitor(primary=False)
+
+    def show_desktop(self):
+        self._move_to_monitor(primary=True)
 
     def close(self):
         self.worker.close()
