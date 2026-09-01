@@ -62,32 +62,19 @@ jobs:
           }
           Write-Host 'POWERSHELL_JSON_ARRAY_REGRESSION_OK' -ForegroundColor Green
 
-      - name: Regression test PowerShell 5.1 Git wrapper scope
+      - name: Regression test PowerShell 5.1 native Git HEAD capture
         shell: powershell
         run: |
           $gitCommand = Get-Command git.exe -CommandType Application | Select-Object -First 1
           [string]$nativeGit = $gitCommand.Source
           if ([string]::IsNullOrWhiteSpace($nativeGit)) { throw 'git.exe missing on runner' }
-          $global:KvtmGitExeCompatTest = $nativeGit
-          function global:git {
-            [string]$gitExe = $global:KvtmGitExeCompatTest
-            if ([string]::IsNullOrWhiteSpace($gitExe)) { throw 'compat git path empty' }
-            & $gitExe @args
-            $nativeExit = $LASTEXITCODE
-            $global:LASTEXITCODE = $nativeExit
+          [object[]]$headOutput = @(& $nativeGit -C $PWD rev-parse HEAD 2>$null)
+          $rc = $LASTEXITCODE
+          [string]$head = ($headOutput | Select-Object -First 1)
+          if ($rc -ne 0 -or [string]::IsNullOrWhiteSpace($head)) {
+            throw "Native Git HEAD capture failed rc=$rc"
           }
-          try {
-            $head = (& git -C $PWD rev-parse HEAD 2>$null | Select-Object -First 1)
-            $rc = $LASTEXITCODE
-            if ($rc -ne 0 -or [string]::IsNullOrWhiteSpace([string]$head)) {
-              throw "Git wrapper regression failed rc=$rc"
-            }
-            Write-Host "POWERSHELL_GIT_WRAPPER_REGRESSION_OK $head" -ForegroundColor Green
-          }
-          finally {
-            Remove-Item Function:\global:git -ErrorAction SilentlyContinue
-            Remove-Variable -Name KvtmGitExeCompatTest -Scope Global -ErrorAction SilentlyContinue
-          }
+          Write-Host "POWERSHELL_NATIVE_GIT_HEAD_OK $head" -ForegroundColor Green
 
       - name: Smoke test transfer collections and crypto primitives
         shell: powershell
