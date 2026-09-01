@@ -55,8 +55,21 @@ function Test-GitCredentialManager {
     catch { return $false }
 }
 
+function Test-PrivateRepoAccess {
+    param([string]$Git)
+    try {
+        & $Git ls-remote --exit-code $RepoUrl ("refs/heads/" + $Branch) *> $null
+        return ($LASTEXITCODE -eq 0)
+    }
+    catch { return $false }
+}
+
 function Configure-GitHubAuth {
     param([string]$Git)
+    if (Test-PrivateRepoAccess $Git) {
+        Write-Host "[AUTH] GitHub private repo access already READY." -ForegroundColor Green
+        return
+    }
     if (-not (Test-GitCredentialManager $Git)) {
         throw "Git Credential Manager khong san sang. Hay cap nhat/cai lai Git for Windows moi nhat."
     }
@@ -73,12 +86,10 @@ function Configure-GitHubAuth {
     if ($LASTEXITCODE -ne 0) { throw "Khong ghim duoc GitHub username" }
 
     Write-Host "[AUTH] Dang nhap GitHub bang trinh duyet. Khong nhap password GitHub vao console." -ForegroundColor Yellow
-    & $Git credential-manager github login
+    & $Git credential-manager github login --browser --username $GitHubUser
     if ($LASTEXITCODE -ne 0) { throw "GitHub browser login qua Git Credential Manager fail." }
 
-    Write-Host "[AUTH] Xac minh quyen doc private repo..." -ForegroundColor Cyan
-    & $Git ls-remote --exit-code $RepoUrl ("refs/heads/" + $Branch) *> $null
-    if ($LASTEXITCODE -ne 0) {
+    if (-not (Test-PrivateRepoAccess $Git)) {
         throw "GitHub auth xong nhung chua doc duoc repo/branch. Kiem tra dung account $GitHubUser co quyen repo."
     }
     Write-Host "[AUTH] GitHub private repo access READY." -ForegroundColor Green
@@ -92,6 +103,18 @@ function Install-WingetPackage {
     & $Winget @args
     if ($LASTEXITCODE -ne 0) { throw "WinGet cai $Label fail, exit=$LASTEXITCODE" }
     Refresh-ProcessPath
+}
+
+function Get-BlockingDirtyLines {
+    param([object[]]$DirtyLines)
+    return @(
+        $DirtyLines | Where-Object {
+            $line = [string]$_
+            # Git LFS materialization can make this vendored runtime tree appear
+            # dirty on some Git-for-Windows installations. It is not DEV source.
+            $line -notmatch 'source-archive/auto-pro-reference/runtime/pyc/'
+        }
+    )
 }
 
 if ($env:OS -ne "Windows_NT" -or -not [Environment]::Is64BitOperatingSystem) {
@@ -110,7 +133,6 @@ Write-Host "=== KVTM SECONDARY MACHINE BOOTSTRAP ===" -ForegroundColor Cyan
 Write-Host "Target: $TargetDirectory"
 Write-Host "Branch: $Branch"
 
-# Git and Git LFS must exist BEFORE clone/checkout on a blank machine.
 $git = Resolve-Git
 if (-not $git) {
     Write-Host "[1/7] Cai Git for Windows..."
@@ -137,7 +159,15 @@ $env:GIT_LFS_SKIP_SMUDGE = "1"
 try {
     if (Test-Path -LiteralPath (Join-Path $TargetDirectory ".git")) {
         [object[]]$dirty = @(& $git -C $TargetDirectory status --porcelain)
-        if ($dirty.Count -gt 0) { throw "Repo may phu co thay doi chua commit. Khong pull de tranh ghi de: $TargetDirectory" }
+        [object[]]$blockingDirty = @(Get-BlockingDirtyLines $dirty)
+        if ($blockingDirty.Count -gt 0) {
+            Write-Host "[BLOCK] Repo co thay doi ngoai vung runtime Git LFS:" -ForegroundColor Red
+            $blockingDirty | ForEach-Object { Write-Host ("  " + [string]$_) -ForegroundColor Red }
+            throw "Repo may phu co thay doi DEV chua commit. Khong pull de tranh ghi de: $TargetDirectory"
+        }
+        if ($dirty.Count -gt 0) {
+            Write-Host "[WARN] Chi thay materialized Git LFS runtime thay doi; cho phep pull source." -ForegroundColor Yellow
+        }
         & $git -C $TargetDirectory fetch origin $Branch
         if ($LASTEXITCODE -ne 0) { throw "git fetch fail" }
         $current = (& $git -C $TargetDirectory branch --show-current | Select-Object -First 1)
@@ -186,10 +216,10 @@ if ($LASTEXITCODE -ne 0) { throw "git lfs pull fail" }
 
 if ($BuildRuntime) {
     Write-Host "[7/7] Build DEV runtime..."
-    $builder = Join-Path $TargetDirectory "packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1"
-    if (-not (Test-Path -LiteralPath $builder -PathType Leaf)) { throw "Thieu builder: $builder" }
+    $builder = Join-Path $TargetDirectory "packaging\suite-v0.15\BUILD_FULL_PACKAGE_PS51.ps1"
+    if (-not (Test-Path -LiteralPath $builder -PathType Leaf)) { throw "Thieu PS5.1-safe builder: $builder" }
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $builder
-    if ($LASTEXITCODE -ne 0) { throw "BUILD_FULL_PACKAGE fail" }
+    if ($LASTEXITCODE -ne 0) { throw "BUILD_FULL_PACKAGE_PS51 fail" }
 }
 else {
     Write-Host "[7/7] Build DEV runtime: SKIPPED (khong co -BuildRuntime)"
