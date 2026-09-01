@@ -60,6 +60,32 @@ jobs:
           }
           Write-Host 'POWERSHELL_JSON_ARRAY_REGRESSION_OK' -ForegroundColor Green
 
+      - name: Smoke test transfer collections and crypto primitives
+        shell: powershell
+        run: |
+          [object[]]$profiles = @()
+          1..13 | ForEach-Object {
+            $profiles += [pscustomobject]@{ id = [string]$_; secret_args = [object[]]@('a','b','c') }
+          }
+          if ($profiles.Count -ne 13) { throw 'object[] accumulation failed' }
+          $payload = [pscustomobject]@{ profile_count = $profiles.Count; profiles = [object[]]$profiles }
+          $json = ConvertTo-Json -InputObject $payload -Depth 10 -Compress
+          $parsed = $json | ConvertFrom-Json
+          [object[]]$parsedProfiles = $parsed.profiles
+          if ($parsedProfiles.Count -ne 13) { throw 'object[] JSON round-trip failed' }
+
+          $salt = New-Object byte[] 32
+          $kdf = New-Object Security.Cryptography.Rfc2898DeriveBytes('0123456789abcdef', $salt, 100000)
+          try { $material = $kdf.GetBytes(64) } finally { $kdf.Dispose() }
+          if ($material.Length -ne 64) { throw 'PBKDF2 smoke failed' }
+
+          $key = New-Object byte[] 32
+          [Array]::Copy($material, 0, $key, 0, 32)
+          $hmac = New-Object Security.Cryptography.HMACSHA256 -ArgumentList (,$key)
+          try { $mac = $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes('kvtm-smoke')) } finally { $hmac.Dispose() }
+          if ($mac.Length -ne 32) { throw 'HMAC smoke failed' }
+          Write-Host 'TRANSFER_COLLECTION_CRYPTO_SMOKE_OK' -ForegroundColor Green
+
       - name: Run read-only machine diagnostic
         shell: powershell
         run: |
