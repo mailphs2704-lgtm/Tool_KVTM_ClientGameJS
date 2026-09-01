@@ -69,9 +69,6 @@ function Resolve-Python311 {
 function Test-VCRuntime {
     param([ValidateSet("x86", "x64")][string]$Arch)
 
-    # On 64-bit Windows, the x86 VC runtime can be exposed through WOW6432Node
-    # depending on installer/registry view. Probe both views so diagnostics do
-    # not report a false MISSING after a successful WinGet install.
     $paths = @(
         "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\$Arch"
     )
@@ -129,9 +126,6 @@ function Get-State {
         }
         catch { }
         try {
-            # PowerShell 5.1 can corrupt $LASTEXITCODE when a native command is
-            # piped directly into Select-Object. Capture output first, capture
-            # the native exit code immediately, then select the first line.
             [object[]]$lfsOutput = @(& $git lfs version 2>$null)
             $lfsExit = $LASTEXITCODE
             $lfsVersion = [string]($lfsOutput | Select-Object -First 1)
@@ -158,14 +152,33 @@ function Get-State {
         }
         catch { }
     }
+
+    $runtimeHost = Join-Path $Dist "Multi\kvtm_multi_dev_host.py"
+    $runtimeUpdateUiPath = Join-Path $Dist "Multi\runtime_update_ui.py"
     $runtimeRequired = @(
-        (Join-Path $Dist "Multi\kvtm_multi_dev_host.py"),
+        $runtimeHost,
         (Join-Path $Dist "Multi\kvtm_multi_dev_entry.py"),
+        $runtimeUpdateUiPath,
         (Join-Path $Dist "AUTO_PRO\local_launcher.py"),
         (Join-Path $Dist "AUTO_PRO\bin\kvtm_loader.exe"),
         (Join-Path $Dist "AUTO_PRO\bin\kvtm_bridge.dll")
     )
     $runtimeMissing = @($runtimeRequired | Where-Object { -not (Test-Path -LiteralPath $_) })
+
+    $runtimeSourceHead = ""
+    $runtimeHeadPath = Join-Path $Dist ".source-head.txt"
+    if (Test-Path -LiteralPath $runtimeHeadPath -PathType Leaf) {
+        try { $runtimeSourceHead = (Get-Content -LiteralPath $runtimeHeadPath -Raw -Encoding ASCII).Trim() } catch { }
+    }
+    $runtimeUpdateUi = Test-Path -LiteralPath $runtimeUpdateUiPath -PathType Leaf
+    $runtimeUpdaterHook = $false
+    if (Test-Path -LiteralPath $runtimeHost -PathType Leaf) {
+        try {
+            $runtimeUpdaterHook = [bool](Select-String -LiteralPath $runtimeHost -SimpleMatch "install_runtime_update_ui" -Quiet)
+        }
+        catch { }
+    }
+
     return [pscustomobject]@{
         winget = $winget; git = $git; git_version = $gitVersion
         lfs_ok = $lfsOk; lfs_version = $lfsVersion; python311 = $python
@@ -173,6 +186,9 @@ function Get-State {
         game_client = $client
         game_dir = if (Test-Path -LiteralPath $gameDir -PathType Container) { $gameDir } else { $null }
         branch = $branch; head = $head; dirty = $dirty; runtime_missing = $runtimeMissing
+        runtime_source_head = $runtimeSourceHead
+        runtime_update_ui = $runtimeUpdateUi
+        runtime_updater_hook = $runtimeUpdaterHook
     }
 }
 
@@ -234,8 +250,12 @@ if ($state.runtime_missing.Count -eq 0) { $lines.Add("runtime=READY") }
 else {
     $lines.Add("runtime=NOT_BUILT_OR_INCOMPLETE")
     foreach ($path in $state.runtime_missing) { $lines.Add("missing=$path") }
-    $lines.Add("action=Run KVTM_DEV_CONTROL.bat -> [9] Full rebuild after Git LFS is ready")
+    $lines.Add("action=Run KVTM_MACHINE_TRANSFER_CONTROL.bat -> [9] update/build runtime")
 }
+$lines.Add("runtime_source_head=" + $(if ($state.runtime_source_head) { $state.runtime_source_head } else { "MISSING" }))
+$lines.Add("runtime_update_ui=" + $(if ($state.runtime_update_ui) { "FOUND" } else { "MISSING" }))
+$lines.Add("runtime_updater_hook=" + $(if ($state.runtime_updater_hook) { "FOUND" } else { "MISSING" }))
+
 $blocking = New-Object System.Collections.Generic.List[string]
 if (-not $state.git) { $blocking.Add("Git") }
 if (-not $state.lfs_ok) { $blocking.Add("Git LFS") }
@@ -245,6 +265,7 @@ if (-not $state.vc_x86) { $blocking.Add("VC++ x86") }
 if (-not $state.game_client) { $blocking.Add("ZingPlay/GameClientJS") }
 if (-not $state.game_dir) { $blocking.Add("KVTM game data") }
 if ($state.branch -ne $ExpectedBranch) { $blocking.Add("Correct Git branch") }
+if ($state.runtime_missing.Count -gt 0) { $blocking.Add("DEV runtime") }
 $lines.Add("")
 $lines.Add("=== RESULT ===")
 if ($blocking.Count -eq 0) { $lines.Add("RESULT=ENVIRONMENT_READY") }
