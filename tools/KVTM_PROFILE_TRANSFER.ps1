@@ -162,14 +162,17 @@ if ([string]::IsNullOrWhiteSpace($ProfileFile)) { $ProfileFile = $DefaultProfile
 
 if ($Mode -eq "Export") {
     if (-not (Test-Path -LiteralPath $ProfileFile -PathType Leaf)) { throw "Khong tim thay profiles.json active: $ProfileFile" }
-    $profiles = @(Get-Content -LiteralPath $ProfileFile -Raw -Encoding UTF8 | ConvertFrom-Json)
+
+    # Windows PowerShell 5.1 may preserve a top-level JSON array as one pipeline object.
+    # Explicit object[] casts keep profile/secret arrays correctly enumerated.
+    [object[]]$profiles = (Get-Content -LiteralPath $ProfileFile -Raw -Encoding UTF8 | ConvertFrom-Json)
     if ($profiles.Count -eq 0) { throw "profiles.json khong co profile." }
     $portableProfiles = New-Object System.Collections.Generic.List[object]
     foreach ($profile in $profiles) {
         if ([string]::IsNullOrWhiteSpace([string]$profile.id) -or [string]::IsNullOrWhiteSpace([string]$profile.secret)) { throw "Profile thieu id/secret; dung export de tranh mat login." }
         try {
             $secretText = Unprotect-DpapiSecret ([string]$profile.secret)
-            $secretArgs = @($secretText | ConvertFrom-Json)
+            [object[]]$secretArgs = ($secretText | ConvertFrom-Json)
         }
         catch { throw "Khong giai ma duoc DPAPI cho profile '$($profile.name)'. Hay export tren dung Windows user da luu profile. Chi tiet: $($_.Exception.Message)" }
         $portableProfiles.Add([pscustomobject]@{
@@ -218,7 +221,7 @@ if (-not (Test-Path -LiteralPath $TransferFile -PathType Leaf)) { throw "Khong t
 $envelope = Get-Content -LiteralPath $TransferFile -Raw -Encoding UTF8 | ConvertFrom-Json
 $password = Read-PasswordText "Nhap mat khau file chuyen may"
 $payload = (Unprotect-PortablePayload $envelope $password) | ConvertFrom-Json
-$incoming = @($payload.profiles)
+[object[]]$incoming = $payload.profiles
 if ($incoming.Count -eq 0) { throw "File transfer khong co profile." }
 if ([int]$payload.profile_count -ne $incoming.Count) { throw "Profile count trong payload khong khop." }
 $localClient = Find-LocalClient
@@ -245,7 +248,7 @@ New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
 Backup-FileSafe $destination (Join-Path $dataRoot "profile-backups") "profiles-before-machine-import"
 $temp = "$destination.transfer.tmp"
 [IO.File]::WriteAllText($temp, (ConvertTo-Json -InputObject @($outProfiles) -Depth 20), $Utf8NoBom)
-$check = @(Get-Content -LiteralPath $temp -Raw -Encoding UTF8 | ConvertFrom-Json)
+[object[]]$check = (Get-Content -LiteralPath $temp -Raw -Encoding UTF8 | ConvertFrom-Json)
 if ($check.Count -ne $outProfiles.Count) {
     Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
     throw "File profiles tam khong hop le; khong ghi de profile active."
