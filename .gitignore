@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.py[cod]
 *.log
 *.tmp
@@ -23,6 +23,9 @@ bridge_token.txt
 *session*
 *cookie*
 *credential*
+*.kvtm
+data-profile-diagnostic/
+data-machine-diagnostic/
 
 # AUTO PRO authoritative runtime is intentionally versioned through Git LFS.
 !source-archive/auto-pro-reference/runtime/
