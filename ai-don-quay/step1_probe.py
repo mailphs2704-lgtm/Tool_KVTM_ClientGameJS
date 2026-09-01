@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 import traceback
 
 
@@ -60,15 +61,7 @@ def _norm(path: str) -> str:
     return os.path.normcase(os.path.abspath(path or ""))
 
 
-def discover_dev_game_targets(auto_root: Path) -> list[dict]:
-    profiles_file = auto_root.parent / "data-dev" / "profiles.json"
-    if not profiles_file.is_file():
-        raise RuntimeError(f"Không tìm thấy profile DEV: {profiles_file}")
-
-    profiles = json.loads(profiles_file.read_text(encoding="utf-8"))
-    if not isinstance(profiles, list):
-        raise RuntimeError("profiles.json của DEV không phải danh sách")
-
+def _running_game_rows() -> list[dict]:
     script = (
         "$p=@(Get-CimInstance Win32_Process -Filter \"Name='GameClientJS.exe'\" | "
         "Select-Object ProcessId,ExecutablePath,CommandLine);"
@@ -89,6 +82,13 @@ def discover_dev_game_targets(auto_root: Path) -> list[dict]:
     rows = json.loads(raw)
     if isinstance(rows, dict):
         rows = [rows]
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _targets_from_profiles(profiles_file: Path, rows: list[dict]) -> list[dict]:
+    profiles = json.loads(profiles_file.read_text(encoding="utf-8"))
+    if not isinstance(profiles, list):
+        raise RuntimeError("profiles.json của DEV không phải danh sách")
 
     prepared_profiles: list[dict] = []
     for profile in profiles:
@@ -144,17 +144,86 @@ def discover_dev_game_targets(auto_root: Path) -> list[dict]:
                     "pid": pid,
                     "profile_id": profile["id"],
                     "profile_name": profile["name"],
+                    "identity_source": "profiles.json",
                 }
             )
             break
+    return targets
+
+
+def _targets_from_fresh_running_map(running_map_file: Path, rows: list[dict]) -> list[dict]:
+    try:
+        age = max(0.0, time.time() - running_map_file.stat().st_mtime)
+    except OSError as exc:
+        raise RuntimeError(f"Không đọc được running_clients.json: {exc}") from exc
+    if age > 30.0:
+        raise RuntimeError(
+            f"running_clients.json đã cũ {age:.1f}s; cần Multi DEV đang mở để xác nhận PID an toàn"
+        )
+
+    payload = json.loads(running_map_file.read_text(encoding="utf-8"))
+    clients = payload.get("clients", []) if isinstance(payload, dict) else []
+    if not isinstance(clients, list):
+        raise RuntimeError("running_clients.json của DEV không đúng schema")
+
+    live_game_pids = set()
+    for row in rows:
+        try:
+            live_game_pids.add(int(row.get("ProcessId")))
+        except (TypeError, ValueError):
+            continue
+
+    targets: list[dict] = []
+    seen: set[int] = set()
+    for item in clients:
+        if not isinstance(item, dict):
+            continue
+        try:
+            pid = int(item.get("pid"))
+        except (TypeError, ValueError):
+            continue
+        profile_id = str(item.get("profile_id") or "")
+        if pid <= 0 or not profile_id or pid not in live_game_pids or pid in seen:
+            continue
+        seen.add(pid)
+        targets.append(
+            {
+                "pid": pid,
+                "profile_id": profile_id,
+                "profile_name": str(item.get("name") or profile_id),
+                "identity_source": "running_clients.json",
+            }
+        )
 
     if not targets:
-        observed = [int(row.get("ProcessId")) for row in rows if row.get("ProcessId")]
         raise RuntimeError(
-            "Không tìm thấy GameClientJS nào thuộc profiles của Multi DEV; "
-            f"các PID GameClientJS đang chạy: {observed}"
+            "running_clients.json không chứa PID GameClientJS DEV còn sống; không thử client khác"
         )
-    return sorted(targets, key=lambda item: int(item["pid"]))
+    return targets
+
+
+def discover_dev_game_targets(auto_root: Path) -> list[dict]:
+    data_dir = auto_root.parent / "data-dev"
+    profiles_file = data_dir / "profiles.json"
+    running_map_file = data_dir / "running_clients.json"
+    rows = _running_game_rows()
+
+    if profiles_file.is_file():
+        targets = _targets_from_profiles(profiles_file, rows)
+        if targets:
+            return sorted(targets, key=lambda item: int(item["pid"]))
+        raise RuntimeError(
+            "Có profiles.json DEV nhưng không profile nào khớp GameClientJS đang chạy; "
+            "không fallback sang client ngoài profile"
+        )
+
+    if running_map_file.is_file():
+        targets = _targets_from_fresh_running_map(running_map_file, rows)
+        return sorted(targets, key=lambda item: int(item["pid"]))
+
+    raise RuntimeError(
+        "Không có nguồn định danh DEV an toàn: thiếu cả profiles.json và running_clients.json"
+    )
 
 
 def main() -> int:
@@ -169,13 +238,15 @@ def main() -> int:
 
     try:
         targets = discover_dev_game_targets(auto_root)
+        sources = sorted({str(item.get("identity_source") or "") for item in targets})
         emit(
             "step1_progress",
             stage="dev-clients-detected",
             message=(
                 f"Bước 1: tìm thấy {len(targets)} GameClientJS thuộc Multi DEV; "
-                "mọi client từ bộ cũ đã bị loại"
+                "mọi client ngoài nguồn định danh DEV đã bị loại"
             ),
+            identity_sources=sources,
             targets=targets,
         )
 
@@ -204,6 +275,7 @@ def main() -> int:
                     message=f"Bước 1: thử DEV profile {target['profile_name']} PID {pid}",
                     pid=pid,
                     profile_id=target["profile_id"],
+                    identity_source=target.get("identity_source"),
                 )
                 driver = u2.connect(f"PC:{pid}")
                 emit(
