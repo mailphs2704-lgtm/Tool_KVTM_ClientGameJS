@@ -157,6 +157,70 @@ function Sync-CurrentDataToStage {
     }
 }
 
+function Get-RelativeRuntimePath {
+    param([string]$Root, [string]$Path)
+    $prefix = [IO.Path]::GetFullPath($Root).TrimEnd('\\') + '\\'
+    $full = [IO.Path]::GetFullPath($Path)
+    if (-not $full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Path is outside runtime root: $full"
+    }
+    return $full.Substring($prefix.Length)
+}
+
+function Test-FilesIdentical {
+    param([string]$Left, [string]$Right)
+    if (-not (Test-Path -LiteralPath $Left -PathType Leaf)) { return $false }
+    if (-not (Test-Path -LiteralPath $Right -PathType Leaf)) { return $false }
+    $leftInfo = Get-Item -LiteralPath $Left
+    $rightInfo = Get-Item -LiteralPath $Right
+    if ($leftInfo.Length -ne $rightInfo.Length) { return $false }
+    return (
+        (Get-FileHash -LiteralPath $Left -Algorithm SHA256).Hash -eq
+        (Get-FileHash -LiteralPath $Right -Algorithm SHA256).Hash
+    )
+}
+
+function Activate-RuntimeOverlay {
+    param([string]$Current, [string]$Stage, [string]$Backup)
+
+    if (Test-Path -LiteralPath $Backup) {
+        Remove-Item -LiteralPath $Backup -Recurse -Force
+    }
+    Copy-Item -LiteralPath $Current -Destination $Backup -Recurse -Force
+
+    $stageRoot = [IO.Path]::GetFullPath($Stage)
+    foreach ($source in Get-ChildItem -LiteralPath $Stage -File -Recurse) {
+        $relative = Get-RelativeRuntimePath -Root $stageRoot -Path $source.FullName
+        if ($relative -eq "data-dev" -or $relative.StartsWith(
+            "data-dev\\", [StringComparison]::OrdinalIgnoreCase
+        )) {
+            continue
+        }
+        $destination = Join-Path $Current $relative
+        if (Test-FilesIdentical -Left $source.FullName -Right $destination) {
+            continue
+        }
+        $parent = Split-Path -Parent $destination
+        if ($parent) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+        Copy-Item -LiteralPath $source.FullName -Destination $destination -Force
+    }
+
+    foreach ($source in Get-ChildItem -LiteralPath $Stage -File -Recurse) {
+        $relative = Get-RelativeRuntimePath -Root $stageRoot -Path $source.FullName
+        if ($relative -eq "data-dev" -or $relative.StartsWith(
+            "data-dev\\", [StringComparison]::OrdinalIgnoreCase
+        )) {
+            continue
+        }
+        $destination = Join-Path $Current $relative
+        if (-not (Test-FilesIdentical -Left $source.FullName -Right $destination)) {
+            throw "Overlay verification failed: $relative"
+        }
+    }
+
+    Remove-Item -LiteralPath $Stage -Recurse -Force
+}
+
 function Activate-Runtime {
     param([string]$Current, [string]$Stage, [string]$Head)
     if (-not (Test-Path -LiteralPath $Stage -PathType Container)) {
@@ -182,10 +246,22 @@ function Activate-Runtime {
         Move-Item -LiteralPath $Stage -Destination $Current
     }
     catch {
+        $renameError = $_
         if ($movedCurrent -and -not (Test-Path -LiteralPath $Current) -and (Test-Path -LiteralPath $backup)) {
             Move-Item -LiteralPath $backup -Destination $Current -ErrorAction SilentlyContinue
         }
-        throw
+        if ($movedCurrent -or -not (Test-Path -LiteralPath $Current -PathType Container)) {
+            throw $renameError
+        }
+
+        # GameClientJS intentionally remains alive when Multi closes and can
+        # keep an unchanged bridge DLL loaded. In that case Windows refuses to
+        # rename the whole runtime directory. Back up the current runtime, then
+        # overlay only changed staging files. Identical locked files are skipped
+        # after SHA-256 comparison; changed locked files still fail safely.
+        Activate-RuntimeOverlay -Current $Current -Stage $Stage -Backup $backup
+        Write-UpdateStatus -State "activated" -Message "Đã kích hoạt runtime DEV mới bằng overlay an toàn." -Head $Head
+        return
     }
 
     Write-UpdateStatus -State "activated" -Message "Đã kích hoạt runtime DEV mới." -Head $Head
