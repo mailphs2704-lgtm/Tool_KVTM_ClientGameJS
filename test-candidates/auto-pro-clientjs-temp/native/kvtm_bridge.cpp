@@ -243,15 +243,19 @@ LONG dispatch_capture(CaptureCommand* command) {
         return ERROR_READ_FAULT;
     }
 
-    // GameClientJS presents this OpenGL surface rotated 180 degrees relative
-    // to the logical game coordinates. Normalize the shared frame once in
-    // native code so Live View and AUTO consume the same top-down image.
+    // glReadPixels returns rows bottom-up while Workspace/AUTO consume
+    // top-down BGRA. Swap row order only; preserve left/right pixel order.
     auto* words = reinterpret_cast<std::uint32_t*>(pixels);
-    const size_t pixel_count = static_cast<size_t>(width) * height;
-    for (size_t left = 0, right = pixel_count - 1; left < right; ++left, --right) {
-        const std::uint32_t value = words[left];
-        words[left] = words[right];
-        words[right] = value;
+    const size_t row_words = static_cast<size_t>(width);
+    for (size_t top = 0, bottom = static_cast<size_t>(height) - 1;
+         top < bottom; ++top, --bottom) {
+        auto* top_row = words + top * row_words;
+        auto* bottom_row = words + bottom * row_words;
+        for (size_t x = 0; x < row_words; ++x) {
+            const std::uint32_t value = top_row[x];
+            top_row[x] = bottom_row[x];
+            bottom_row[x] = value;
+        }
     }
 
     const DWORD frame = static_cast<DWORD>(InterlockedIncrement(&g_capture_frame));
