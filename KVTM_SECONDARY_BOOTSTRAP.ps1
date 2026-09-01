@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoUrl = "https://github.com/mailphs2704-lgtm/Tool_KVTM_ClientGameJS.git"
 $Branch = "develop/multi-auto-dev"
+$GitHubUser = "mailphs2704-lgtm"
 
 function Resolve-Winget {
     $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
@@ -44,6 +45,45 @@ function Test-GitLfs {
     catch { return $false }
 }
 
+function Test-GitCredentialManager {
+    param([string]$Git)
+    if (-not $Git) { return $false }
+    try {
+        & $Git credential-manager --version *> $null
+        return ($LASTEXITCODE -eq 0)
+    }
+    catch { return $false }
+}
+
+function Configure-GitHubAuth {
+    param([string]$Git)
+    if (-not (Test-GitCredentialManager $Git)) {
+        throw "Git Credential Manager khong san sang. Hay cap nhat/cai lai Git for Windows moi nhat."
+    }
+
+    Write-Host "[AUTH] Cau hinh Git Credential Manager + GitHub browser OAuth..." -ForegroundColor Cyan
+    & $Git credential-manager configure
+    if ($LASTEXITCODE -ne 0) { throw "git credential-manager configure fail" }
+
+    & $Git config --global credential.helper manager
+    if ($LASTEXITCODE -ne 0) { throw "Khong cau hinh duoc credential.helper=manager" }
+    & $Git config --global credential.gitHubAuthModes browser
+    if ($LASTEXITCODE -ne 0) { throw "Khong cau hinh duoc GitHub browser auth mode" }
+    & $Git config --global credential.https://github.com.username $GitHubUser
+    if ($LASTEXITCODE -ne 0) { throw "Khong ghim duoc GitHub username" }
+
+    Write-Host "[AUTH] Dang nhap GitHub bang trinh duyet. Khong nhap password GitHub vao console." -ForegroundColor Yellow
+    & $Git credential-manager github login
+    if ($LASTEXITCODE -ne 0) { throw "GitHub browser login qua Git Credential Manager fail." }
+
+    Write-Host "[AUTH] Xac minh quyen doc private repo..." -ForegroundColor Cyan
+    & $Git ls-remote --exit-code $RepoUrl ("refs/heads/" + $Branch) *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "GitHub auth xong nhung chua doc duoc repo/branch. Kiem tra dung account $GitHubUser co quyen repo."
+    }
+    Write-Host "[AUTH] GitHub private repo access READY." -ForegroundColor Green
+}
+
 function Install-WingetPackage {
     param([string]$Winget, [string]$Id, [string]$Label, [string]$Architecture = "")
     Write-Host "[INSTALL] $Label ($Id)..." -ForegroundColor Cyan
@@ -73,13 +113,13 @@ Write-Host "Branch: $Branch"
 # Git and Git LFS must exist BEFORE clone/checkout on a blank machine.
 $git = Resolve-Git
 if (-not $git) {
-    Write-Host "[1/6] Cai Git for Windows..."
+    Write-Host "[1/7] Cai Git for Windows..."
     Install-WingetPackage $winget "Git.Git" "Git for Windows" "x64"
     $git = Resolve-Git
 }
 if (-not $git) { throw "Da cai Git nhung chua tim thay git.exe. Mo PowerShell moi va chay lai." }
 
-Write-Host "[2/6] Kiem tra Git LFS truoc khi clone..."
+Write-Host "[2/7] Kiem tra Git LFS truoc khi clone..."
 if (-not (Test-GitLfs $git)) {
     Install-WingetPackage $winget "GitHub.GitLFS" "Git LFS"
     $git = Resolve-Git
@@ -88,7 +128,10 @@ if (-not (Test-GitLfs $git)) { throw "Git LFS chua san sang sau khi cai." }
 & $git lfs install
 if ($LASTEXITCODE -ne 0) { throw "git lfs install fail" }
 
-Write-Host "[3/6] Chuan bi repository dung branch..."
+Write-Host "[3/7] GitHub private-repo authentication..."
+Configure-GitHubAuth $git
+
+Write-Host "[4/7] Chuan bi repository dung branch..."
 $previousSkipSmudge = $env:GIT_LFS_SKIP_SMUDGE
 $env:GIT_LFS_SKIP_SMUDGE = "1"
 try {
@@ -114,14 +157,14 @@ try {
             New-Item -ItemType Directory -Path (Split-Path -Parent $TargetDirectory) -Force | Out-Null
         }
         & $git clone --branch $Branch --single-branch $RepoUrl $TargetDirectory
-        if ($LASTEXITCODE -ne 0) { throw "git clone fail. Repo private co the yeu cau dang nhap GitHub qua cua so trinh duyet." }
+        if ($LASTEXITCODE -ne 0) { throw "git clone fail sau khi GitHub auth da READY." }
     }
 }
 finally {
     $env:GIT_LFS_SKIP_SMUDGE = $previousSkipSmudge
 }
 
-Write-Host "[4/6] Cai/kiem tra dependency bang diagnostic chinh..."
+Write-Host "[5/7] Cai/kiem tra dependency bang diagnostic chinh..."
 $setup = Join-Path $TargetDirectory "tools\KVTM_MACHINE_SETUP.ps1"
 if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "Thieu $setup" }
 $setupArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup, "-InstallMissing")
@@ -134,7 +177,7 @@ Refresh-ProcessPath
 $git = Resolve-Git
 if (-not $git) { throw "Khong tim thay git.exe sau setup." }
 
-Write-Host "[5/6] Materialize Git LFS..."
+Write-Host "[6/7] Materialize Git LFS..."
 if (-not (Test-GitLfs $git)) { throw "Git LFS bi mat sau setup." }
 & $git lfs install
 if ($LASTEXITCODE -ne 0) { throw "git lfs install fail" }
@@ -142,14 +185,14 @@ if ($LASTEXITCODE -ne 0) { throw "git lfs install fail" }
 if ($LASTEXITCODE -ne 0) { throw "git lfs pull fail" }
 
 if ($BuildRuntime) {
-    Write-Host "[6/6] Build DEV runtime..."
+    Write-Host "[7/7] Build DEV runtime..."
     $builder = Join-Path $TargetDirectory "packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1"
     if (-not (Test-Path -LiteralPath $builder -PathType Leaf)) { throw "Thieu builder: $builder" }
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $builder
     if ($LASTEXITCODE -ne 0) { throw "BUILD_FULL_PACKAGE fail" }
 }
 else {
-    Write-Host "[6/6] Build DEV runtime: SKIPPED (khong co -BuildRuntime)"
+    Write-Host "[7/7] Build DEV runtime: SKIPPED (khong co -BuildRuntime)"
 }
 
 Write-Host ""
