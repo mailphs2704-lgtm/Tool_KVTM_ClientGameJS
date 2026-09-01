@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import time
+import traceback
 
 
 def _configure_console() -> None:
@@ -32,6 +33,21 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _parse_args() -> argparse.Namespace:
+    """Tolerate cmd.exe stripping the quotes around the human-readable title.
+
+    Windows cmd /S /K has special first/last quote handling.  A title such as
+    ``KVTM DEV - Don quay DLL probe`` can therefore arrive as several tokens.
+    Only the title is allowed to absorb unknown trailing tokens; the required
+    --log/--done switches remain strict and are still validated by argparse.
+    """
+    parser = _parser()
+    args, trailing = parser.parse_known_args()
+    if trailing:
+        args.title = " ".join([str(args.title), *map(str, trailing)]).strip()
+    return args
+
+
 def _print_header(title: str, log_path: Path) -> None:
     line = "=" * 78
     print(line)
@@ -43,13 +59,7 @@ def _print_header(title: str, log_path: Path) -> None:
     print(flush=True)
 
 
-def main() -> int:
-    _configure_console()
-    args = _parser().parse_args()
-    log_path = Path(args.log).resolve()
-    done_path = Path(args.done).resolve()
-    _print_header(str(args.title), log_path)
-
+def _follow(log_path: Path, done_path: Path) -> int:
     position = 0
     idle_after_done = 0
     while True:
@@ -85,5 +95,27 @@ def main() -> int:
         time.sleep(0.25)
 
 
+def main() -> int:
+    _configure_console()
+    args = _parse_args()
+    log_path = Path(args.log).resolve()
+    done_path = Path(args.done).resolve()
+    _print_header(str(args.title), log_path)
+    return _follow(log_path, done_path)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except BaseException:
+        _configure_console()
+        print("\n[console] Lỗi không bắt được trong console helper:")
+        traceback.print_exc()
+        print("\nNhấn ENTER để đóng CMD.", flush=True)
+        try:
+            input()
+        except (EOFError, KeyboardInterrupt):
+            pass
+        raise
