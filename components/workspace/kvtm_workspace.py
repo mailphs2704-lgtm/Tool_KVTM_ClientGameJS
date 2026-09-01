@@ -262,7 +262,19 @@ class DeviceView(ttk.Frame):
         if self.attached:
             return
         user32 = ctypes.windll.user32
+        user32.GetParent.argtypes = [wintypes.HWND]
+        user32.GetParent.restype = wintypes.HWND
+        user32.SetParent.argtypes = [wintypes.HWND, wintypes.HWND]
+        user32.SetParent.restype = wintypes.HWND
+        user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.GetWindowLongW.restype = wintypes.LONG
+        user32.SetWindowLongW.argtypes = [
+            wintypes.HWND, ctypes.c_int, wintypes.LONG,
+        ]
+        user32.SetWindowLongW.restype = wintypes.LONG
         hwnd = int(self.device["hwnd"])
+        self.status.set("Đang gắn ClientJS vào Workspace...")
+        self.update_idletasks()
         if not user32.IsWindow(hwnd):
             messagebox.showerror(APP_TITLE, "Client DEV không còn chạy.")
             return
@@ -279,7 +291,7 @@ class DeviceView(ttk.Frame):
             int(rect.right - rect.left), int(rect.bottom - rect.top),
         )
         child_style = (self.original_style & ~0x80000000) | 0x40000000 | 0x10000000
-        user32.SetLastError(0)
+        ctypes.windll.kernel32.SetLastError(0)
         user32.SetWindowLongW(hwnd, -16, child_style)
         user32.SetParent(hwnd, self.canvas.winfo_id())
         if int(user32.GetParent(hwnd) or 0) != int(self.canvas.winfo_id()):
