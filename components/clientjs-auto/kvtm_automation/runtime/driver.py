@@ -62,14 +62,28 @@ class ClientJSDriverFactory:
         *,
         logger: Callable[[str], None] | None = None,
     ) -> DriverBundle:
+        """Connect the native Cocos bridge before loading image dependencies.
+
+        DLL transport is intentionally brought up first.  This guarantees that
+        the UI/probe can report PID -> PING -> inject -> pipe-ready immediately,
+        instead of appearing frozen while NumPy/OpenCV/Pillow are materialized.
+        Vision dependencies are loaded only after the DLL transport is healthy.
+        """
+        if logger is not None:
+            logger("DLL bridge: bắt đầu kết nối trực tiếp ClientJS")
+        driver = CocosBridgeDriver(
+            int(pid),
+            self.auto_root,
+            reference_size=(1000, 1000),
+            logger=logger,
+        )
+        if logger is not None:
+            logger("DLL bridge: transport đã sẵn sàng; đang nạp thư viện ảnh")
         install_binary_dependencies(self.auto_root)
+        if logger is not None:
+            logger("DLL bridge: thư viện ảnh đã sẵn sàng")
         return DriverBundle(
-            driver=CocosBridgeDriver(
-                int(pid),
-                self.auto_root,
-                reference_size=(1000, 1000),
-                logger=logger,
-            ),
+            driver=driver,
             bridge_root=self.auto_root / "bin",
             mode="cocos-dll-direct",
         )
