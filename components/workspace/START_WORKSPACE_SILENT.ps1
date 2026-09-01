@@ -8,7 +8,7 @@ $MainDevRoot = if ($env:KVTM_MULTI_DEV_ROOT) {
 } else {
     Join-Path $env:USERPROFILE "Desktop\Tool_KVTM_Multi_DEV"
 }
-$DriverRoot = Join-Path $MainDevRoot "dist\KVTM-ClientJS-Suite-Multi-DEV\AUTO_PRO"
+$DriverRoot = Join-Path $MainDevRoot "dist\KVTM-ClientJS-Suite-Multi-DEV\Multi"
 $LogRoot = Join-Path $WorkspaceRoot "data-workspace\logs"
 
 foreach ($required in @($WorkspaceScript, (Join-Path $DriverRoot "pc_driver.py"))) {
