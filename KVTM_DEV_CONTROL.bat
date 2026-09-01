@@ -8,23 +8,28 @@ set "EXPECTED_BRANCH=develop/multi-auto-dev"
 set "DIST=dist\KVTM-ClientJS-Suite-Multi-DEV"
 set "STEP1=components\clientjs-auto\worker\clear_stall_step1_probe.py"
 set "STEP1_OUT=%DIST%\data-dev\clear-stall-step1"
+set "BUILD_SCRIPT=packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1"
 
 :menu
 cls
-echo ===============================================================================
-echo  KVTM MULTI DEV - CONTROL CENTER
-echo  Chi dung cho Tool_KVTM_Multi_DEV. Khong dieu khien client o bo cu.
-echo ===============================================================================
+set "CUR_BRANCH="
+set "CUR_HEAD="
 for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "CUR_BRANCH=%%B"
 for /f "delims=" %%H in ('git rev-parse --short HEAD 2^>nul') do set "CUR_HEAD=%%H"
+echo ===============================================================================
+echo  KVTM MULTI DEV - CONTROL CENTER
+echo  MOT CUA SO DUY NHAT. Chi dung cho Tool_KVTM_Multi_DEV.
+echo  Khong dieu khien GameClientJS cua bo cu.
+echo ===============================================================================
 echo  Repo   : %CD%
 echo  Branch : %CUR_BRANCH%
 echo  HEAD   : %CUR_HEAD%
 echo -------------------------------------------------------------------------------
 echo  [1] Cap nhat source DEV
-echo  [2] Build package DEV
-echo  [3] Mo Multi DEV
+echo  [2] Build package DEV thu cong
+echo  [3] Mo Multi DEV  ^(tu build neu package cu/thieu^)
 echo  [4] Don quay - BUOC HIEN TAI: STEP 1 capture bang luong AUTO chinh
+echo      ^(tu build neu package cu/thieu^)
 echo  [5] Mo thu muc ket qua STEP 1
 echo  [0] Thoat
 echo -------------------------------------------------------------------------------
@@ -39,27 +44,73 @@ if "%CHOICE%"=="0" goto end
 goto menu
 
 :guard_branch
+set "CUR_BRANCH="
 for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "CUR_BRANCH=%%B"
-if /I not "%CUR_BRANCH%"=="%EXPECTED_BRANCH%" (
+if /I "%CUR_BRANCH%"=="%EXPECTED_BRANCH%" exit /b 0
+echo.
+echo [STOP] Sai branch: %CUR_BRANCH%
+echo        Can dung: %EXPECTED_BRANCH%
+echo.
+exit /b 1
+
+:do_build
+echo.
+echo [DEV] Dang build/cap nhat fixed package DEV...
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\%BUILD_SCRIPT%"
+if errorlevel 1 (
   echo.
-  echo [STOP] Sai branch: %CUR_BRANCH%
-  echo        Can dung: %EXPECTED_BRANCH%
-  echo.
-  pause
-  goto menu
+  echo [LOI] Build package DEV that bai.
+  exit /b 1
 )
+if not exist "%DIST%\Multi\kvtm_multi_dev_host.py" (
+  echo [LOI] Build xong nhung van thieu Multi\kvtm_multi_dev_host.py
+  exit /b 1
+)
+if not exist "%DIST%\.source-head.txt" (
+  echo [LOI] Build xong nhung thieu .source-head.txt
+  exit /b 1
+)
+echo [OK] Package DEV da dong bo voi source hien tai.
 exit /b 0
+
+:ensure_package
+call :guard_branch
+if errorlevel 1 exit /b 1
+set "REPO_HEAD="
+set "PACKAGE_HEAD="
+for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "REPO_HEAD=%%H"
+if exist "%DIST%\.source-head.txt" set /p "PACKAGE_HEAD="<"%DIST%\.source-head.txt"
+set "NEED_BUILD=0"
+if not exist "%DIST%\02_START_MULTI_DEV.bat" set "NEED_BUILD=1"
+if not exist "%DIST%\AUTO_PRO\local_launcher.py" set "NEED_BUILD=1"
+if not exist "%DIST%\Multi\kvtm_multi.py" set "NEED_BUILD=1"
+if not exist "%DIST%\Multi\kvtm_multi_dev_entry.py" set "NEED_BUILD=1"
+if not exist "%DIST%\Multi\kvtm_multi_dev_host.py" set "NEED_BUILD=1"
+if not exist "%DIST%\Multi\clear_stall_probe_console.py" set "NEED_BUILD=1"
+if not exist "%DIST%\components\clientjs-auto\worker\clear_stall_step1_probe.py" set "NEED_BUILD=1"
+if not defined PACKAGE_HEAD set "NEED_BUILD=1"
+if /I not "%PACKAGE_HEAD%"=="%REPO_HEAD%" set "NEED_BUILD=1"
+if "%NEED_BUILD%"=="0" (
+  echo [OK] Package DEV da dung HEAD hien tai.
+  exit /b 0
+)
+echo [DEV] Package dang cu/thieu. Control Center se tu build mot lan.
+call :do_build
+exit /b %ERRORLEVEL%
 
 :update
 call :guard_branch
-if errorlevel 1 goto menu
+if errorlevel 1 (
+  pause
+  goto menu
+)
 cls
 echo [DEV] Cap nhat source tren branch %EXPECTED_BRANCH%...
 echo [DEV] Tat auto-gc/maintenance de tranh prompt unlink pack file.
 git -c gc.auto=0 -c maintenance.auto=false pull --ff-only origin %EXPECTED_BRANCH%
 if errorlevel 1 (
   echo.
-  echo [LOI] git pull that bai. Khong build/test tiep.
+  echo [LOI] git pull that bai. Khong lam tiep.
   pause
   goto menu
 )
@@ -73,34 +124,31 @@ if errorlevel 1 (
 echo.
 git rev-parse --short HEAD
 echo [OK] Source DEV da cap nhat.
+echo [INFO] Khi chon [3] hoac [4], package se tu build neu can.
 pause
 goto menu
 
 :build
 call :guard_branch
-if errorlevel 1 goto menu
-cls
-echo [DEV] Build fixed package...
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1"
-set "RC=%ERRORLEVEL%"
-echo.
-if not "%RC%"=="0" (
-  echo [LOI] Build that bai. code=%RC%
-) else (
-  echo [OK] Build package DEV xong.
+if errorlevel 1 (
+  pause
+  goto menu
 )
+cls
+call :do_build
 pause
 goto menu
 
 :startmulti
-call :guard_branch
-if errorlevel 1 goto menu
 cls
-if not exist "%DIST%\02_START_MULTI_DEV.bat" (
-  echo [LOI] Chua co package DEV. Hay chon [2] Build package DEV truoc.
+call :ensure_package
+if errorlevel 1 (
+  echo.
+  echo [STOP] Khong mo Multi vi package chua hop le.
   pause
   goto menu
 )
+echo.
 echo [DEV] Dang mo Multi DEV...
 call "%DIST%\02_START_MULTI_DEV.bat"
 echo.
@@ -109,9 +157,14 @@ pause
 goto menu
 
 :step1
-call :guard_branch
-if errorlevel 1 goto menu
 cls
+call :ensure_package
+if errorlevel 1 (
+  echo.
+  echo [STOP] Khong test STEP 1 vi package chua hop le.
+  pause
+  goto menu
+)
 echo ===============================================================================
 echo  DON QUAY - STEP 1 ONLY
 echo  Muc tieu: dung dung bootstrap AUTO chinh, match CHI client Multi DEV, chup 1 anh.
@@ -119,12 +172,6 @@ echo  KHONG click, KHONG swipe, KHONG mua/ban, KHONG dung vao client bo cu.
 echo ===============================================================================
 if not exist "%STEP1%" (
   echo [LOI] Thieu %STEP1%
-  pause
-  goto menu
-)
-if not exist "%DIST%\AUTO_PRO" (
-  echo [LOI] Thieu %DIST%\AUTO_PRO
-  echo       Hay chon [2] Build package DEV truoc.
   pause
   goto menu
 )
