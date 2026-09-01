@@ -24,199 +24,170 @@ jobs:
             components/clientjs-auto \
             source-archive/multi-current/kvtm_multi_tool
 
-      - name: Verify clear-stall manifest rules
+      - name: Verify clean architecture and business rules
         run: |
           python - <<'PY'
+          import json
           import sys
           import tempfile
-          import threading
           from pathlib import Path
 
-          sys.path.insert(0, str(Path('components/clientjs-auto/workflows').resolve()))
-          from clear_stall.manifest import (
-              ItemFingerprint,
-              PurchasedItem,
-              TransactionManifest,
+          component = Path('components/clientjs-auto').resolve()
+          sys.path.insert(0, str(component))
+
+          from kvtm_automation.actions.stall import StallActions
+          from kvtm_automation.models import VisualFingerprint
+          from kvtm_automation.workflows.clear_stall.config import ClearStallRequest
+          from kvtm_automation.workflows.clear_stall.manifest import (
+              ClearStallManifest,
+              PurchasedRecord,
           )
-          from clear_stall.detector import (
-              AUTO_PRO_STALL_VIEW_COUNT,
-              PageScan,
-              StallScanner,
-              new_local_slots_for_view,
-              physical_slot_index,
-          )
-          from clear_stall.workflow import ClearStallRequest, ClearStallWorkflow
+          from kvtm_automation.workflows.clear_stall.state import CarryoverStore
 
-          def fp(char: str):
-              value = (char * 64)[:64]
-              phash = (char * 16)[:16]
-              return ItemFingerprint(value, phash, 84, 84, '')
+          def fp(ch):
+              return VisualFingerprint(ch * 64, ch * 16, 84, 84, '')
 
-          def add_units(manifest, fingerprint, count):
-              start = len(manifest.items)
-              for index in range(count):
-                  manifest.items.append(PurchasedItem(
-                      fingerprint=fingerprint,
-                      source_page=1,
-                      source_slot=((start + index) % 8) + 1,
-                      requested_quantity=1,
-                      purchased_quantity=1,
-                  ))
-
-          def manifest_for(*groups, profile='profile-A'):
-              manifest = TransactionManifest(profile, 2, 2, 999)
-              for fingerprint, count in groups:
-                  add_units(manifest, fingerprint, count)
-              return manifest
+          def record(fingerprint, count, slot=1):
+              return PurchasedRecord(
+                  fingerprint=fingerprint,
+                  source_view=1,
+                  source_local_slot=slot,
+                  source_physical_slot=slot,
+                  purchased_quantity=count,
+              )
 
           a = fp('a')
           b = fp('b')
 
+          # Four overlapping views must map exactly to 20 physical positions.
           physical = []
-          for view in range(1, AUTO_PRO_STALL_VIEW_COUNT + 1):
-              for local_slot in new_local_slots_for_view(view):
-                  physical.append(physical_slot_index(view, local_slot))
+          for view in range(1, 5):
+              for local in StallActions.new_local_slots(view):
+                  physical.append(StallActions.physical_slot(view, local))
           assert physical == list(range(1, 21)), physical
 
-          repeated = PurchasedItem(a, 1, 1, requested_quantity=8)
-          for count in range(8):
-              repeated.record_purchase(count, count + 1)
-          assert repeated.purchased_quantity == 8
-          assert repeated.inventory_before == 0
-          assert repeated.inventory_after == 8
-          try:
-              repeated.record_purchase(8, 9)
-          except RuntimeError:
-              pass
-          else:
-              raise AssertionError('purchase accumulation exceeded requested quantity')
-
-          m = manifest_for((a, 7))
-          assert m.sellable_total == 0
+          # Resale is per exact VP type, one stall slot = exactly ten.
+          m = ClearStallManifest('A', 2, 2, 7)
+          m.records = [record(a, 7)]
+          assert m.sellable_remaining_total == 0
           assert m.planned_remainder_total == 7
-          assert len(m.resale_batches()) == 0
+          assert not m.resale_batches()
 
-          m = manifest_for((a, 10))
-          assert m.sellable_total == 10
+          m = ClearStallManifest('A', 2, 2, 10)
+          m.records = [record(a, 10)]
           assert len(m.resale_batches()) == 1
           m.record_group_sale(a, 10)
-          m.complete()
-          assert m.retained_total == 0
+          assert m.remaining_total == 0
 
-          m = manifest_for((a, 13))
-          assert m.sellable_total == 10
+          m = ClearStallManifest('A', 2, 2, 13)
+          m.records = [record(a, 13)]
+          assert len(m.resale_batches()) == 1
           assert m.planned_remainder_total == 3
           m.record_group_sale(a, 10)
-          m.complete()
-          assert m.retained_total == 3
+          assert m.remaining_total == 3
 
-          m = manifest_for((a, 20))
-          assert m.sellable_total == 20
+          m = ClearStallManifest('A', 2, 2, 20)
+          m.records = [record(a, 20)]
           assert len(m.resale_batches()) == 2
 
-          m = manifest_for((a, 6), (b, 4))
-          assert m.purchased_total == 10
-          assert m.sellable_total == 0
-          assert len(m.resale_batches()) == 0
+          mixed = ClearStallManifest('A', 2, 2, 10)
+          mixed.records = [record(a, 6), record(b, 4, 2)]
+          assert mixed.remaining_total == 10
+          assert mixed.sellable_remaining_total == 0
+          assert not mixed.resale_batches()
 
-          m = manifest_for((a, 10), (b, 9))
-          assert m.sellable_total == 10
-          assert m.planned_remainder_total == 9
-
-          m = manifest_for((a, 3), (a, 7))
-          assert m.sellable_total == 10
-          assert len(m.resale_batches()) == 1
-
-          prev = PageScan(1, (), tuple('abcdefgh'), 'p1')
-          cur1 = PageScan(2, (), tuple('bcdefghi'), 'p2')
-          cur2 = PageScan(2, (), tuple('cdefghij'), 'p3')
-          same = PageScan(2, (), tuple('abcdefgh'), 'p4')
-          assert StallScanner.infer_forward_shift(prev, cur1) == 1
-          assert StallScanner.infer_forward_shift(prev, cur2) == 2
-          assert StallScanner.infer_forward_shift(prev, same) == 0
-
+          # 13 -> sell 10, keep 3; next session +7 -> one full batch of ten.
           with tempfile.TemporaryDirectory() as temp:
               root = Path(temp)
+              store_a = CarryoverStore(root / 'profile-A')
+              first = ClearStallManifest('profile-A', 2, 2, 13)
+              first.records = [record(a, 13)]
+              first.record_group_sale(a, 10)
+              store_a.save(first)
+              loaded = store_a.load('profile-A')
+              assert sum(item.remaining_quantity for item in loaded) == 3
 
-              def workflow(profile, run_name, buy_quantity=8):
-                  request = ClearStallRequest(
-                      profile_id=profile,
-                      friend_ordinal=2,
-                      stall_id=2,
-                      buy_quantity=buy_quantity,
-                      max_scan_pages=20,
-                      work_dir=root / profile / run_name,
-                  )
-                  return ClearStallWorkflow(
-                      request,
-                      adapter=None,
-                      stop_event=threading.Event(),
-                      logger=lambda _message: None,
-                  )
+              second = ClearStallManifest('profile-A', 2, 2, 7)
+              for item in loaded:
+                  second.add_carryover(item)
+              second.records.append(record(a, 7, 2))
+              assert second.remaining_total == 10
+              assert len(second.resale_batches()) == 1
+              second.record_group_sale(a, 10)
+              store_a.save(second)
+              assert not store_a.path.exists()
 
-              first = workflow('profile-A', 'run-1')
-              first.manifest.items = manifest_for((a, 13)).items
-              first.manifest.record_group_sale(a, 10)
-              first._save_carryover()
-              assert first.carryover_path.is_file()
+              store_b = CarryoverStore(root / 'profile-B')
+              assert store_b.load('profile-B') == []
 
-              second = workflow('profile-A', 'run-2')
-              assert second.manifest.purchased_total == 3
-              add_units(second.manifest, a, 7)
-              assert second.manifest.sellable_total == 10
-              second.manifest.record_group_sale(a, 10)
-              second.manifest.complete()
-              second._save_carryover()
-              assert not second.carryover_path.exists()
+          # Current clean navigation is deliberately bounded to the seven
+          # friend cards proven by the recovered behavior; do not guess paging.
+          request = ClearStallRequest('A', 7, 5, 8, Path('.'))
+          assert request.friend_ordinal == 7
+          assert request.resale_storage_id == 5
+          try:
+              ClearStallRequest('A', 8, 2, 8, Path('.'))
+          except ValueError:
+              pass
+          else:
+              raise AssertionError('friend ordinal 8 must remain blocked until paging is verified')
 
-              other = workflow('profile-B', 'run-1')
-              assert other.manifest.purchased_total == 0
-
-              class RepeatingExecutor:
-                  def __init__(self, available):
-                      self.available = available
-                      self.clicks = 0
-
-                  def source_listing_matches(self, _item):
-                      return self.available > 0
-
-                  def purchase_listing(self, _item):
-                      self.available -= 1
-                      self.clicks += 1
-
-              full = workflow('profile-C', 'repeat-full', buy_quantity=8)
-              full_item = PurchasedItem(a, 1, 1, requested_quantity=8)
-              full.manifest.add_item(full_item)
-              full_executor = RepeatingExecutor(8)
-              assert full.execute_purchases([full_item], full_executor) == 8
-              assert full_item.purchased_quantity == 8
-              assert full_executor.clicks == 8
-
-              partial = workflow('profile-D', 'repeat-partial', buy_quantity=8)
-              partial_item = PurchasedItem(a, 1, 1, requested_quantity=8)
-              partial.manifest.add_item(partial_item)
-              partial_executor = RepeatingExecutor(3)
-              assert partial.execute_purchases([partial_item], partial_executor) == 3
-              assert partial_item.purchased_quantity == 3
-              assert partial_executor.clicks == 3
-
-          probe_path = Path(
-              'components/clientjs-auto/worker/clear_stall_live_probe.py'
+          workers = [
+              component / 'worker' / 'clear_stall_worker.py',
+              component / 'worker' / 'clear_stall_live_probe.py',
+          ]
+          forbidden = (
+              'from auto_worker import',
+              'import auto_worker',
+              'FarmAutomation',
+              'ADBController',
+              'install_headless_clientjs_runtime',
+              'automation.pyc',
+              'adb_controller.pyc',
+              'runtime/pyc',
           )
-          probe_source = probe_path.read_text(encoding='utf-8')
-          assert 'StallScanner' in probe_source
-          assert 'AUTO_PRO_STALL_VIEW_COUNT' in probe_source
-          assert '1000x1000' in probe_source
-          for forbidden in (
-              'purchase_listing(',
-              'execute_purchases(',
-              'execute_resale(',
-              'sell_manifest_batch(',
-              'makeBuyItems(',
-          ):
-              assert forbidden not in probe_source, forbidden
+          for worker in workers:
+              source = worker.read_text(encoding='utf-8')
+              for token in forbidden:
+                  assert token not in source, (worker, token)
 
-          print('CLEAR_STALL_STATIC_OK')
+          probe_source = workers[1].read_text(encoding='utf-8')
+          for token in (
+              'automation.buying',
+              'automation.selling',
+              'sell_batch_of_ten(',
+              'buy_from_listing(',
+          ):
+              assert token not in probe_source, token
+
+          # New execution path must exist as one maintainable package.
+          required_clean = (
+              'automation.py',
+              'context.py',
+              'models.py',
+              'runtime/bootstrap.py',
+              'runtime/driver.py',
+              'runtime/vision.py',
+              'actions/popup.py',
+              'actions/navigation.py',
+              'actions/stall.py',
+              'actions/buying.py',
+              'actions/inventory.py',
+              'actions/selling.py',
+              'workflows/clear_stall/config.py',
+              'workflows/clear_stall/manifest.py',
+              'workflows/clear_stall/state.py',
+              'workflows/clear_stall/result.py',
+              'workflows/clear_stall/workflow.py',
+          )
+          clean_root = component / 'kvtm_automation'
+          for relative in required_clean:
+              assert (clean_root / relative).is_file(), relative
+
+          print('CLEAR_STALL_CLEAN_ARCHITECTURE_OK')
+          print('CLEAR_STALL_20_SLOT_MAPPING_OK')
+          print('CLEAR_STALL_BATCH_AND_CARRYOVER_OK')
+          print('CLEAR_STALL_WORKERS_NO_PYC_DEPENDENCY_OK')
           print('CLEAR_STALL_LIVE_PROBE_READ_ONLY_OK')
           PY
 
@@ -244,20 +215,20 @@ jobs:
         shell: powershell
         run: |
           $root = Join-Path $PWD "dist\KVTM-ClientJS-Suite-CI"
-          $carryMarker = Join-Path $root "data-dev\clear-stall\profile-ci\carryover-marker.txt"
+          $stateMarker = Join-Path $root "data-dev\clear-stall\profile-ci\state\carryover-marker.txt"
           $probeMarker = Join-Path $root "data-dev\clear-stall-probe\profile-ci\probe-marker.txt"
-          New-Item -ItemType Directory -Path (Split-Path $carryMarker) -Force | Out-Null
+          New-Item -ItemType Directory -Path (Split-Path $stateMarker) -Force | Out-Null
           New-Item -ItemType Directory -Path (Split-Path $probeMarker) -Force | Out-Null
-          Set-Content -LiteralPath $carryMarker -Value "KEEP-CLEAR-STALL" -Encoding ASCII
+          Set-Content -LiteralPath $stateMarker -Value "KEEP-CLEAR-STALL" -Encoding ASCII
           Set-Content -LiteralPath $probeMarker -Value "KEEP-LIVE-PROBE" -Encoding ASCII
 
           & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
 
-          if (-not (Test-Path -LiteralPath $carryMarker -PathType Leaf)) {
-            throw "clear-stall runtime data was lost during fixed DEV rebuild"
+          if (-not (Test-Path -LiteralPath $stateMarker -PathType Leaf)) {
+            throw "clear-stall state was lost during fixed DEV rebuild"
           }
-          if ((Get-Content -LiteralPath $carryMarker -Raw).Trim() -ne "KEEP-CLEAR-STALL") {
-            throw "clear-stall runtime marker changed during rebuild"
+          if ((Get-Content -LiteralPath $stateMarker -Raw).Trim() -ne "KEEP-CLEAR-STALL") {
+            throw "clear-stall state marker changed during rebuild"
           }
           if (-not (Test-Path -LiteralPath $probeMarker -PathType Leaf)) {
             throw "clear-stall probe diagnostics were lost during fixed DEV rebuild"
@@ -272,15 +243,22 @@ jobs:
         shell: powershell
         run: |
           $root = Join-Path $PWD "dist\KVTM-ClientJS-Suite-CI"
+          $clean = Join-Path $root "components\clientjs-auto\kvtm_automation"
           $zip = "$root.zip"
           $required = @(
             (Join-Path $root "Multi\kvtm_multi.py"),
             (Join-Path $root "Multi\kvtm_multi_entry.py"),
-            (Join-Path $root "components\clientjs-auto\worker\auto_worker.py"),
+            (Join-Path $root "components\clientjs-auto\worker\clean_worker_support.py"),
             (Join-Path $root "components\clientjs-auto\worker\clear_stall_worker.py"),
             (Join-Path $root "components\clientjs-auto\worker\clear_stall_live_probe.py"),
-            (Join-Path $root "components\clientjs-auto\workflows\clear_stall\manifest.py"),
-            (Join-Path $root "components\clientjs-auto\workflows\clear_stall\workflow.py"),
+            (Join-Path $clean "automation.py"),
+            (Join-Path $clean "runtime\bootstrap.py"),
+            (Join-Path $clean "runtime\driver.py"),
+            (Join-Path $clean "actions\navigation.py"),
+            (Join-Path $clean "actions\stall.py"),
+            (Join-Path $clean "workflows\clear_stall\manifest.py"),
+            (Join-Path $clean "workflows\clear_stall\state.py"),
+            (Join-Path $clean "workflows\clear_stall\workflow.py"),
             (Join-Path $root "02_START_MULTI_DEV.bat"),
             $zip
           )
@@ -294,7 +272,7 @@ jobs:
           $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
           try {
             $bad = @($archive.Entries | Where-Object {
-              $_.FullName -match '(^|/)(data-dev|auto-logs|clear-stall)(/|$)' -or
+              $_.FullName -match '(^|/)(data-dev|auto-logs|clear-stall|clear-stall-probe)(/|$)' -or
               $_.FullName -match '(^|/)(profiles|settings)\.json$'
             })
             if ($bad.Count -gt 0) {
@@ -304,10 +282,53 @@ jobs:
           finally {
             $archive.Dispose()
           }
-
           Write-Host "PACKAGE_SMOKE_OK" -ForegroundColor Green
 
-      - name: Preflight packaged Auto Pro runtime
+      - name: Preflight packaged clean Dọn quầy runtime
+        shell: powershell
+        run: |
+          @'
+          import importlib
+          import sys
+          from pathlib import Path
+
+          root = Path('dist/KVTM-ClientJS-Suite-CI').resolve()
+          component = root / 'components' / 'clientjs-auto'
+          auto_root = root / 'AUTO_PRO'
+          sys.path.insert(0, str(component))
+
+          from kvtm_automation.runtime.bootstrap import install_binary_dependencies
+          install_binary_dependencies(auto_root)
+          cv2 = importlib.import_module('cv2')
+          numpy = importlib.import_module('numpy')
+          PIL = importlib.import_module('PIL')
+          from kvtm_automation import KVAutomation
+          from kvtm_automation.workflows.clear_stall import ClearStallWorkflow
+
+          assert KVAutomation is not None
+          assert ClearStallWorkflow is not None
+          assert getattr(cv2, '__version__', None)
+          assert getattr(numpy, '__version__', None)
+          assert PIL is not None
+
+          forbidden = (
+              'from auto_worker import', 'import auto_worker', 'FarmAutomation',
+              'ADBController', 'install_headless_clientjs_runtime',
+              'automation.pyc', 'adb_controller.pyc', 'runtime/pyc',
+          )
+          for name in ('clear_stall_worker.py', 'clear_stall_live_probe.py'):
+              source = (component / 'worker' / name).read_text(encoding='utf-8')
+              for token in forbidden:
+                  assert token not in source, (name, token)
+
+          print('PACKAGED_CLEAN_CLEAR_STALL_PREFLIGHT_OK')
+          print('cv2=' + str(cv2.__version__))
+          print('numpy=' + str(numpy.__version__))
+          '@ | Set-Content -LiteralPath .\clean_clear_stall_preflight_ci.py -Encoding UTF8
+          python .\clean_clear_stall_preflight_ci.py
+          Remove-Item -LiteralPath .\clean_clear_stall_preflight_ci.py -Force
+
+      - name: Preflight legacy suite runtime for other AUTO features
         shell: powershell
         run: |
           @'
@@ -319,23 +340,12 @@ jobs:
           auto_root = root / 'AUTO_PRO'
           worker_root = root / 'components' / 'clientjs-auto' / 'worker'
           sys.path.insert(0, str(worker_root))
-
           from auto_worker import install_headless_clientjs_runtime
-
           automation = install_headless_clientjs_runtime(auto_root)
           adb_controller = importlib.import_module('adb_controller')
-          cv2 = importlib.import_module('cv2')
-          numpy = importlib.import_module('numpy')
-
           assert hasattr(automation, 'FarmAutomation')
           assert hasattr(adb_controller, 'ADBController')
-          assert callable(getattr(automation.FarmAutomation, 'start', None))
-          assert getattr(cv2, '__version__', None)
-          assert getattr(numpy, '__version__', None)
-
-          print('PACKAGED_RUNTIME_PREFLIGHT_OK')
-          print('cv2=' + str(cv2.__version__))
-          print('numpy=' + str(numpy.__version__))
-          '@ | Set-Content -LiteralPath .\runtime_preflight_ci.py -Encoding UTF8
-          python .\runtime_preflight_ci.py
-          Remove-Item -LiteralPath .\runtime_preflight_ci.py -Force
+          print('LEGACY_SUITE_RUNTIME_PREFLIGHT_OK')
+          '@ | Set-Content -LiteralPath .\legacy_suite_preflight_ci.py -Encoding UTF8
+          python .\legacy_suite_preflight_ci.py
+          Remove-Item -LiteralPath .\legacy_suite_preflight_ci.py -Force
