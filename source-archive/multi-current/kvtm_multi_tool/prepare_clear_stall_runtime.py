@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+import platform
+import struct
 import sys
 import threading
 import time
 import traceback
+
+
+SUPPORTED_PYTHON = (3, 11)
 
 
 def _runtime_paths() -> tuple[Path, Path]:
@@ -15,7 +20,27 @@ def _runtime_paths() -> tuple[Path, Path]:
     return component_root, auto_root
 
 
+def _check_interpreter() -> bool:
+    version = tuple(sys.version_info[:2])
+    bits = struct.calcsize("P") * 8
+    print(
+        f"[CLEAN RUNTIME] Python={platform.python_version()} {bits}-bit | exe={sys.executable}",
+        flush=True,
+    )
+    if version != SUPPORTED_PYTHON or bits != 64:
+        print(
+            "[CLEAN RUNTIME] ERROR: Dọn quầy clean yêu cầu CPython 3.11 x64 "
+            "vì NumPy/OpenCV/Pillow bundled là native cp311.",
+            flush=True,
+        )
+        return False
+    return True
+
+
 def main() -> int:
+    if not _check_interpreter():
+        return 3
+
     component_root, auto_root = _runtime_paths()
     if not component_root.is_dir():
         print(f"[CLEAN RUNTIME] ERROR: missing component root: {component_root}", flush=True)
@@ -41,7 +66,7 @@ def main() -> int:
             from kvtm_automation.runtime.bootstrap import install_binary_dependencies
 
             install_binary_dependencies(auto_root)
-        except BaseException as exc:  # diagnostics must keep the original failure
+        except BaseException as exc:
             failure.append(exc)
         finally:
             finished.set()
