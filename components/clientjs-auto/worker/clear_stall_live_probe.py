@@ -15,14 +15,14 @@ from clean_worker_support import (
 )
 
 
-PROBE_VERSION = 5
+PROBE_VERSION = 6
 STALL_VIEW_COUNT = 4
 TOTAL_STALL_SLOTS = 20
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Read-only clean ClientJS Dọn quầy probe"
+        description="Read-only clean ClientJS Dọn quầy DLL probe"
     )
     parser.add_argument("--auto-root", required=True)
     parser.add_argument("--pid", type=int, required=True)
@@ -61,7 +61,7 @@ def main() -> int:
     report_lock = threading.RLock()
     report: dict[str, object] = {
         "version": PROBE_VERSION,
-        "mode": "clean_read_only_live_probe",
+        "mode": "clean_read_only_direct_dll_probe",
         "profile_id": args.profile_id,
         "profile_name": args.profile_name,
         "pid": args.pid,
@@ -105,7 +105,6 @@ def main() -> int:
 
     from kvtm_automation import AutomationContext, KVAutomation
     from kvtm_automation.errors import AutomationStopped
-    from kvtm_automation.runtime.driver import ClientJSDriverFactory
 
     context = AutomationContext(
         pid=args.pid,
@@ -154,18 +153,27 @@ def main() -> int:
 
     try:
         checkpoint("clean-runtime-start")
-        factory = ClientJSDriverFactory(component_root, Path(args.auto_root))
+        checkpoint(
+            "dll-bridge-preflight",
+            pipe=rf"\\.\pipe\KVTM-Cocos-{args.pid}",
+            dll=str(Path(args.auto_root) / "bin" / "kvtm_bridge.dll"),
+            loader=str(Path(args.auto_root) / "bin" / "kvtm_loader.exe"),
+        )
 
-        # First capture uses the plain Windows ClientJS bridge. This guarantees
-        # diagnostics even if the engine bridge cannot be constructed later.
-        checkpoint("raw-window-connecting")
-        raw_bundle = factory.raw(args.pid)
-        capture("raw-window", raw_bundle.driver)
-        context.ensure_running()
-
-        checkpoint("clientjs-engine-connecting")
+        # KVAutomation now constructs the clean CocosBridgeDriver directly.
+        # This is the authoritative ClientJS transport for touches and capture.
         automation = KVAutomation(context)
-        capture("engine-ready", automation.driver)
+        with report_lock:
+            report["bridge_mode"] = str(automation.bridge_mode)
+            report["bridge_root"] = str(automation.bridge_root)
+            report["bridge_info"] = dict(getattr(automation.driver, "info", {}) or {})
+            persist()
+        checkpoint(
+            "dll-bridge-ready",
+            mode=str(automation.bridge_mode),
+            pipe=str(getattr(automation.driver, "pipe_name", "")),
+        )
+        capture("dll-engine-ready", automation.driver)
         context.ensure_running()
 
         checkpoint("waiting-main-screen")
