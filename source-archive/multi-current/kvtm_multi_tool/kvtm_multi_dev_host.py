@@ -117,11 +117,9 @@ def main() -> int:
 
         print("[KVTM DEV] Resident host: importing Multi UI AFTER runtime READY...", flush=True)
         import kvtm_multi_dev_entry
-        from runtime_update_ui import install_runtime_update_ui
 
         _configure_dpi()
         app = kvtm_multi_dev_entry.MultiDevApp()
-        install_runtime_update_ui(app)
         app.mainloop()
         return 0
     except Exception as exc:
