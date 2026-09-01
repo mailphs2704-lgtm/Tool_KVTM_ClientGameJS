@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import importlib
 import os
 from pathlib import Path
-import shutil
 import struct
 import sys
 from typing import Callable
 
 
-_VENDOR_VERSION = "2"
 _SUPPORTED_PYTHON = (3, 11)
+_FORBIDDEN_BUSINESS_MODULES = (
+    "automation",
+    "adb_controller",
+    "image_processor",
+    "gui",
+    "gui_base",
+)
 
 
 def _require_supported_python() -> None:
@@ -26,78 +32,64 @@ def _require_supported_python() -> None:
         raise RuntimeError("Dọn quầy clean yêu cầu CPython 3.11 64-bit")
 
 
-def _vendor_root() -> Path:
-    """Return a persistent runtime cache outside the source/package tree."""
-
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        base = Path(local_app_data)
-    else:
-        base = Path.home() / ".kvtm"
-    return base / "KVTM Multi" / "clean-runtime-vendor" / f"v{_VENDOR_VERSION}"
+def _module_file(module) -> Path:
+    value = getattr(module, "__file__", None)
+    if not value:
+        raise RuntimeError(f"Không xác định được nguồn module {module!r}")
+    return Path(value).resolve()
 
 
-def _vendor_is_ready(vendor: Path) -> bool:
-    marker = vendor / ".kvtm-third-party-version"
+def _inside(path: Path, root: Path) -> bool:
     try:
-        if marker.read_text(encoding="ascii").strip() != _VENDOR_VERSION:
-            return False
-    except OSError:
+        path.relative_to(root)
+        return True
+    except ValueError:
         return False
-    required = (
-        vendor / "numpy" / "__init__.pyc",
-        vendor / "numpy" / "core" / "multiarray.pyc",
-        vendor / "numpy" / "_core",
-        vendor / "numpy.libs",
-        vendor / "cv2" / "__init__.py",
-        vendor / "cv2" / "cv2.pyd",
-        vendor / "PIL" / "Image.pyc",
-        vendor / "PIL" / "_imaging.cp311-win_amd64.pyd",
-    )
-    return all(path.exists() for path in required)
 
 
-def _copy_tree(source: Path, destination: Path) -> None:
-    if not source.is_dir():
-        raise RuntimeError(f"Thiếu dependency bundle: {source}")
-    destination.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, destination, dirs_exist_ok=True)
+def _prepend_path_environment(*directories: Path) -> None:
+    """Mirror the proven AUTO worker DLL/PATH environment without business imports."""
+
+    current = [item for item in os.environ.get("PATH", "").split(os.pathsep) if item]
+    normalized = {os.path.normcase(os.path.abspath(item)) for item in current}
+    prefix: list[str] = []
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        text = str(directory)
+        key = os.path.normcase(os.path.abspath(text))
+        if key in normalized:
+            continue
+        normalized.add(key)
+        prefix.append(text)
+    if prefix:
+        os.environ["PATH"] = os.pathsep.join(prefix + current)
 
 
-def _materialize_vendor(auto_root: Path, vendor: Path) -> None:
-    """Build an isolated cache containing third-party libraries only.
+def _install_dll_directories(*directories: Path) -> None:
+    if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+        return
 
-    The recovered AUTO PRO bundle stores NumPy and Pillow Python bytecode under
-    runtime/pyc while their native extensions live under _internal. OpenCV is a
-    complete package under _internal/cv2. The two legacy parent directories are
-    never exposed through sys.path; only the selected third-party packages are
-    copied into this cache.
-    """
-
-    root = Path(auto_root).resolve()
-    pure_root = root / "runtime" / "pyc"
-    native_root = root / "_internal"
-    if not pure_root.is_dir() or not native_root.is_dir():
-        raise RuntimeError(
-            "Thiếu third-party bundle để dựng runtime sạch: "
-            f"{pure_root} / {native_root}"
-        )
-
-    if vendor.exists():
-        shutil.rmtree(vendor, ignore_errors=True)
-    vendor.mkdir(parents=True, exist_ok=True)
-
-    _copy_tree(pure_root / "numpy", vendor / "numpy")
-    _copy_tree(native_root / "numpy", vendor / "numpy")
-    _copy_tree(native_root / "numpy.libs", vendor / "numpy.libs")
-    _copy_tree(native_root / "cv2", vendor / "cv2")
-    _copy_tree(pure_root / "PIL", vendor / "PIL")
-    _copy_tree(native_root / "PIL", vendor / "PIL")
-
-    (vendor / ".kvtm-third-party-version").write_text(
-        _VENDOR_VERSION,
-        encoding="ascii",
-    )
+    handles = getattr(_install_dll_directories, "_handles", None)
+    if handles is None:
+        handles = []
+        _install_dll_directories._handles = handles
+    known = {
+        os.path.normcase(os.path.abspath(str(getattr(handle, "path", ""))))
+        for handle in handles
+    }
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        text = str(directory)
+        key = os.path.normcase(os.path.abspath(text))
+        if key in known:
+            continue
+        try:
+            handles.append(os.add_dll_directory(text))
+            known.add(key)
+        except OSError:
+            continue
 
 
 def install_binary_dependencies(
@@ -105,10 +97,18 @@ def install_binary_dependencies(
     *,
     logger: Callable[[str], None] | None = None,
 ) -> None:
-    """Expose clean third-party dependencies without AUTO PRO business logic.
+    """Load only third-party image libraries from AUTO PRO's proven layout.
 
-    ``logger`` is deliberately optional so package/build preflight stays simple,
-    while live workers can report exactly which native import is in progress.
+    The normal AUTO worker is already proven on the user's ClientJS runtime. It
+    does not reconstruct NumPy/OpenCV/Pillow into a second cache; instead it
+    exposes the extracted PyInstaller ``runtime/pyc`` and ``_internal`` layout,
+    configures the Windows DLL search path, then imports the runtime.
+
+    Clean Dọn quầy now mirrors only that *third-party environment setup*. It
+    imports NumPy, OpenCV and Pillow, verifies that their files come from the
+    packaged AUTO_PRO tree, and restores ``sys.path`` immediately afterwards.
+    AUTO PRO business modules such as automation/adb_controller/image_processor
+    are never imported by this function.
     """
 
     def log(message: str) -> None:
@@ -120,58 +120,107 @@ def install_binary_dependencies(
             pass
 
     _require_supported_python()
+
+    root = Path(auto_root).resolve()
+    pyc = root / "runtime" / "pyc"
+    internal = root / "_internal"
+    if not pyc.is_dir() or not internal.is_dir():
+        raise RuntimeError(
+            "Thiếu third-party runtime AUTO_PRO: "
+            f"{pyc} / {internal}"
+        )
+
+    # Clean workers used to inherit cwd=AUTO_PRO while importing a reconstructed
+    # vendor cache. The launcher prewarm succeeded from Multi, while the worker
+    # hung at ``import numpy``. Keep native imports away from AUTO_PRO's root so
+    # Windows current-directory DLL lookup cannot shadow the intended runtime.
+    safe_cwd = Path(__file__).resolve().parents[2]
+    try:
+        os.chdir(safe_cwd)
+    except OSError as exc:
+        raise RuntimeError(f"Không chuyển được clean runtime cwd tới {safe_cwd}: {exc}") from exc
+
     log(
         "Thư viện ảnh: process "
         f"Python={sys.version.split()[0]} exe={sys.executable} cwd={Path.cwd()}"
     )
+    log("Thư viện ảnh: dùng trực tiếp layout thư viện AUTO chính; không dựng vendor cache")
 
-    root = Path(auto_root).resolve()
-    internal = root / "_internal"
-    if not internal.is_dir():
-        raise RuntimeError(f"Thiếu thư viện runtime: {internal}")
+    # Match the environment used by install_headless_clientjs_runtime(), which
+    # is the known-good AUTO path on ClientJS. Only library paths are reused.
+    _prepend_path_environment(internal, root / "platform-tools")
+    _install_dll_directories(
+        internal,
+        internal / "cv2",
+        internal / "numpy.libs",
+        internal / "pywin32_system32",
+        internal / "Pythonwin",
+    )
 
-    vendor = _vendor_root()
-    if not _vendor_is_ready(vendor):
-        log(f"Thư viện ảnh: dựng vendor cache tại {vendor}")
-        _materialize_vendor(root, vendor)
-    else:
-        log(f"Thư viện ảnh: vendor cache sẵn sàng tại {vendor}")
+    runtime_paths = (
+        pyc,
+        internal,
+        internal / "win32",
+        internal / "win32" / "lib",
+        internal / "Pythonwin",
+        internal / "pywin32_system32",
+        root,
+    )
+    previous_sys_path = list(sys.path)
+    business_before = {
+        name for name in _FORBIDDEN_BUSINESS_MODULES if name in sys.modules
+    }
 
-    vendor_text = str(vendor)
-    if vendor_text in sys.path:
-        sys.path.remove(vendor_text)
-    sys.path.insert(0, vendor_text)
+    try:
+        # Intentionally use the same insertion order as the working AUTO worker.
+        for directory in runtime_paths:
+            if not directory.exists():
+                continue
+            text = str(directory)
+            while text in sys.path:
+                sys.path.remove(text)
+            sys.path.insert(0, text)
 
-    if os.name == "nt" and hasattr(os, "add_dll_directory"):
-        candidates = (
-            vendor,
-            vendor / "cv2",
-            vendor / "numpy.libs",
-            vendor / "PIL",
-            internal,
+        log("Thư viện ảnh: import numpy từ layout AUTO chính...")
+        numpy = importlib.import_module("numpy")
+        log(
+            "Thư viện ảnh: numpy READY "
+            f"{getattr(numpy, '__version__', '?')} source={_module_file(numpy)}"
         )
-        handles = getattr(install_binary_dependencies, "_dll_handles", None)
-        if handles is None:
-            handles = []
-            install_binary_dependencies._dll_handles = handles
-        known = {str(getattr(handle, "path", "")) for handle in handles}
-        for directory in candidates:
-            if not directory.is_dir() or str(directory) in known:
-                continue
-            try:
-                handle = os.add_dll_directory(str(directory))
-                handles.append(handle)
-            except OSError:
-                continue
 
-    log("Thư viện ảnh: import numpy...")
-    import numpy  # noqa: F401
-    log(f"Thư viện ảnh: numpy READY {getattr(numpy, '__version__', '?')}")
+        log("Thư viện ảnh: import cv2 từ layout AUTO chính...")
+        cv2 = importlib.import_module("cv2")
+        log(
+            "Thư viện ảnh: cv2 READY "
+            f"{getattr(cv2, '__version__', '?')} source={_module_file(cv2)}"
+        )
 
-    log("Thư viện ảnh: import cv2...")
-    import cv2  # noqa: F401
-    log(f"Thư viện ảnh: cv2 READY {getattr(cv2, '__version__', '?')}")
+        log("Thư viện ảnh: import PIL từ layout AUTO chính...")
+        PIL = importlib.import_module("PIL")
+        Image = importlib.import_module("PIL.Image")
+        log(
+            "Thư viện ảnh: PIL READY "
+            f"source={_module_file(PIL)} image={_module_file(Image)}"
+        )
 
-    log("Thư viện ảnh: import PIL...")
-    from PIL import Image  # noqa: F401
-    log("Thư viện ảnh: PIL READY")
+        for name, module in (("numpy", numpy), ("cv2", cv2), ("PIL", PIL)):
+            source = _module_file(module)
+            if not _inside(source, root):
+                raise RuntimeError(
+                    f"{name} không được nạp từ AUTO_PRO packaged runtime: {source}"
+                )
+
+        business_after = {
+            name for name in _FORBIDDEN_BUSINESS_MODULES if name in sys.modules
+        }
+        leaked = sorted(business_after - business_before)
+        if leaked:
+            raise RuntimeError(
+                "Clean image bootstrap đã nạp nhầm business module AUTO_PRO: "
+                + ", ".join(leaked)
+            )
+    finally:
+        # NumPy/OpenCV/Pillow are now resident. Restore the clean worker import
+        # surface so later workflow code cannot accidentally import AUTO PRO's
+        # business bytecode by name.
+        sys.path[:] = previous_sys_path
