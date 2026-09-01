@@ -24,11 +24,11 @@ function Resolve-Winget {
 function Resolve-Git {
     $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
     if ($cmd -and $cmd.Source) { return $cmd.Source }
-    foreach ($candidate in @(
-        (Join-Path $env:ProgramFiles "Git\cmd\git.exe"),
-        (if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} "Git\cmd\git.exe" })
-    )) {
-        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if ($env:ProgramFiles) { $candidates.Add((Join-Path $env:ProgramFiles "Git\cmd\git.exe")) }
+    if (${env:ProgramFiles(x86)}) { $candidates.Add((Join-Path ${env:ProgramFiles(x86)} "Git\cmd\git.exe")) }
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
     }
     return $null
 }
@@ -69,11 +69,11 @@ function Test-VCRuntime {
 }
 
 function Find-GameClient {
-    foreach ($candidate in @(
-        (Join-Path $env:ProgramFiles "ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe"),
-        (if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} "ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe" })
-    )) {
-        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if ($env:ProgramFiles) { $candidates.Add((Join-Path $env:ProgramFiles "ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")) }
+    if (${env:ProgramFiles(x86)}) { $candidates.Add((Join-Path ${env:ProgramFiles(x86)} "ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")) }
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
     }
     return $null
 }
@@ -100,8 +100,7 @@ function Get-State {
     $lfsOk = $false
     $lfsVersion = ""
     if ($git) {
-        try { $gitVersion = (& $git --version 2>$null | Select-Object -First 1) }
-        catch { }
+        try { $gitVersion = (& $git --version 2>$null | Select-Object -First 1) } catch { }
         try {
             $lfsVersion = (& $git lfs version 2>$null | Select-Object -First 1)
             $lfsOk = ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($lfsVersion))
@@ -111,9 +110,7 @@ function Get-State {
     $python = Resolve-Python311
     $client = Find-GameClient
     $gameDir = Join-Path $env:APPDATA "VNG Corporation\ZingPlay\zpp\24\game"
-    $branch = "NOT_A_GIT_REPO"
-    $head = ""
-    $dirty = "unknown"
+    $branch = "NOT_A_GIT_REPO"; $head = ""; $dirty = "unknown"
     if ($git -and (Test-Path -LiteralPath (Join-Path $RepoRoot ".git"))) {
         try {
             $branch = (& $git -C $RepoRoot branch --show-current 2>$null | Select-Object -First 1)
@@ -123,7 +120,6 @@ function Get-State {
         }
         catch { }
     }
-
     $runtimeRequired = @(
         (Join-Path $Dist "Multi\kvtm_multi_dev_host.py"),
         (Join-Path $Dist "Multi\kvtm_multi_dev_entry.py"),
@@ -132,31 +128,18 @@ function Get-State {
         (Join-Path $Dist "AUTO_PRO\bin\kvtm_bridge.dll")
     )
     $runtimeMissing = @($runtimeRequired | Where-Object { -not (Test-Path -LiteralPath $_) })
-
     return [pscustomobject]@{
-        winget = $winget
-        git = $git
-        git_version = $gitVersion
-        lfs_ok = $lfsOk
-        lfs_version = $lfsVersion
-        python311 = $python
-        vc_x64 = Test-VCRuntime x64
-        vc_x86 = Test-VCRuntime x86
+        winget = $winget; git = $git; git_version = $gitVersion
+        lfs_ok = $lfsOk; lfs_version = $lfsVersion; python311 = $python
+        vc_x64 = Test-VCRuntime x64; vc_x86 = Test-VCRuntime x86
         game_client = $client
         game_dir = if (Test-Path -LiteralPath $gameDir -PathType Container) { $gameDir } else { $null }
-        branch = $branch
-        head = $head
-        dirty = $dirty
-        runtime_missing = $runtimeMissing
+        branch = $branch; head = $head; dirty = $dirty; runtime_missing = $runtimeMissing
     }
 }
 
-if ($env:OS -ne "Windows_NT") {
-    throw "KVTM Multi chi ho tro Windows."
-}
-if (-not [Environment]::Is64BitOperatingSystem) {
-    throw "Can Windows x64."
-}
+if ($env:OS -ne "Windows_NT") { throw "KVTM Multi chi ho tro Windows." }
+if (-not [Environment]::Is64BitOperatingSystem) { throw "Can Windows x64." }
 
 $before = Get-State
 if ($InstallMissing) {
@@ -164,35 +147,18 @@ if ($InstallMissing) {
         Write-Host "[BLOCK] Khong co WinGet. Cai 'App Installer' tu Microsoft Store, sau do chay lai." -ForegroundColor Red
     }
     else {
-        if (-not $before.git) {
-            Install-WingetPackage $before.winget "Git.Git" "Git for Windows" "x64" | Out-Null
-        }
+        if (-not $before.git) { Install-WingetPackage $before.winget "Git.Git" "Git for Windows" "x64" | Out-Null }
         $midGit = Resolve-Git
         if ($midGit) {
-            try {
-                & $midGit lfs version *> $null
-                if ($LASTEXITCODE -ne 0) {
-                    Install-WingetPackage $before.winget "GitHub.GitLFS" "Git LFS" | Out-Null
-                }
-            }
-            catch {
-                Install-WingetPackage $before.winget "GitHub.GitLFS" "Git LFS" | Out-Null
-            }
+            $lfsNeedsInstall = $true
+            try { & $midGit lfs version *> $null; $lfsNeedsInstall = ($LASTEXITCODE -ne 0) } catch { }
+            if ($lfsNeedsInstall) { Install-WingetPackage $before.winget "GitHub.GitLFS" "Git LFS" | Out-Null }
         }
-        if (-not (Resolve-Python311)) {
-            Install-WingetPackage $before.winget "Python.Python.3.11" "CPython 3.11 x64" "x64" | Out-Null
-        }
-        if (-not (Test-VCRuntime x64)) {
-            Install-WingetPackage $before.winget "Microsoft.VCRedist.2015+.x64" "Visual C++ 2015-2022 x64" "x64" | Out-Null
-        }
-        if (-not (Test-VCRuntime x86)) {
-            Install-WingetPackage $before.winget "Microsoft.VCRedist.2015+.x86" "Visual C++ 2015-2022 x86" "x86" | Out-Null
-        }
+        if (-not (Resolve-Python311)) { Install-WingetPackage $before.winget "Python.Python.3.11" "CPython 3.11 x64" "x64" | Out-Null }
+        if (-not (Test-VCRuntime x64)) { Install-WingetPackage $before.winget "Microsoft.VCRedist.2015+.x64" "Visual C++ 2015-2022 x64" "x64" | Out-Null }
+        if (-not (Test-VCRuntime x86)) { Install-WingetPackage $before.winget "Microsoft.VCRedist.2015+.x86" "Visual C++ 2015-2022 x86" "x86" | Out-Null }
         $gitAfterInstall = Resolve-Git
-        if ($gitAfterInstall) {
-            try { & $gitAfterInstall lfs install | Out-Null }
-            catch { }
-        }
+        if ($gitAfterInstall) { try { & $gitAfterInstall lfs install | Out-Null } catch { } }
     }
 }
 
@@ -225,15 +191,12 @@ $lines.Add("head=$($state.head)")
 $lines.Add("working_tree=$($state.dirty)")
 $lines.Add("")
 $lines.Add("=== DEV RUNTIME ===")
-if ($state.runtime_missing.Count -eq 0) {
-    $lines.Add("runtime=READY")
-}
+if ($state.runtime_missing.Count -eq 0) { $lines.Add("runtime=READY") }
 else {
     $lines.Add("runtime=NOT_BUILT_OR_INCOMPLETE")
     foreach ($path in $state.runtime_missing) { $lines.Add("missing=$path") }
     $lines.Add("action=Run KVTM_DEV_CONTROL.bat -> [9] Full rebuild after Git LFS is ready")
 }
-
 $blocking = New-Object System.Collections.Generic.List[string]
 if (-not $state.git) { $blocking.Add("Git") }
 if (-not $state.lfs_ok) { $blocking.Add("Git LFS") }
@@ -243,16 +206,10 @@ if (-not $state.vc_x86) { $blocking.Add("VC++ x86") }
 if (-not $state.game_client) { $blocking.Add("ZingPlay/GameClientJS") }
 if (-not $state.game_dir) { $blocking.Add("KVTM game data") }
 if ($state.branch -ne $ExpectedBranch) { $blocking.Add("Correct Git branch") }
-
 $lines.Add("")
 $lines.Add("=== RESULT ===")
-if ($blocking.Count -eq 0) {
-    $lines.Add("RESULT=ENVIRONMENT_READY")
-}
-else {
-    $lines.Add("RESULT=NOT_READY")
-    $lines.Add("blocking=" + ($blocking -join "; "))
-}
+if ($blocking.Count -eq 0) { $lines.Add("RESULT=ENVIRONMENT_READY") }
+else { $lines.Add("RESULT=NOT_READY"); $lines.Add("blocking=" + ($blocking -join "; ")) }
 $lines.Add("secret_values_printed=false")
 $lines | Set-Content -LiteralPath $ReportPath -Encoding UTF8
 [IO.File]::WriteAllText($LatestPath, $ReportPath + [Environment]::NewLine, [Text.Encoding]::UTF8)
@@ -260,12 +217,8 @@ $lines | Set-Content -LiteralPath $ReportPath -Encoding UTF8
 Write-Host ""
 Write-Host "KVTM MACHINE DIAGNOSTIC COMPLETE" -ForegroundColor Green
 Write-Host "Report: $ReportPath"
-if ($blocking.Count -eq 0) {
-    Write-Host "RESULT: ENVIRONMENT_READY" -ForegroundColor Green
-}
-else {
-    Write-Host ("RESULT: NOT_READY - " + ($blocking -join ", ")) -ForegroundColor Yellow
-}
+if ($blocking.Count -eq 0) { Write-Host "RESULT: ENVIRONMENT_READY" -ForegroundColor Green }
+else { Write-Host ("RESULT: NOT_READY - " + ($blocking -join ", ")) -ForegroundColor Yellow }
 if (-not $state.game_client) {
     Write-Host "ZingPlay/Sky Garden can cai tu nguon chinh thuc: https://zingplay.com/games/sky-garden.html" -ForegroundColor Yellow
     if ($OpenZingPlayPage) { Start-Process "https://zingplay.com/games/sky-garden.html" }
