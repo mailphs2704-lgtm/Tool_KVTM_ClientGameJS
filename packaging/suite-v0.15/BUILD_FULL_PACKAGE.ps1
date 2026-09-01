@@ -111,7 +111,38 @@ function Assert-CleanClearStallWorker {
     }
 }
 
+function Build-ClientJsCaptureBridge {
+    $buildScript = Join-Path $PatchSource "BUILD_X86.bat"
+    $source = Join-Path $PatchSource "native\kvtm_bridge.cpp"
+    $loader = Join-Path $PatchSource "bin\kvtm_loader.exe"
+    $bridge = Join-Path $PatchSource "bin\kvtm_bridge.dll"
+    if (-not (Test-Path -LiteralPath $buildScript -PathType Leaf)) {
+        throw "Missing capture bridge builder: $buildScript"
+    }
+    $sourceText = Get-Content -LiteralPath $source -Raw -Encoding UTF8
+    foreach ($token in @("CAPTURE", "OK FRAME", "KCAP")) {
+        if (-not $sourceText.Contains($token)) {
+            throw "Capture bridge source missing protocol token '$token': $source"
+        }
+    }
+    Write-Host "Building ClientJS OpenGL capture bridge (x86)..." -ForegroundColor Cyan
+    & cmd.exe /d /c ('"' + $buildScript + '"')
+    if ($LASTEXITCODE -ne 0) {
+        throw "ClientJS capture bridge build failed; exit=$LASTEXITCODE. Install Visual Studio C++ x86/x64 Build Tools."
+    }
+    foreach ($file in @($loader, $bridge)) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+            throw "Capture bridge build did not create: $file"
+        }
+        if ((Get-Item -LiteralPath $file).Length -lt 4096) {
+            throw "Capture bridge binary is unexpectedly small: $file"
+        }
+    }
+    Write-Host "ClientJS OpenGL capture bridge BUILD VERIFIED" -ForegroundColor Green
+}
+
 Resolve-AutoProLfsRuntime
+Build-ClientJsCaptureBridge
 
 $DataCandidates = @()
 $CurrentData = Join-Path $OutputRoot "data-dev"
@@ -228,6 +259,14 @@ New-Item -ItemType Directory -Path $AutoOut, $MultiOut -Force | Out-Null
 Copy-Item -Path (Join-Path $AutoSource "*") -Destination $AutoOut -Recurse -Force
 Copy-Item -Path (Join-Path $MultiSource "*") -Destination $MultiOut -Recurse -Force
 
+# AUTO reference contains the legacy frame-lock bridge. Always overlay the
+# freshly built CAPTURE1/KCAP bridge so Workspace and AUTO share frames by PID.
+$BridgeOut = Join-Path $AutoOut "bin"
+New-Item -ItemType Directory -Path $BridgeOut -Force | Out-Null
+foreach ($name in @("kvtm_loader.exe", "kvtm_bridge.dll")) {
+    Copy-Item -LiteralPath (Join-Path $PatchSource ("bin\" + $name)) -Destination (Join-Path $BridgeOut $name) -Force
+}
+
 $packagedPointers = @(Get-GitLfsPointers -Root $AutoOut)
 if ($packagedPointers.Count -gt 0) {
     $sample = ($packagedPointers | Select-Object -First 12 | ForEach-Object { $_.FullName }) -join "`n  - "
@@ -279,6 +318,8 @@ $checks = @(
     (Join-Path $AutoOut "clientjs_auto_patch.py"),
     (Join-Path $AutoOut "pc_driver.py"),
     (Join-Path $AutoOut "engine_driver.py"),
+    (Join-Path $AutoOut "bin\kvtm_loader.exe"),
+    (Join-Path $AutoOut "bin\kvtm_bridge.dll"),
     (Join-Path $MultiOut "kvtm_multi.py"),
     (Join-Path $MultiOut "kvtm_multi_entry.py"),
     (Join-Path $MultiOut "kvtm_multi_dev_entry.py"),
