@@ -59,14 +59,12 @@ jobs:
           a = fp('a')
           b = fp('b')
 
-          # Four overlapping views must map exactly to 20 physical positions.
           physical = []
           for view in range(1, 5):
               for local in StallActions.new_local_slots(view):
                   physical.append(StallActions.physical_slot(view, local))
           assert physical == list(range(1, 21)), physical
 
-          # Resale is per exact VP type, one stall slot = exactly ten.
           m = ClearStallManifest('A', 2, 2, 7)
           m.records = [record(a, 7)]
           assert m.sellable_remaining_total == 0
@@ -96,7 +94,6 @@ jobs:
           assert mixed.sellable_remaining_total == 0
           assert not mixed.resale_batches()
 
-          # 13 -> sell 10, keep 3; next session +7 -> one full batch of ten.
           with tempfile.TemporaryDirectory() as temp:
               root = Path(temp)
               store_a = CarryoverStore(root / 'profile-A')
@@ -120,8 +117,6 @@ jobs:
               store_b = CarryoverStore(root / 'profile-B')
               assert store_b.load('profile-B') == []
 
-          # Current clean navigation is deliberately bounded to the seven
-          # friend cards proven by the recovered behavior; do not guess paging.
           request = ClearStallRequest('A', 7, 5, 8, Path('.'))
           assert request.friend_ordinal == 7
           assert request.resale_storage_id == 5
@@ -160,7 +155,6 @@ jobs:
           ):
               assert token not in probe_source, token
 
-          # New execution path must exist as one maintainable package.
           required_clean = (
               'automation.py',
               'context.py',
@@ -209,7 +203,7 @@ jobs:
       - name: Build fixed-layout package
         shell: powershell
         run: |
-          & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
+          & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE_PS51.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
 
       - name: Verify runtime data survives fixed DEV rebuild
         shell: powershell
@@ -222,7 +216,7 @@ jobs:
           Set-Content -LiteralPath $stateMarker -Value "KEEP-CLEAR-STALL" -Encoding ASCII
           Set-Content -LiteralPath $probeMarker -Value "KEEP-LIVE-PROBE" -Encoding ASCII
 
-          & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
+          & .\packaging\suite-v0.15\BUILD_FULL_PACKAGE_PS51.ps1 -OutputName "KVTM-ClientJS-Suite-CI"
 
           if (-not (Test-Path -LiteralPath $stateMarker -PathType Leaf)) {
             throw "clear-stall state was lost during fixed DEV rebuild"
@@ -248,6 +242,8 @@ jobs:
           $required = @(
             (Join-Path $root "Multi\kvtm_multi.py"),
             (Join-Path $root "Multi\kvtm_multi_entry.py"),
+            (Join-Path $root "Multi\kvtm_multi_dev_host.py"),
+            (Join-Path $root "Multi\runtime_update_ui.py"),
             (Join-Path $root "components\clientjs-auto\worker\clean_worker_support.py"),
             (Join-Path $root "components\clientjs-auto\worker\clear_stall_worker.py"),
             (Join-Path $root "components\clientjs-auto\worker\clear_stall_live_probe.py"),
