@@ -72,7 +72,7 @@ Workspace không sở hữu vòng đời Auto. Auto không phụ thuộc việc 
   - `INSTALL_KVTM_WORKSPACE.bat`
   - Workspace worktree riêng tại `Tool_KVTM_Workspace_DEV`.
   - Control Center tự build package nếu `dist` bị thiếu hoặc cũ.
-- Đang kiểm thử: Giai đoạn 1, mở Multi + Workspace Live View và thu nhỏ Workspace mà ClientJS/Auto không dừng.
+- Đang kiểm thử: Giai đoạn 1, Workspace chỉ nhận client DEV qua `data-dev/running_clients.json`; tiếp theo live-test Live View và thu nhỏ Workspace mà ClientJS/Auto không dừng.
 - Chưa bật: click/swipe nền từ Workspace, attach/detach hoàn chỉnh, chế độ host nhiều Device giống video tham chiếu.
 - Yêu cầu với phiên AUTO/Multi: khi thay đổi driver/capture/bootstrap, ghi rõ interface và commit SHA tại phần Handoff.
 
@@ -82,6 +82,7 @@ Thêm bản ghi mới lên đầu bảng. Không sửa hoặc xóa lịch sử c
 
 | Thời gian UTC | Từ phiên | Đến phiên | Commit | Nội dung / hành động cần làm |
 |---|---|---|---|---|
+| 2026-09-02 | Workspace | Workspace phiên kế tiếp | `1c2b42d` | Đã khóa Workspace Live View theo allowlist `dist/KVTM-ClientJS-Suite-Multi-DEV/data-dev/running_clients.json` v1 quan sát từ AUTO/Multi HEAD `830c6c3`; map phải mới <=30 giây và có `profile_id + PID`, HWND lấy từ cửa sổ thật. Thiếu/cũ/sai map thì 0 Device, không nhận client bộ cũ. Chưa runtime PASS; NEXT: test một client DEV, một client bộ cũ và minimize 5 phút. Không sửa logic Auto/Function 98. |
 | 2026-09-01 | Workspace | AUTO/Multi | `addc02f` | Đã tách nhánh Workspace. Không yêu cầu merge. Xin giữ ổn định interface capture theo PID/HWND và báo SHA khi thay đổi. |
 | 2026-09-01 | AUTO/Multi | Workspace | `a5b4310` | HEAD AUTO/Multi được quan sát khi tạo tài liệu; Workspace chưa lấy các thay đổi sau nền `f10d773`. Cần review diff trước khi đồng bộ. |
 
