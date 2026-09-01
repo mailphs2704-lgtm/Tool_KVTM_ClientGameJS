@@ -13,6 +13,12 @@ $LatestPath = Join-Path $ReportRoot "LATEST.txt"
 $ExpectedBranch = "develop/multi-auto-dev"
 $Dist = Join-Path $RepoRoot "dist\KVTM-ClientJS-Suite-Multi-DEV"
 
+function Refresh-ProcessPath {
+    $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $user = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = (($machine, $user) -join ";")
+}
+
 function Resolve-Winget {
     $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($cmd -and $cmd.Source) { return $cmd.Source }
@@ -89,6 +95,7 @@ function Install-WingetPackage {
         Write-Host "[FAIL] Winget khong cai duoc $Label, exit=$LASTEXITCODE" -ForegroundColor Yellow
         return $false
     }
+    Refresh-ProcessPath
     Write-Host "[OK] $Label install command completed." -ForegroundColor Green
     return $true
 }
@@ -157,6 +164,7 @@ if ($InstallMissing) {
         if (-not (Resolve-Python311)) { Install-WingetPackage $before.winget "Python.Python.3.11" "CPython 3.11 x64" "x64" | Out-Null }
         if (-not (Test-VCRuntime x64)) { Install-WingetPackage $before.winget "Microsoft.VCRedist.2015+.x64" "Visual C++ 2015-2022 x64" "x64" | Out-Null }
         if (-not (Test-VCRuntime x86)) { Install-WingetPackage $before.winget "Microsoft.VCRedist.2015+.x86" "Visual C++ 2015-2022 x86" "x86" | Out-Null }
+        Refresh-ProcessPath
         $gitAfterInstall = Resolve-Git
         if ($gitAfterInstall) { try { & $gitAfterInstall lfs install | Out-Null } catch { } }
     }
