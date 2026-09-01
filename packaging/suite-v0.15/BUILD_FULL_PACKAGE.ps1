@@ -165,6 +165,7 @@ if (Test-Path -LiteralPath $CurrentClearStallProbe -PathType Container) {
 
 $ClearStallWorker = Join-Path $ClientJsAutoSource "worker\clear_stall_worker.py"
 $ClearStallProbe = Join-Path $ClientJsAutoSource "worker\clear_stall_live_probe.py"
+$Step1Probe = Join-Path $ClientJsAutoSource "worker\clear_stall_step1_probe.py"
 $CleanWorkflow = Join-Path $CleanAutoSource "workflows\clear_stall"
 
 foreach ($required in @(
@@ -176,6 +177,9 @@ foreach ($required in @(
     (Join-Path $AutoSource "_internal\cv2\cv2.pyd"),
     (Join-Path $MultiSource "kvtm_multi.py"),
     (Join-Path $MultiSource "kvtm_multi_entry.py"),
+    (Join-Path $MultiSource "kvtm_multi_dev_entry.py"),
+    (Join-Path $MultiSource "kvtm_multi_dev_host.py"),
+    (Join-Path $MultiSource "clear_stall_probe_console.py"),
     (Join-Path $PatchSource "clientjs_auto_patch.py"),
     (Join-Path $PatchSource "pc_driver.py"),
     (Join-Path $PatchSource "engine_driver.py"),
@@ -185,6 +189,7 @@ foreach ($required in @(
     (Join-Path $ClientJsAutoSource "worker\clean_worker_support.py"),
     $ClearStallWorker,
     $ClearStallProbe,
+    $Step1Probe,
     (Join-Path $CleanAutoSource "automation.py"),
     (Join-Path $CleanAutoSource "context.py"),
     (Join-Path $CleanAutoSource "models.py"),
@@ -276,12 +281,16 @@ $checks = @(
     (Join-Path $AutoOut "engine_driver.py"),
     (Join-Path $MultiOut "kvtm_multi.py"),
     (Join-Path $MultiOut "kvtm_multi_entry.py"),
+    (Join-Path $MultiOut "kvtm_multi_dev_entry.py"),
+    (Join-Path $MultiOut "kvtm_multi_dev_host.py"),
+    (Join-Path $MultiOut "clear_stall_probe_console.py"),
     (Join-Path $ClientJsAutoOut "catalog\functions.json"),
     (Join-Path $ClientJsAutoOut "worker\runtime_probe.py"),
     (Join-Path $ClientJsAutoOut "worker\auto_worker.py"),
     (Join-Path $ClientJsAutoOut "worker\clean_worker_support.py"),
     (Join-Path $ClientJsAutoOut "worker\clear_stall_worker.py"),
     (Join-Path $ClientJsAutoOut "worker\clear_stall_live_probe.py"),
+    (Join-Path $ClientJsAutoOut "worker\clear_stall_step1_probe.py"),
     (Join-Path $PackagedClean "automation.py"),
     (Join-Path $PackagedClean "runtime\bootstrap.py"),
     (Join-Path $PackagedClean "actions\navigation.py"),
@@ -300,6 +309,16 @@ foreach ($file in $checks) {
 }
 Assert-CleanClearStallWorker -Path (Join-Path $ClientJsAutoOut "worker\clear_stall_worker.py")
 Assert-CleanClearStallWorker -Path (Join-Path $ClientJsAutoOut "worker\clear_stall_live_probe.py")
+
+$head = (& git -C $RepoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($head)) {
+    throw "Cannot determine repository HEAD for package stamp."
+}
+[System.IO.File]::WriteAllText(
+    (Join-Path $OutputRoot ".source-head.txt"),
+    ($head.Trim() + "`n"),
+    [System.Text.Encoding]::ASCII
+)
 
 $ZipPath = "$OutputRoot.zip"
 if (Test-Path -LiteralPath $ZipPath) {
@@ -326,6 +345,7 @@ Remove-Item -LiteralPath $PreserveRoot -Recurse -Force
 Write-Host "PACKAGE OK" -ForegroundColor Green
 Write-Host "Folder: $OutputRoot"
 Write-Host "ZIP:    $ZipPath"
+Write-Host "SOURCE HEAD: $($head.Trim())" -ForegroundColor Cyan
 Write-Host "Legacy AUTO PRO runtime kept only for other suite features/reference." -ForegroundColor DarkGray
 Write-Host "Dọn quầy CLEAN VERIFIED: no legacy pyc execution dependency" -ForegroundColor Green
 Write-Host "Dọn quầy CLEAN VERIFIED: KVAutomation + 4 views / 20 physical slots" -ForegroundColor Green
