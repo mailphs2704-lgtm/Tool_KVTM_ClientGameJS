@@ -6,6 +6,16 @@ set "KVTM_MULTI_INSTANCE_NAME=KVTM Multi DEV"
 set "KVTM_MULTI_ISOLATED=1"
 if not exist "%KVTM_MULTI_APP_DIR%" mkdir "%KVTM_MULTI_APP_DIR%"
 cd /d "%~dp0Multi"
+if not exist "kvtm_multi_dev_entry.py" (
+  echo [LOI] Thieu Multi\kvtm_multi_dev_entry.py
+  pause
+  goto :done
+)
+if not exist "clear_stall_probe_console.py" (
+  echo [LOI] Thieu Multi\clear_stall_probe_console.py
+  pause
+  goto :done
+)
 where py >nul 2>nul
 if %errorlevel%==0 (
   py -3 kvtm_multi_dev_entry.py
