@@ -25,15 +25,7 @@ _IMAGE_RUNTIME_TIMEOUT_SECONDS = 15.0
 
 
 def _load_image_runtime(context: AutomationContext) -> float:
-    """Load native image libraries exactly like the proven launcher prewarm.
-
-    The launcher path that works on the user's Windows machine performs the
-    native imports in a dedicated thread while the caller remains responsive.
-    Earlier clean workers imported NumPy/OpenCV synchronously on their main
-    thread and could hang forever.  Use the same threading model here and put a
-    hard upper bound on startup so a bad native import becomes a useful error,
-    never another 30-100 second silent stall.
-    """
+    """Load native image libraries with a bounded, observable worker thread."""
 
     started = time.monotonic()
     done = threading.Event()
@@ -74,16 +66,12 @@ def _load_image_runtime(context: AutomationContext) -> float:
 
 
 class KVAutomation:
-    """Clean facade shared by all ClientJS automation workflows.
+    """Clean facade shared by ClientJS workflows.
 
-    This is the standalone replacement for the role previously played by
-    AUTO PRO's FarmAutomation/ADBController pair. It is intentionally small:
-    reusable mechanics live in `actions/`, while business flows live in
-    `workflows/`.
-
-    Native image dependencies are loaded before the ClientJS DLL bridge is
-    connected.  They use the same dedicated-thread model as the proven DEV
-    launcher prewarm and are bounded by a hard timeout.
+    DEV may keep the image runtime resident in the same Python process that owns
+    the Multi UI. In that mode ``image_runtime_ready=True`` skips all native
+    imports here, so a live probe goes directly to the Cocos DLL bridge.
+    Production/CLI workers keep the bounded loader as a safe fallback.
     """
 
     def __init__(
@@ -91,6 +79,7 @@ class KVAutomation:
         context: AutomationContext,
         *,
         driver: Any | None = None,
+        image_runtime_ready: bool = False,
     ) -> None:
         self.context = context
         self.component_root = Path(__file__).resolve().parents[1]
@@ -99,13 +88,17 @@ class KVAutomation:
             context.auto_root,
         )
 
-        context.stage("clean-image-runtime-loading")
-        elapsed = _load_image_runtime(context)
-        context.log(
-            "Thư viện ảnh: toàn bộ runtime READY sau "
-            f"{elapsed:.2f}s"
-        )
-        context.stage("clean-image-runtime-ready")
+        if image_runtime_ready:
+            context.stage("clean-image-runtime-ready")
+            context.log("Thư viện ảnh: dùng runtime resident của process Multi DEV")
+        else:
+            context.stage("clean-image-runtime-loading")
+            elapsed = _load_image_runtime(context)
+            context.log(
+                "Thư viện ảnh: toàn bộ runtime READY sau "
+                f"{elapsed:.2f}s"
+            )
+            context.stage("clean-image-runtime-ready")
 
         if driver is None:
             context.stage("clientjs-dll-bridge-connecting")
