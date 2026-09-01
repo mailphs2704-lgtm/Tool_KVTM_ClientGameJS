@@ -47,25 +47,6 @@ def _inside(path: Path, root: Path) -> bool:
         return False
 
 
-def _prepend_path_environment(*directories: Path) -> None:
-    """Mirror the proven AUTO worker DLL/PATH environment without business imports."""
-
-    current = [item for item in os.environ.get("PATH", "").split(os.pathsep) if item]
-    normalized = {os.path.normcase(os.path.abspath(item)) for item in current}
-    prefix: list[str] = []
-    for directory in directories:
-        if not directory.is_dir():
-            continue
-        text = str(directory)
-        key = os.path.normcase(os.path.abspath(text))
-        if key in normalized:
-            continue
-        normalized.add(key)
-        prefix.append(text)
-    if prefix:
-        os.environ["PATH"] = os.pathsep.join(prefix + current)
-
-
 def _install_dll_directories(*directories: Path) -> None:
     if os.name != "nt" or not hasattr(os, "add_dll_directory"):
         return
@@ -99,16 +80,16 @@ def install_binary_dependencies(
 ) -> None:
     """Load only third-party image libraries from AUTO PRO's proven layout.
 
-    The normal AUTO worker is already proven on the user's ClientJS runtime. It
-    does not reconstruct NumPy/OpenCV/Pillow into a second cache; instead it
-    exposes the extracted PyInstaller ``runtime/pyc`` and ``_internal`` layout,
-    configures the Windows DLL search path, then imports the runtime.
+    This deliberately mirrors the environment setup used by the working
+    ``install_headless_clientjs_runtime`` path.  It reuses only third-party
+    NumPy/OpenCV/Pillow files and native DLL directories.  No AUTO PRO business
+    module is imported here.
 
-    Clean Dọn quầy now mirrors only that *third-party environment setup*. It
-    imports NumPy, OpenCV and Pillow, verifies that their files come from the
-    packaged AUTO_PRO tree, and restores ``sys.path`` immediately afterwards.
-    AUTO PRO business modules such as automation/adb_controller/image_processor
-    are never imported by this function.
+    One subtle but important compatibility detail is the import order.  The
+    working AUTO path reaches OpenCV first (through its image stack), and OpenCV
+    then resolves NumPy.  Earlier clean builds imported NumPy directly first;
+    that path hung on the user's Windows runtime even though CI passed.  Clean
+    Dọn quầy therefore follows the proven OpenCV-first order.
     """
 
     def log(message: str) -> None:
@@ -130,25 +111,19 @@ def install_binary_dependencies(
             f"{pyc} / {internal}"
         )
 
-    # Clean workers used to inherit cwd=AUTO_PRO while importing a reconstructed
-    # vendor cache. The launcher prewarm succeeded from Multi, while the worker
-    # hung at ``import numpy``. Keep native imports away from AUTO_PRO's root so
-    # Windows current-directory DLL lookup cannot shadow the intended runtime.
-    safe_cwd = Path(__file__).resolve().parents[2]
-    try:
-        os.chdir(safe_cwd)
-    except OSError as exc:
-        raise RuntimeError(f"Không chuyển được clean runtime cwd tới {safe_cwd}: {exc}") from exc
-
     log(
         "Thư viện ảnh: process "
         f"Python={sys.version.split()[0]} exe={sys.executable} cwd={Path.cwd()}"
     )
-    log("Thư viện ảnh: dùng trực tiếp layout thư viện AUTO chính; không dựng vendor cache")
+    log("Thư viện ảnh: dùng đúng layout + import order của AUTO chính")
 
-    # Match the environment used by install_headless_clientjs_runtime(), which
-    # is the known-good AUTO path on ClientJS. Only library paths are reused.
-    _prepend_path_environment(internal, root / "platform-tools")
+    # Match AUTO worker PATH behavior exactly: prepend, do not reconstruct a
+    # second vendor tree and do not change cwd behind the worker's back.
+    os.environ["PATH"] = os.pathsep.join((
+        str(internal),
+        str(root / "platform-tools"),
+        os.environ.get("PATH", ""),
+    ))
     _install_dll_directories(
         internal,
         internal / "cv2",
@@ -172,27 +147,28 @@ def install_binary_dependencies(
     }
 
     try:
-        # Intentionally use the same insertion order as the working AUTO worker.
+        # This is intentionally byte-for-byte equivalent in ordering semantics
+        # to auto_worker.install_headless_clientjs_runtime(): each path is
+        # inserted at index 0 in the same loop order.
         for directory in runtime_paths:
-            if not directory.exists():
-                continue
-            text = str(directory)
-            while text in sys.path:
-                sys.path.remove(text)
-            sys.path.insert(0, text)
+            if directory.exists():
+                sys.path.insert(0, str(directory))
 
-        log("Thư viện ảnh: import numpy từ layout AUTO chính...")
-        numpy = importlib.import_module("numpy")
-        log(
-            "Thư viện ảnh: numpy READY "
-            f"{getattr(numpy, '__version__', '?')} source={_module_file(numpy)}"
-        )
-
-        log("Thư viện ảnh: import cv2 từ layout AUTO chính...")
+        # IMPORTANT: OpenCV first.  The working AUTO path reaches cv2 before it
+        # ever performs a standalone ``import numpy``.  cv2 itself resolves the
+        # bundled NumPy runtime.  Do not reverse this order without a live test.
+        log("Thư viện ảnh: import cv2 theo đúng AUTO chính...")
         cv2 = importlib.import_module("cv2")
         log(
             "Thư viện ảnh: cv2 READY "
             f"{getattr(cv2, '__version__', '?')} source={_module_file(cv2)}"
+        )
+
+        log("Thư viện ảnh: xác nhận numpy do cv2/runtime đã nạp...")
+        numpy = importlib.import_module("numpy")
+        log(
+            "Thư viện ảnh: numpy READY "
+            f"{getattr(numpy, '__version__', '?')} source={_module_file(numpy)}"
         )
 
         log("Thư viện ảnh: import PIL từ layout AUTO chính...")
@@ -220,7 +196,6 @@ def install_binary_dependencies(
                 + ", ".join(leaked)
             )
     finally:
-        # NumPy/OpenCV/Pillow are now resident. Restore the clean worker import
-        # surface so later workflow code cannot accidentally import AUTO PRO's
-        # business bytecode by name.
+        # Third-party modules are resident.  Restore the clean import surface so
+        # workflow code cannot later import AUTO PRO business bytecode by name.
         sys.path[:] = previous_sys_path
