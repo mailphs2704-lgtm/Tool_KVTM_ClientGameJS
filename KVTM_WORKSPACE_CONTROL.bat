@@ -8,6 +8,8 @@ set "EXPECTED_BRANCH=develop/clientjs-workspace"
 set "WORKSPACE=components\workspace\kvtm_workspace.py"
 set "DRIVER_DIR=test-candidates\auto-pro-clientjs-temp"
 set "LOG_DIR=data-workspace"
+set "DIST=dist\KVTM-ClientJS-Suite-Multi-DEV"
+set "BUILD_SCRIPT=packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1"
 
 :menu
 cls
@@ -61,13 +63,48 @@ if not errorlevel 1 echo [PASS] Source Workspace da cap nhat.
 goto pause_menu
 
 :multi
-if exist "dist\KVTM-ClientJS-Suite-Multi-DEV\02_START_MULTI_DEV.bat" (
-  start "KVTM MULTI DEV" /D "dist\KVTM-ClientJS-Suite-Multi-DEV" cmd /k call "02_START_MULTI_DEV.bat"
-  echo [OK] Da gui lenh mo Multi DEV.
-) else (
-  echo [FAIL] Chua co package Multi DEV. Hay build tu KVTM_DEV_CONTROL.bat mot lan.
+call :guard
+if errorlevel 1 goto pause_menu
+call :ensure_package
+if errorlevel 1 (
+  echo [FAIL] Package Multi DEV chua san sang. Khong mo Multi.
+  goto pause_menu
 )
+start "KVTM MULTI DEV" /D "%DIST%" cmd /k call "02_START_MULTI_DEV.bat"
+echo [OK] Da gui lenh mo Multi DEV.
 goto pause_menu
+
+:ensure_package
+set "REPO_HEAD="
+set "PACKAGE_HEAD="
+for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "REPO_HEAD=%%H"
+if exist "%DIST%\.source-head.txt" set /p "PACKAGE_HEAD="<"%DIST%\.source-head.txt"
+set "NEED_BUILD=0"
+if not exist "%DIST%\02_START_MULTI_DEV.bat" set "NEED_BUILD=1"
+if not exist "%DIST%\AUTO_PRO\local_launcher.py" set "NEED_BUILD=1"
+if not exist "%DIST%\Multi\kvtm_multi.py" set "NEED_BUILD=1"
+if not defined PACKAGE_HEAD set "NEED_BUILD=1"
+if /I not "%PACKAGE_HEAD%"=="%REPO_HEAD%" set "NEED_BUILD=1"
+if "%NEED_BUILD%"=="0" (
+  echo [PASS] Package Multi DEV da dung HEAD hien tai.
+  exit /b 0
+)
+echo [INFO] Package Multi DEV chua co/cu. Dang tu build mot lan...
+if not exist "%BUILD_SCRIPT%" (
+  echo [FAIL] Thieu build script: %BUILD_SCRIPT%
+  exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\%BUILD_SCRIPT%"
+if errorlevel 1 (
+  echo [FAIL] Build package Multi DEV that bai.
+  exit /b 1
+)
+if not exist "%DIST%\02_START_MULTI_DEV.bat" (
+  echo [FAIL] Build xong nhung thieu 02_START_MULTI_DEV.bat.
+  exit /b 1
+)
+echo [PASS] Package Multi DEV da build xong.
+exit /b 0
 
 :workspace
 call :guard
