@@ -97,8 +97,10 @@ class SellingActions:
 
         before = self.vision.frame()[330:760, 180:820].copy()
         self.vision.driver.click(*self.PLACE_BUTTON)
-        self.waiter.sleep(0.20)
-        # Some storage categories require an additional confirmation.
+        # From here the destructive click has already been sent. Finish the
+        # short confirmation/verification window before honoring a user stop,
+        # so the workflow can persist the successful ten-VP sale atomically.
+        self.waiter.settle(0.20)
         self.vision.find(
             "dong_y",
             threshold=0.74,
@@ -109,7 +111,6 @@ class SellingActions:
         best_change = 0.0
         deadline = time.monotonic() + 6.0
         while time.monotonic() < deadline:
-            self.context.ensure_running()
             after = self.vision.frame()[330:760, 180:820].copy()
             best_change = max(best_change, _mean_difference(before, after))
             if best_change >= self.minimum_screen_change:
@@ -118,15 +119,18 @@ class SellingActions:
                     f"(inventory-match={score:.3f}, change={best_change:.2f})"
                 )
                 return
-            self.waiter.sleep(0.20)
-        self._cancel_dialog()
+            self.waiter.settle(0.20)
+        self._cancel_dialog(cancelable=False)
         raise TransactionError("Không xác nhận được thay đổi sau khi treo 10 VP")
 
-    def _cancel_dialog(self) -> None:
+    def _cancel_dialog(self, *, cancelable: bool = True) -> None:
         for name in ("huy", "close_game", "close", "x_popup_event"):
             try:
                 if self.vision.find(name, threshold=0.72, click=True) is not None:
-                    self.waiter.sleep(0.20)
+                    if cancelable:
+                        self.waiter.sleep(0.20)
+                    else:
+                        self.waiter.settle(0.20)
                     return
             except Exception:
                 continue
