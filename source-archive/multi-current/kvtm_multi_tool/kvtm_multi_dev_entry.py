@@ -122,7 +122,6 @@ class MultiDevApp(production.MultiApp):
 
         helper = core.TOOL_DIR / "clear_stall_probe_console.py"
         if not helper.is_file():
-            # The launcher guard should prevent this, but record it if possible.
             self._append_probe_log(profile_id, f"ERROR thiếu console helper: {helper}")
             return
         title = f"KVTM DEV - Don quay DLL probe - {profile_id[:8]}"
@@ -139,8 +138,10 @@ class MultiDevApp(production.MultiApp):
             ]
         )
         try:
+            # /K is deliberate: even if Python/helper crashes before it can
+            # enter its own input() loop, the diagnostic window remains visible.
             console = subprocess.Popen(
-                ["cmd.exe", "/c", command],
+                ["cmd.exe", "/d", "/s", "/k", command],
                 cwd=str(core.TOOL_DIR),
                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010),
             )
