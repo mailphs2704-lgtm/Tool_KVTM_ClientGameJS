@@ -3,7 +3,9 @@ param(
     [string]$Mode = "Update",
     [string]$RuntimePath,
     [string]$StagingPath,
-    [string]$Branch = "develop/multi-auto-dev"
+    [string]$Branch = "develop/multi-auto-dev",
+    [int]$OwnerPid = 0,
+    [switch]$Relaunched
 )
 
 $ErrorActionPreference = "Stop"
@@ -77,23 +79,67 @@ function Get-GitFirstLine {
     return $first.Trim()
 }
 
-function Test-RuntimeBusy {
+function Get-RuntimeProcesses {
     param([string]$Root)
     try {
         $needle = [IO.Path]::GetFullPath($Root)
-        [object[]]$rows = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-            $name = [string]$_.Name
-            $cmd = [string]$_.CommandLine
-            $python = ($name -match '^python(?:w)?(?:3(?:\.11)?)?\.exe$')
-            $python -and -not [string]::IsNullOrWhiteSpace($cmd) -and
-                $cmd.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0
-        })
+        return @(
+            Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+                $name = [string]$_.Name
+                $cmd = [string]$_.CommandLine
+                $python = ($name -match '^python(?:w)?(?:3(?:\.11)?)?\.exe$')
+                $python -and -not [string]::IsNullOrWhiteSpace($cmd) -and
+                    $cmd.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0
+            }
+        )
+    }
+    catch {
+        return @()
+    }
+}
+
+function Test-RuntimeBusy {
+    param([string]$Root)
+    try {
+        [object[]]$rows = @(Get-RuntimeProcesses -Root $Root)
         return ($rows.Count -gt 0)
     }
     catch {
-        # Fail safe: if process inspection is unavailable, do not hot-swap files.
         return $true
     }
+}
+
+function Get-RuntimeHostPid {
+    param([string]$Root)
+    try {
+        [object[]]$rows = @(Get-RuntimeProcesses -Root $Root | Where-Object {
+            ([string]$_.CommandLine).IndexOf(
+                "kvtm_multi_dev_host.py",
+                [StringComparison]::OrdinalIgnoreCase
+            ) -ge 0
+        })
+        if ($rows.Count -gt 0) { return [int]$rows[0].ProcessId }
+    }
+    catch { }
+    return 0
+}
+
+function Test-ProcessAlive {
+    param([int]$ProcessId)
+    if ($ProcessId -le 0) { return $false }
+    try {
+        $null = Get-Process -Id $ProcessId -ErrorAction Stop
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Quote-ProcessArgument {
+    param([string]$Value)
+    if ($null -eq $Value) { return '""' }
+    return '"' + ($Value -replace '"', '\"') + '"'
 }
 
 function Sync-CurrentDataToStage {
@@ -120,8 +166,6 @@ function Activate-Runtime {
         throw "Runtime is still busy; activation deferred."
     }
 
-    # Copy the freshest profiles/settings only after the old Multi has exited.
-    # This prevents data changes made while staging was being built from being lost.
     Sync-CurrentDataToStage -Current $Current -Stage $Stage
 
     $backup = $Current + ".previous"
@@ -148,16 +192,18 @@ function Activate-Runtime {
 }
 
 function Start-ActivationWatcher {
-    param([string]$Current, [string]$Stage)
-    $args = @(
+    param([string]$Current, [string]$Stage, [int]$OwnerProcessId)
+    $rawArgs = @(
         "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
         "-File", $PSCommandPath,
         "-Mode", "ActivatePending",
         "-RuntimePath", $Current,
         "-StagingPath", $Stage,
-        "-Branch", $Branch
+        "-Branch", $Branch,
+        "-OwnerPid", ([string]$OwnerProcessId)
     )
-    Start-Process -FilePath "powershell.exe" -ArgumentList $args -WindowStyle Hidden | Out-Null
+    $argumentLine = ($rawArgs | ForEach-Object { Quote-ProcessArgument ([string]$_) }) -join ' '
+    Start-Process -FilePath "powershell.exe" -ArgumentList $argumentLine -WindowStyle Hidden | Out-Null
 }
 
 function Invoke-ActivatePending {
@@ -172,11 +218,50 @@ function Invoke-ActivatePending {
         if ($git) { $head = Get-GitFirstLine -Git $git -Arguments @("-C", $RepoRoot, "rev-parse", "HEAD") }
     }
 
-    while (Test-RuntimeBusy $RuntimePath) {
-        Start-Sleep -Seconds 1
+    if ($OwnerPid -gt 0) {
+        while (Test-ProcessAlive -ProcessId $OwnerPid) {
+            Start-Sleep -Milliseconds 100
+        }
     }
-    Start-Sleep -Milliseconds 1200
-    Activate-Runtime -Current $RuntimePath -Stage $StagingPath -Head $head
+    else {
+        while (Test-RuntimeBusy $RuntimePath) {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 240; $attempt++) {
+        try {
+            if (Test-RuntimeBusy $RuntimePath) {
+                Start-Sleep -Milliseconds 250
+                continue
+            }
+            Activate-Runtime -Current $RuntimePath -Stage $StagingPath -Head $head
+            return
+        }
+        catch {
+            $lastError = $_
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    if ($lastError) { throw $lastError }
+    throw "Pending runtime activation timed out."
+}
+
+function Restart-WithFreshUpdater {
+    param([int]$CurrentOwnerPid)
+    $rawArgs = @(
+        "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", $PSCommandPath,
+        "-Mode", "Update",
+        "-RuntimePath", $RuntimePath,
+        "-Branch", $Branch,
+        "-OwnerPid", ([string]$CurrentOwnerPid),
+        "-Relaunched"
+    )
+    $argumentLine = ($rawArgs | ForEach-Object { Quote-ProcessArgument ([string]$_) }) -join ' '
+    $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $argumentLine -WindowStyle Hidden -PassThru
+    if (-not $proc) { throw "Không chạy lại được updater DEV mới sau khi pull." }
 }
 
 function Invoke-Update {
@@ -187,8 +272,6 @@ function Invoke-Update {
 
     Write-UpdateStatus -State "checking" -Message "Đang kiểm tra cập nhật GitHub/local DEV..."
 
-    # Windows PowerShell 5.1 can leave a stale LASTEXITCODE when native output
-    # is piped through Select-Object. Capture native output and exit code first.
     [object[]]$branchOutput = @(& $git -C $RepoRoot branch --show-current 2>$null)
     $branchExit = $LASTEXITCODE
     [string]$currentBranch = ($branchOutput | Select-Object -First 1)
@@ -202,11 +285,19 @@ function Invoke-Update {
         throw "Repo có thay đổi DEV chưa commit; updater không ghi đè working tree."
     }
 
+    $effectiveOwnerPid = $OwnerPid
+    if ($effectiveOwnerPid -le 0) {
+        $effectiveOwnerPid = Get-RuntimeHostPid -Root $RuntimePath
+    }
+
+    $beforeFetchHead = Get-GitFirstLine -Git $git -Arguments @("-C", $RepoRoot, "rev-parse", "HEAD")
+
     & $git -C $RepoRoot fetch origin $Branch
     if ($LASTEXITCODE -ne 0) { throw "git fetch origin $Branch failed." }
 
     $localHead = Get-GitFirstLine -Git $git -Arguments @("-C", $RepoRoot, "rev-parse", "HEAD")
     $remoteHead = Get-GitFirstLine -Git $git -Arguments @("-C", $RepoRoot, "rev-parse", "origin/$Branch")
+    $pulledNewSource = $false
 
     if ($localHead -ne $remoteHead) {
         & $git -C $RepoRoot merge-base --is-ancestor $localHead $remoteHead *> $null
@@ -218,12 +309,18 @@ function Invoke-Update {
             Write-UpdateStatus -State "pulling" -Message "Có bản GitHub mới; đang pull fast-forward..." -Head $remoteHead
             & $git -C $RepoRoot pull --ff-only origin $Branch
             if ($LASTEXITCODE -ne 0) { throw "git pull --ff-only failed." }
+            $pulledNewSource = $true
         }
         elseif (-not $localAhead) {
             throw "Local và origin/$Branch đã diverge; cần xử lý Git trước khi update runtime."
         }
-        # localAhead is intentionally supported on the main DEV machine: build
-        # its committed local source even before that commit is pushed.
+    }
+
+    $afterPullHead = Get-GitFirstLine -Git $git -Arguments @("-C", $RepoRoot, "rev-parse", "HEAD")
+    if ($pulledNewSource -and -not $Relaunched -and $afterPullHead -ne $beforeFetchHead) {
+        Write-UpdateStatus -State "pulling" -Message "Đã tải updater mới; đang chuyển sang updater mới..." -Head $afterPullHead
+        Restart-WithFreshUpdater -CurrentOwnerPid $effectiveOwnerPid
+        return
     }
 
     & $git -C $RepoRoot lfs install *> $null
@@ -266,8 +363,11 @@ function Invoke-Update {
     }
 
     if (Test-RuntimeBusy $RuntimePath) {
+        if ($effectiveOwnerPid -le 0) {
+            $effectiveOwnerPid = Get-RuntimeHostPid -Root $RuntimePath
+        }
         Write-UpdateStatus -State "pending_restart" -Message "Bản mới đã tải/build xong. Tool hiện tại tiếp tục chạy; sẽ tự kích hoạt khi Multi đóng." -Head $targetHead -Stage $stagePath
-        Start-ActivationWatcher -Current $RuntimePath -Stage $stagePath
+        Start-ActivationWatcher -Current $RuntimePath -Stage $stagePath -OwnerProcessId $effectiveOwnerPid
         return
     }
 
