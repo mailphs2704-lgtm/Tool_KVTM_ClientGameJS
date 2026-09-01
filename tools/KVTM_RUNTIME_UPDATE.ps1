@@ -268,7 +268,7 @@ function Invoke-Update {
     $git = Resolve-KvtmGit
     if ([string]::IsNullOrWhiteSpace($git)) { throw "git.exe not found." }
     if (-not (Test-Path -LiteralPath $Builder -PathType Leaf)) { throw "Builder missing: $Builder" }
-    if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot ".git") -PathType Container)) { throw "Not a Git repo: $RepoRoot" }
+    if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot ".git"))) { throw "Not a Git repo: $RepoRoot" }
 
     Write-UpdateStatus -State "checking" -Message "Đang kiểm tra cập nhật GitHub/local DEV..."
 
