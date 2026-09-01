@@ -158,7 +158,7 @@ def capture_shared_bgra(pid: int, timeout_ms: int = 2500) -> tuple[bytes, int, i
             ):
                 raise RuntimeError("Kích thước KCAP không khớp")
             if (
-                pixel_format != 1 or stride != width * 4
+                pixel_format not in (1, 2) or stride != width * 4
                 or buffer_size != stride * height
                 or buffer_size > 64 * 1024 * 1024
             ):
