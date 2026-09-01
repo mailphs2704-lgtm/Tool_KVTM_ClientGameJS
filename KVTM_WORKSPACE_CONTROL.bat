@@ -9,7 +9,7 @@ set "WORKSPACE=components\workspace\kvtm_workspace.py"
 set "LOG_DIR=data-workspace"
 set "MAIN_DEV_ROOT=%USERPROFILE%\Desktop\Tool_KVTM_Multi_DEV"
 set "DIST=%MAIN_DEV_ROOT%\dist\KVTM-ClientJS-Suite-Multi-DEV"
-set "DRIVER_DIR=%DIST%\AUTO_PRO"
+set "DRIVER_DIR=%DIST%\Multi"
 
 :menu
 cls
