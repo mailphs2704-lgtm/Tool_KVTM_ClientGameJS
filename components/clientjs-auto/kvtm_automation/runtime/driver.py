@@ -20,13 +20,13 @@ class DriverBundle:
 class ClientJSDriverFactory:
     """Construct ClientJS drivers for clean automation.
 
-    Transaction-capable clean automation always uses :class:`CocosBridgeDriver`,
-    which talks directly to ``kvtm_bridge.dll``. The plain Windows driver is
-    retained only as a read-only diagnostic fallback and never carries Dọn quầy
-    touches.
+    Transaction-capable clean automation always sends touches through
+    :class:`CocosBridgeDriver` and ``kvtm_bridge.dll``. Capture is negotiated
+    from the bridge PING response: CAPTURE1 uses DLL shared memory; older bridge
+    binaries use the same Win32 capture fallback as the working AUTO.
 
-    Image dependencies are prepared by :class:`KVAutomation` *before* the DLL
-    bridge is connected. The DLL transport path therefore never performs heavy
+    Image dependencies are prepared by :class:`KVAutomation` before the DLL
+    bridge is connected. The transport path therefore never performs heavy
     native Python imports after a successful bridge PING.
     """
 
@@ -66,7 +66,8 @@ class ClientJSDriverFactory:
         *,
         logger: Callable[[str], None] | None = None,
     ) -> DriverBundle:
-        """Connect only the native Cocos bridge; image runtime is already ready."""
+        """Connect Cocos touch transport and negotiate capture capability."""
+
         if logger is not None:
             logger("DLL bridge: bắt đầu kết nối trực tiếp ClientJS")
         driver = CocosBridgeDriver(
@@ -75,10 +76,18 @@ class ClientJSDriverFactory:
             reference_size=(1000, 1000),
             logger=logger,
         )
+        mode = (
+            "cocos-dll-shared-capture"
+            if driver.shared_capture_supported
+            else "cocos-dll-touch-win32-capture"
+        )
         if logger is not None:
-            logger("DLL bridge: transport sẵn sàng; image runtime đã nạp trước")
+            logger(
+                "DLL bridge: transport sẵn sàng; image runtime đã nạp trước; "
+                f"mode={mode}"
+            )
         return DriverBundle(
             driver=driver,
             bridge_root=self.auto_root / "bin",
-            mode="cocos-dll-direct",
+            mode=mode,
         )
