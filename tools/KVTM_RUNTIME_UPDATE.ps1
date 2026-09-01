@@ -120,8 +120,9 @@ function Activate-Runtime {
         throw "Runtime is still busy; activation deferred."
     }
 
+    # Copy the freshest profiles/settings only after the old Multi has exited.
+    # This prevents data changes made while staging was being built from being lost.
     Sync-CurrentDataToStage -Current $Current -Stage $Stage
-    Write-Utf8NoBom -Path (Join-Path $Stage "data-dev\runtime-source-head.txt") -Text ($Head + "`r`n")
 
     $backup = $Current + ".previous"
     if (Test-Path -LiteralPath $backup) {
@@ -147,7 +148,7 @@ function Activate-Runtime {
 }
 
 function Start-ActivationWatcher {
-    param([string]$Current, [string]$Stage, [string]$Head)
+    param([string]$Current, [string]$Stage)
     $args = @(
         "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
         "-File", $PSCommandPath,
@@ -161,10 +162,10 @@ function Start-ActivationWatcher {
 
 function Invoke-ActivatePending {
     if ([string]::IsNullOrWhiteSpace($StagingPath)) { throw "ActivatePending requires -StagingPath." }
-    $headFile = Join-Path $StagingPath "data-dev\runtime-source-head.txt"
+    $headFile = Join-Path $StagingPath ".source-head.txt"
     $head = ""
     if (Test-Path -LiteralPath $headFile -PathType Leaf) {
-        $head = (Get-Content -LiteralPath $headFile -Raw -Encoding UTF8).Trim()
+        $head = (Get-Content -LiteralPath $headFile -Raw -Encoding ASCII).Trim()
     }
     if ([string]::IsNullOrWhiteSpace($head)) {
         $git = Resolve-KvtmGit
@@ -185,6 +186,11 @@ function Invoke-Update {
     if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot ".git") -PathType Container)) { throw "Not a Git repo: $RepoRoot" }
 
     Write-UpdateStatus -State "checking" -Message "Đang kiểm tra cập nhật GitHub/local DEV..."
+
+    [string]$currentBranch = (& $git -C $RepoRoot branch --show-current | Select-Object -First 1)
+    if ($LASTEXITCODE -ne 0 -or $currentBranch.Trim() -ne $Branch) {
+        throw "Repo phải ở branch $Branch trước khi update runtime."
+    }
 
     [object[]]$dirty = @(& $git -C $RepoRoot status --porcelain)
     [object[]]$blockingDirty = @(Get-BlockingDirtyLines $dirty)
@@ -208,7 +214,6 @@ function Invoke-Update {
             Write-UpdateStatus -State "pulling" -Message "Có bản GitHub mới; đang pull fast-forward..." -Head $remoteHead
             & $git -C $RepoRoot pull --ff-only origin $Branch
             if ($LASTEXITCODE -ne 0) { throw "git pull --ff-only failed." }
-            $localHead = Get-GitFirstLine -Git $git -Arguments @("-C", $RepoRoot, "rev-parse", "HEAD")
         }
         elseif (-not $localAhead) {
             throw "Local và origin/$Branch đã diverge; cần xử lý Git trước khi update runtime."
@@ -223,10 +228,10 @@ function Invoke-Update {
     if ($LASTEXITCODE -ne 0) { throw "git lfs pull failed." }
 
     $targetHead = Get-GitFirstLine -Git $git -Arguments @("-C", $RepoRoot, "rev-parse", "HEAD")
-    $stampPath = Join-Path $RuntimePath "data-dev\runtime-source-head.txt"
+    $stampPath = Join-Path $RuntimePath ".source-head.txt"
     $currentStamp = ""
     if (Test-Path -LiteralPath $stampPath -PathType Leaf) {
-        $currentStamp = (Get-Content -LiteralPath $stampPath -Raw -Encoding UTF8).Trim()
+        $currentStamp = (Get-Content -LiteralPath $stampPath -Raw -Encoding ASCII).Trim()
     }
 
     if ($currentStamp -eq $targetHead) {
@@ -246,6 +251,7 @@ function Invoke-Update {
     if ($LASTEXITCODE -ne 0) { throw "Runtime staging build failed." }
 
     foreach ($required in @(
+        (Join-Path $stagePath ".source-head.txt"),
         (Join-Path $stagePath "Multi\kvtm_multi_dev_host.py"),
         (Join-Path $stagePath "Multi\runtime_update_ui.py"),
         (Join-Path $stagePath "AUTO_PRO\local_launcher.py")
@@ -254,11 +260,10 @@ function Invoke-Update {
             throw "Staging runtime incomplete: $required"
         }
     }
-    Write-Utf8NoBom -Path (Join-Path $stagePath "data-dev\runtime-source-head.txt") -Text ($targetHead + "`r`n")
 
     if (Test-RuntimeBusy $RuntimePath) {
         Write-UpdateStatus -State "pending_restart" -Message "Bản mới đã tải/build xong. Tool hiện tại tiếp tục chạy; sẽ tự kích hoạt khi Multi đóng." -Head $targetHead -Stage $stagePath
-        Start-ActivationWatcher -Current $RuntimePath -Stage $stagePath -Head $targetHead
+        Start-ActivationWatcher -Current $RuntimePath -Stage $stagePath
         return
     }
 
