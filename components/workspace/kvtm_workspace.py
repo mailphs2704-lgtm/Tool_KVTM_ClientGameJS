@@ -59,38 +59,6 @@ def find_bridge_files() -> tuple[Path, Path] | None:
     return None
 
 
-_PARKED_WINDOWS: dict[int, tuple[int, int, int, int]] = {}
-
-
-def park_client_window(hwnd: int) -> bool:
-    """Keep ClientJS top-level/rendering while leaving a 32px render-keepalive strip on desktop."""
-    user32 = ctypes.windll.user32
-    rect = wintypes.RECT()
-    if not user32.IsWindow(hwnd) or not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
-        return False
-    _PARKED_WINDOWS.setdefault(
-        int(hwnd), (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top)
-    )
-    virtual_left = user32.GetSystemMetrics(76)  # SM_XVIRTUALSCREEN
-    virtual_top = user32.GetSystemMetrics(77)   # SM_YVIRTUALSCREEN
-    virtual_width = user32.GetSystemMetrics(78) # SM_CXVIRTUALSCREEN
-    width = max(1, rect.right - rect.left)
-    height = max(1, rect.bottom - rect.top)
-    parked_x = virtual_left + virtual_width - 32
-    flags = 0x0010 | 0x0200  # SWP_NOACTIVATE | SWP_NOOWNERZORDER
-    return bool(user32.SetWindowPos(hwnd, 1, parked_x, virtual_top, width, height, flags))
-
-
-def restore_client_window(hwnd: int) -> bool:
-    user32 = ctypes.windll.user32
-    position = _PARKED_WINDOWS.pop(int(hwnd), None)
-    if not position or not user32.IsWindow(hwnd):
-        return False
-    left, top, width, height = position
-    flags = 0x0010 | 0x0200
-    return bool(user32.SetWindowPos(hwnd, 0, left, top, width, height, flags))
-
-
 def load_dev_client_allowlist() -> tuple[dict[int, dict], str]:
     """Read the secret-free PID/profile map published by authoritative Multi DEV."""
     reasons = []
@@ -270,10 +238,6 @@ class DeviceView(ttk.Frame):
         ttk.Button(
             self.header, text="Hiện Client", command=self.show_client
         ).pack(side="right", padx=4)
-        self.park_button = ttk.Button(
-            self.header, text="Ẩn ngoài desktop", command=self.toggle_park
-        )
-        self.park_button.pack(side="right", padx=4)
         self.canvas = tk.Canvas(self, background="black", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.status = tk.StringVar(value="Đang kết nối capture...")
@@ -341,30 +305,16 @@ class DeviceView(ttk.Frame):
             f"{detail} • {width}×{height} • Live View {int(TARGET_FPS)} FPS"
         )
 
-    def toggle_park(self):
-        hwnd = int(self.device["hwnd"])
-        if hwnd in _PARKED_WINDOWS:
-            if restore_client_window(hwnd):
-                self.park_button.configure(text="Ẩn ngoài desktop")
-            return
-        if not park_client_window(hwnd):
-            messagebox.showerror(APP_TITLE, "Không thể ẩn ClientJS DEV.")
-            return
-        self.park_button.configure(text="Trả về desktop")
-
     def show_client(self):
         hwnd = int(self.device["hwnd"])
         user32 = ctypes.windll.user32
         if not user32.IsWindow(hwnd):
             messagebox.showerror(APP_TITLE, "Client DEV không còn chạy.")
             return
-        restore_client_window(hwnd)
-        self.park_button.configure(text="Ẩn ngoài desktop")
         user32.ShowWindow(hwnd, 9)
         user32.SetForegroundWindow(hwnd)
 
     def close(self):
-        restore_client_window(int(self.device["hwnd"]))
         self.worker.close()
 
 
