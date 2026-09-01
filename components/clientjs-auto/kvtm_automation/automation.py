@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 from typing import Any
 
 from .actions import (
@@ -13,6 +14,7 @@ from .actions import (
 )
 from .context import AutomationContext
 from .runtime.assets import AssetLibrary
+from .runtime.bootstrap import install_binary_dependencies
 from .runtime.driver import ClientJSDriverFactory
 from .runtime.vision import VisionEngine
 from .runtime.wait import Waiter
@@ -25,6 +27,10 @@ class KVAutomation:
     AUTO PRO's FarmAutomation/ADBController pair. It is intentionally small:
     reusable mechanics live in `actions/`, while business flows live in
     `workflows/`.
+
+    Native image dependencies are loaded before the ClientJS DLL bridge is
+    connected. This keeps native Python imports and the injected Cocos transport
+    in separate startup phases and makes each phase independently observable.
     """
 
     def __init__(
@@ -39,6 +45,16 @@ class KVAutomation:
             self.component_root,
             context.auto_root,
         )
+
+        context.stage("clean-image-runtime-loading")
+        started = time.monotonic()
+        install_binary_dependencies(context.auto_root, logger=context.log)
+        context.log(
+            "Thư viện ảnh: toàn bộ runtime READY sau "
+            f"{time.monotonic() - started:.2f}s"
+        )
+        context.stage("clean-image-runtime-ready")
+
         if driver is None:
             context.stage("clientjs-dll-bridge-connecting")
             bundle = self.driver_factory.engine(
