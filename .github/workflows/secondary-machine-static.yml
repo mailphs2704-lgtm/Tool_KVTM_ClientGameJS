@@ -9,9 +9,11 @@ on:
       - 'tools/KVTM_PROFILE_TRANSFER.ps1'
       - 'tools/KVTM_PROFILE_VERIFY.ps1'
       - 'tools/KVTM_MACHINE_SETUP.ps1'
+      - 'tools/KVTM_GITHUB_BRIDGE.ps1'
       - 'KVTM_SECONDARY_BOOTSTRAP.ps1'
       - 'KVTM_MACHINE_TRANSFER_CONTROL.bat'
       - 'packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1'
+      - '.gitignore'
       - '.github/workflows/secondary-machine-static.yml'
   workflow_dispatch:
 
@@ -29,6 +31,7 @@ jobs:
             '.\tools\KVTM_PROFILE_TRANSFER.ps1',
             '.\tools\KVTM_PROFILE_VERIFY.ps1',
             '.\tools\KVTM_MACHINE_SETUP.ps1',
+            '.\tools\KVTM_GITHUB_BRIDGE.ps1',
             '.\KVTM_SECONDARY_BOOTSTRAP.ps1',
             '.\packaging\suite-v0.15\BUILD_FULL_PACKAGE_PS51.ps1'
           )
@@ -104,6 +107,28 @@ jobs:
           }
           Write-Host 'PS51_PACKAGE_HEAD_PATCH_TARGET_OK' -ForegroundColor Green
 
+      - name: Static safety check GitHub bridge
+        shell: powershell
+        run: |
+          $bridge = Get-Content '.\tools\KVTM_GITHUB_BRIDGE.ps1' -Raw -Encoding UTF8
+          foreach ($required in @(
+            'SAFE_DIAGNOSTIC_ONLY',
+            'profile_data_uploaded=false',
+            'transfer_file_uploaded=false',
+            "'.kvtm'",
+            "'profiles.json'",
+            'data-machine-sync',
+            'machine-sync/cry-pc'
+          )) {
+            if (-not $bridge.Contains($required)) {
+              throw "GitHub bridge safety marker missing: $required"
+            }
+          }
+          if (-not $bridge.Contains("Get-SafeDiagnosticText")) {
+            throw 'GitHub bridge safe diagnostic filter missing'
+          }
+          Write-Host 'GITHUB_BRIDGE_STATIC_SAFETY_OK' -ForegroundColor Green
+
       - name: Smoke test transfer collections and crypto primitives
         shell: powershell
         run: |
@@ -143,7 +168,9 @@ jobs:
       - name: Ensure transfer artifacts are ignored
         shell: powershell
         run: |
-          if (-not (Select-String -Path .\.gitignore -Pattern '^\*\.kvtm$' -Quiet)) {
-            throw '*.kvtm is not ignored'
+          foreach ($pattern in @('^\*\.kvtm$', '^data-machine-sync/$')) {
+            if (-not (Select-String -Path .\.gitignore -Pattern $pattern -Quiet)) {
+              throw "Required ignore missing: $pattern"
+            }
           }
           Write-Host 'TRANSFER_ARTIFACT_IGNORE_OK' -ForegroundColor Green
