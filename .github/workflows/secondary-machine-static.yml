@@ -10,6 +10,9 @@ on:
       - 'tools/KVTM_PROFILE_VERIFY.ps1'
       - 'tools/KVTM_MACHINE_SETUP.ps1'
       - 'tools/KVTM_GITHUB_BRIDGE.ps1'
+      - 'tools/KVTM_RUNTIME_UPDATE.ps1'
+      - 'source-archive/multi-current/kvtm_multi_tool/runtime_update_ui.py'
+      - 'source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py'
       - 'KVTM_SECONDARY_BOOTSTRAP.ps1'
       - 'KVTM_MACHINE_TRANSFER_CONTROL.bat'
       - 'packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1'
@@ -32,6 +35,7 @@ jobs:
             '.\tools\KVTM_PROFILE_VERIFY.ps1',
             '.\tools\KVTM_MACHINE_SETUP.ps1',
             '.\tools\KVTM_GITHUB_BRIDGE.ps1',
+            '.\tools\KVTM_RUNTIME_UPDATE.ps1',
             '.\KVTM_SECONDARY_BOOTSTRAP.ps1',
             '.\packaging\suite-v0.15\BUILD_FULL_PACKAGE_PS51.ps1'
           )
@@ -51,6 +55,15 @@ jobs:
             }
           }
           if ($failed) { throw 'PowerShell parse check failed' }
+
+      - name: Parse runtime updater Python
+        shell: powershell
+        run: |
+          python -m py_compile .\source-archive\multi-current\kvtm_multi_tool\runtime_update_ui.py
+          if ($LASTEXITCODE -ne 0) { throw 'runtime_update_ui.py compile failed' }
+          python -m py_compile .\source-archive\multi-current\kvtm_multi_tool\kvtm_multi_dev_host.py
+          if ($LASTEXITCODE -ne 0) { throw 'kvtm_multi_dev_host.py compile failed' }
+          Write-Host 'RUNTIME_UPDATE_PYTHON_PARSE_OK' -ForegroundColor Green
 
       - name: Regression test PowerShell 5.1 JSON arrays
         shell: powershell
@@ -128,6 +141,28 @@ jobs:
             throw 'GitHub bridge safe diagnostic filter missing'
           }
           Write-Host 'GITHUB_BRIDGE_STATIC_SAFETY_OK' -ForegroundColor Green
+
+      - name: Static safety check staged runtime updater
+        shell: powershell
+        run: |
+          $updater = Get-Content '.\tools\KVTM_RUNTIME_UPDATE.ps1' -Raw -Encoding UTF8
+          foreach ($required in @(
+            'pending_restart',
+            'ActivatePending',
+            'Test-RuntimeBusy',
+            'Sync-CurrentDataToStage',
+            'runtime-source-head.txt',
+            'pull --ff-only',
+            '.previous'
+          )) {
+            if (-not $updater.Contains($required)) {
+              throw "Runtime updater safety marker missing: $required"
+            }
+          }
+          if ($updater.Contains('Remove-Item -LiteralPath $RuntimePath -Recurse -Force')) {
+            throw 'Runtime updater must never delete active runtime directly'
+          }
+          Write-Host 'RUNTIME_UPDATE_STAGING_SAFETY_OK' -ForegroundColor Green
 
       - name: Smoke test transfer collections and crypto primitives
         shell: powershell
