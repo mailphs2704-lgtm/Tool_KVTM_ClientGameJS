@@ -72,6 +72,9 @@ function Get-SafeDiagnosticText {
         'head' = $true
         'working_tree' = $true
         'runtime' = $true
+        'runtime_source_head' = $true
+        'runtime_update_ui' = $true
+        'runtime_updater_hook' = $true
         'RESULT' = $true
         'blocking' = $true
         'secret_values_printed' = $true
