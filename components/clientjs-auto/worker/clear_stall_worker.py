@@ -1,89 +1,121 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
-import queue
 import sys
-import threading
-import time
 import traceback
 
-
-def emit(event: str, **data) -> None:
-    print(json.dumps({"event": event, **data}, ensure_ascii=True), flush=True)
-
-
-def command_reader(commands: queue.Queue) -> None:
-    for line in sys.stdin:
-        try:
-            commands.put(json.loads(line))
-        except json.JSONDecodeError:
-            continue
+from clean_worker_support import (
+    StopChannel,
+    configure_utf8_stdio,
+    emit,
+    install_component_path,
+)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
+WORKFLOW_NAME = "clear_stall_clean"
+REQUIRED_STALL_VIEWS = 4
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="KVTM Multi clean Dọn quầy worker"
+    )
     parser.add_argument("--auto-root", required=True)
     parser.add_argument("--pid", type=int, required=True)
     parser.add_argument("--profile-id", required=True)
     parser.add_argument("--profile-name", required=True)
     parser.add_argument("--friend-ordinal", type=int, required=True)
-    parser.add_argument("--stall-id", type=int, required=True)
+    # Historical UI/CLI name. Internally this is the clone inventory category
+    # used when locating VP for resale, not a second physical friend stall.
+    parser.add_argument("--stall-id", dest="resale_storage_id", type=int, required=True)
     parser.add_argument("--quantity", type=int, required=True)
-    parser.add_argument("--max-pages", type=int, required=True)
+    # Kept only so older Multi launchers remain compatible. The clean scanner
+    # always uses exactly four overlapping views to cover 20 physical slots.
+    parser.add_argument("--max-pages", type=int, default=REQUIRED_STALL_VIEWS)
     parser.add_argument("--work-dir", required=True)
-    args = parser.parse_args()
+    return parser
+
+
+def _validate(args: argparse.Namespace) -> None:
+    if not 1 <= int(args.friend_ordinal) <= 7:
+        raise ValueError(
+            "Bạn bè số phải trong khoảng 1..7 cho đường điều hướng đã xác nhận"
+        )
+    if not 1 <= int(args.resale_storage_id) <= 5:
+        raise ValueError("Kho VP bán lại phải trong khoảng 1..5")
+    if not 1 <= int(args.quantity) <= 999:
+        raise ValueError("Số lượng mua phải trong khoảng 1..999")
+    if int(args.max_pages) < REQUIRED_STALL_VIEWS:
+        raise ValueError("Dọn đủ 20 ô cần đúng 4 view quầy")
+
+
+def main() -> int:
+    configure_utf8_stdio()
+    args = _parser().parse_args()
 
     emit(
         "worker_boot",
         pid=args.pid,
         profile_id=args.profile_id,
         profile_name=args.profile_name,
-        workflow="clear_stall_python",
+        workflow=WORKFLOW_NAME,
         stage="process_started",
     )
+
+    try:
+        _validate(args)
+    except Exception as exc:
+        emit("worker_error", error=str(exc), workflow=WORKFLOW_NAME)
+        return 2
+
     emit(
         "worker_boot",
         pid=args.pid,
         profile_id=args.profile_id,
-        workflow="clear_stall_python",
-        stage="importing_auto_worker",
+        workflow=WORKFLOW_NAME,
+        stage="clean_runtime_importing",
     )
-    from auto_worker import (
-        GuiProxy,
-        configure_utf8_stdio,
-        install_headless_clientjs_runtime,
+    install_component_path()
+
+    from kvtm_automation import AutomationContext, KVAutomation
+    from kvtm_automation.errors import AutomationStopped
+    from kvtm_automation.workflows.clear_stall import (
+        ClearStallRequest,
+        ClearStallWorkflow,
     )
-    configure_utf8_stdio()
 
-    if not 1 <= args.friend_ordinal <= 500:
-        emit("worker_error", error="Bạn bè số phải trong khoảng 1..500")
-        return 2
-    if not 1 <= args.stall_id <= 4:
-        emit("worker_error", error="Quầy phải trong khoảng 1..4")
-        return 2
-    if not 1 <= args.quantity <= 999:
-        emit("worker_error", error="Số lượng mua phải trong khoảng 1..999")
-        return 2
-    if not 1 <= args.max_pages <= 50:
-        emit("worker_error", error="Số trang quét phải trong khoảng 1..50")
-        return 2
-
-    workflow_root = Path(__file__).resolve().parents[1] / "workflows"
-    sys.path.insert(0, str(workflow_root))
-    from clear_stall.adapter import AutoProNavigationAdapter
-    from clear_stall.transaction import VisualTransactionExecutor
-    from clear_stall.workflow import ClearStallRequest, ClearStallWorkflow
-
-    stop_event = threading.Event()
-    commands: queue.Queue = queue.Queue()
-    threading.Thread(
-        target=command_reader, args=(commands,), daemon=True
-    ).start()
+    channel = StopChannel(
+        on_stop=lambda command: emit(
+            "worker_stopping",
+            reason="user",
+            command=command,
+            workflow=WORKFLOW_NAME,
+        )
+    )
+    channel.start()
 
     def log(message: str) -> None:
-        emit("progress", message=str(message))
+        emit("progress", message=str(message), workflow=WORKFLOW_NAME)
+
+    def stage(stage_name: str) -> None:
+        emit(
+            "progress",
+            message=str(stage_name),
+            stage=str(stage_name),
+            workflow=WORKFLOW_NAME,
+        )
+
+    context = AutomationContext(
+        pid=args.pid,
+        profile_id=args.profile_id,
+        profile_name=args.profile_name,
+        auto_root=Path(args.auto_root),
+        work_dir=Path(args.work_dir),
+        stop_event=channel.event,
+        logger=log,
+        stage_reporter=stage,
+    )
 
     workflow = None
     try:
@@ -91,157 +123,77 @@ def main() -> int:
             "worker_boot",
             pid=args.pid,
             profile_id=args.profile_id,
-            profile_name=args.profile_name,
-            workflow="clear_stall_python",
-            stage="loading_auto_pro_runtime",
+            workflow=WORKFLOW_NAME,
+            stage="clientjs_engine_connecting",
         )
-        automation_module = install_headless_clientjs_runtime(
-            Path(args.auto_root).resolve()
-        )
+        automation = KVAutomation(context)
         emit(
             "worker_boot",
             pid=args.pid,
             profile_id=args.profile_id,
-            workflow="clear_stall_python",
-            stage="constructing_controller",
+            workflow=WORKFLOW_NAME,
+            stage="clientjs_engine_ready",
         )
-        # Function 136 is used only to construct AUTO PRO's controller and
-        # image library. automation.start()/produceItems_* is never called.
-        automation = automation_module.FarmAutomation(
-            f"PC:{args.pid}",
-            136,
-            gui_ref=GuiProxy(),
-            options={},
-            skip_items=[],
-        )
-        emit(
-            "worker_boot",
-            pid=args.pid,
-            profile_id=args.profile_id,
-            workflow="clear_stall_python",
-            stage="controller_ready",
-        )
-        adapter = AutoProNavigationAdapter(
-            automation, stop_event=stop_event, logger=log
-        )
-        executor = VisualTransactionExecutor(
-            adapter.controller, stop_event=stop_event, logger=log
-        )
+
         request = ClearStallRequest(
             profile_id=args.profile_id,
             friend_ordinal=args.friend_ordinal,
-            stall_id=args.stall_id,
+            resale_storage_id=args.resale_storage_id,
             buy_quantity=args.quantity,
-            max_scan_pages=args.max_pages,
             work_dir=Path(args.work_dir),
+            probe_only=False,
         )
-        workflow = ClearStallWorkflow(
-            request, adapter, stop_event=stop_event, logger=log
-        )
+        workflow = ClearStallWorkflow(request, automation)
         emit(
             "worker_started",
             pid=args.pid,
             profile_id=args.profile_id,
             profile_name=args.profile_name,
-            workflow="clear_stall_python",
+            workflow=WORKFLOW_NAME,
+            friend_ordinal=args.friend_ordinal,
+            resale_storage_id=args.resale_storage_id,
+            quantity=args.quantity,
+            stall_views=REQUIRED_STALL_VIEWS,
         )
 
-        outcome: dict[str, object] = {
-            "done": False,
-            "error": None,
-            "stopped": False,
-        }
-
-        def run_workflow() -> None:
-            try:
-                detected = workflow.discover_source_items()
-                pending = workflow.prepare_manifest_items(detected)
-                bought = workflow.execute_purchases(pending, executor)
-                sold = workflow.execute_resale(executor)
-                outcome["bought"] = bought
-                outcome["sold"] = sold
-            except InterruptedError as exc:
-                outcome["stopped"] = True
-                outcome["error"] = exc
-                try:
-                    workflow.fail(exc)
-                except Exception:
-                    pass
-            except Exception as exc:
-                outcome["error"] = exc
-                try:
-                    workflow.fail(exc)
-                except Exception:
-                    pass
-            finally:
-                outcome["done"] = True
-
-        task = threading.Thread(target=run_workflow, daemon=True)
-        task.start()
-        command_accept_after = time.monotonic() + 4.0
-        while not bool(outcome["done"]):
-            try:
-                command = commands.get(timeout=0.20)
-            except queue.Empty:
-                continue
-            action = str(command.get("command") or "").lower()
-            if action in {"stop", "pause"}:
-                if time.monotonic() < command_accept_after:
-                    emit(
-                        "log",
-                        message=(
-                            "Đã bỏ qua lệnh Dừng xuất hiện trong 4 giây "
-                            "khởi động đầu"
-                        ),
-                        ignored_command=command,
-                    )
-                    continue
-                stop_event.set()
-                emit(
-                    "worker_stopping",
-                    reason="user",
-                    command=command,
-                )
-        task.join(timeout=3.0)
-        error = outcome.get("error")
-        if bool(outcome.get("stopped")):
-            emit(
-                "worker_stopped",
-                profile_id=args.profile_id,
-                workflow="clear_stall_python",
-                reason="user",
-            )
-            return 0
-        if error is not None:
-            emit(
-                "worker_error",
-                error=repr(error),
-                traceback="".join(
-                    traceback.format_exception(
-                        type(error), error, error.__traceback__
-                    )
-                ),
-            )
-            return 1
+        result = workflow.run()
+        payload = result.to_dict()
         emit(
             "worker_finished",
+            workflow=WORKFLOW_NAME,
+            **payload,
+        )
+        return 0
+
+    except AutomationStopped as exc:
+        emit(
+            "worker_stopped",
             profile_id=args.profile_id,
-            workflow="clear_stall_python",
-            bought=int(outcome.get("bought") or 0),
-            sold=int(outcome.get("sold") or 0),
-            retained=int(workflow.manifest.retained_total),
+            workflow=WORKFLOW_NAME,
+            reason="user",
+            error=str(exc),
+        )
+        return 0
+    except InterruptedError as exc:
+        emit(
+            "worker_stopped",
+            profile_id=args.profile_id,
+            workflow=WORKFLOW_NAME,
+            reason="user",
+            error=str(exc),
         )
         return 0
     except Exception as exc:
-        if workflow is not None:
-            try:
-                workflow.fail(exc)
-            except Exception:
-                pass
         emit(
             "worker_error",
+            profile_id=args.profile_id,
+            workflow=WORKFLOW_NAME,
             error=repr(exc),
             traceback=traceback.format_exc(),
+            diagnostics={
+                "source_file": str(Path(__file__).name),
+                "function": "main",
+            },
         )
         return 1
 
