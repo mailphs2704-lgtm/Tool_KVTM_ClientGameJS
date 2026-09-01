@@ -11,7 +11,7 @@ def emit(event: str, **data) -> None:
     print(json.dumps({"event": event, **data}, ensure_ascii=False), flush=True)
 
 
-def discover_single_game_pid() -> int:
+def discover_game_pids() -> list[int]:
     script = (
         "$p=@(Get-CimInstance Win32_Process -Filter \"Name='GameClientJS.exe'\" | "
         "Select-Object -ExpandProperty ProcessId);$p|ConvertTo-Json -Compress"
@@ -30,12 +30,7 @@ def discover_single_game_pid() -> int:
         raise RuntimeError("Không có GameClientJS.exe nào đang chạy")
     value = json.loads(raw)
     pids = value if isinstance(value, list) else [value]
-    pids = [int(pid) for pid in pids]
-    if len(pids) != 1:
-        raise RuntimeError(
-            f"Bước 1 cần đúng 1 GameClientJS đang mở; hiện có {len(pids)} PID: {pids}"
-        )
-    return pids[0]
+    return sorted({int(pid) for pid in pids})
 
 
 def main() -> int:
@@ -51,18 +46,22 @@ def main() -> int:
     work_dir = Path(args.work_dir).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    pid = int(args.pid) if args.pid else discover_single_game_pid()
-
     try:
+        pids = [int(args.pid)] if args.pid else discover_game_pids()
+        emit(
+            "step1_progress",
+            stage="clients-detected",
+            message=f"Bước 1: phát hiện {len(pids)} GameClientJS; sẽ thử từng PID bằng AUTO chính",
+            pids=pids,
+        )
+
+        # Reuse the exact bootstrap used by the working AUTO ClientJS worker.
+        # Step 1 deliberately does not use any clean/resident Dọn quầy runtime.
         emit(
             "step1_progress",
             stage="bootstrap-auto-main",
             message="Bước 1: nạp đúng bootstrap AUTO chính",
-            pid=pid,
         )
-
-        # This is the exact bootstrap used by the working AUTO ClientJS worker.
-        # Step 1 deliberately does not use the clean/resident Dọn quầy runtime.
         from auto_worker import install_clientjs_runtime
 
         install_clientjs_runtime(auto_root)
@@ -74,40 +73,85 @@ def main() -> int:
 
         # AUTO chính patches uiautomator2.connect("PC:<pid>") to EngineDriver.
         import uiautomator2 as u2
-
-        driver = u2.connect(f"PC:{pid}")
-        emit(
-            "step1_progress",
-            stage="auto-main-driver-ready",
-            message=f"Bước 1: đã kết nối bằng {type(driver).__name__}",
-            driver_type=type(driver).__name__,
-        )
-
-        # EngineDriver.screenshot() is authoritative here. On the currently
-        # packaged touch-only DLL it automatically falls back to PCDriver capture,
-        # exactly as the working AUTO does.
-        frame = driver.screenshot(format="opencv")
-        if frame is None or not hasattr(frame, "shape"):
-            raise RuntimeError("AUTO chính không trả về frame OpenCV hợp lệ")
-
         import cv2
 
-        output = work_dir / "step1-auto-main-capture.png"
-        if not cv2.imwrite(str(output), frame):
-            raise RuntimeError(f"Không ghi được ảnh kiểm tra: {output}")
+        successes: list[dict] = []
+        failures: list[dict] = []
+        for pid in pids:
+            try:
+                emit(
+                    "step1_progress",
+                    stage="auto-main-driver-connecting",
+                    message=f"Bước 1: thử PID {pid}",
+                    pid=pid,
+                )
+                driver = u2.connect(f"PC:{pid}")
+                emit(
+                    "step1_progress",
+                    stage="auto-main-driver-ready",
+                    message=f"Bước 1: PID {pid} đã kết nối bằng {type(driver).__name__}",
+                    pid=pid,
+                    driver_type=type(driver).__name__,
+                )
 
-        height, width = int(frame.shape[0]), int(frame.shape[1])
+                # EngineDriver.screenshot() is authoritative. With the current
+                # touch-only DLL it falls back to PCDriver capture, exactly as
+                # the working AUTO does.
+                frame = driver.screenshot(format="opencv")
+                if frame is None or not hasattr(frame, "shape"):
+                    raise RuntimeError("AUTO chính không trả về frame OpenCV hợp lệ")
+
+                output = work_dir / f"step1-auto-main-capture-pid-{pid}.png"
+                if not cv2.imwrite(str(output), frame):
+                    raise RuntimeError(f"Không ghi được ảnh kiểm tra: {output}")
+
+                height, width = int(frame.shape[0]), int(frame.shape[1])
+                result = {
+                    "pid": pid,
+                    "driver_type": type(driver).__name__,
+                    "width": width,
+                    "height": height,
+                    "capture": str(output),
+                }
+                successes.append(result)
+                emit(
+                    "step1_pid_pass",
+                    stage="capture-pass",
+                    message=f"Bước 1: PID {pid} chụp ảnh PASS",
+                    **result,
+                )
+            except Exception as exc:
+                failure = {
+                    "pid": pid,
+                    "error": repr(exc),
+                    "traceback": traceback.format_exc(),
+                }
+                failures.append(failure)
+                emit(
+                    "step1_pid_error",
+                    stage="capture-failed",
+                    message=f"Bước 1: PID {pid} lỗi; tiếp tục PID khác",
+                    **failure,
+                )
+
+        if not successes:
+            emit(
+                "step1_error",
+                stage="step1-failed",
+                error="Không PID GameClientJS nào chụp ảnh PASS bằng luồng AUTO chính",
+                failures=failures,
+            )
+            return 1
+
         emit(
             "step1_pass",
             stage="capture-pass",
-            message="BƯỚC 1 PASS: AUTO chính đã kết nối và chụp được màn GameClientJS",
-            pid=pid,
+            message="BƯỚC 1 PASS: AUTO chính đã kết nối và chụp được ít nhất một GameClientJS",
             profile_id=args.profile_id,
             profile_name=args.profile_name,
-            driver_type=type(driver).__name__,
-            width=width,
-            height=height,
-            capture=str(output),
+            detected_pids=pids,
+            successes=successes,
+            failures=failures,
         )
         return 0
     except Exception as exc:
@@ -116,7 +160,6 @@ def main() -> int:
             stage="step1-failed",
             error=repr(exc),
             traceback=traceback.format_exc(),
-            pid=pid,
         )
         return 1
 
