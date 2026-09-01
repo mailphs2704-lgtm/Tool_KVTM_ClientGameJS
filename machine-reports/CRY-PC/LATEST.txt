@@ -1,5 +1,5 @@
 KVTM SECONDARY MACHINE DIAGNOSTIC
-timestamp=2026-09-01 22:35:23 +07:00
+timestamp=2026-09-01 22:45:26 +07:00
 computer=CRY-PC
 windows64=True
 powershell=5.1.19041.6456
@@ -21,20 +21,24 @@ game_data=FOUND %APPDATA%\VNG Corporation\ZingPlay\zpp\24\game
 repo=%USERPROFILE%\Desktop\Tool_KVTM_Multi_DEV
 branch=develop/multi-auto-dev
 expected_branch=develop/multi-auto-dev
-head=595f8df
+head=9d6acfc
 working_tree=dirty
 
 === DEV RUNTIME ===
-runtime=READY
+runtime=NOT_BUILT_OR_INCOMPLETE
+runtime_source_head=37f194eee2ecd75a3e787bbbdbf6766015fccf07
+runtime_update_ui=MISSING
+runtime_updater_hook=MISSING
 
 === RESULT ===
-RESULT=ENVIRONMENT_READY
+RESULT=NOT_READY
+blocking=DEV runtime
 secret_values_printed=false
 
 === GITHUB BRIDGE META ===
-sent_at=2026-09-01 22:35:24 +07:00
+sent_at=2026-09-01 22:45:27 +07:00
 source_branch=develop/multi-auto-dev
-source_head=595f8dff3b80d3362bdb14d44c5189f54f426564
+source_head=9d6acfcfbb2dc74998a6218dbdce7b8e07dad43c
 working_tree_entry_count=9
 payload=SAFE_DIAGNOSTIC_ONLY
 profile_data_uploaded=false
