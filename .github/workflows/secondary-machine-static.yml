@@ -76,6 +76,34 @@ jobs:
           }
           Write-Host "POWERSHELL_NATIVE_GIT_HEAD_OK $head" -ForegroundColor Green
 
+      - name: Smoke test PS5.1 package HEAD patch target
+        shell: powershell
+        run: |
+          $builder = '.\packaging\suite-v0.15\BUILD_FULL_PACKAGE.ps1'
+          $source = Get-Content -LiteralPath $builder -Raw -Encoding UTF8
+          $oldBlock = @'
+          $head = (& git -C $RepoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($head)) {
+              throw "Cannot determine repository HEAD for package stamp."
+          }
+          '@
+          if (-not $source.Contains($oldBlock)) {
+            throw 'PS5.1 package HEAD patch target not found'
+          }
+          $newBlock = @'
+          [object[]]$headOutput = @(& $env:KVTM_PS51_GIT_EXE -C $RepoRoot rev-parse HEAD 2>$null)
+          $headExit = $LASTEXITCODE
+          $head = [string]($headOutput | Select-Object -First 1)
+          if ($headExit -ne 0 -or [string]::IsNullOrWhiteSpace($head)) {
+              throw "Cannot determine repository HEAD for package stamp. exit=$headExit"
+          }
+          '@
+          $patched = $source.Replace($oldBlock, $newBlock)
+          if ($patched -eq $source -or -not $patched.Contains('$headExit = $LASTEXITCODE')) {
+            throw 'PS5.1 package HEAD replacement failed'
+          }
+          Write-Host 'PS51_PACKAGE_HEAD_PATCH_TARGET_OK' -ForegroundColor Green
+
       - name: Smoke test transfer collections and crypto primitives
         shell: powershell
         run: |
