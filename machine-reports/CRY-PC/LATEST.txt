@@ -1,0 +1,42 @@
+KVTM SECONDARY MACHINE DIAGNOSTIC
+timestamp=2026-09-01 21:57:45 +07:00
+computer=CRY-PC
+windows64=True
+powershell=5.1.19041.6456
+install_missing_requested=False
+
+=== REQUIRED SOFTWARE ===
+winget=FOUND %LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe
+git=FOUND C:\Program Files\Git\cmd\git.exe [git version 2.55.0.windows.3]
+git_lfs=MISSING
+python311_x64=FOUND %LOCALAPPDATA%\Programs\Python\Python311\python.exe
+vc_redist_x64=FOUND
+vc_redist_x86=MISSING
+
+=== ZINGPLAY / KVTM ===
+game_client=FOUND C:\Program Files\ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe
+game_data=FOUND %APPDATA%\VNG Corporation\ZingPlay\zpp\24\game
+
+=== REPOSITORY ===
+repo=%USERPROFILE%\Desktop\Tool_KVTM_Multi_DEV
+branch=develop/multi-auto-dev
+expected_branch=develop/multi-auto-dev
+head=806d5c9
+working_tree=dirty
+
+=== DEV RUNTIME ===
+runtime=READY
+
+=== RESULT ===
+RESULT=NOT_READY
+blocking=Git LFS; VC++ x86
+secret_values_printed=false
+
+=== GITHUB BRIDGE META ===
+sent_at=2026-09-01 21:57:46 +07:00
+source_branch=develop/multi-auto-dev
+source_head=806d5c9e4663e30d576bc91c6525f29aeeede799
+working_tree_entry_count=9
+payload=SAFE_DIAGNOSTIC_ONLY
+profile_data_uploaded=false
+transfer_file_uploaded=false
