@@ -151,7 +151,7 @@ jobs:
             'ActivatePending',
             'Test-RuntimeBusy',
             'Sync-CurrentDataToStage',
-            'runtime-source-head.txt',
+            '.source-head.txt',
             'pull --ff-only',
             '.previous'
           )) {
