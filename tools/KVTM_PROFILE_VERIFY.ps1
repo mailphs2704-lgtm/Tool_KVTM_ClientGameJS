@@ -13,7 +13,10 @@ $Entropy = [Text.Encoding]::UTF8.GetBytes("KVTM-MULTI-v1")
 if (-not (Test-Path -LiteralPath $ProfileFile -PathType Leaf)) {
     throw "Khong tim thay profiles.json: $ProfileFile"
 }
-$profiles = @(Get-Content -LiteralPath $ProfileFile -Raw -Encoding UTF8 | ConvertFrom-Json)
+
+# Windows PowerShell 5.1 can preserve a top-level JSON array as one pipeline object.
+# Cast explicitly to object[] so a profiles.json array is always enumerated correctly.
+[object[]]$profiles = (Get-Content -LiteralPath $ProfileFile -Raw -Encoding UTF8 | ConvertFrom-Json)
 $decryptable = 0
 $validArgs = 0
 $clientPaths = 0
