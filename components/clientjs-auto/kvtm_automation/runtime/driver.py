@@ -4,8 +4,6 @@ from dataclasses import dataclass
 import importlib
 from pathlib import Path
 import sys
-import threading
-import time
 from typing import Any, Callable
 
 from .bootstrap import install_binary_dependencies
@@ -26,6 +24,10 @@ class ClientJSDriverFactory:
     which talks directly to ``kvtm_bridge.dll``. The plain Windows driver is
     retained only as a read-only diagnostic fallback and never carries Dọn quầy
     touches.
+
+    Image dependencies are prepared by :class:`KVAutomation` *before* the DLL
+    bridge is connected. The DLL transport path therefore never performs heavy
+    native Python imports after a successful bridge PING.
     """
 
     def __init__(self, component_root: Path, auto_root: Path) -> None:
@@ -64,7 +66,7 @@ class ClientJSDriverFactory:
         *,
         logger: Callable[[str], None] | None = None,
     ) -> DriverBundle:
-        """Connect the native Cocos bridge before loading image dependencies."""
+        """Connect only the native Cocos bridge; image runtime is already ready."""
         if logger is not None:
             logger("DLL bridge: bắt đầu kết nối trực tiếp ClientJS")
         driver = CocosBridgeDriver(
@@ -74,37 +76,7 @@ class ClientJSDriverFactory:
             logger=logger,
         )
         if logger is not None:
-            logger("DLL bridge: transport đã sẵn sàng; đang nạp thư viện ảnh")
-
-        started = time.monotonic()
-        heartbeat_stop = threading.Event()
-        heartbeat = None
-        if logger is not None:
-            def report_loading() -> None:
-                while not heartbeat_stop.wait(5.0):
-                    logger(
-                        "Thư viện ảnh: vẫn đang nạp "
-                        f"({time.monotonic() - started:.0f}s)"
-                    )
-
-            heartbeat = threading.Thread(
-                target=report_loading,
-                name="kvtm-clean-image-runtime-heartbeat",
-                daemon=True,
-            )
-            heartbeat.start()
-        try:
-            install_binary_dependencies(self.auto_root)
-        finally:
-            heartbeat_stop.set()
-            if heartbeat is not None:
-                heartbeat.join(timeout=0.2)
-
-        if logger is not None:
-            logger(
-                "DLL bridge: thư viện ảnh đã sẵn sàng sau "
-                f"{time.monotonic() - started:.1f}s"
-            )
+            logger("DLL bridge: transport sẵn sàng; image runtime đã nạp trước")
         return DriverBundle(
             driver=driver,
             bridge_root=self.auto_root / "bin",
