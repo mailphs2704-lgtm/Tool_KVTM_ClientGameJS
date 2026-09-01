@@ -3,7 +3,12 @@ from __future__ import annotations
 import time
 
 from ..context import AutomationContext
-from ..errors import InsufficientBatch, NoEmptyStallSlot, TransactionError
+from ..errors import (
+    InsufficientBatch,
+    NoEmptyStallSlot,
+    ScreenTimeout,
+    TransactionError,
+)
 from ..models import VisualFingerprint
 from ..runtime.vision import VisionEngine
 from ..runtime.wait import Waiter
@@ -11,8 +16,9 @@ from .inventory import InventoryActions
 
 
 class SellingActions:
-    """Place one exact batch of ten VP using recovered AUTO PRO sellItems order."""
+    """Place one exact batch of ten VP using the recovered sale order."""
 
+    # AUTO_PRO_REFERENCE: fixed 1000x1000 regions/click point.
     EMPTY_STALL_ZONE = (196, 340, 599, 395)
     DAT_BAN_ZONE = (662, 598, 231, 145)
     SL10_ZONE = (737, 426, 81, 81)
@@ -35,7 +41,6 @@ class SellingActions:
         self.minimum_screen_change = float(minimum_screen_change)
 
     def _find_empty_slot(self) -> bool:
-        # Both spellings exist in recovered asset inventories/builds.
         for name in ("quaytrong", "quay_trong"):
             if self.vision.find(
                 name,
@@ -77,12 +82,13 @@ class SellingActions:
                 interval=0.20,
                 description="màn hình đặt bán",
             )
-        except Exception as exc:
+        except ScreenTimeout as exc:
             self._cancel_dialog()
             raise TransactionError("VP không mở được màn hình đặt bán") from exc
 
-        # AUTO PRO only sells when the x10 option is available. Missing x10 is
-        # therefore a normal deferred remainder, not a fatal workflow error.
+        # LIVE_VERIFIED/AUTO_PRO_REFERENCE: old live traces showed sl10 around
+        # 0.639; 0.62 keeps the intended x10 gate without treating other VP as
+        # interchangeable. Missing x10 is a deferred remainder, not fatal.
         sl10 = None
         deadline = time.monotonic() + 2.5
         while time.monotonic() < deadline:
@@ -97,9 +103,10 @@ class SellingActions:
 
         before = self.vision.frame()[330:760, 180:820].copy()
         self.vision.driver.click(*self.PLACE_BUTTON)
-        # From here the destructive click has already been sent. Finish the
-        # short confirmation/verification window before honoring a user stop,
-        # so the workflow can persist the successful ten-VP sale atomically.
+
+        # The destructive click has already been sent. Finish this short
+        # verification window before honoring stop so manifest accounting stays
+        # atomic with the game-side action.
         self.waiter.settle(0.20)
         self.vision.find(
             "dong_y",
