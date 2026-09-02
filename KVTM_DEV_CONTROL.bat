@@ -244,6 +244,7 @@ if defined GATE_PROFILE_ROOT (
 )
 for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%T"
 set "RUN_REL=diagnostics\clear-stall\gate-runs\%STAMP%"
+set "RUN_REL_GIT=diagnostics/clear-stall/gate-runs/%STAMP%"
 set "RUN_DIR=%RESULT_WT%\%RUN_REL%"
 if exist "%RESULT_WT%" (
   git worktree remove --force "%RESULT_WT%" >nul 2>&1
@@ -305,7 +306,17 @@ git -C "%RESULT_WT%" config user.name "KVTM DEV Diagnostics" >nul
 git -C "%RESULT_WT%" config user.email "kvtm-dev-diagnostics@local" >nul
 rem Force-add only the already allowlisted Gate run. Global ignore rules
 rem intentionally exclude logs/JSON/PNG elsewhere in the repository.
-git -C "%RESULT_WT%" add -f -- "%RUN_REL%" "diagnostics\clear-stall\LATEST_GATE.txt"
+git -C "%RESULT_WT%" add -f -- "%RUN_REL_GIT%" "diagnostics/clear-stall/LATEST_GATE.txt"
+git -C "%RESULT_WT%" diff --cached --name-only -- "%RUN_REL_GIT%/activity.log" | findstr /L /I /X "%RUN_REL_GIT%/activity.log" >nul
+if errorlevel 1 (
+  echo [FAIL] activity.log chua duoc Git stage. Khong tao commit metadata rong.
+  git -C "%RESULT_WT%" status --short -- "%RUN_REL_GIT%"
+  git worktree remove --force "%RESULT_WT%" >nul 2>&1
+  pause
+  goto menu
+)
+echo [GIT] Allowlisted files da stage:
+git -C "%RESULT_WT%" diff --cached --name-only -- "%RUN_REL_GIT%"
 git -C "%RESULT_WT%" commit -m "Add clear stall Gate diagnostics %STAMP%" >nul 2>&1
 if errorlevel 1 (
   echo [FAIL] Khong tao duoc Gate diagnostics commit.
