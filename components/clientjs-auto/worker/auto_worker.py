@@ -131,7 +131,7 @@ class GuiProxy:
         return no_op
 
 
-def install_clientjs_runtime(auto_root: Path):
+def install_clientjs_runtime(auto_root: Path, profile_id: str):
     sys.path.insert(0, str(auto_root))
     importlib.import_module("local_launcher")
 
@@ -149,7 +149,11 @@ def install_clientjs_runtime(auto_root: Path):
     def pc_connect(device_id=None, *args, **kwargs):
         value = str(device_id or "")
         if value.startswith("PC:"):
-            return EngineDriver(int(value[3:]), reference_size=(1000, 1000))
+            # Bind the driver to the immutable DEV profile, not only the
+            # current process ID. ClientJS restart creates a new PID; using
+            # the profile lets EngineDriver relaunch and rebind safely to the
+            # exact same account instead of waiting on the dead PID.
+            return EngineDriver(str(profile_id), reference_size=(1000, 1000))
         return original_connect(device_id, *args, **kwargs)
 
     u2.connect = pc_connect
@@ -480,7 +484,7 @@ def main() -> int:
 
     auto_root = Path(args.auto_root).resolve()
     try:
-        automation_module = install_clientjs_runtime(auto_root)
+        automation_module = install_clientjs_runtime(auto_root, args.profile_id)
         automation_class = automation_module.FarmAutomation
         entrypoint_name = f"produceItems_{args.function_id}"
         entrypoint = getattr(automation_class, entrypoint_name, None)
