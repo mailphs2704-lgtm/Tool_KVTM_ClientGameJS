@@ -93,7 +93,7 @@ Không chạy lệnh CMD thủ công. Các binary sinh ra nằm trong `bridge-v3
 | 3 | Live capture, frame id tăng, ảnh đúng chiều | LOCAL PASS: PID 1940, 1000x1000, frame 1→2, protocol V3 đúng |
 | 4 | Swipe 0.50 giây, sai số trong ngưỡng | LOCAL PASS: 0.500s yêu cầu, 0.513934s thực tế, sai số +13.934ms |
 | 5 | Tối ưu SwapBuffers/PBO nếu profiler chứng minh cần | Chưa triển khai |
-| 6 | Cài runtime và test AUTO nhận diện | ADAPTER_SOURCE_READY / CI_AND_LIVE_PENDING |
+| 6 | Adapter runtime + capture/swipe production | LOCAL LIVE PASS / BUSINESS RECOGNITION PENDING |
 
 Không gọi FULL PASS chỉ vì source đã có. Giai đoạn 2–4 đã có bằng chứng local PASS. [4] vẫn khóa cứng cho đến khi EngineDriver production dùng protocol V3 và package CI PASS; chỉ thay DLL khi driver còn V1 sẽ làm AUTO mất capture/input. PBO/SwapBuffers không được thêm trước khi đo vì đó là độ phức tạp dư thừa có thể tạo race/stale frame.
 
@@ -1089,3 +1089,18 @@ Live evidence tại runtime HEAD `c769752`:
 - Diagnostic result code: 0; branch `diagnostics/clear-stall`, run `20260902-141617`.
 
 Gesture production là gate riêng [7] trong `KVTM_DEV_CONTROL.bat`. Nó từ chối nếu không có đúng một client DEV và chỉ chạy sau khi người dùng gõ `SWIPE-V3`. Gesture cố định 80px ở giữa game, tổng thời gian 0.50s; capture trước/sau đều phải PASS và timing sai số không vượt ngưỡng. Mục [3] vẫn tuyệt đối không click/swipe.
+
+
+## 14. Production EngineDriver gesture evidence
+
+Live PASS trên runtime production side-by-side:
+
+- PID: 11500; driver: `EngineDriver`.
+- Capture trước gesture: PASS; capture sau gesture: PASS.
+- Gesture: center vertical 80px; 11 điểm.
+- Tổng thời gian yêu cầu: 0.500s.
+- Tổng thời gian thực tế: 0.5121342999918852s.
+- Sai số: +12.1342999918852ms; ngưỡng: 100ms.
+- Kết luận gate bridge production: PASS.
+
+Mốc này xác minh transport capture/input và timing. Nó chưa tự chứng minh mọi template/threshold hoặc workflow nghiệp vụ AUTO nhận diện đúng.
