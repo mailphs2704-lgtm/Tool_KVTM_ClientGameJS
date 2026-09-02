@@ -447,7 +447,7 @@ class EngineDriver(PCDriver):
             }
             self._trace(
                 "touch_path", logical_path=[list(point) for point in path],
-                point_count=len(path), replay_point_count=len(replay_path),
+                logical_point_count=len(path), replay_point_count=len(replay_path),
                 mode="engine_bridge_v3", **timing,
             )
             return timing
