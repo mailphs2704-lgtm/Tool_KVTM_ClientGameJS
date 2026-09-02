@@ -9,7 +9,7 @@ import traceback
 from typing import Callable
 
 
-PROBE_VERSION = 9
+PROBE_VERSION = 11
 STALL_VIEW_COUNT = 4
 TOTAL_STALL_SLOTS = 20
 
@@ -256,7 +256,7 @@ def run_probe(
                 "probe_progress",
                 message=(
                     f"Probe view {view}/4 • {len(observations)} ô mới có VP • "
-                    f"đã nhận {len(set(covered))}/{RENDERED_STALL_SLOTS} vị trí render"
+                    f"đã lấy {len(set(occupied))} mẫu có VP (không suy ra sức chứa)"
                 ),
                 view=view,
                 capture=str(view_path),
@@ -264,33 +264,15 @@ def run_probe(
             if view < STALL_VIEW_COUNT:
                 automation.stall.next_view()
 
-        expected = list(range(1, RENDERED_STALL_SLOTS + 1))
+        expected = list(range(1, TOTAL_STALL_SLOTS + 1))
         if covered != expected:
-            raise RuntimeError(
-                f"Mapping quầy không phủ đúng {RENDERED_STALL_SLOTS} vị trí render: "
-                f"{covered}"
-            )
+            raise RuntimeError(f"Mapping mẫu quầy không phủ đủ 4 view: {covered}")
 
         occupied_slots = sorted(set(occupied))
         occupied_total = len(occupied_slots)
-        locked_slots = [
-            slot for slot in range(1, TOTAL_STALL_SLOTS + 1)
-            if slot not in occupied_slots
-        ]
-        slot_model_valid = (
-            occupied_total == EXPECTED_OPEN_OCCUPIED_SLOTS
-            and locked_slots == [18, 19, 20]
-        )
-        with report_lock:
-            report["rendered_physical_slots"] = expected
-            report["locked_physical_slots"] = locked_slots
-            report["slot_model_valid"] = slot_model_valid
-            persist()
-        if not slot_model_valid:
-            raise RuntimeError(
-                "Mô hình quầy 17 ô sai: "
-                f"occupied={occupied_total}, locked={locked_slots}"
-            )
+        # Capacity varies by account. Gate 1 never infers unlocked/locked counts
+        # from overlapping screenshots; production stops by remaining quantity.
+        capacity_model = "DYNAMIC_REMAINING_COUNTER"
 
         target_listings = int(config.buy_quantity) // 10
         planned_listings = min(occupied_total, target_listings)
@@ -300,6 +282,8 @@ def run_probe(
             report["covered_physical_slots"] = covered
             report["occupied_new_physical_slots"] = occupied_slots
             report["occupied_new_total"] = occupied_total
+            report["capacity_model"] = capacity_model
+            report["sample_hits_not_unique_inventory"] = occupied_total
             report["target_listings"] = target_listings
             report["planned_listings"] = planned_listings
             report["planned_quantity"] = planned_quantity
@@ -313,8 +297,8 @@ def run_probe(
             profile_id=str(config.profile_id),
             report=str(report_path),
             occupied_new_total=occupied_total,
-            locked_physical_slots=locked_slots,
-            slot_model_valid=slot_model_valid,
+            capacity_model=capacity_model,
+            sample_hits_not_unique_inventory=occupied_total,
             requested_quantity=int(config.buy_quantity),
             target_listings=target_listings,
             planned_listings=planned_listings,
