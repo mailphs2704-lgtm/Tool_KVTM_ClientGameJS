@@ -94,11 +94,15 @@ class MultiDevApp(production.MultiApp):
     """DEV shell with one resident image runtime and an in-process safe probe."""
 
     def _build_auto_panel(self) -> None:
-        super()._build_auto_panel()
+        # Base panel refreshes during construction, so resident probe state must
+        # exist before super() creates/enables the Gate button.
         self._clear_stall_probe_log_consoles: dict[str, subprocess.Popen] = {}
         self._clear_stall_probe_log_paths: dict[str, tuple[Path, Path]] = {}
         self._dev_probe_threads: dict[str, threading.Thread] = {}
         self._dev_probe_stop_events: dict[str, threading.Event] = {}
+        self._clear_stall_probe_starting: set[str] = set()
+        self._clear_stall_probe_terminal: dict[str, str] = {}
+        super()._build_auto_panel()
         self._refresh_clear_stall_panel()
 
     def _poll_clear_stall_schedule(self) -> None:
@@ -264,7 +268,8 @@ class MultiDevApp(production.MultiApp):
     def _prepare_probe_console(self, profile_id: str, profile: dict | None) -> None:
         paths = self._new_live_log_paths(profile_id)
         self._clear_stall_probe_log_paths[profile_id] = paths
-        self._open_probe_log_console_paths(profile_id, paths)
+        # Keep diagnostics silent/background. The user sends them later
+        # through the single Control Center BAT; no extra CMD is opened here.
         self._append_probe_log(profile_id, "BUTTON ✓ Kiểm tra Dọn quầy")
         self._append_probe_log(profile_id, "runtime_mode=IN_PROCESS_RESIDENT")
         if profile:
@@ -434,6 +439,68 @@ class MultiDevApp(production.MultiApp):
             }
             self._append_probe_event(profile_id, exit_payload)
             self.after(0, lambda data=exit_payload: self._finish_inprocess_probe(data))
+
+    def _handle_clear_stall_probe_event(self, payload: dict) -> None:
+        profile_id = str(payload.get("profile_id") or "")
+        event = str(payload.get("event") or "")
+        message = str(payload.get("message") or "")
+        stage = str(payload.get("stage") or "")
+        if event == "probe_boot":
+            self._set_clear_stall_checkpoint(
+                profile_id, f"GATE 1 • {stage or 'đang khởi tạo'}"
+            )
+        elif event == "probe_progress":
+            self._set_clear_stall_checkpoint(
+                profile_id, message or stage or "GATE 1 đang chạy"
+            )
+        elif event == "probe_ok":
+            occupied = int(payload.get("occupied_new_total") or 0)
+            planned = int(payload.get("planned_quantity") or 0)
+            requested = int(payload.get("requested_quantity") or 0)
+            reached = bool(payload.get("target_reached", False))
+            summary = (
+                f"GATE 1 PASS • {occupied}/20 ô có VP • "
+                f"kế hoạch {planned}/{requested} • "
+                f"target {'ĐỦ' if reached else 'THIẾU'}"
+            )
+            self._clear_stall_probe_terminal[profile_id] = "PASS"
+            self._set_clear_stall_checkpoint(
+                profile_id,
+                summary,
+                {
+                    "ok": True,
+                    "probe_only": True,
+                    "occupied": occupied,
+                    "planned_quantity": planned,
+                    "requested_quantity": requested,
+                    "target_reached": reached,
+                    "report": str(payload.get("report") or ""),
+                },
+            )
+        elif event == "probe_stopped":
+            self._clear_stall_probe_terminal[profile_id] = "STOPPED"
+            self._set_clear_stall_checkpoint(profile_id, "GATE 1 đã dừng an toàn")
+        elif event == "probe_error":
+            error = str(payload.get("error") or "Lỗi probe không xác định")
+            self._clear_stall_probe_terminal[profile_id] = "FAIL"
+            self._set_clear_stall_checkpoint(
+                profile_id,
+                "GATE 1 FAIL",
+                {
+                    "ok": False,
+                    "probe_only": True,
+                    "error": error,
+                    "report": str(payload.get("report") or ""),
+                },
+            )
+            if profile_id == self._active_profile_id:
+                core.messagebox.showerror(core.APP_NAME, f"GATE 1 lỗi:\n{error}")
+        elif event == "probe_exit":
+            if profile_id not in self._clear_stall_probe_terminal:
+                code = int(payload.get("returncode") or 0)
+                self._clear_stall_probe_terminal[profile_id] = (
+                    "PASS" if code == 0 else "FAIL"
+                )
 
     def _finish_inprocess_probe(self, payload: dict) -> None:
         profile_id = str(payload.get("profile_id") or "")
