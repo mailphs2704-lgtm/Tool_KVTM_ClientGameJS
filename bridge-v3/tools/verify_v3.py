@@ -52,7 +52,7 @@ def main() -> int:
         if token in text:
             fail(f"forbidden layout/data token in V3 DLL: {token}")
     client_text = client.read_text(encoding="utf-8")
-    for token in ("time.perf_counter", "requested_seconds", "actual_seconds"):
+    for token in ("time.perf_counter", "requested_seconds", "actual_seconds", "UnmapViewOfFile.argtypes"):
         if token not in client_text:
             fail(f"timing client missing: {token}")
     if "duration * (len(" in client_text:
