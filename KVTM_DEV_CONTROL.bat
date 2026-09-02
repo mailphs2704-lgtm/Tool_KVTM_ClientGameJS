@@ -20,6 +20,7 @@ set "EXPECTED_BRANCH=develop/multi-auto-dev"
 set "DIST=dist\KVTM-ClientJS-Suite-Multi-DEV"
 set "STEP1=components\clientjs-auto\worker\clear_stall_step1_probe.py"
 set "V3_GESTURE=components\clientjs-auto\worker\bridge_v3_gesture_probe.py"
+set "SPEED_PROBE=components\clientjs-auto\worker\speed_binding_probe.py"
 set "STEP1_OUT=%DIST%\data-dev\clear-stall-step1"
 set "RESULT_BRANCH=diagnostics/clear-stall"
 set "RESULT_WT=%TEMP%\KVTM_DEV_DIAGNOSTICS_WORKTREE"
@@ -47,6 +48,7 @@ echo  [4] Gui lai ket qua gan nhat len GitHub
 echo  [5] Mo thu muc ket qua
 echo  [6] Kiem tra profile/login READ-ONLY
 echo  [7] Bridge V3 - gesture production 0.50s ^(can go SWIPE-V3^)
+echo  [8] Audit mapping toc do AUTO PRO READ-ONLY
 echo  [9] Full rebuild package        ^(CHI dung khi ChatGPT yeu cau^)
 echo  [0] Thoat
 echo -------------------------------------------------------------------------------
@@ -59,6 +61,7 @@ if "%CHOICE%"=="4" goto upload_latest
 if "%CHOICE%"=="5" goto openstep1
 if "%CHOICE%"=="6" goto profile_diagnostic
 if "%CHOICE%"=="7" goto v3_gesture
+if "%CHOICE%"=="8" goto speed_probe
 if "%CHOICE%"=="9" goto fullbuild
 if "%CHOICE%"=="0" goto end
 goto menu
@@ -343,6 +346,33 @@ if errorlevel 1 (
   echo [FAIL] BRIDGE V3 PRODUCTION GESTURE PROBE
 ) else (
   echo [PASS] BRIDGE V3 PRODUCTION GESTURE PROBE
+)
+pause
+goto menu
+
+:speed_probe
+cls
+call :sync_dev
+if errorlevel 1 (
+  echo [STOP] Khong audit mapping toc do vi sync DEV that bai.
+  pause
+  goto menu
+)
+echo ===============================================================================
+echo  AUDIT MAPPING TOC DO AUTO PRO - READ ONLY
+echo  Khong mo profile, khong click/swipe, khong chay nghiep vu AUTO.
+echo ===============================================================================
+if not exist "%SPEED_PROBE%" (
+  echo [FAIL] Thieu %SPEED_PROBE%
+  pause
+  goto menu
+)
+if not exist "%DIST%\data-dev\speed-binding" mkdir "%DIST%\data-dev\speed-binding" >nul 2>&1
+py -3.11 "%SPEED_PROBE%" --auto-root "%DIST%\AUTO_PRO" --output "%DIST%\data-dev\speed-binding\LATEST.json"
+if errorlevel 1 (
+  echo [FAIL] SPEED BINDING PROBE
+) else (
+  echo [PASS] SPEED BINDING PROBE
 )
 pause
 goto menu
