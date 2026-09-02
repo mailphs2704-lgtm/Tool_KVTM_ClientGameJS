@@ -192,6 +192,7 @@ jobs:
             bridge-v3/python/kvtm_bridge_v3.py \
             bridge-v3/tools/verify_v3.py \
             bridge-v3/tools/probe_v3.py \
+            components/clientjs-auto/worker/bridge_v3_gesture_probe.py \
             test-candidates/auto-pro-clientjs-temp/pc_driver.py \
             test-candidates/auto-pro-clientjs-temp/engine_driver.py
           python - <<'PY'
@@ -204,7 +205,7 @@ jobs:
           required_engine = (
               'KVTM-CocosV3-', 'KVTM-CaptureV3-', 'version != 3',
               'pixel_format != 2', 'time.perf_counter',
-              'fallback="disabled"', 'kvtm_bridge_v3.dll',
+              'fallback="disabled"', 'kvtm_bridge_v3.dll', 'return timing',
           )
           for token in required_engine:
               assert token in engine, token
