@@ -1097,8 +1097,9 @@ class MultiApp(tk.Tk):
         action_row.grid(row=2, column=0, columnspan=7, sticky="w")
         self.auto_clear_stall_start_button = ttk.Button(
             action_row, text="▶ GATE 1: Kiểm tra quầy (không mua)",
-            style="Start.TButton", command=self._start_clear_stall,
+            style="Start.TButton", command=self._start_clear_stall_probe,
         )
+        self.auto_clear_stall_probe_button = self.auto_clear_stall_start_button
         self.auto_clear_stall_start_button.pack(side="left", padx=(0, 8))
         self.auto_clear_stall_stop_button = ttk.Button(
             action_row, text="■ Dừng",
@@ -1935,6 +1936,10 @@ class MultiApp(tk.Tk):
         save_settings(self.settings)
         if profile_id == self._active_profile_id:
             self.auto_clear_stall_status.set(str(checkpoint))
+
+    def _start_clear_stall_probe(self) -> None:
+        """Production fallback; DEV overrides this with the resident read-only probe."""
+        self._start_clear_stall()
 
     def _start_clear_stall(
         self, profile_id: str | None = None, scheduled: bool = False
