@@ -93,7 +93,7 @@ Không chạy lệnh CMD thủ công. Các binary sinh ra nằm trong `bridge-v3
 | 3 | Live capture, frame id tăng, ảnh đúng chiều | LOCAL PASS: PID 1940, 1000x1000, frame 1→2, protocol V3 đúng |
 | 4 | Swipe 0.50 giây, sai số trong ngưỡng | LOCAL PASS: 0.500s yêu cầu, 0.513934s thực tế, sai số +13.934ms |
 | 5 | Tối ưu SwapBuffers/PBO nếu profiler chứng minh cần | Chưa triển khai |
-| 6 | Cài runtime và test AUTO nhận diện | LOCKED |
+| 6 | Cài runtime và test AUTO nhận diện | ADAPTER_SOURCE_READY / CI_AND_LIVE_PENDING |
 
 Không gọi FULL PASS chỉ vì source đã có. Giai đoạn 2–4 đã có bằng chứng local PASS. [4] vẫn khóa cứng cho đến khi EngineDriver production dùng protocol V3 và package CI PASS; chỉ thay DLL khi driver còn V1 sẽ làm AUTO mất capture/input. PBO/SwapBuffers không được thêm trước khi đo vì đó là độ phức tạp dư thừa có thể tạo race/stale frame.
 
@@ -1035,3 +1035,17 @@ if __name__ == "__main__":
 - Capture probe: PASS trên PID 1940; protocol `CAPTURE3 INPUT3 NO_LAYOUT`; 1000x1000; frame 1→2; SHA256 frame `1dfe6f567146d7f34bf1d34e66de2f223f4e650e7e51173f17bf409c498c0689`.
 - Swipe timing: PASS; 11 điểm; yêu cầu 0.500s; thực tế 0.513934s; sai số +13.934ms.
 - Runtime cutover: LOCKED.
+
+
+## 10. Adapter AUTO production
+
+Source adapter được chuẩn bị side-by-side, chưa cắt bỏ bridge V1 dùng cho Workspace:
+
+- `EngineDriver` dùng binary, pipe, mapping và KCAP V3 riêng.
+- Capture V3 nghiêm ngặt: nếu lỗi sẽ báo lỗi; không âm thầm chuyển sang HWND.
+- `swipe_points(duration)` coi duration là tổng thời gian gesture, nội suy một lần và dùng deadline `perf_counter`.
+- `PCDriver.swipe` cũng dùng deadline tuyệt đối; TouchProxy không còn sleep cố định cho DOWN/MOVE/UP.
+- Builder vẫn đóng gói bridge V1 cho consumer cũ và thêm V3 side-by-side cho AUTO; do đó không đổi interface Workspace.
+- Control BAT có chế độ build nội bộ không tương tác để builder/CI vẫn dùng đúng một BAT chính thức.
+
+Trạng thái: source ready; phải có package CI PASS và live AUTO recognition evidence trước khi mở khóa cài runtime.
