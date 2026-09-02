@@ -204,6 +204,7 @@ jobs:
           pc = Path('test-candidates/auto-pro-clientjs-temp/pc_driver.py').read_text(encoding='utf-8')
           builder = Path('packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1').read_text(encoding='utf-8')
           worker = Path('components/clientjs-auto/worker/auto_worker.py').read_text(encoding='utf-8')
+          multi = Path('source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py').read_text(encoding='utf-8')
 
           required_engine = (
               'KVTM-CocosV3-', 'KVTM-CaptureV3-', 'version != 3',
@@ -238,8 +239,21 @@ jobs:
               assert token in native_v3, token
           for token in ('Build-KvtmBridgeV3', 'kvtm_bridge_v3.dll', 'kvtm_loader_v3.exe'):
               assert token in builder, token
-          for token in ('setattr(automation, key, value)', 'setattr(controller, key, value)', 'synchronized_targets', 'gesture_timing'):
+          for token in (
+              'setattr(automation, key, value)', 'setattr(controller, key, value)',
+              'synchronized_targets', 'gesture_timing',
+              '"Kho 1": 1', '"Kho 2": 2', '"Max Kho": 3',
+              '"Kho 1 & 2": 4', '"time_nang_kho": auto_nang_kho_time_hours',
+              '"balance_nang_kho": auto_nang_kho_balance',
+              'controller.open_chests_enabled = bool(auto_options["open_chest"])',
+          ):
               assert token in worker, token
+          for token in (
+              'rows = running_clients()',
+              'lambda snapshot=rows: self._adopt_running_clients(snapshot)',
+              'Injection remains restricted',
+          ):
+              assert token in multi, token
           print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
           print('BRIDGE_V3_AUTO_PRO_BATCH_SEMANTICS_OK')
           print('BRIDGE_V3_STRICT_CAPTURE_NO_FALLBACK_OK')
