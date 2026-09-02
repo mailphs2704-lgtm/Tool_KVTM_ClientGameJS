@@ -30,6 +30,12 @@ CELL_HALF_WIDTH = 52
 CELL_HALF_HEIGHT = 67
 EMPTY_THRESHOLD = 9.0
 
+# AUTO PRO's proven stall drag uses the configurable "Tốc độ kéo quầy"
+# value.  The user's working reference is 0.35 s.  The old clean probe used
+# 0.08 s, which outran ClientJS rendering and could capture between slot views.
+STALL_SWIPE_DURATION = 0.35
+STALL_RENDER_SETTLE = 0.55
+
 
 class StallActions:
     """Friend/own stall entry, 20-slot scan and shop scrolling."""
@@ -132,18 +138,30 @@ class StallActions:
         raise ScreenTimeout("Không vào được quầy bán của clone")
 
     def next_view(self) -> None:
-        """Recovered `_rollbackItem`: two short drags move four physical slots."""
-        for _ in range(2):
+        """Move four slots using AUTO PRO's proven stall-drag timing."""
+        for step in range(1, 3):
             self.context.ensure_running()
-            self.vision.driver.swipe(633, 546, 540, 540, duration=0.08)
-            self.waiter.sleep(0.50)
+            self.vision.driver.swipe(
+                633, 546, 540, 540, duration=STALL_SWIPE_DURATION
+            )
+            self.context.log(
+                f"Kéo quầy tới view kế • nhịp {step}/2 • "
+                f"duration={STALL_SWIPE_DURATION:.2f}s"
+            )
+            self.waiter.sleep(STALL_RENDER_SETTLE)
 
     def previous_view(self) -> None:
-        """Recovered `_scroll_back_shop`: reverse one 4-slot shop view."""
-        for _ in range(2):
+        """Return four slots with the same stable timing as forward scan."""
+        for step in range(1, 3):
             self.context.ensure_running()
-            self.vision.driver.swipe(540, 540, 633, 546, duration=0.08)
-            self.waiter.sleep(0.50)
+            self.vision.driver.swipe(
+                540, 540, 633, 546, duration=STALL_SWIPE_DURATION
+            )
+            self.context.log(
+                f"Kéo quầy về view trước • nhịp {step}/2 • "
+                f"duration={STALL_SWIPE_DURATION:.2f}s"
+            )
+            self.waiter.sleep(STALL_RENDER_SETTLE)
 
     def rewind_to_first(self, current_view: int) -> None:
         for _ in range(max(0, int(current_view) - 1)):
