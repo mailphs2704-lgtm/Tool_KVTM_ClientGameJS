@@ -268,10 +268,20 @@ class MultiDevApp(production.MultiApp):
     def _prepare_probe_console(self, profile_id: str, profile: dict | None) -> None:
         paths = self._new_live_log_paths(profile_id)
         self._clear_stall_probe_log_paths[profile_id] = paths
+        # The first record is mandatory evidence that the Gate button was
+        # actually pressed.  Do not rely on the best-effort append helper here:
+        # an empty file cannot be committed and previously hid the whole run.
+        header = (
+            f"[{time.strftime('%H:%M:%S')}] BUTTON Gate Dọn quầy\\n"
+            f"[{time.strftime('%H:%M:%S')}] MODE   IN_PROCESS_RESIDENT\\n"
+        )
+        try:
+            paths[0].write_text(header, encoding="utf-8")
+        except OSError as exc:
+            self.auto_clear_stall_status.set(f"Không ghi được log Gate: {exc}")
+            raise RuntimeError(f"Không ghi được activity.log Gate: {exc}") from exc
         # Keep diagnostics silent/background. The user sends them later
         # through the single Control Center BAT; no extra CMD is opened here.
-        self._append_probe_log(profile_id, "BUTTON ✓ Kiểm tra Dọn quầy")
-        self._append_probe_log(profile_id, "runtime_mode=IN_PROCESS_RESIDENT")
         if profile:
             self._append_probe_log(
                 profile_id,
