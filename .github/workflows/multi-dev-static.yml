@@ -205,6 +205,7 @@ jobs:
           builder = Path('packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1').read_text(encoding='utf-8')
           worker = Path('components/clientjs-auto/worker/auto_worker.py').read_text(encoding='utf-8')
           multi = Path('source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py').read_text(encoding='utf-8')
+          clientjs_patch = Path('test-candidates/auto-pro-clientjs-temp/clientjs_auto_patch.py').read_text(encoding='utf-8')
 
           required_engine = (
               'KVTM-CocosV3-', 'KVTM-CaptureV3-', 'version != 3',
@@ -254,6 +255,13 @@ jobs:
               'Injection remains restricted',
           ):
               assert token in multi, token
+          for token in (
+              'for x, y in ((500, 660), (433, 557))',
+              'for attempt in range(5)',
+              'attempt=attempt + 1',
+              'before = after',
+          ):
+              assert token in clientjs_patch, token
           print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
           print('BRIDGE_V3_AUTO_PRO_BATCH_SEMANTICS_OK')
           print('BRIDGE_V3_STRICT_CAPTURE_NO_FALLBACK_OK')
