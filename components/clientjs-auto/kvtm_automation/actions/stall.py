@@ -28,7 +28,10 @@ ICON_HALF_WIDTH = 42
 ICON_HALF_HEIGHT = 42
 CELL_HALF_WIDTH = 52
 CELL_HALF_HEIGHT = 67
-EMPTY_THRESHOLD = 9.0
+# Live Gate v8 evidence across four runs:
+# empty wood slot stddev = 13.69; lowest occupied crop = 28.53.
+# Keep a wide separation so empty stall wood is never treated as an item.
+EMPTY_THRESHOLD = 20.0
 
 # AUTO PRO's proven stall drag uses the configurable "Tốc độ kéo quầy"
 # value.  The user's working reference is 0.35 s.  The old clean probe used
