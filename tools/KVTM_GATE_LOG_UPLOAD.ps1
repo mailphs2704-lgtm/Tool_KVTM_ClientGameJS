@@ -9,10 +9,10 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version 2.0
 
 function Invoke-Git {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
-    & git @Arguments
+    param([Parameter(Mandatory = $true)][string[]]$GitArgs)
+    & git @GitArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "git failed ($LASTEXITCODE): git $($Arguments -join ' ')"
+        throw "git failed ($LASTEXITCODE): git $($GitArgs -join ' ')"
     }
 }
 
@@ -51,9 +51,9 @@ try {
     & git fetch origin $ResultBranch 2>$null
     & git rev-parse --verify "refs/remotes/origin/$ResultBranch" 2>$null
     if ($LASTEXITCODE -eq 0) {
-        Invoke-Git worktree add --detach $tempRoot "origin/$ResultBranch"
+        Invoke-Git -GitArgs @("worktree", "add", "--detach", $tempRoot, "origin/$ResultBranch")
     } else {
-        Invoke-Git worktree add --detach $tempRoot HEAD
+        Invoke-Git -GitArgs @("worktree", "add", "--detach", $tempRoot, "HEAD")
     }
     $worktreeAdded = $true
 
@@ -112,9 +112,9 @@ try {
     New-Item -ItemType Directory -Path $pointerDir -Force | Out-Null
     $runRelGit | Set-Content -LiteralPath (Join-Path $pointerDir "LATEST_GATE.txt") -Encoding ASCII
 
-    Invoke-Git -C $tempRoot config user.name "KVTM DEV Diagnostics"
-    Invoke-Git -C $tempRoot config user.email "kvtm-dev-diagnostics@local"
-    Invoke-Git -C $tempRoot add -f -- $runRelGit "diagnostics/clear-stall/LATEST_GATE.txt"
+    Invoke-Git -GitArgs @("-C", $tempRoot, "config", "user.name", "KVTM DEV Diagnostics")
+    Invoke-Git -GitArgs @("-C", $tempRoot, "config", "user.email", "kvtm-dev-diagnostics@local")
+    Invoke-Git -GitArgs @("-C", $tempRoot, "add", "-f", "--", $runRelGit, "diagnostics/clear-stall/LATEST_GATE.txt")
 
     $staged = @(& git -C $tempRoot diff --cached --name-only -- $runRelGit)
     if ($LASTEXITCODE -ne 0) {
@@ -133,8 +133,8 @@ try {
     Write-Host "[GIT] Allowlisted files da stage:"
     $staged | ForEach-Object { Write-Host $_ }
 
-    Invoke-Git -C $tempRoot commit -m "Add clear stall Gate diagnostics $stamp"
-    Invoke-Git -C $tempRoot push origin "HEAD:refs/heads/$ResultBranch"
+    Invoke-Git -GitArgs @("-C", $tempRoot, "commit", "-m", "Add clear stall Gate diagnostics $stamp")
+    Invoke-Git -GitArgs @("-C", $tempRoot, "push", "origin", "HEAD:refs/heads/$ResultBranch")
 
     Write-Host ""
     Write-Host "[PASS] Da gui log Gate an toan."
