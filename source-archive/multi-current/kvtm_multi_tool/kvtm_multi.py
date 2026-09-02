@@ -3326,16 +3326,20 @@ class MultiApp(tk.Tk):
     def _bridge_monitor(self) -> None:
         while not self._bridge_stop.wait(2.0):
             try:
+                rows = running_clients()
+                self.after(
+                    0, lambda snapshot=rows: self._adopt_running_clients(snapshot)
+                )
                 if ISOLATED_INSTANCE:
-                    # A development instance must never adopt or inject into
-                    # clients owned by the production Multi/AUTO process.
+                    # DEV may re-adopt only clients that exactly match one of
+                    # its DPAPI-protected profiles. Injection remains restricted
+                    # to self.processes, so production/old-suite clients are not
+                    # touched when a ClientJS reset creates a replacement PID.
                     live = {
                         int(proc.pid) for proc in list(self.processes.values())
                         if proc and proc.poll() is None
                     }
                 else:
-                    rows = running_clients()
-                    self.after(0, lambda snapshot=rows: self._adopt_running_clients(snapshot))
                     live = {
                         int(row.get("ProcessId", 0)) for row in rows
                         if int(row.get("ProcessId", 0)) > 0
