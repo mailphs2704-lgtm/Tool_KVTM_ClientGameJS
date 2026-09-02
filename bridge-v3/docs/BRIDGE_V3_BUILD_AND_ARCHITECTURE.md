@@ -1161,3 +1161,14 @@ Sau `c694a4f` + `c330310`, production EngineDriver probe trên PID 11132:
 - Timing error: +14.883700001519173ms; tolerance: 100ms.
 - Transport/timing gate: PASS.
 - Workflow sáu cây và chênh lệch harvest_speed: chờ live evidence nghiệp vụ.
+
+
+## 19. Live workflow timing bottleneck và 64px sampling
+
+Telemetry production:
+
+- `plantTrees`: requested 0.050s; actual 3.611s; 420 điểm.
+- `harvestTrees`: requested 0.050s; actual 3.842s; 448 điểm.
+- `makeItems`: requested 0.035s; actual 0.421s; 18 điểm.
+
+Kết luận: UI và bytecode truyền đúng duration; sampling 8px tạo quá nhiều Cocos touch events nên game/pipe overhead vượt deadline, làm tốc độ không đều và cấu hình nhỏ mất tác dụng. Commit `7828e11` đổi sampling thành 64px. Với path harvest khoảng 3360px, số điểm dự kiến giảm từ khoảng 420 xuống khoảng 53, vẫn dày hơn khoảng cách hit area cần thiết cho sáu cây. CI `5e4d799` khóa sampling 64px và cấm công thức 8px quay lại. Chờ live evidence đủ sáu cây + timing; chưa PASS.
