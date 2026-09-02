@@ -42,3 +42,12 @@ test-candidates/auto-pro-clientjs-temp/bin/
 test-candidates/auto-pro-clientjs-temp/*.obj
 test-candidates/auto-pro-clientjs-temp/*.exp
 test-candidates/auto-pro-clientjs-temp/*.lib
+
+# Bridge V3 local build, probe and rollback artifacts. Source/docs remain tracked.
+bridge-v3/bin/
+bridge-v3/backup/
+bridge-v3/probe-output/
+bridge-v3/*.obj
+bridge-v3/*.exp
+bridge-v3/*.lib
+bridge-v3/ALLOW_RUNTIME_INSTALL.txt
