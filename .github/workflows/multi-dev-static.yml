@@ -185,6 +185,45 @@ jobs:
           print('CLEAR_STALL_LIVE_PROBE_READ_ONLY_OK')
           PY
 
+
+      - name: Verify Bridge V3 production adapter contract
+        run: |
+          python -m py_compile \
+            bridge-v3/python/kvtm_bridge_v3.py \
+            bridge-v3/tools/verify_v3.py \
+            bridge-v3/tools/probe_v3.py \
+            test-candidates/auto-pro-clientjs-temp/pc_driver.py \
+            test-candidates/auto-pro-clientjs-temp/engine_driver.py
+          python - <<'PY'
+          from pathlib import Path
+
+          engine = Path('test-candidates/auto-pro-clientjs-temp/engine_driver.py').read_text(encoding='utf-8')
+          pc = Path('test-candidates/auto-pro-clientjs-temp/pc_driver.py').read_text(encoding='utf-8')
+          builder = Path('packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1').read_text(encoding='utf-8')
+
+          required_engine = (
+              'KVTM-CocosV3-', 'KVTM-CaptureV3-', 'version != 3',
+              'pixel_format != 2', 'time.perf_counter',
+              'fallback="disabled"', 'kvtm_bridge_v3.dll',
+          )
+          for token in required_engine:
+              assert token in engine, token
+          for token in (
+              'duration * (len(path) - 1)',
+              'shared_capture_fallback',
+              'KVTM-Cocos-{self.pid}',
+              'KVTM-Capture-{self.pid}',
+          ):
+              assert token not in engine, token
+          for token in ('time.sleep(0.018)', 'time.sleep(0.014)', 'time.sleep(0.025)'):
+              assert token not in pc, token
+          for token in ('Build-KvtmBridgeV3', 'kvtm_bridge_v3.dll', 'kvtm_loader_v3.exe'):
+              assert token in builder, token
+          print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
+          print('BRIDGE_V3_SINGLE_TIMING_OWNER_OK')
+          print('BRIDGE_V3_STRICT_CAPTURE_NO_FALLBACK_OK')
+          PY
+
   package-smoke:
     needs: clear-stall-static
     runs-on: windows-latest
