@@ -211,6 +211,7 @@ jobs:
               'fallback="disabled"', 'kvtm_bridge_v3.dll', 'return timing',
               'math.ceil(math.hypot', 'interpolation_px=8',
               'pipe_mode="persistent"', 'CreateFileW',
+              'caller_name = sys._getframe(1).f_code.co_name', 'gesture_observer',
           )
           for token in required_engine:
               assert token in engine, token
@@ -227,7 +228,7 @@ jobs:
               assert token in native_v3, token
           for token in ('Build-KvtmBridgeV3', 'kvtm_bridge_v3.dll', 'kvtm_loader_v3.exe'):
               assert token in builder, token
-          for token in ('setattr(automation, key, value)', 'setattr(controller, key, value)', 'synchronized_targets'):
+          for token in ('setattr(automation, key, value)', 'setattr(controller, key, value)', 'synchronized_targets', 'gesture_timing'):
               assert token in worker, token
           print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
           print('BRIDGE_V3_SINGLE_TIMING_OWNER_OK')
