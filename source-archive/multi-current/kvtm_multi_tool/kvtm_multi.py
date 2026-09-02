@@ -1970,6 +1970,38 @@ class MultiApp(tk.Tk):
             return
         if profile_id in self._clear_stall_starting:
             return
+
+        # Dọn quầy is a machine-wide serialized job.  A later account stays
+        # due and is retried by the scheduler after the active account exits;
+        # never open two clients/workers into the same friend-stall workflow.
+        busy_profiles = {
+            str(other_id)
+            for other_id, other_worker in self._clear_stall_workers.items()
+            if str(other_id) != str(profile_id)
+            and other_worker is not None
+            and other_worker.poll() is None
+        }
+        busy_profiles.update(
+            str(other_id)
+            for other_id in self._clear_stall_starting
+            if str(other_id) != str(profile_id)
+        )
+        if busy_profiles:
+            active_name = next(
+                (
+                    str(item.get("name") or other_id)
+                    for other_id in sorted(busy_profiles)
+                    for item in self.profiles
+                    if str(item.get("id") or "") == other_id
+                ),
+                "tài khoản trước",
+            )
+            self._set_clear_stall_checkpoint(
+                str(profile_id),
+                f"Đang xếp hàng • chờ {active_name} dọn quầy xong",
+            )
+            return
+
         job = self._clear_stall_job(profile_id)
         if not job:
             if not scheduled:
