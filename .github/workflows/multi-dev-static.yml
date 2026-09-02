@@ -270,6 +270,10 @@ jobs:
               'return bool(chest_screen_changed)',
               'self.driver.click = click_without_post_open_replay',
               'self.driver.click = original_click',
+              'selection_wait_done = False',
+              'while time.monotonic() - wait_started < 4.0:',
+              '"clientjs_chest_selection_ready_wait"',
+              'waited_seconds=round(time.monotonic() - wait_started, 3)',
           ):
               assert token in clientjs_patch, token
           print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
