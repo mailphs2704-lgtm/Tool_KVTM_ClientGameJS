@@ -11,7 +11,7 @@ from ...errors import (
     NoEmptyStallSlot,
 )
 from ...models import StallSlotObservation
-from .config import ClearStallRequest
+from .config import ClearStallRequest, LISTING_QUANTITY
 from .manifest import ClearStallManifest, PurchasedRecord
 from .result import ClearStallResult
 from .state import CarryoverStore
@@ -22,9 +22,9 @@ class ClearStallWorkflow:
 
     Business contract:
     1. enter the selected clone and recover to the farm screen;
-    2. visit exactly the selected friend;
-    3. scan four overlapping views that cover twenty physical friend-stall slots;
-    4. buy at most `buy_quantity` VP in total for this clone run;
+    2. visit configured friend houses sequentially until the target is met;
+    3. re-enter/scroll stalls as needed; account slot capacity is never assumed;
+    4. count each verified x10 listing as ten VP toward `buy_quantity`;
     5. return to the clone home;
     6. group identical VP with carryover from previous runs;
     7. sell only full groups of ten into empty own-stall slots;
@@ -183,6 +183,7 @@ class ClearStallWorkflow:
         self,
         observations: list[StallSlotObservation],
     ) -> tuple[int, bool]:
+        """Buy verified x10 listings and report quantities in VP, not clicks."""
         # scan_all_20 leaves the physical shop at view four.
         self.automation.stall.rewind_to_first(4)
         if not observations:
@@ -197,12 +198,13 @@ class ClearStallWorkflow:
         self._checkpoint("PURCHASE_STARTED", save_state=False)
 
         current_view = 1
-        purchased = 0
+        purchased_quantity = 0
         inventory_full = False
         for observation in sorted(observations, key=lambda item: item.physical_slot):
             self.context.ensure_running()
-            remaining = self.request.buy_quantity - purchased
-            if remaining <= 0:
+            remaining_quantity = self.request.buy_quantity - purchased_quantity
+            remaining_listings = remaining_quantity // LISTING_QUANTITY
+            if remaining_listings <= 0:
                 break
             while current_view < observation.view:
                 self.automation.stall.next_view()
@@ -211,34 +213,36 @@ class ClearStallWorkflow:
             record = source_records[observation.physical_slot]
 
             def on_unit(_listing_count: int, record: PurchasedRecord = record) -> None:
-                nonlocal purchased
-                record.record_purchase(1)
-                purchased += 1
+                nonlocal purchased_quantity
+                # buy_from_listing reports verified listing clicks. Every
+                # Dọn-quầy listing is one batch of exactly ten VP.
+                record.record_purchase(LISTING_QUANTITY)
+                purchased_quantity += LISTING_QUANTITY
                 self._persist_state()
                 self._checkpoint(
-                    f"PURCHASED_{purchased}_OF_{self.request.buy_quantity}",
+                    f"PURCHASED_{purchased_quantity}_OF_{self.request.buy_quantity}",
                     save_state=False,
                 )
 
             try:
                 self.automation.buying.buy_from_listing(
                     observation,
-                    maximum=remaining,
+                    maximum=remaining_listings,
                     on_unit=on_unit,
                 )
             except InventoryFull:
                 inventory_full = True
                 self.context.log(
-                    f"Kho clone đã đạt giới hạn sau {purchased} VP; "
+                    f"Kho clone đã đạt giới hạn sau {purchased_quantity} VP; "
                     "chuyển sang treo bán"
                 )
                 break
 
         self._checkpoint("PURCHASE_COMPLETE")
         self.context.log(
-            f"Kết thúc mua: {purchased}/{self.request.buy_quantity} VP trong phiên"
+            f"Kết thúc mua: {purchased_quantity}/{self.request.buy_quantity} VP trong phiên"
         )
-        return purchased, inventory_full
+        return purchased_quantity, inventory_full
 
     def _resell(self) -> tuple[int, bool]:
         batches = self.manifest.resale_batches()
