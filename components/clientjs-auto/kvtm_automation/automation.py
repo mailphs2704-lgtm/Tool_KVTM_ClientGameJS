@@ -21,7 +21,7 @@ from .runtime.vision import VisionEngine
 from .runtime.wait import Waiter
 
 
-_IMAGE_RUNTIME_TIMEOUT_SECONDS = 15.0
+_IMAGE_RUNTIME_TIMEOUT_SECONDS = 60.0
 
 
 def _load_image_runtime(context: AutomationContext) -> float:
@@ -46,6 +46,10 @@ def _load_image_runtime(context: AutomationContext) -> float:
     )
     thread.start()
 
+    context.log(
+        "Thư viện ảnh: bắt đầu cold-load; giới hạn an toàn "
+        f"{_IMAGE_RUNTIME_TIMEOUT_SECONDS:.0f}s"
+    )
     next_heartbeat = 2.0
     while not done.wait(0.10):
         context.ensure_running()
