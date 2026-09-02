@@ -471,15 +471,12 @@ class MultiDevApp(production.MultiApp):
                 profile_id, message or stage or "GATE 1 đang chạy"
             )
         elif event == "probe_ok":
-            occupied = int(payload.get("occupied_new_total") or 0)
-            locked = len(list(payload.get("locked_physical_slots") or []))
-            planned = int(payload.get("planned_quantity") or 0)
+            sample_hits = int(payload.get("sample_hits_not_unique_inventory") or 0)
             requested = int(payload.get("requested_quantity") or 0)
-            reached = bool(payload.get("target_reached", False))
             summary = (
-                f"GATE 1 PASS • {occupied} ô VP x10 • {locked} ô khóa • "
-                f"kế hoạch {planned}/{requested} • "
-                f"target {'ĐỦ' if reached else 'THIẾU'}"
+                "GATE 1 PASS • điều hướng/capture/4 view ổn định • "
+                f"{sample_hits} mẫu ảnh có VP (chỉ chẩn đoán) • "
+                f"mục tiêu {requested} VP dùng bộ đếm động"
             )
             self._clear_stall_probe_terminal[profile_id] = "PASS"
             self._set_clear_stall_checkpoint(
@@ -488,12 +485,11 @@ class MultiDevApp(production.MultiApp):
                 {
                     "ok": True,
                     "probe_only": True,
-                    "occupied": occupied,
-                    "locked": locked,
-                    "slot_model_valid": bool(payload.get("slot_model_valid", False)),
-                    "planned_quantity": planned,
+                    "sample_hits_not_unique_inventory": sample_hits,
+                    "capacity_model": str(
+                        payload.get("capacity_model") or "DYNAMIC_REMAINING_COUNTER"
+                    ),
                     "requested_quantity": requested,
-                    "target_reached": reached,
                     "report": str(payload.get("report") or ""),
                 },
             )
