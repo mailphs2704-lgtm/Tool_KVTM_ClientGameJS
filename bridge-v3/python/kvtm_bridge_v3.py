@@ -38,6 +38,10 @@ class BridgeV3Client:
             wintypes.DWORD, ctypes.c_size_t,
         ]
         self.kernel32.MapViewOfFile.restype = wintypes.LPVOID
+        self.kernel32.UnmapViewOfFile.argtypes = [ctypes.c_void_p]
+        self.kernel32.UnmapViewOfFile.restype = wintypes.BOOL
+        self.kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        self.kernel32.CloseHandle.restype = wintypes.BOOL
 
     @property
     def pipe_name(self) -> str:
