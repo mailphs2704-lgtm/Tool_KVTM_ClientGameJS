@@ -1018,7 +1018,7 @@ class MultiApp(tk.Tk):
             row=0, column=0, sticky="w", padx=(0, 12), pady=(0, 6)
         )
         ttk.Label(
-            clear_stall_body, text="Bạn bè số:", style="AutoValue.TLabel"
+            clear_stall_body, text="Số nhà cần duyệt:", style="AutoValue.TLabel"
         ).grid(row=0, column=1, sticky="e", padx=(0, 5), pady=(0, 6))
         self.auto_clear_stall_friend = tk.IntVar(value=1)
         self.auto_clear_stall_friend_spin = ttk.Spinbox(
@@ -1120,7 +1120,7 @@ class MultiApp(tk.Tk):
                 "<Return>", lambda _event: self._save_clear_stall_config(), add="+"
             )
         self.auto_clear_stall_status = tk.StringVar(
-            value="GATE 1 READ-ONLY • quét 20 ô, không mua/bán"
+            value="GATE 1 READ-ONLY • kiểm tra 4 view, không suy số ô"
         )
         ttk.Label(
             clear_stall_tab, textvariable=self.auto_clear_stall_status,
@@ -1435,7 +1435,7 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_close.set(True)
                 self.auto_clear_stall_context.set("Chọn tài khoản clone")
                 self.auto_clear_stall_status.set(
-                    "GATE 1 READ-ONLY • quét 20 ô, không mua/bán"
+                    "GATE 1 READ-ONLY • kiểm tra 4 view, không suy số ô"
                 )
                 return
             jobs = self.settings.setdefault("clear_stall_jobs", {})
@@ -1449,7 +1449,7 @@ class MultiApp(tk.Tk):
                     return default
             self.auto_clear_stall_enabled.set(bool(saved.get("enabled", False)))
             self.auto_clear_stall_friend.set(
-                bounded("target_friend_ordinal", 1, 1, 500)
+                bounded("target_friend_ordinal", 1, 1, 7)
             )
             self.auto_clear_stall_stall.set(bounded("target_stall_id", 2, 1, 4))
             self.auto_clear_stall_quantity.set(bounded("buy_quantity", 10, 10, 1000))
@@ -2103,7 +2103,7 @@ class MultiApp(tk.Tk):
         self._set_clear_stall_checkpoint(
             profile_id,
             (
-                f"Python worker • Nhà bạn số {friend} • Quầy {stall} • "
+                f"Python worker • Duyệt nhà 1..{friend} • Kho {stall} • "
                 f"Mua {quantity} • Quét tối đa {pages} trang"
             ),
         )
