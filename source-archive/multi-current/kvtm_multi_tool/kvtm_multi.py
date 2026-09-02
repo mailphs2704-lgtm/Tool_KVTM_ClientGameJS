@@ -1030,7 +1030,7 @@ class MultiApp(tk.Tk):
             row=0, column=2, sticky="w", padx=(0, 12), pady=(0, 6)
         )
         ttk.Label(
-            clear_stall_body, text="Quầy:", style="AutoValue.TLabel"
+            clear_stall_body, text="Kho VP:", style="AutoValue.TLabel"
         ).grid(row=0, column=3, sticky="e", padx=(0, 5), pady=(0, 6))
         self.auto_clear_stall_stall = tk.IntVar(value=2)
         self.auto_clear_stall_stall_spin = ttk.Spinbox(
@@ -1044,9 +1044,9 @@ class MultiApp(tk.Tk):
         ttk.Label(
             clear_stall_body, text="Số lượng mua:", style="AutoValue.TLabel"
         ).grid(row=0, column=5, sticky="e", padx=(0, 5), pady=(0, 6))
-        self.auto_clear_stall_quantity = tk.IntVar(value=8)
+        self.auto_clear_stall_quantity = tk.IntVar(value=10)
         self.auto_clear_stall_quantity_spin = ttk.Spinbox(
-            clear_stall_body, from_=1, to=999, width=6,
+            clear_stall_body, from_=10, to=1000, increment=10, width=6,
             textvariable=self.auto_clear_stall_quantity,
             command=self._save_clear_stall_config,
         )
@@ -1096,7 +1096,7 @@ class MultiApp(tk.Tk):
         action_row = ttk.Frame(clear_stall_body, style="Detail.TFrame")
         action_row.grid(row=2, column=0, columnspan=7, sticky="w")
         self.auto_clear_stall_start_button = ttk.Button(
-            action_row, text="▶ Bắt đầu Dọn quầy",
+            action_row, text="▶ GATE 1: Kiểm tra quầy (không mua)",
             style="Start.TButton", command=self._start_clear_stall,
         )
         self.auto_clear_stall_start_button.pack(side="left", padx=(0, 8))
@@ -1119,7 +1119,7 @@ class MultiApp(tk.Tk):
                 "<Return>", lambda _event: self._save_clear_stall_config(), add="+"
             )
         self.auto_clear_stall_status = tk.StringVar(
-            value="Chọn clone rồi bấm Bắt đầu để chạy ngay"
+            value="GATE 1 READ-ONLY • quét 20 ô, không mua/bán"
         )
         ttk.Label(
             clear_stall_tab, textvariable=self.auto_clear_stall_status,
@@ -1428,13 +1428,13 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_enabled.set(False)
                 self.auto_clear_stall_friend.set(1)
                 self.auto_clear_stall_stall.set(2)
-                self.auto_clear_stall_quantity.set(8)
+                self.auto_clear_stall_quantity.set(10)
                 self.auto_clear_stall_pages.set(10)
                 self.auto_clear_stall_interval.set(65)
                 self.auto_clear_stall_close.set(True)
                 self.auto_clear_stall_context.set("Chọn tài khoản clone")
                 self.auto_clear_stall_status.set(
-                    "Chọn clone rồi bấm Bắt đầu để chạy ngay"
+                    "GATE 1 READ-ONLY • quét 20 ô, không mua/bán"
                 )
                 return
             jobs = self.settings.setdefault("clear_stall_jobs", {})
@@ -1451,7 +1451,7 @@ class MultiApp(tk.Tk):
                 bounded("target_friend_ordinal", 1, 1, 500)
             )
             self.auto_clear_stall_stall.set(bounded("target_stall_id", 2, 1, 4))
-            self.auto_clear_stall_quantity.set(bounded("buy_quantity", 8, 1, 999))
+            self.auto_clear_stall_quantity.set(bounded("buy_quantity", 10, 10, 1000))
             self.auto_clear_stall_pages.set(bounded("max_scan_pages", 10, 1, 50))
             self.auto_clear_stall_interval.set(
                 bounded("interval_minutes", 65, 5, 1440)
@@ -1476,7 +1476,7 @@ class MultiApp(tk.Tk):
                 )
             else:
                 self.auto_clear_stall_status.set(
-                    "Sẵn sàng • Bấm Bắt đầu để chạy ngay"
+                    "GATE 1 sẵn sàng • chỉ quét, không mua/bán"
                 )
         finally:
             self._clear_stall_refreshing = False
@@ -1490,11 +1490,12 @@ class MultiApp(tk.Tk):
         try:
             friend = max(1, min(500, int(self.auto_clear_stall_friend.get())))
             stall = max(1, min(4, int(self.auto_clear_stall_stall.get())))
-            quantity = max(1, min(999, int(self.auto_clear_stall_quantity.get())))
+            quantity = max(10, min(1000, int(self.auto_clear_stall_quantity.get())))
+            quantity = max(10, (quantity // 10) * 10)
             pages = max(1, min(50, int(self.auto_clear_stall_pages.get())))
             interval = max(5, min(1440, int(self.auto_clear_stall_interval.get())))
         except (tk.TclError, TypeError, ValueError):
-            friend, stall, quantity, pages, interval = 1, 2, 8, 10, 65
+            friend, stall, quantity, pages, interval = 1, 2, 10, 10, 65
         self.auto_clear_stall_friend.set(friend)
         self.auto_clear_stall_stall.set(stall)
         self.auto_clear_stall_quantity.set(quantity)
@@ -2165,6 +2166,26 @@ class MultiApp(tk.Tk):
                 )
         elif event == "worker_finished":
             job = self._clear_stall_job(profile_id)
+            if bool(payload.get("probe_only", False)):
+                planned = int(payload.get("planned_quantity", 0) or 0)
+                requested = int(job.get("buy_quantity", 0) or 0)
+                reached = bool(payload.get("target_reached", False))
+                job["last_checkpoint"] = (
+                    f"GATE 1 PASS • kế hoạch {planned}/{requested} VP • "
+                    f"target {'ĐỦ' if reached else 'THIẾU'}"
+                )
+                job["last_result"] = {
+                    "ok": True,
+                    "probe_only": True,
+                    "finished_at": time.time(),
+                    "planned_quantity": planned,
+                    "target_reached": reached,
+                }
+                self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+                save_settings(self.settings)
+                if profile_id == self._active_profile_id:
+                    self._refresh_clear_stall_panel()
+                return
             interval = max(5, int(job.get("interval_minutes", 65) or 65))
             job["last_checkpoint"] = "Hoàn thành mua và bán lại"
             job["last_result"] = {"ok": True, "finished_at": time.time()}
