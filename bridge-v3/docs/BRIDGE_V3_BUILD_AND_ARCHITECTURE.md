@@ -421,8 +421,12 @@ DWORD WINAPI pipe_thread(void*) {
         }
         BOOL connected = ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
         if (connected) {
-            char input[128]{}; DWORD read = 0;
-            if (ReadFile(pipe, input, sizeof(input) - 1, &read, nullptr)) {
+            // Keep one connection alive for the whole gesture. Python remains
+            // the timing owner, while repeated MOVE commands avoid reconnect cost.
+            for (;;) {
+                char input[128]{}; DWORD read = 0;
+                if (!ReadFile(pipe, input, sizeof(input) - 1, &read, nullptr) || !read)
+                    break;
                 input[read] = 0;
                 const char* response = "ERR PARSE\n";
                 char output[64]{};
@@ -451,7 +455,10 @@ DWORD WINAPI pipe_thread(void*) {
                     }
                 }
                 DWORD written = 0;
-                WriteFile(pipe, response, static_cast<DWORD>(std::strlen(response)), &written, nullptr);
+                if (!WriteFile(
+                        pipe, response, static_cast<DWORD>(std::strlen(response)),
+                        &written, nullptr))
+                    break;
             }
         }
         FlushFileBuffers(pipe);
@@ -1127,3 +1134,18 @@ Sau commit `9dd02f8`, production EngineDriver probe trên PID 15296:
 - Timing error: +13.981299998704344ms; tolerance: 100ms.
 - Point count: 2 thay vì 11 ở path thẳng thử nghiệm.
 - Kết luận: bỏ nội suy dư không phá timing/capture; cần live workflow harvest/plant để xác nhận tác dụng cấu hình nghiệp vụ.
+
+
+## 17. Six-tree regression correction và persistent pipe
+
+Live workflow cho thấy việc dùng nguyên waypoint path tại `9dd02f8` là sai: mỗi tầng sáu cây chỉ chạm điểm đầu. Kết luận đúng là AUTO PRO cung cấp waypoint đoạn/tầng và runtime Android/v2.2 nội suy các điểm giữa.
+
+Thiết kế sửa:
+
+- Khôi phục nội suy không gian 8px để đường kéo đi qua đủ sáu cây.
+- Không quay lại chi phí cũ: DLL server giữ một pipe connection cho toàn gesture.
+- EngineDriver mở một handle pipe persistent và tuần tự WriteFile/ReadFile cho PING, CAPTURE, DOWN, MOVE, UP.
+- Python vẫn là timing owner bằng deadline `perf_counter`; DLL không sleep và không sở hữu duration.
+- Khi PID đổi/restart, handle cũ được đóng trước khi kết nối bridge mới.
+
+Commits: native persistent server `c694a4f`; EngineDriver persistent client + six-tree interpolation `c330310`; CI guard `7395666`. Chờ build và live gate mới; chưa gọi PASS.
