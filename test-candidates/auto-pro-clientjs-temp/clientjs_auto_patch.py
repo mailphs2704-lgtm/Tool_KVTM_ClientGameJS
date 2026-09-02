@@ -229,8 +229,10 @@ def _install_controller_patch(adb_controller_module) -> None:
         original_click = self.driver.click
         fallback_used = False
         chest_screen_changed = False
+        selection_wait_done = False
 
         def click_without_post_open_replay(x, y, *args, **kwargs):
+            nonlocal selection_wait_done
             # AUTO PRO replays its LD confirmation point after mo_ruong
             # succeeds. Once ClientJS has visibly opened the chest, suppress
             # that one legacy replay so it cannot leak into the home screen.
@@ -247,7 +249,30 @@ def _install_controller_patch(adb_controller_module) -> None:
                 except Exception:
                     pass
                 return None
-            return original_click(x, y, *args, **kwargs)
+            result = original_click(x, y, *args, **kwargs)
+            if (
+                not selection_wait_done
+                and abs(float(x) - 371.0) < 1.0
+                and abs(float(y) - 647.0) < 1.0
+            ):
+                # ClientJS needs time to render the selected chest artwork and
+                # its touch target. AUTO PRO/LD can continue immediately, but
+                # doing so on ClientJS sends the open tap into a loading modal.
+                selection_wait_done = True
+                wait_started = time.monotonic()
+                while time.monotonic() - wait_started < 4.0:
+                    if _stopped(stop_event):
+                        return result
+                    time.sleep(0.10)
+                try:
+                    self.driver._trace(
+                        "clientjs_chest_selection_ready_wait",
+                        logical=[float(x), float(y)],
+                        waited_seconds=round(time.monotonic() - wait_started, 3),
+                    )
+                except Exception:
+                    pass
+            return result
 
         def _chest_region():
             frame = self.driver.screenshot(format="opencv")
