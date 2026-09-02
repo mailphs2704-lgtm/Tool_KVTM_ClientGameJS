@@ -34,8 +34,8 @@ Capture và input dùng chung DLL nhưng không dùng chung logic thời gian:
 3. DLL đọc BGRA từ OpenGL, đảo thứ tự hàng một lần để xuất ảnh top-down.
 4. DLL ghi header KCAP v3 và pixels vào `Local\KVTM-CaptureV3-<PID>`.
 5. Python kiểm tra magic/version/format/frame id trước khi nhận ảnh.
-6. Với swipe, Python nội suy đường đi một lần và phát DOWN/MOVE/UP theo deadline tuyệt đối từ `time.perf_counter()`.
-7. DLL chỉ chuyển từng điểm vào Cocos; DLL không sleep và không nhân duration.
+6. Với swipe AUTO, Python giữ nguyên waypoint gốc, đổi duration thành `segment_steps = int(duration / 0.005)` rồi gửi toàn bộ đường đi bằng một lệnh `SWIPE`.
+7. DLL nội suy từng đoạn theo số bước, phát touch vào Cocos theo deadline 5ms và trả một kết quả batch; transport không còn lặp theo từng MOVE.
 
 ## 3. Hợp đồng V3
 
@@ -48,9 +48,10 @@ Capture và input dùng chung DLL nhưng không dùng chung logic thời gian:
 | Shared memory | `Local\KVTM-CaptureV3-<PID>` |
 | Magic | `KCAP` |
 | Pixel format | 2 = BGRA8 top-down |
-| Input | `DOWN x y`, `MOVE x y`, `UP x y` |
+| Input đơn | `DOWN x y`, `MOVE x y`, `UP x y` |
+| Input AUTO batch | `SWIPE <segment_steps> <point_count> <x1> <y1> ...` |
 | Capture | on-demand `glReadPixels` |
-| Timing owner | Python, monotonic absolute deadlines |
+| Timing owner swipe batch | DLL worker, QPC absolute deadlines 5ms |
 | HWND fallback | Không có trong client V3 nghiêm ngặt |
 
 Header KCAP gồm: magic, version, header_size, width, height, stride, pixel_format, buffer_size, frame_id, status và timestamp_ms. Reader chỉ đọc pixels sau khi mọi trường hợp lệ.
@@ -139,6 +140,7 @@ Tệp chính thức: `bridge-v3/native/kvtm_bridge_v3.cpp`
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <sstream>
 
 namespace {
 constexpr UINT WM_KVTM_TOUCH = WM_APP + 0x417;
@@ -155,6 +157,12 @@ constexpr unsigned int GL_UNSIGNED_BYTE_VALUE = 0x1401;
 
 enum class Phase : int { Down = 1, Move = 2, Up = 3 };
 struct TouchCommand { Phase phase; float x; float y; LONG result; };
+struct GesturePoint { float x; float y; };
+struct GestureCommand {
+    int segment_steps;
+    int point_count;
+    GesturePoint points[32];
+};
 struct CaptureCommand {
     LONG result;
     DWORD frame_id;
@@ -407,6 +415,82 @@ bool parse_command(const char* line, TouchCommand& command) {
     return true;
 }
 
+bool parse_gesture(const char* line, GestureCommand& gesture) {
+    std::istringstream stream(line);
+    std::string name;
+    if (!(stream >> name >> gesture.segment_steps >> gesture.point_count))
+        return false;
+    if (name != "SWIPE" || gesture.segment_steps < 1 ||
+        gesture.segment_steps > 400 || gesture.point_count < 2 ||
+        gesture.point_count > 32)
+        return false;
+    for (int index = 0; index < gesture.point_count; ++index) {
+        auto& point = gesture.points[index];
+        if (!(stream >> point.x >> point.y) ||
+            point.x < 0 || point.x > 1000 ||
+            point.y < 0 || point.y > 1000)
+            return false;
+    }
+    stream >> std::ws;
+    return stream.eof();
+}
+
+LONG send_touch(Phase phase, float x, float y) {
+    TouchCommand command{phase, x, y, ERROR_SUCCESS};
+    SendMessageW(g_window, WM_KVTM_TOUCH, 0, reinterpret_cast<LPARAM>(&command));
+    return command.result;
+}
+
+void wait_until(LONGLONG deadline, LONGLONG frequency) {
+    LARGE_INTEGER now{};
+    for (;;) {
+        QueryPerformanceCounter(&now);
+        const LONGLONG remaining = deadline - now.QuadPart;
+        if (remaining <= 0) return;
+        const DWORD remaining_ms = static_cast<DWORD>(remaining * 1000 / frequency);
+        if (remaining_ms > 1) Sleep(remaining_ms - 1);
+        else SwitchToThread();
+    }
+}
+
+LONG dispatch_gesture(const GestureCommand& gesture, DWORD& actual_ms, DWORD& move_count) {
+    LARGE_INTEGER frequency{}, started{}, finished{};
+    if (!QueryPerformanceFrequency(&frequency) || !QueryPerformanceCounter(&started))
+        return ERROR_NOT_SUPPORTED;
+    LONG result = send_touch(
+        Phase::Down, gesture.points[0].x, gesture.points[0].y);
+    if (result != ERROR_SUCCESS) return result;
+
+    move_count = 0;
+    const LONGLONG step_ticks = frequency.QuadPart * 5 / 1000;
+    for (int segment = 1; segment < gesture.point_count; ++segment) {
+        const auto& start = gesture.points[segment - 1];
+        const auto& end = gesture.points[segment];
+        for (int step = 1; step <= gesture.segment_steps; ++step) {
+            ++move_count;
+            wait_until(
+                started.QuadPart + static_cast<LONGLONG>(move_count) * step_ticks,
+                frequency.QuadPart);
+            const float ratio =
+                static_cast<float>(step) / static_cast<float>(gesture.segment_steps);
+            result = send_touch(
+                Phase::Move,
+                start.x + (end.x - start.x) * ratio,
+                start.y + (end.y - start.y) * ratio);
+            if (result != ERROR_SUCCESS) {
+                send_touch(Phase::Up, end.x, end.y);
+                return result;
+            }
+        }
+    }
+    const auto& last = gesture.points[gesture.point_count - 1];
+    result = send_touch(Phase::Up, last.x, last.y);
+    QueryPerformanceCounter(&finished);
+    actual_ms = static_cast<DWORD>(
+        (finished.QuadPart - started.QuadPart) * 1000 / frequency.QuadPart);
+    return result;
+}
+
 DWORD WINAPI pipe_thread(void*) {
     if (!attach_window() || !resolve_cocos()) return 1;
     wchar_t pipe_name[128]{};
@@ -416,22 +500,22 @@ DWORD WINAPI pipe_thread(void*) {
         if (pipe == INVALID_HANDLE_VALUE) {
             pipe = CreateNamedPipeW(pipe_name, PIPE_ACCESS_DUPLEX,
                 PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-                1, 256, 256, 0, nullptr);
+                1, 4096, 4096, 0, nullptr);
             if (pipe == INVALID_HANDLE_VALUE) { Sleep(100); continue; }
         }
         BOOL connected = ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
         if (connected) {
-            // Keep one connection alive for the whole gesture. Python remains
-            // the timing owner, while repeated MOVE commands avoid reconnect cost.
+            // Keep one connection alive. SWIPE batches the complete AUTO PRO
+            // polyline so transport overhead cannot distort per-segment timing.
             for (;;) {
-                char input[128]{}; DWORD read = 0;
+                char input[4096]{}; DWORD read = 0;
                 if (!ReadFile(pipe, input, sizeof(input) - 1, &read, nullptr) || !read)
                     break;
                 input[read] = 0;
                 const char* response = "ERR PARSE\n";
                 char output[64]{};
                 if (std::strncmp(input, "PING", 4) == 0) {
-                    response = "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT3 NO_LAYOUT\n";
+                    response = "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT\n";
                 } else if (std::strncmp(input, "CAPTURE", 7) == 0) {
                     CaptureCommand command{};
                     SendMessageW(
@@ -446,6 +530,21 @@ DWORD WINAPI pipe_thread(void*) {
                         sprintf_s(output, "ERR %ld\n", command.result);
                     }
                     response = output;
+                } else if (std::strncmp(input, "SWIPE ", 6) == 0) {
+                    GestureCommand gesture{};
+                    if (parse_gesture(input, gesture)) {
+                        DWORD actual_ms = 0, move_count = 0;
+                        const LONG result =
+                            dispatch_gesture(gesture, actual_ms, move_count);
+                        if (result == ERROR_SUCCESS) {
+                            sprintf_s(
+                                output, "OK SWIPE %lu %lu\n",
+                                actual_ms, move_count);
+                        } else {
+                            sprintf_s(output, "ERR %ld\n", result);
+                        }
+                        response = output;
+                    }
                 } else {
                     TouchCommand command{};
                     if (parse_command(input, command)) {
@@ -486,7 +585,6 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     }
     return TRUE;
 }
-
 ```
 
 # PHỤ LỤC B — Toàn bộ source loader x86
@@ -1172,3 +1270,23 @@ Telemetry production:
 - `makeItems`: requested 0.035s; actual 0.421s; 18 điểm.
 
 Kết luận: UI và bytecode truyền đúng duration; sampling 8px tạo quá nhiều Cocos touch events nên game/pipe overhead vượt deadline, làm tốc độ không đều và cấu hình nhỏ mất tác dụng. Commit `7828e11` đổi sampling thành 64px. Với path harvest khoảng 3360px, số điểm dự kiến giảm từ khoảng 420 xuống khoảng 53, vẫn dày hơn khoảng cách hit area cần thiết cho sáu cây. CI `5e4d799` khóa sampling 64px và cấm công thức 8px quay lại. Chờ live evidence đủ sáu cây + timing; chưa PASS.
+
+
+## 20. Đối chiếu AUTO PRO gốc và batch swipe INPUT4
+
+Bytecode chỉ được đọc, không chạy EXE. Bản AUTO PRO LD gốc cho bằng chứng:
+
+- `GameConstants._get_path_by_layers` chỉ thêm điểm đầu và điểm cuối mỗi tầng; tối đa năm tầng tạo khoảng 11 waypoint logic.
+- `uiautomator2._Device.swipe_points` tính `steps = int(duration / 0.005)`.
+- Toàn bộ `points + steps` được gửi trong một lần `jsonrpc.swipePoints`; duration là nhịp của từng đoạn, không phải tổng thời gian mọi tầng.
+- Vì vậy sampling 8px và 64px ở Python đều không tương thích bản gốc. 8px tạo 420–448 pipe request; 64px giảm tải nhưng có thể bỏ hit area cây.
+
+INPUT4 thay cơ chế cũ:
+
+1. EngineDriver không nội suy không gian.
+2. EngineDriver gửi waypoint gốc và `segment_steps` trong đúng một lệnh `SWIPE`.
+3. DLL nội suy từng đoạn và phát `segment_steps` MOVE với deadline 5ms.
+4. Telemetry tách `configured_seconds_per_segment`, `expected_total_seconds`, `logical_point_count`, `move_count` và thời gian native.
+5. Các lệnh DOWN/MOVE/UP đơn vẫn tồn tại cho probe; Workspace/V1 không bị thay đổi.
+
+Commits triển khai: native batch `6b9fc0c`, EngineDriver semantics `40b8396`, CI guard `06e6221`, static protocol `51060e2`. Chưa gọi runtime PASS trước build Windows và live workflow thu hoạch/trồng đủ sáu cây.
