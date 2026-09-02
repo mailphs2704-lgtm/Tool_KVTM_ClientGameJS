@@ -33,8 +33,8 @@ def _parser() -> argparse.ArgumentParser:
     # used when locating VP for resale, not a second physical friend stall.
     parser.add_argument("--stall-id", dest="resale_storage_id", type=int, required=True)
     parser.add_argument("--quantity", type=int, required=True)
-    # Kept only so older Multi launchers remain compatible. The clean scanner
-    # always uses exactly four overlapping views to cover 20 physical slots.
+    # Maximum refresh/re-entry attempts per configured friend house. Gate 1
+    # still performs one read-only four-view transport scan.
     parser.add_argument("--max-pages", type=int, default=REQUIRED_STALL_VIEWS)
     parser.add_argument("--work-dir", required=True)
     return parser
@@ -176,6 +176,7 @@ def main() -> int:
             # Gate 1 is deliberately non-destructive. Purchase/resale stays
             # locked until the read-only 20-slot scan passes on live ClientJS.
             probe_only=True,
+            max_stall_passes=int(args.max_pages),
         )
         workflow = ClearStallWorkflow(request, automation)
         emit(
