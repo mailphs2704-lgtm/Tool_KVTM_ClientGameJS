@@ -244,7 +244,11 @@ class ClearStallWorkflow:
         inventory_full = False
         for observation in sorted(observations, key=lambda item: item.physical_slot):
             self.context.ensure_running()
-            remaining_quantity = (\n                self.request.buy_quantity - int(already_purchased) - purchased_quantity\n            )
+            remaining_quantity = (
+                self.request.buy_quantity
+                - int(already_purchased)
+                - purchased_quantity
+            )
             remaining_listings = remaining_quantity // LISTING_QUANTITY
             if remaining_listings <= 0:
                 break
@@ -262,7 +266,8 @@ class ClearStallWorkflow:
                 purchased_quantity += LISTING_QUANTITY
                 self._persist_state()
                 self._checkpoint(
-                    f"PURCHASED_{int(already_purchased) + purchased_quantity}_OF_"\n                    f"{self.request.buy_quantity}",
+                    f"PURCHASED_{int(already_purchased) + purchased_quantity}_OF_"
+                    f"{self.request.buy_quantity}",
                     save_state=False,
                 )
 
