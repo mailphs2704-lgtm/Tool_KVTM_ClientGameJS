@@ -197,7 +197,11 @@ class ClearStallWorkflow:
         self.automation.ensure_main_screen(timeout=90.0)
 
         self._checkpoint("NAVIGATING_FRIEND", save_state=False)
-        self.automation.navigation.go_to_friend(\n            self.request.friend_ordinal if friend_position is None else int(friend_position)\n        )
+        self.automation.navigation.go_to_friend(
+            self.request.friend_ordinal
+            if friend_position is None
+            else int(friend_position)
+        )
 
         self._checkpoint("OPENING_SOURCE_STALL", save_state=False)
         self.automation.stall.open_friend_stall()
