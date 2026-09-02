@@ -10,9 +10,19 @@ Set-StrictMode -Version 2.0
 
 function Invoke-Git {
     param([Parameter(Mandatory = $true)][string[]]$GitArgs)
-    & git @GitArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "git failed ($LASTEXITCODE): git $($GitArgs -join ' ')"
+    # Windows PowerShell 5.1 may promote normal git stderr progress (for
+    # example "From https://...") to NativeCommandError when the caller uses
+    # ErrorActionPreference=Stop. Capture the native exit code explicitly.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & git @GitArgs
+        $nativeExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($nativeExit -ne 0) {
+        throw "git failed ($nativeExit): git $($GitArgs -join ' ')"
     }
 }
 
@@ -50,13 +60,9 @@ try {
     }
     Invoke-Git -GitArgs @("worktree", "prune")
 
-    & git fetch origin $ResultBranch 2>$null
-    & git rev-parse --verify "refs/remotes/origin/$ResultBranch" 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Invoke-Git -GitArgs @("worktree", "add", "--detach", $tempRoot, "origin/$ResultBranch")
-    } else {
-        Invoke-Git -GitArgs @("worktree", "add", "--detach", $tempRoot, "HEAD")
-    }
+    Invoke-Git -GitArgs @("fetch", "origin", $ResultBranch)
+    Invoke-Git -GitArgs @("rev-parse", "--verify", "refs/remotes/origin/$ResultBranch")
+    Invoke-Git -GitArgs @("worktree", "add", "--detach", $tempRoot, "origin/$ResultBranch")
     $worktreeAdded = $true
 
     $runDir = Join-Path $tempRoot ($runRelGit -replace "/", "\\")
