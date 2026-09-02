@@ -1,0 +1,4 @@
+gate=READ_ONLY_SCAN
+timestamp=20260903-053547
+source_head=24b778db37c0da668183b19a65ecc5b20572bac7
+note=Allowlisted Gate diagnostics only. No profiles/settings/secrets.
