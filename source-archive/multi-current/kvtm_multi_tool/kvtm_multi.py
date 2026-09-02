@@ -2474,6 +2474,14 @@ class MultiApp(tk.Tk):
         elif event == "tuning_error":
             error = str(payload.get("error") or "Không rõ lỗi")
             self.note.set(f"Lỗi áp dụng tốc độ: {error}")
+        elif event == "gesture_timing":
+            caller = str(payload.get("caller") or "gesture")
+            requested = float(payload.get("requested_seconds") or 0.0)
+            actual = float(payload.get("actual_seconds") or 0.0)
+            points = int(payload.get("point_count") or 0)
+            self.auto_scope_note.set(
+                f"{caller}: cấu hình {requested:.3f}s → thực tế {actual:.3f}s • {points} điểm"
+            )
         elif event == "stats":
             data = self._game_data.setdefault(profile_id, {})
             data["sales"] = payload.get("total", data.get("sales", "—"))
