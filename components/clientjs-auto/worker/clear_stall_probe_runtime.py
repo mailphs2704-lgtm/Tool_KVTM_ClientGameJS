@@ -22,6 +22,7 @@ class ProbeConfig:
     profile_name: str
     friend_ordinal: int
     resale_storage_id: int
+    buy_quantity: int
     work_dir: Path
 
 
@@ -52,6 +53,12 @@ def run_probe(
     if not 1 <= int(config.resale_storage_id) <= 5:
         emit_event({"event": "probe_error", "error": "Kho VP bán lại phải trong khoảng 1..5"})
         return 2
+    if not 10 <= int(config.buy_quantity) <= 1000 or int(config.buy_quantity) % 10:
+        emit_event({
+            "event": "probe_error",
+            "error": "Số lượng kế hoạch phải là bội số 10 trong khoảng 10..1000",
+        })
+        return 2
 
     auto_root = Path(config.auto_root).resolve()
     work_dir = Path(config.work_dir).resolve()
@@ -72,6 +79,7 @@ def run_probe(
         "pid": int(config.pid),
         "friend_ordinal": int(config.friend_ordinal),
         "resale_storage_id": int(config.resale_storage_id),
+        "requested_quantity": int(config.buy_quantity),
         "image_runtime_ready_before_probe": bool(image_runtime_ready),
         "started_at": time.time(),
         "checkpoints": [],
@@ -252,10 +260,19 @@ def run_probe(
         if covered != expected:
             raise RuntimeError(f"Mapping quầy không phủ đúng 20 ô: {covered}")
 
+        occupied_total = len(set(occupied))
+        target_listings = int(config.buy_quantity) // 10
+        planned_listings = min(occupied_total, target_listings)
+        planned_quantity = planned_listings * 10
+        target_reached = planned_listings == target_listings
         with report_lock:
             report["covered_physical_slots"] = covered
             report["occupied_new_physical_slots"] = sorted(set(occupied))
-            report["occupied_new_total"] = len(set(occupied))
+            report["occupied_new_total"] = occupied_total
+            report["target_listings"] = target_listings
+            report["planned_listings"] = planned_listings
+            report["planned_quantity"] = planned_quantity
+            report["target_reached"] = target_reached
             report["ok"] = True
             report["completed_at"] = time.time()
             report["last_stage"] = "completed"
@@ -264,7 +281,12 @@ def run_probe(
             "probe_ok",
             profile_id=str(config.profile_id),
             report=str(report_path),
-            occupied_new_total=len(set(occupied)),
+            occupied_new_total=occupied_total,
+            requested_quantity=int(config.buy_quantity),
+            target_listings=target_listings,
+            planned_listings=planned_listings,
+            planned_quantity=planned_quantity,
+            target_reached=target_reached,
             frame_size=[1000, 1000],
         )
         return 0
