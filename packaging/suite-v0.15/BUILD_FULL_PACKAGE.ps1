@@ -8,6 +8,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $AutoSource = Join-Path $RepoRoot "source-archive\auto-pro-reference"
 $MultiSource = Join-Path $RepoRoot "source-archive\multi-current\kvtm_multi_tool"
 $PatchSource = Join-Path $RepoRoot "test-candidates\auto-pro-clientjs-temp"
+$BridgeV3Source = Join-Path $RepoRoot "bridge-v3"
 $ClientJsAutoSource = Join-Path $RepoRoot "components\clientjs-auto"
 $CleanAutoSource = Join-Path $ClientJsAutoSource "kvtm_automation"
 $DistRoot = Join-Path $RepoRoot "dist"
@@ -141,8 +142,39 @@ function Build-ClientJsCaptureBridge {
     Write-Host "ClientJS OpenGL capture bridge BUILD VERIFIED" -ForegroundColor Green
 }
 
+function Build-KvtmBridgeV3 {
+    $control = Join-Path $BridgeV3Source "KVTM_BRIDGE_V3_CONTROL.bat"
+    $source = Join-Path $BridgeV3Source "native\kvtm_bridge_v3.cpp"
+    $loader = Join-Path $BridgeV3Source "bin\kvtm_loader_v3.exe"
+    $bridge = Join-Path $BridgeV3Source "bin\kvtm_bridge_v3.dll"
+    foreach ($file in @($control, $source)) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+            throw "Missing Bridge V3 build input: $file"
+        }
+    }
+    $sourceText = Get-Content -LiteralPath $source -Raw -Encoding UTF8
+    foreach ($token in @("KVTM_BRIDGE_V3", "CAPTURE3", "NO_LAYOUT", "KvtmBridgeProtocol")) {
+        if (-not $sourceText.Contains($token)) {
+            throw "Bridge V3 source missing contract token '$token': $source"
+        }
+    }
+    Write-Host "Building isolated Bridge V3 capture/input binary (x86)..." -ForegroundColor Cyan
+    & cmd.exe /d /c ('"' + $control + '" build')
+    if ($LASTEXITCODE -ne 0) {
+        throw "Bridge V3 build failed; exit=$LASTEXITCODE."
+    }
+    foreach ($file in @($loader, $bridge)) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or
+            (Get-Item -LiteralPath $file).Length -lt 4096) {
+            throw "Bridge V3 build output invalid: $file"
+        }
+    }
+    Write-Host "BRIDGE V3 BUILD VERIFIED" -ForegroundColor Green
+}
+
 Resolve-AutoProLfsRuntime
 Build-ClientJsCaptureBridge
+Build-KvtmBridgeV3
 
 $DataCandidates = @()
 $CurrentData = Join-Path $OutputRoot "data-dev"
@@ -266,6 +298,9 @@ New-Item -ItemType Directory -Path $BridgeOut -Force | Out-Null
 foreach ($name in @("kvtm_loader.exe", "kvtm_bridge.dll")) {
     Copy-Item -LiteralPath (Join-Path $PatchSource ("bin\" + $name)) -Destination (Join-Path $BridgeOut $name) -Force
 }
+foreach ($name in @("kvtm_loader_v3.exe", "kvtm_bridge_v3.dll")) {
+    Copy-Item -LiteralPath (Join-Path $BridgeV3Source ("bin\" + $name)) -Destination (Join-Path $BridgeOut $name) -Force
+}
 
 $packagedPointers = @(Get-GitLfsPointers -Root $AutoOut)
 if ($packagedPointers.Count -gt 0) {
@@ -320,6 +355,8 @@ $checks = @(
     (Join-Path $AutoOut "engine_driver.py"),
     (Join-Path $AutoOut "bin\kvtm_loader.exe"),
     (Join-Path $AutoOut "bin\kvtm_bridge.dll"),
+    (Join-Path $AutoOut "bin\kvtm_loader_v3.exe"),
+    (Join-Path $AutoOut "bin\kvtm_bridge_v3.dll"),
     (Join-Path $MultiOut "kvtm_multi.py"),
     (Join-Path $MultiOut "kvtm_multi_entry.py"),
     (Join-Path $MultiOut "kvtm_multi_dev_entry.py"),
