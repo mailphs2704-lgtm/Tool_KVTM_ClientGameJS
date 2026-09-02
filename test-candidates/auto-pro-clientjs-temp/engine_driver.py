@@ -439,69 +439,81 @@ class EngineDriver(PCDriver):
             raise RuntimeError(f"Bridge V3 capture thất bại; không dùng HWND fallback: {exc}") from exc
 
     def swipe_points(self, points, duration: float = 0.5) -> None:
-        """uiautomator2-compatible continuous gesture through every point."""
+        """Match AUTO PRO/uiautomator2: one batch, duration per segment."""
         path = [(float(point[0]), float(point[1])) for point in points]
         if len(path) < 2:
             raise ValueError("swipe_points cần ít nhất hai tọa độ")
+        if len(path) > 32:
+            raise ValueError("swipe_points hỗ trợ tối đa 32 mốc logic")
         for x, y in path:
             if not (0 <= x <= 1000 and 0 <= y <= 1000):
-                raise ValueError(f"Tọa độ swipe_points ngoài vùng 1000x1000: {(x, y)}")
+                raise ValueError(
+                    f"Tọa độ swipe_points ngoài vùng 1000x1000: {(x, y)}"
+                )
 
-        # AUTO PRO provides floor/turn waypoints, not every tree coordinate.
-        # Sample at 64 px: dense enough to cross six tree hit areas without the
-        # hundreds of 8 px events that made pipe/game overhead dominate timing.
-        replay_path = [path[0]]
-        for start, end in zip(path, path[1:]):
-            dx, dy = end[0] - start[0], end[1] - start[1]
-            steps = max(1, int(math.ceil(math.hypot(dx, dy) / 64.0)))
-            for step in range(1, steps + 1):
-                ratio = step / steps
-                replay_path.append((start[0] + dx * ratio, start[1] + dy * ratio))
-
-        requested_duration = max(0.02, float(duration))
+        configured_duration = max(0.005, float(duration))
+        # AUTO PRO's uiautomator2 adapter uses int(duration / 0.005).
+        segment_steps = max(1, min(400, int(configured_duration / 0.005)))
+        expected_total = (
+            segment_steps * 0.005 * max(1, len(path) - 1)
+        )
         try:
             caller_name = sys._getframe(1).f_code.co_name
         except Exception:
             caller_name = "unknown"
-        # V3 contract: duration is total gesture time. One interpolation pass and
-        # one monotonic timing owner; never multiply by logical segment count.
+
+        coordinates = " ".join(
+            f"{x:.3f} {y:.3f}" for x, y in path
+        )
+        command = f"SWIPE {segment_steps} {len(path)} {coordinates}\n"
         with _GESTURE_LOCK:
             started = time.perf_counter()
             self._trace(
-                "swipe_points_attempt", logical_path=[list(point) for point in path],
-                point_count=len(path), requested_duration=requested_duration,
-                replay_point_count=len(replay_path), interpolation_px=64,
-                pipe_mode="persistent", timing_owner="engine_driver_v3", mode="engine_bridge_v3",
+                "swipe_points_attempt",
+                logical_path=[list(point) for point in path],
+                logical_point_count=len(path),
+                configured_seconds_per_segment=configured_duration,
+                segment_steps=segment_steps,
+                expected_total_seconds=expected_total,
+                pipe_mode="single_batch",
+                timing_owner="bridge_v3_native",
+                mode="engine_bridge_v3",
             )
-            self._touch_event("down", *replay_path[0])
-            try:
-                moves = replay_path[1:]
-                for index, point in enumerate(moves, start=1):
-                    deadline = started + requested_duration * index / len(moves)
-                    remaining = deadline - time.perf_counter()
-                    if remaining > 0:
-                        time.sleep(remaining)
-                    self._touch_event("move", *point)
-                self._touch_event("up", *replay_path[-1])
-            except Exception:
-                try:
-                    self._touch_event("up", *replay_path[-1])
-                except Exception:
-                    pass
-                raise
+            response = self._pipe(
+                command,
+                max(3000, int(expected_total * 1000) + 3000),
+            )
             actual_duration = time.perf_counter() - started
+            parts = response.split()
+            if len(parts) != 4 or parts[:2] != ["OK", "SWIPE"]:
+                raise RuntimeError(
+                    f"Phản hồi batch swipe không hợp lệ: {response}"
+                )
+            native_actual_ms = int(parts[2])
+            move_count = int(parts[3])
             timing = {
                 "caller": caller_name,
-                "requested_seconds": requested_duration,
+                # Keep the UI value visible while exposing original per-segment
+                # semantics and the expected duration of the complete polyline.
+                "requested_seconds": configured_duration,
+                "configured_seconds_per_segment": configured_duration,
+                "expected_total_seconds": expected_total,
                 "actual_seconds": actual_duration,
-                "point_count": len(replay_path),
-                "timing_error_ms": (actual_duration - requested_duration) * 1000.0,
-                "pipe_mode": "persistent",
+                "native_actual_seconds": native_actual_ms / 1000.0,
+                "point_count": len(path),
+                "logical_point_count": len(path),
+                "move_count": move_count,
+                "segment_steps": segment_steps,
+                "timing_error_ms": (
+                    actual_duration - expected_total
+                ) * 1000.0,
+                "pipe_mode": "single_batch",
             }
             self._trace(
-                "touch_path", logical_path=[list(point) for point in path],
-                logical_point_count=len(path), replay_point_count=len(replay_path),
-                mode="engine_bridge_v3", **timing,
+                "touch_path",
+                logical_path=[list(point) for point in path],
+                mode="engine_bridge_v3_batch",
+                **timing,
             )
             observer = getattr(self, "gesture_observer", None)
             if callable(observer):
