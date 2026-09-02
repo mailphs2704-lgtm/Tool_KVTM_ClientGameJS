@@ -232,7 +232,7 @@ echo ===========================================================================
 set "GATE_ACTIVITY="
 set "GATE_PROFILE_ROOT="
 set "GATE_REPORT_DIR="
-for /f "usebackq delims=" %%F in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_LOG_ROOT%' -Recurse -Filter activity.log -File -ErrorAction SilentlyContinue ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty FullName; if($p){$p}"`) do set "GATE_ACTIVITY=%%F"
+for /f "usebackq delims=" %%F in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_LOG_ROOT%' -Recurse -Filter activity.log -File -ErrorAction SilentlyContinue ^| Where-Object Length -gt 0 ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty FullName; if($p){$p}"`) do set "GATE_ACTIVITY=%%F"
 if not defined GATE_ACTIVITY (
   echo [FAIL] Chua co activity.log. Hay bam nut Gate trong Multi truoc.
   pause
@@ -273,6 +273,12 @@ if errorlevel 1 (
 )
 if not exist "%RUN_DIR%\activity.log" (
   echo [FAIL] activity.log khong ton tai sau khi sao chep. Khong upload.
+  git worktree remove --force "%RESULT_WT%" >nul 2>&1
+  pause
+  goto menu
+)
+for %%Z in ("%RUN_DIR%\activity.log") do if %%~zZ LEQ 0 (
+  echo [FAIL] activity.log rong 0 byte. Khong upload.
   git worktree remove --force "%RESULT_WT%" >nul 2>&1
   pause
   goto menu
