@@ -19,7 +19,7 @@ TOTAL_FRIEND_STALL_SLOTS = 20
 class ClearStallRequest:
     """Validated business input for one clone Dọn quầy session.
 
-    ``resale_storage_id`` is the clean name for the historical UI field
+    ``friend_ordinal`` is the number of configured friend houses to visit\n    sequentially (positions 1..N), not a fixed stall capacity.\n\n    ``resale_storage_id`` is the clean name for the historical UI field
     ``stall_id`` / ``buy_sell_friend_kho_id``. Reverse-engineered call flow
     shows that value is passed to the clone resale/storage selector; the friend
     side has one 20-slot stall. The old CLI name remains only at the worker/UI
@@ -32,6 +32,7 @@ class ClearStallRequest:
     buy_quantity: int
     work_dir: Path
     probe_only: bool = False
+    max_stall_passes: int = 10
 
     def __post_init__(self) -> None:
         profile_id = str(self.profile_id).strip()
@@ -40,6 +41,7 @@ class ClearStallRequest:
         friend = int(self.friend_ordinal)
         storage = int(self.resale_storage_id)
         quantity = int(self.buy_quantity)
+        passes = int(self.max_stall_passes)
         if not MIN_FRIEND_ORDINAL <= friend <= MAX_VERIFIED_FRIEND_ORDINAL:
             raise ValueError(
                 "Bản clean chỉ cho phép bạn bè số 1..7 vì đây là 7 vị trí "
@@ -51,12 +53,15 @@ class ClearStallRequest:
             raise ValueError("Số lượng mua phải trong khoảng 10..1000 VP")
         if quantity % LISTING_QUANTITY:
             raise ValueError("Số lượng Dọn quầy phải là bội số của 10 VP")
+        if not 1 <= passes <= 50:
+            raise ValueError("Số lượt tải lại mỗi quầy phải trong khoảng 1..50")
         object.__setattr__(self, "profile_id", profile_id)
         object.__setattr__(self, "friend_ordinal", friend)
         object.__setattr__(self, "resale_storage_id", storage)
         object.__setattr__(self, "buy_quantity", quantity)
         object.__setattr__(self, "work_dir", Path(self.work_dir).resolve())
         object.__setattr__(self, "probe_only", bool(self.probe_only))
+        object.__setattr__(self, "max_stall_passes", passes)
 
     @property
     def target_listing_count(self) -> int:
