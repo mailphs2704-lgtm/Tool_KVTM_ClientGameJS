@@ -713,6 +713,11 @@ set "PY=%ROOT%python"
 set "BIN=%ROOT%bin"
 set "BACKUP=%ROOT%backup"
 set "DEV_BIN=%ROOT%..\dist\KVTM-ClientJS-Suite-Multi-DEV\AUTO_PRO\bin"
+set "AUTOMODE="
+if /I "%~1"=="build" (
+  set "AUTOMODE=1"
+  goto build
+)
 
 :menu
 cls
@@ -753,12 +758,14 @@ cls
 call :find_vs
 if errorlevel 1 (
   echo [FAIL] Khong tim thay Visual Studio C++ x86/x64 Build Tools.
+  if defined AUTOMODE exit /b 20
   pause
   goto menu
 )
 call "%VSROOT%\VC\Auxiliary\Build\vcvarsall.bat" x86
 if errorlevel 1 (
   echo [FAIL] Khong nap duoc MSVC x86 environment.
+  if defined AUTOMODE exit /b 20
   pause
   goto menu
 )
@@ -771,10 +778,12 @@ if errorlevel 1 goto build_fail
 echo.
 echo [PASS] BUILD V3 x86
 certutil -hashfile "%BIN%\kvtm_bridge_v3.dll" SHA256
+if defined AUTOMODE exit /b 0
 pause
 goto menu
 :build_fail
 echo [FAIL] Build V3 that bai. Runtime chinh KHONG bi thay doi.
+if defined AUTOMODE exit /b 1
 pause
 goto menu
 
