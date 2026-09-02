@@ -439,14 +439,18 @@ class EngineDriver(PCDriver):
                     pass
                 raise
             actual_duration = time.perf_counter() - started
+            timing = {
+                "requested_seconds": requested_duration,
+                "actual_seconds": actual_duration,
+                "point_count": len(replay_path),
+                "timing_error_ms": (actual_duration - requested_duration) * 1000.0,
+            }
             self._trace(
                 "touch_path", logical_path=[list(point) for point in path],
                 point_count=len(path), replay_point_count=len(replay_path),
-                requested_duration=requested_duration,
-                actual_duration=actual_duration,
-                timing_error_ms=(actual_duration - requested_duration) * 1000.0,
-                mode="engine_bridge_v3",
+                mode="engine_bridge_v3", **timing,
             )
+            return timing
 
     def app_stop(self, _package: str) -> None:
         """Close only when this PID can be relaunched from a saved Multi profile."""
