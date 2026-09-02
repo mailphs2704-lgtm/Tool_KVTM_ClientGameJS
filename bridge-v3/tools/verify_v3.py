@@ -63,7 +63,7 @@ def main() -> int:
     if len(raw) < 4096 or raw[:2] != b"MZ":
         fail("V3 DLL is not a valid PE candidate")
     pe_offset = struct.unpack_from("<I", raw, 0x3C)[0]
-    if raw[pe_offset:pe_offset + 4] != b"PE\\0\\0":
+    if raw[pe_offset:pe_offset + 4] != b"PE\0\0":
         fail("V3 DLL PE signature missing")
     machine = struct.unpack_from("<H", raw, pe_offset + 4)[0]
     if machine != 0x014C:
