@@ -201,6 +201,7 @@ jobs:
           engine = Path('test-candidates/auto-pro-clientjs-temp/engine_driver.py').read_text(encoding='utf-8')
           pc = Path('test-candidates/auto-pro-clientjs-temp/pc_driver.py').read_text(encoding='utf-8')
           builder = Path('packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1').read_text(encoding='utf-8')
+          worker = Path('components/clientjs-auto/worker/auto_worker.py').read_text(encoding='utf-8')
 
           required_engine = (
               'KVTM-CocosV3-', 'KVTM-CaptureV3-', 'version != 3',
@@ -220,6 +221,8 @@ jobs:
               assert token not in pc, token
           for token in ('Build-KvtmBridgeV3', 'kvtm_bridge_v3.dll', 'kvtm_loader_v3.exe'):
               assert token in builder, token
+          for token in ('setattr(automation, key, value)', 'setattr(controller, key, value)', 'synchronized_targets'):
+              assert token in worker, token
           print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
           print('BRIDGE_V3_SINGLE_TIMING_OWNER_OK')
           print('BRIDGE_V3_STRICT_CAPTURE_NO_FALLBACK_OK')
