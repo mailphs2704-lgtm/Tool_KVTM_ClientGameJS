@@ -8,7 +8,18 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import traceback
+
+
+def configure_utf8_console() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
+configure_utf8_console()
 
 
 def emit(event: str, **data) -> None:
