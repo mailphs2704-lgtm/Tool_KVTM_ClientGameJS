@@ -348,6 +348,8 @@ class MultiDevApp(production.MultiApp):
         job = self._clear_stall_job(profile_id)
         friend = max(1, min(7, int(job.get("target_friend_ordinal", 1) or 1)))
         storage = max(1, min(5, int(job.get("target_stall_id", 2) or 2)))
+        quantity = max(10, min(1000, int(job.get("buy_quantity", 10) or 10)))
+        quantity = max(10, (quantity // 10) * 10)
         run_id = time.strftime("%Y%m%d-%H%M%S")
         work_dir = core.APP_DIR / "clear-stall-probe" / profile_id / run_id
         stop_event = threading.Event()
@@ -357,7 +359,10 @@ class MultiDevApp(production.MultiApp):
 
         thread = threading.Thread(
             target=self._run_probe_thread,
-            args=(profile_id, profile, int(proc.pid), friend, storage, work_dir, stop_event),
+            args=(
+                profile_id, profile, int(proc.pid), friend, storage,
+                quantity, work_dir, stop_event,
+            ),
             name=f"kvtm-dev-clear-stall-probe-{profile_id[:8]}",
             daemon=True,
         )
@@ -367,7 +372,7 @@ class MultiDevApp(production.MultiApp):
             f"probe_thread_start pid={proc.pid} report_dir={work_dir}",
         )
         self.auto_clear_stall_status.set(
-            f"Kiểm tra resident • Nhà bạn {friend} • Kho VP {storage}"
+            f"Kiểm tra resident • Nhà bạn {friend} • kế hoạch {quantity} VP"
         )
         thread.start()
         self._refresh_clear_stall_panel()
@@ -379,6 +384,7 @@ class MultiDevApp(production.MultiApp):
         pid: int,
         friend: int,
         storage: int,
+        quantity: int,
         work_dir: Path,
         stop_event: threading.Event,
     ) -> None:
@@ -394,6 +400,7 @@ class MultiDevApp(production.MultiApp):
                 profile_name=str(profile.get("name") or profile_id),
                 friend_ordinal=int(friend),
                 resale_storage_id=int(storage),
+                buy_quantity=int(quantity),
                 work_dir=work_dir,
             )
 
