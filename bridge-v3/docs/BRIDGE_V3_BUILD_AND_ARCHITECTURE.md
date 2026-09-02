@@ -776,7 +776,7 @@ goto menu
 
 :verify
 cls
-py -3.11 "%ROOT%tools\verify_v3.py" --root "%ROOT%"
+py -3.11 "%ROOT%tools\verify_v3.py" --root "%ROOT%."
 if errorlevel 1 (
   echo [FAIL] STATIC VERIFY V3
 ) else (
