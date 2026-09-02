@@ -15,6 +15,16 @@ TOTAL_STALL_SLOTS = 20
 STALL_VIEW_COUNT = 4
 STALL_SHIFT = 4
 
+# A 17-slot stall renders the 17 unlocked cells plus the next locked cell.
+# The last right-edge view therefore contributes only one final column (2
+# rendered positions), while slots 19-20 do not exist in the scroll surface.
+NEW_SLOT_MAP = {
+    1: ((1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6), (7, 7), (8, 8)),
+    2: ((3, 9), (4, 10), (7, 11), (8, 12)),
+    3: ((3, 13), (4, 14), (7, 15), (8, 16)),
+    4: ((4, 17), (8, 18)),
+}
+
 # Recovered AUTO PRO crop geometry at the fixed 1000x1000 ClientJS size.
 VISIBLE_SLOT_CENTERS = (
     (300, 456), (432, 456), (565, 456), (698, 456),
@@ -60,19 +70,22 @@ class StallActions:
 
     @staticmethod
     def physical_slot(view: int, local_slot: int) -> int:
-        if not 1 <= int(view) <= STALL_VIEW_COUNT:
+        pairs = NEW_SLOT_MAP.get(int(view))
+        if pairs is None:
             raise ValueError(f"Cửa sổ quầy không hợp lệ: {view}")
-        if not 1 <= int(local_slot) <= len(VISIBLE_SLOT_CENTERS):
-            raise ValueError(f"Ô quầy không hợp lệ: {local_slot}")
-        return (int(view) - 1) * STALL_SHIFT + int(local_slot)
+        for local, physical in pairs:
+            if int(local_slot) == local:
+                return physical
+        raise ValueError(
+            f"Ô local {local_slot} không phải vị trí mới của view {view}"
+        )
 
     @staticmethod
     def new_local_slots(view: int) -> tuple[int, ...]:
-        if int(view) == 1:
-            return tuple(range(1, 9))
-        if 2 <= int(view) <= STALL_VIEW_COUNT:
-            return (5, 6, 7, 8)
-        raise ValueError(f"Cửa sổ quầy không hợp lệ: {view}")
+        pairs = NEW_SLOT_MAP.get(int(view))
+        if pairs is None:
+            raise ValueError(f"Cửa sổ quầy không hợp lệ: {view}")
+        return tuple(local for local, _physical in pairs)
 
     def open_friend_stall(self, timeout: float = 20.0) -> None:
         """Open the single 20-slot stall at the currently visited friend's home.
