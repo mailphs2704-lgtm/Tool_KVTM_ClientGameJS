@@ -247,6 +247,9 @@ jobs:
               '"Kho 1 & 2": 4', '"time_nang_kho": auto_nang_kho_time_hours',
               '"balance_nang_kho": auto_nang_kho_balance',
               'controller.open_chests_enabled = bool(auto_options["open_chest"])',
+              'def install_clientjs_runtime(auto_root: Path, profile_id: str):',
+              'return EngineDriver(str(profile_id), reference_size=(1000, 1000))',
+              'install_clientjs_runtime(auto_root, args.profile_id)',
           ):
               assert token in worker, token
           for token in (
