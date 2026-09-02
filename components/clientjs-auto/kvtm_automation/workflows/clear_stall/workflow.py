@@ -114,18 +114,54 @@ class ClearStallWorkflow:
 
         inventory_full = False
         deferred = False
-        source_empty = False
         observations: list[StallSlotObservation] = []
         bought = 0
         sold = 0
 
         try:
-            observations = self._discover_source()
-            source_empty = not observations
-            bought, inventory_full = self._purchase(observations)
+            # friend_ordinal is the configured friend count: visit 1..N in
+            # order. Account stall capacity is intentionally never inferred.
+            for friend_position in range(1, self.request.friend_ordinal + 1):
+                if bought >= self.request.buy_quantity or inventory_full:
+                    break
+                for pass_number in range(1, self.request.max_stall_passes + 1):
+                    if bought >= self.request.buy_quantity or inventory_full:
+                        break
+                    self.context.log(
+                        f"Nhà bạn {friend_position}/{self.request.friend_ordinal} • "
+                        f"lượt tải quầy {pass_number}/{self.request.max_stall_passes} • "
+                        f"còn thiếu {self.request.buy_quantity - bought} VP"
+                    )
+                    current = self._discover_source(friend_position)
+                    observations.extend(current)
+                    before = bought
+                    delta, inventory_full = self._purchase(
+                        current,
+                        already_purchased=bought,
+                    )
+                    bought += delta
 
-            self._checkpoint("RETURNING_TO_CLONE")
-            self.automation.navigation.return_home()
+                    # Every refresh and every house transition starts from a
+                    # verified own-home state, preventing clicks on stale UI.
+                    self.automation.stall.close_friend_stall()
+                    self._checkpoint("RETURNING_TO_CLONE", save_state=False)
+                    self.automation.navigation.return_home()
+
+                    if inventory_full or bought >= self.request.buy_quantity:
+                        break
+                    if bought == before:
+                        self.context.log(
+                            f"Nhà bạn {friend_position} không còn ô mua được; "
+                            "chuyển sang nhà kế tiếp"
+                        )
+                        break
+
+            source_empty = not observations
+            if bought < self.request.buy_quantity and not inventory_full:
+                self.context.log(
+                    f"Đã duyệt hết nhà/lượt cấu hình nhưng còn thiếu "
+                    f"{self.request.buy_quantity - bought} VP"
+                )
 
             sold, deferred = self._resell()
             self.manifest.complete(deferred=deferred)
@@ -143,9 +179,9 @@ class ClearStallWorkflow:
                 inventory_full=inventory_full,
                 source_empty=source_empty,
                 state=self.manifest.state,
+                target_reached=bought >= self.request.buy_quantity,
             )
         except AutomationStopped:
-            # Purchases/sales already confirmed before the stop stay persisted.
             self.manifest.state = "STOPPED"
             self._persist_state()
             self._save_manifest()
@@ -156,12 +192,12 @@ class ClearStallWorkflow:
             self._save_manifest()
             raise
 
-    def _discover_source(self) -> list[StallSlotObservation]:
+    def _discover_source(self, friend_position: int | None = None) -> list[StallSlotObservation]:
         self._checkpoint("WAITING_MAIN_SCREEN", save_state=False)
         self.automation.ensure_main_screen(timeout=90.0)
 
         self._checkpoint("NAVIGATING_FRIEND", save_state=False)
-        self.automation.navigation.go_to_friend(self.request.friend_ordinal)
+        self.automation.navigation.go_to_friend(\n            self.request.friend_ordinal if friend_position is None else int(friend_position)\n        )
 
         self._checkpoint("OPENING_SOURCE_STALL", save_state=False)
         self.automation.stall.open_friend_stall()
@@ -182,6 +218,8 @@ class ClearStallWorkflow:
     def _purchase(
         self,
         observations: list[StallSlotObservation],
+        *,
+        already_purchased: int = 0,
     ) -> tuple[int, bool]:
         """Buy verified x10 listings and report quantities in VP, not clicks."""
         # scan_all_20 leaves the physical shop at view four.
@@ -202,7 +240,7 @@ class ClearStallWorkflow:
         inventory_full = False
         for observation in sorted(observations, key=lambda item: item.physical_slot):
             self.context.ensure_running()
-            remaining_quantity = self.request.buy_quantity - purchased_quantity
+            remaining_quantity = (\n                self.request.buy_quantity - int(already_purchased) - purchased_quantity\n            )
             remaining_listings = remaining_quantity // LISTING_QUANTITY
             if remaining_listings <= 0:
                 break
@@ -220,7 +258,7 @@ class ClearStallWorkflow:
                 purchased_quantity += LISTING_QUANTITY
                 self._persist_state()
                 self._checkpoint(
-                    f"PURCHASED_{purchased_quantity}_OF_{self.request.buy_quantity}",
+                    f"PURCHASED_{int(already_purchased) + purchased_quantity}_OF_"\n                    f"{self.request.buy_quantity}",
                     save_state=False,
                 )
 
@@ -240,7 +278,8 @@ class ClearStallWorkflow:
 
         self._checkpoint("PURCHASE_COMPLETE")
         self.context.log(
-            f"Kết thúc mua: {purchased_quantity}/{self.request.buy_quantity} VP trong phiên"
+            f"Lượt mua thêm {purchased_quantity} VP • tổng "
+            f"{int(already_purchased) + purchased_quantity}/{self.request.buy_quantity} VP"
         )
         return purchased_quantity, inventory_full
 
