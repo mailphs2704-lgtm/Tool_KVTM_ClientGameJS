@@ -1149,3 +1149,15 @@ Thiết kế sửa:
 - Khi PID đổi/restart, handle cũ được đóng trước khi kết nối bridge mới.
 
 Commits: native persistent server `c694a4f`; EngineDriver persistent client + six-tree interpolation `c330310`; CI guard `7395666`. Chờ build và live gate mới; chưa gọi PASS.
+
+
+## 18. Persistent-pipe live gate
+
+Sau `c694a4f` + `c330310`, production EngineDriver probe trên PID 11132:
+
+- Capture trước/sau: PASS.
+- Spatial interpolation: 11 điểm, đã khôi phục.
+- Requested: 0.500s; actual: 0.5148837000015192s.
+- Timing error: +14.883700001519173ms; tolerance: 100ms.
+- Transport/timing gate: PASS.
+- Workflow sáu cây và chênh lệch harvest_speed: chờ live evidence nghiệp vụ.
