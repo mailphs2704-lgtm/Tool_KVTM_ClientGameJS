@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import subprocess
 import struct
+import sys
 import threading
 import time
 
@@ -458,6 +459,10 @@ class EngineDriver(PCDriver):
                 replay_path.append((start[0] + dx * ratio, start[1] + dy * ratio))
 
         requested_duration = max(0.02, float(duration))
+        try:
+            caller_name = sys._getframe(1).f_code.co_name
+        except Exception:
+            caller_name = "unknown"
         # V3 contract: duration is total gesture time. One interpolation pass and
         # one monotonic timing owner; never multiply by logical segment count.
         with _GESTURE_LOCK:
@@ -486,16 +491,24 @@ class EngineDriver(PCDriver):
                 raise
             actual_duration = time.perf_counter() - started
             timing = {
+                "caller": caller_name,
                 "requested_seconds": requested_duration,
                 "actual_seconds": actual_duration,
                 "point_count": len(replay_path),
                 "timing_error_ms": (actual_duration - requested_duration) * 1000.0,
+                "pipe_mode": "persistent",
             }
             self._trace(
                 "touch_path", logical_path=[list(point) for point in path],
                 logical_point_count=len(path), replay_point_count=len(replay_path),
                 mode="engine_bridge_v3", **timing,
             )
+            observer = getattr(self, "gesture_observer", None)
+            if callable(observer):
+                try:
+                    observer(dict(timing))
+                except Exception:
+                    pass
             return timing
 
     def app_stop(self, _package: str) -> None:
