@@ -390,11 +390,22 @@ def main() -> int:
     auto_options["go_friend_home"] = bool(
         requested_options.get("go_friend_home", False)
     )
+    nang_kho_type_code = {
+        "Kho 1": 1,
+        "Kho 2": 2,
+        "Max Kho": 3,
+        "Kho 1 & 2": 4,
+    }[auto_nang_kho_type]
     auto_options.update({
         "quay_he_count": quay_he_count,
+        # Keep UI keys for diagnostics while also binding the exact option
+        # names consumed by recovered FarmAutomation.Tuychon bytecode.
         "auto_nang_kho_type": auto_nang_kho_type,
+        "auto_nang_kho_type_code": nang_kho_type_code,
         "auto_nang_kho_time_hours": auto_nang_kho_time_hours,
+        "time_nang_kho": auto_nang_kho_time_hours,
         "auto_nang_kho_balance": auto_nang_kho_balance,
+        "balance_nang_kho": auto_nang_kho_balance,
         "kc_nang_kho": kc_nang_kho,
     })
 
@@ -494,7 +505,7 @@ def main() -> int:
             gui_ref=proxy,
             options=auto_options,
             skip_items=skip_items,
-            auto_nang_kho_type=auto_nang_kho_type,
+            auto_nang_kho_type=nang_kho_type_code,
             auto_nang_kho_time_hours=auto_nang_kho_time_hours,
             auto_nang_kho_balance=auto_nang_kho_balance,
             kc_nang_kho=kc_nang_kho,
@@ -532,6 +543,9 @@ def main() -> int:
             if controller is not None:
                 setattr(controller, key, value)
         if controller is not None:
+            # openChests has its own runtime kill-switch. Bind it explicitly so
+            # a new worker always reflects the current Multi option.
+            controller.open_chests_enabled = bool(auto_options["open_chest"])
             controller.clear_stall_quantity = clear_stall_values["clear_stall_quantity"]
             controller.clear_stall_max_pages = clear_stall_values["clear_stall_max_pages"]
             driver = getattr(controller, "driver", None)
