@@ -8,8 +8,9 @@ MIN_FRIEND_ORDINAL = 1
 MAX_VERIFIED_FRIEND_ORDINAL = 7
 MIN_RESALE_STORAGE_ID = 1
 MAX_RESALE_STORAGE_ID = 5
-MIN_BUY_QUANTITY = 1
-MAX_BUY_QUANTITY = 999
+LISTING_QUANTITY = 10
+MIN_BUY_QUANTITY = LISTING_QUANTITY
+MAX_BUY_QUANTITY = 1000
 STALL_VIEW_COUNT = 4
 TOTAL_FRIEND_STALL_SLOTS = 20
 
@@ -47,13 +48,20 @@ class ClearStallRequest:
         if not MIN_RESALE_STORAGE_ID <= storage <= MAX_RESALE_STORAGE_ID:
             raise ValueError("Kho VP bán lại phải trong khoảng 1..5")
         if not MIN_BUY_QUANTITY <= quantity <= MAX_BUY_QUANTITY:
-            raise ValueError("Số lượng mua phải trong khoảng 1..999")
+            raise ValueError("Số lượng mua phải trong khoảng 10..1000 VP")
+        if quantity % LISTING_QUANTITY:
+            raise ValueError("Số lượng Dọn quầy phải là bội số của 10 VP")
         object.__setattr__(self, "profile_id", profile_id)
         object.__setattr__(self, "friend_ordinal", friend)
         object.__setattr__(self, "resale_storage_id", storage)
         object.__setattr__(self, "buy_quantity", quantity)
         object.__setattr__(self, "work_dir", Path(self.work_dir).resolve())
         object.__setattr__(self, "probe_only", bool(self.probe_only))
+
+    @property
+    def target_listing_count(self) -> int:
+        """Number of ten-item friend-stall listings required this run."""
+        return self.buy_quantity // LISTING_QUANTITY
 
     @property
     def legacy_stall_id(self) -> int:
