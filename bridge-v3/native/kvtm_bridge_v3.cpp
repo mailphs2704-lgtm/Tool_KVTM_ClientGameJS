@@ -288,8 +288,12 @@ DWORD WINAPI pipe_thread(void*) {
         }
         BOOL connected = ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
         if (connected) {
-            char input[128]{}; DWORD read = 0;
-            if (ReadFile(pipe, input, sizeof(input) - 1, &read, nullptr)) {
+            // Keep one connection alive for the whole gesture. Python remains
+            // the timing owner, while repeated MOVE commands avoid reconnect cost.
+            for (;;) {
+                char input[128]{}; DWORD read = 0;
+                if (!ReadFile(pipe, input, sizeof(input) - 1, &read, nullptr) || !read)
+                    break;
                 input[read] = 0;
                 const char* response = "ERR PARSE\n";
                 char output[64]{};
@@ -318,7 +322,10 @@ DWORD WINAPI pipe_thread(void*) {
                     }
                 }
                 DWORD written = 0;
-                WriteFile(pipe, response, static_cast<DWORD>(std::strlen(response)), &written, nullptr);
+                if (!WriteFile(
+                        pipe, response, static_cast<DWORD>(std::strlen(response)),
+                        &written, nullptr))
+                    break;
             }
         }
         FlushFileBuffers(pipe);
