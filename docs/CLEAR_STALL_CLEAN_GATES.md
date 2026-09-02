@@ -9,16 +9,16 @@ Module clean Python độc lập, không gọi `FarmAutomation`, `ADBController`
 
 1. Hết thời gian đếm ngược, mở đúng clone DEV và chờ vào game.
 2. Đóng popup, vào nhà bạn theo thứ tự cấu hình.
-3. Mở quầy nhà bạn và quét bằng bốn view chồng lấn, phủ 20 ô vật lý.
+3. Mở quầy nhà bạn và kéo bốn view đã xác nhận. Không suy luận số ô mở/khóa; sức chứa thay đổi theo tài khoản.
 4. Mỗi ô mua tương ứng đúng 10 VP. Cấu hình mua phải là bội số 10;
    ví dụ 200 VP tương ứng 20 ô.
-5. Kéo quầy theo thao tác bán VP đã kiểm chứng của AUTO PRO để lộ các ô tiếp theo.
+5. Kéo quầy theo thao tác bán VP đã kiểm chứng của AUTO PRO. Nếu chưa đủ target thì thoát/vào lại quầy, sau đó chuyển lần lượt qua nhà 1..N.
 6. Chỉ tăng số đã mua sau khi game xác nhận giao dịch.
 7. Quay về nhà clone, mở quầy và thu vàng ở các ô đã hết thời gian.
 8. Treo lại đúng loại VP đã mua, mỗi lượt đúng 10. Không thay đổi giá.
 9. Nếu một loại không đủ 10, bỏ qua loại đó và thử loại tiếp theo.
 10. Khi không còn loại nào đủ 10, đóng ClientJS và bắt đầu chu kỳ đếm ngược mới.
-11. Không carry-over phần lẻ sang vòng sau và không bán lẻ dưới 10.
+11. Không carry-over phần lẻ sang vòng sau và không bán lẻ dưới 10.\n12. Toàn máy chỉ chạy một job Dọn quầy; tài khoản đến giờ sau xếp hàng đến khi job trước thoát.
 
 ## State machine mục tiêu
 
@@ -27,7 +27,7 @@ Module clean Python độc lập, không gọi `FarmAutomation`, `ADBController`
 - `WAITING_MAIN_SCREEN`
 - `NAVIGATING_FRIEND`
 - `OPENING_SOURCE_STALL`
-- `SCANNING_20_SLOTS`
+- `SCANNING_STALL_VIEWS`
 - `PURCHASING_TEN_ITEM_LISTINGS`
 - `RETURNING_HOME`
 - `COLLECTING_STALL_GOLD`
