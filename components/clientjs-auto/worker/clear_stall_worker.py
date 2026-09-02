@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import os
 import sys
+import threading
 import traceback
 
 from clean_worker_support import (
@@ -129,7 +131,34 @@ def main() -> int:
             workflow=WORKFLOW_NAME,
             stage="clientjs_engine_connecting",
         )
+        runtime_ready = threading.Event()
+
+        def runtime_watchdog() -> None:
+            if runtime_ready.wait(90.0):
+                return
+            emit(
+                "worker_error",
+                profile_id=args.profile_id,
+                workflow=WORKFLOW_NAME,
+                error=(
+                    "Clean image runtime bị treo quá 90s khi cold-load đồng bộ; "
+                    "worker dừng an toàn trước navigation/mua/bán"
+                ),
+                diagnostics={
+                    "source_file": str(Path(__file__).name),
+                    "function": "runtime_watchdog",
+                    "stage": "clean_runtime_importing",
+                },
+            )
+            os._exit(86)
+
+        threading.Thread(
+            target=runtime_watchdog,
+            name="kvtm-clean-runtime-watchdog",
+            daemon=True,
+        ).start()
         automation = KVAutomation(context)
+        runtime_ready.set()
         emit(
             "worker_boot",
             pid=args.pid,
