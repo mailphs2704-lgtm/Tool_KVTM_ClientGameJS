@@ -18,6 +18,9 @@ class ClearStallResult:
     source_empty: bool
     probe_only: bool
     state: str
+    planned_listings: int = 0
+    planned_quantity: int = 0
+    target_reached: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
