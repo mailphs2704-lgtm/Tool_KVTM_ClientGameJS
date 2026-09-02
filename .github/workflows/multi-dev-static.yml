@@ -265,6 +265,11 @@ jobs:
               'before = after',
               'if name != "mo_ruong" or fallback_used:',
               'if not kwargs.get("click"):',
+              'def click_without_post_open_replay(x, y, *args, **kwargs):',
+              '"clientjs_chest_post_open_click_suppressed"',
+              'return bool(chest_screen_changed)',
+              'self.driver.click = click_without_post_open_replay',
+              'self.driver.click = original_click',
           ):
               assert token in clientjs_patch, token
           print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
