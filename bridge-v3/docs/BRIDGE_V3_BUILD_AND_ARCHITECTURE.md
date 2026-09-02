@@ -90,7 +90,7 @@ Không chạy lệnh CMD thủ công. Các binary sinh ra nằm trong `bridge-v3
 |---|---|---|
 | 1 | Tách source, protocol v3, bỏ layout | SOURCE_READY |
 | 2 | Build MSVC x86 + static verify | LOCAL PASS, DLL SHA256 `74df4645...f893` |
-| 3 | Live capture, frame id tăng, ảnh đúng chiều | PARTIAL: inject PASS; Python pointer cleanup đã sửa, chờ retest |
+| 3 | Live capture, frame id tăng, ảnh đúng chiều | LOCAL PASS: PID 1940, 1000x1000, frame 1→2, protocol V3 đúng |
 | 4 | Swipe 0.50 giây, sai số trong ngưỡng | Chưa test V3 |
 | 5 | Tối ưu SwapBuffers/PBO nếu profiler chứng minh cần | Chưa triển khai |
 | 6 | Cài runtime và test AUTO nhận diện | LOCKED |
@@ -1038,3 +1038,12 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 ```
+
+
+## 9. Live evidence
+
+- Build x86: PASS; DLL 144896 bytes; SHA256 `74df4645c8c04321c211b9ad9c14043b66d59f85cdaeb8925d505b0f5becf893`.
+- Static verify: PASS; scope capture/input; layout absent; runtime_installed=false.
+- Capture probe: PASS trên PID 1940; protocol `CAPTURE3 INPUT3 NO_LAYOUT`; 1000x1000; frame 1→2; SHA256 frame `1dfe6f567146d7f34bf1d34e66de2f223f4e650e7e51173f17bf409c498c0689`.
+- Swipe timing: NOT_TESTED.
+- Runtime cutover: LOCKED.
