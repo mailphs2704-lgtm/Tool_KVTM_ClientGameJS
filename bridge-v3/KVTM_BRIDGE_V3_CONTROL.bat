@@ -107,7 +107,11 @@ if errorlevel 1 (
   pause
   goto menu
 )
-py -3.11 "%ROOT%tools\probe_v3.py" --pid "%GAME_PID%" --output "%ROOT%probe-output"
+set "SWIPE_ARG="
+set "SWIPE_CONFIRM="
+set /p "SWIPE_CONFIRM=Chay swipe nho 0.50s o tam game? Go SWIPE de dong y, Enter de bo qua: "
+if "%SWIPE_CONFIRM%"=="SWIPE" set "SWIPE_ARG=--swipe-test"
+py -3.11 "%ROOT%tools\probe_v3.py" --pid "%GAME_PID%" --output "%ROOT%probe-output" %SWIPE_ARG%
 if errorlevel 1 (
   echo [FAIL] LIVE PROBE V3. KHONG cai runtime.
 ) else (
