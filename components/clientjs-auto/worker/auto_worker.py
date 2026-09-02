@@ -524,8 +524,14 @@ def main() -> int:
                 ),
             )
         controller = getattr(automation, "adb", None)
+        # Recovered workflows do not have one consistent owner for tuning:
+        # some read FarmAutomation, others read ADBController. Keep both views
+        # synchronized so one Multi setting has one effective value everywhere.
+        for key, value in auto_tuning.items():
+            setattr(automation, key, value)
+            if controller is not None:
+                setattr(controller, key, value)
         if controller is not None:
-            controller.shop_drag_speed = auto_tuning["shop_drag_speed"]
             controller.clear_stall_quantity = clear_stall_values["clear_stall_quantity"]
             controller.clear_stall_max_pages = clear_stall_values["clear_stall_max_pages"]
         if args.function_id == 170:
@@ -614,9 +620,14 @@ def main() -> int:
                 emit("tuning_error", error="AUTO chưa có ADBController")
                 continue
             for key, value in validated_update.items():
+                setattr(automation, key, value)
                 setattr(controller, key, value)
                 auto_tuning[key] = value
-            emit("tuning_applied", tuning=dict(auto_tuning))
+            emit(
+                "tuning_applied",
+                tuning=dict(auto_tuning),
+                synchronized_targets=["FarmAutomation", "ADBController"],
+            )
         elif action in {"stop", "pause"}:
             emit("worker_stopping", reason=action)
             try:
