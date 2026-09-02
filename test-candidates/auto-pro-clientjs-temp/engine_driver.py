@@ -4,7 +4,6 @@ import base64
 import ctypes
 from ctypes import wintypes
 import json
-import math
 import os
 from pathlib import Path
 import subprocess
@@ -401,15 +400,10 @@ class EngineDriver(PCDriver):
             if not (0 <= x <= 1000 and 0 <= y <= 1000):
                 raise ValueError(f"Tọa độ swipe_points ngoài vùng 1000x1000: {(x, y)}")
 
-        # Android interpolates swipePoints between waypoints. Do the same so
-        # Cocos receives a real continuous drag instead of large coordinate jumps.
-        replay_path = [path[0]]
-        for start, end in zip(path, path[1:]):
-            dx, dy = end[0] - start[0], end[1] - start[1]
-            steps = max(1, int(math.ceil(math.hypot(dx, dy) / 8.0)))
-            for step in range(1, steps + 1):
-                ratio = step / steps
-                replay_path.append((start[0] + dx * ratio, start[1] + dy * ratio))
+        # AUTO PRO's get_harvest_path/plant path is already authoritative.
+        # Re-interpolating every 8 px here duplicated layout points and made
+        # named-pipe overhead dominate the configured total duration.
+        replay_path = path
 
         requested_duration = max(0.02, float(duration))
         # V3 contract: duration is total gesture time. One interpolation pass and
@@ -419,7 +413,7 @@ class EngineDriver(PCDriver):
             self._trace(
                 "swipe_points_attempt", logical_path=[list(point) for point in path],
                 point_count=len(path), requested_duration=requested_duration,
-                replay_point_count=len(replay_path), interpolation_px=8,
+                replay_point_count=len(replay_path), interpolation="auto_pro_path",
                 timing_owner="engine_driver_v3", mode="engine_bridge_v3",
             )
             self._touch_event("down", *replay_path[0])
