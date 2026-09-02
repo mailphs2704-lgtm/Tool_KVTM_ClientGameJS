@@ -1104,3 +1104,15 @@ Live PASS trên runtime production side-by-side:
 - Kết luận gate bridge production: PASS.
 
 Mốc này xác minh transport capture/input và timing. Nó chưa tự chứng minh mọi template/threshold hoặc workflow nghiệp vụ AUTO nhận diện đúng.
+
+
+## 15. Bytecode speed-binding evidence
+
+READ-ONLY audit của AUTO PRO cho thấy:
+
+- `ADBController.harvestTrees`: gọi `get_harvest_path`, rồi `driver.swipe_points`, và đọc `harvest_speed`.
+- `ADBController.plantTrees`: tạo/điều chỉnh path gieo, gọi `driver.swipe_points`, và đọc `harvest_speed`; `next_gieo` dùng cho nhịp kiểm tra/gieo tiếp.
+- `goUp/goDown`: gọi `driver.swipe` và cũng đọc `harvest_speed`, giải thích vì sao cấu hình trước đó thấy tác động ở kéo tầng.
+- `makeItems`: có `production_wait` và các call swipe riêng.
+
+Adapter cũ nhận path đã được AUTO PRO tạo nhưng lại nội suy thêm mỗi 8px. Với mỗi MOVE dùng một pipe transaction, số điểm thừa làm overhead lấn át duration ở thu hoạch/gieo cây. Commit `9dd02f8` bỏ lần nội suy thứ hai: `replay_path = path`; Python vẫn là timing owner và duration vẫn là tổng gesture. CI `92ddc51` cấm công thức nội suy dư quay lại.
