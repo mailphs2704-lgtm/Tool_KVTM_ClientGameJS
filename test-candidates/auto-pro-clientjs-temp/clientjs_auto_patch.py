@@ -267,10 +267,10 @@ def _install_controller_patch(adb_controller_module) -> None:
                 pass
 
             before = _chest_region()
-            # AUTO PRO/LD clicks (433, 557), but ClientJS renders the
-            # selected-chest modal lower. The live 1000-wide ClientJS capture
-            # places the "Cham de mo ruong" action around y=660. Try that
-            # ClientJS point first, then the legacy point. Repeat a point like
+            # AUTO PRO/LD clicks (433, 557), but the live ClientJS
+            # capture places the selected chest center around (500, 470).
+            # Tap the chest itself first, then retain the LD point as fallback.
+            # Repeat a point like
             # AUTO PRO (up to five taps), and stop immediately after a real
             # modal change so no tap can leak into the game behind it.
             for x, y in ((500, 470), (433, 557)):
