@@ -117,9 +117,17 @@ jobs:
               store_b = CarryoverStore(root / 'profile-B')
               assert store_b.load('profile-B') == []
 
-          request = ClearStallRequest('A', 7, 5, 8, Path('.'))
+          request = ClearStallRequest('A', 7, 5, 200, Path('.'))
           assert request.friend_ordinal == 7
           assert request.resale_storage_id == 5
+          assert request.buy_quantity == 200
+          assert request.target_listing_count == 20
+          try:
+              ClearStallRequest('A', 1, 2, 15, Path('.'))
+          except ValueError:
+              pass
+          else:
+              raise AssertionError('clear-stall quantity must stay a multiple of ten')
           try:
               ClearStallRequest('A', 8, 2, 8, Path('.'))
           except ValueError:
@@ -204,6 +212,8 @@ jobs:
           pc = Path('test-candidates/auto-pro-clientjs-temp/pc_driver.py').read_text(encoding='utf-8')
           builder = Path('packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1').read_text(encoding='utf-8')
           worker = Path('components/clientjs-auto/worker/auto_worker.py').read_text(encoding='utf-8')
+          clear_stall_worker = Path('components/clientjs-auto/worker/clear_stall_worker.py').read_text(encoding='utf-8')
+          clear_stall_workflow = Path('components/clientjs-auto/kvtm_automation/workflows/clear_stall/workflow.py').read_text(encoding='utf-8')
           multi = Path('source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py').read_text(encoding='utf-8')
           clientjs_patch = Path('test-candidates/auto-pro-clientjs-temp/clientjs_auto_patch.py').read_text(encoding='utf-8')
 
@@ -252,6 +262,25 @@ jobs:
               'install_clientjs_runtime(auto_root, args.profile_id)',
           ):
               assert token in worker, token
+          for token in (
+              'EXECUTION_GATE = "READ_ONLY_SCAN"',
+              'probe_only=True',
+              'result = workflow.probe()',
+              'GATE 1: chỉ quét quầy, KHÔNG click mua/bán',
+          ):
+              assert token in clear_stall_worker, token
+          for token in (
+              'planned_listings = min(',
+              'self.request.target_listing_count',
+              'target_reached=target_reached',
+          ):
+              assert token in clear_stall_workflow, token
+          for token in (
+              'GATE 1: Kiểm tra quầy (không mua)',
+              'from_=10, to=1000, increment=10',
+              'if bool(payload.get("probe_only", False)):',
+          ):
+              assert token in multi, token
           for token in (
               'rows = running_clients()',
               'lambda snapshot=rows: self._adopt_running_clients(snapshot)',
