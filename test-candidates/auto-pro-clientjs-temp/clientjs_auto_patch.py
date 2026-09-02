@@ -265,26 +265,33 @@ def _install_controller_patch(adb_controller_module) -> None:
                 return False
 
             before = _chest_region()
-            # All points stay inside the selected chest/prompt. Stop as soon
-            # as the modal visibly changes so no extra tap reaches the game.
-            for x, y in ((500, 557), (433, 557), (500, 620)):
-                if _stopped(stop_event):
-                    return False
-                self.driver.click(x, y)
-                time.sleep(0.65)
-                after = _chest_region()
-                score = _difference(before, after)
-                try:
-                    self.driver._trace(
-                        "clientjs_chest_probe",
-                        logical=[x, y],
-                        screen_change=round(score, 3),
-                    )
-                except Exception:
-                    pass
-                if score >= 2.0:
-                    chest_screen_changed = True
-                    return True
+            # AUTO PRO/LD clicks (433, 557), but ClientJS renders the
+            # selected-chest modal lower. The live 1000-wide ClientJS capture
+            # places the "Cham de mo ruong" action around y=660. Try that
+            # ClientJS point first, then the legacy point. Repeat a point like
+            # AUTO PRO (up to five taps), and stop immediately after a real
+            # modal change so no tap can leak into the game behind it.
+            for x, y in ((500, 660), (433, 557)):
+                for attempt in range(5):
+                    if _stopped(stop_event):
+                        return False
+                    self.driver.click(x, y)
+                    time.sleep(0.65)
+                    after = _chest_region()
+                    score = _difference(before, after)
+                    try:
+                        self.driver._trace(
+                            "clientjs_chest_probe",
+                            logical=[x, y],
+                            attempt=attempt + 1,
+                            screen_change=round(score, 3),
+                        )
+                    except Exception:
+                        pass
+                    if score >= 2.0:
+                        chest_screen_changed = True
+                        return True
+                    before = after
 
             try:
                 self.gui.log(
