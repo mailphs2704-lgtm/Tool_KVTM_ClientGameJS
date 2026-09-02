@@ -193,6 +193,7 @@ jobs:
             bridge-v3/tools/verify_v3.py \
             bridge-v3/tools/probe_v3.py \
             components/clientjs-auto/worker/bridge_v3_gesture_probe.py \
+            components/clientjs-auto/worker/speed_binding_probe.py \
             test-candidates/auto-pro-clientjs-temp/pc_driver.py \
             test-candidates/auto-pro-clientjs-temp/engine_driver.py
           python - <<'PY'
