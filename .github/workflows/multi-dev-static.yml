@@ -208,6 +208,7 @@ jobs:
               'KVTM-CocosV3-', 'KVTM-CaptureV3-', 'version != 3',
               'pixel_format != 2', 'time.perf_counter',
               'fallback="disabled"', 'kvtm_bridge_v3.dll', 'return timing',
+              'replay_path = path', 'interpolation="auto_pro_path"',
           )
           for token in required_engine:
               assert token in engine, token
@@ -216,6 +217,7 @@ jobs:
               'shared_capture_fallback',
               'KVTM-Cocos-{self.pid}',
               'KVTM-Capture-{self.pid}',
+              'math.ceil(math.hypot',
           ):
               assert token not in engine, token
           for token in ('time.sleep(0.018)', 'time.sleep(0.014)', 'time.sleep(0.025)'):
