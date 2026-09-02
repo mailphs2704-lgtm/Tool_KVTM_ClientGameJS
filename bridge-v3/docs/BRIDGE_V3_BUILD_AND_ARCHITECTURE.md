@@ -1116,3 +1116,14 @@ READ-ONLY audit của AUTO PRO cho thấy:
 - `makeItems`: có `production_wait` và các call swipe riêng.
 
 Adapter cũ nhận path đã được AUTO PRO tạo nhưng lại nội suy thêm mỗi 8px. Với mỗi MOVE dùng một pipe transaction, số điểm thừa làm overhead lấn át duration ở thu hoạch/gieo cây. Commit `9dd02f8` bỏ lần nội suy thứ hai: `replay_path = path`; Python vẫn là timing owner và duration vẫn là tổng gesture. CI `92ddc51` cấm công thức nội suy dư quay lại.
+
+
+## 16. Post-deinterpolation live gate
+
+Sau commit `9dd02f8`, production EngineDriver probe trên PID 15296:
+
+- Capture trước/sau: PASS.
+- Requested: 0.500s; actual: 0.5139812999987043s.
+- Timing error: +13.981299998704344ms; tolerance: 100ms.
+- Point count: 2 thay vì 11 ở path thẳng thử nghiệm.
+- Kết luận: bỏ nội suy dư không phá timing/capture; cần live workflow harvest/plant để xác nhận tác dụng cấu hình nghiệp vụ.
