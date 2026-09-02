@@ -534,6 +534,11 @@ def main() -> int:
         if controller is not None:
             controller.clear_stall_quantity = clear_stall_values["clear_stall_quantity"]
             controller.clear_stall_max_pages = clear_stall_values["clear_stall_max_pages"]
+            driver = getattr(controller, "driver", None)
+            if driver is not None:
+                driver.gesture_observer = lambda timing: emit(
+                    "gesture_timing", **timing
+                )
         if args.function_id == 170:
             # Function 170 already owns the purchase -> return -> resale flow.
             # Bind the new per-clone controls to the counters it reads so the
