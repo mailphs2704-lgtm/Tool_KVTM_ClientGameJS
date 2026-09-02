@@ -345,3 +345,36 @@ jobs:
           '@ | Set-Content -LiteralPath .\legacy_suite_preflight_ci.py -Encoding UTF8
           python .\legacy_suite_preflight_ci.py
           Remove-Item -LiteralPath .\legacy_suite_preflight_ci.py -Force
+
+
+  bridge-v3-static:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+
+      - name: Build isolated Bridge V3 x86
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86
+          if not exist bridge-v3\bin mkdir bridge-v3\bin
+          cl /nologo /std:c++17 /O2 /EHsc /MT /LD /Fe:bridge-v3\bin\kvtm_bridge_v3.dll bridge-v3\native\kvtm_bridge_v3.cpp user32.lib
+          cl /nologo /std:c++17 /O2 /EHsc /MT /Fe:bridge-v3\bin\kvtm_loader_v3.exe bridge-v3\native\kvtm_loader_v3.cpp
+
+      - name: Verify V3 scope, timing and PE architecture
+        shell: cmd
+        run: py -3.11 bridge-v3\tools\verify_v3.py --root bridge-v3
+
+      - name: Prove production runtime is not modified
+        shell: powershell
+        run: |
+          if (Test-Path -LiteralPath "bridge-v3\ALLOW_RUNTIME_INSTALL.txt") {
+            throw "Runtime install gate must not be committed"
+          }
+          Write-Host "BRIDGE_V3_RUNTIME_CUTOVER_LOCKED" -ForegroundColor Green
