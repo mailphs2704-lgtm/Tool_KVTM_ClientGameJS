@@ -264,16 +264,23 @@ jobs:
           ):
               assert token in worker, token
           for token in (
-              '_IMAGE_RUNTIME_TIMEOUT_SECONDS = 60.0',
-              'Thư viện ảnh: bắt đầu cold-load; giới hạn an toàn',
-              'next_heartbeat = 2.0',
+              'cold-load đồng bộ trên worker main thread',
+              'install_binary_dependencies(context.auto_root, logger=context.log)',
           ):
               assert token in clean_automation, token
+          for forbidden_loader in (
+              'threading.Thread(', 'done.wait(0.10)',
+              '_IMAGE_RUNTIME_TIMEOUT_SECONDS',
+          ):
+              assert forbidden_loader not in clean_automation, forbidden_loader
           for token in (
               'EXECUTION_GATE = "READ_ONLY_SCAN"',
               'probe_only=True',
               'result = workflow.probe()',
               'GATE 1: chỉ quét quầy, KHÔNG click mua/bán',
+              'runtime_ready.wait(90.0)',
+              'name="kvtm-clean-runtime-watchdog"',
+              'os._exit(86)',
           ):
               assert token in clear_stall_worker, token
           for token in (
