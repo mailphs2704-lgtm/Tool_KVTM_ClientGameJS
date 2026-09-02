@@ -19,6 +19,7 @@ title KVTM MULTI DEV - CONTROL CENTER
 set "EXPECTED_BRANCH=develop/multi-auto-dev"
 set "DIST=dist\KVTM-ClientJS-Suite-Multi-DEV"
 set "STEP1=components\clientjs-auto\worker\clear_stall_step1_probe.py"
+set "V3_GESTURE=components\clientjs-auto\worker\bridge_v3_gesture_probe.py"
 set "STEP1_OUT=%DIST%\data-dev\clear-stall-step1"
 set "RESULT_BRANCH=diagnostics/clear-stall"
 set "RESULT_WT=%TEMP%\KVTM_DEV_DIAGNOSTICS_WORKTREE"
@@ -45,6 +46,7 @@ echo      Sau test se TU GUI log + anh len GitHub cho ChatGPT doc.
 echo  [4] Gui lai ket qua gan nhat len GitHub
 echo  [5] Mo thu muc ket qua
 echo  [6] Kiem tra profile/login READ-ONLY
+echo  [7] Bridge V3 - gesture production 0.50s ^(can go SWIPE-V3^)
 echo  [9] Full rebuild package        ^(CHI dung khi ChatGPT yeu cau^)
 echo  [0] Thoat
 echo -------------------------------------------------------------------------------
@@ -56,6 +58,7 @@ if "%CHOICE%"=="3" goto step1
 if "%CHOICE%"=="4" goto upload_latest
 if "%CHOICE%"=="5" goto openstep1
 if "%CHOICE%"=="6" goto profile_diagnostic
+if "%CHOICE%"=="7" goto v3_gesture
 if "%CHOICE%"=="9" goto fullbuild
 if "%CHOICE%"=="0" goto end
 goto menu
@@ -310,6 +313,36 @@ if errorlevel 1 (
 ) else (
   echo [PASS] Da tao bao cao read-only.
   start "" explorer "%CD%\data-profile-diagnostic"
+)
+pause
+goto menu
+
+:v3_gesture
+cls
+call :sync_dev
+if errorlevel 1 (
+  echo [STOP] Khong test gesture vi sync DEV that bai.
+  pause
+  goto menu
+)
+echo ===============================================================================
+echo  BRIDGE V3 - PRODUCTION ENGINE DRIVER GESTURE PROBE
+echo  Chi chay khi DUNG 1 ClientJS DEV dang trong game.
+echo  Gesture: keo doc 80px o tam game trong 0.50 giay.
+echo ===============================================================================
+set "V3_CONFIRM="
+set /p "V3_CONFIRM=Go SWIPE-V3 de dong y, Enter de huy: "
+if not "%V3_CONFIRM%"=="SWIPE-V3" goto menu
+if not exist "%V3_GESTURE%" (
+  echo [FAIL] Thieu %V3_GESTURE%
+  pause
+  goto menu
+)
+py -3.11 "%V3_GESTURE%" --auto-root "%DIST%\AUTO_PRO" --duration 0.50
+if errorlevel 1 (
+  echo [FAIL] BRIDGE V3 PRODUCTION GESTURE PROBE
+) else (
+  echo [PASS] BRIDGE V3 PRODUCTION GESTURE PROBE
 )
 pause
 goto menu
