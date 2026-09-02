@@ -81,6 +81,17 @@ class ClearStallWorkflow:
         observations = self._discover_source()
         # Leave the shop in a predictable first-view position for diagnostics.
         self.automation.stall.rewind_to_first(4)
+        planned_listings = min(
+            len(observations), self.request.target_listing_count
+        )
+        planned_quantity = planned_listings * 10
+        target_reached = planned_listings == self.request.target_listing_count
+        self.context.log(
+            "GATE 1 kế hoạch READ-ONLY: "
+            f"{planned_listings}/{self.request.target_listing_count} ô x10 • "
+            f"{planned_quantity}/{self.request.buy_quantity} VP • "
+            f"target={'ĐỦ' if target_reached else 'THIẾU'}"
+        )
         self.manifest.complete()
         self._save_manifest()
         return self._result(
@@ -92,6 +103,9 @@ class ClearStallWorkflow:
             inventory_full=False,
             source_empty=not observations,
             state="PROBE_COMPLETED",
+            planned_listings=planned_listings,
+            planned_quantity=planned_quantity,
+            target_reached=target_reached,
         )
 
     def run(self) -> ClearStallResult:
@@ -308,6 +322,9 @@ class ClearStallWorkflow:
         inventory_full: bool,
         source_empty: bool,
         state: str,
+        planned_listings: int = 0,
+        planned_quantity: int = 0,
+        target_reached: bool = False,
     ) -> ClearStallResult:
         result = ClearStallResult(
             profile_id=self.request.profile_id,
@@ -322,6 +339,9 @@ class ClearStallWorkflow:
             source_empty=bool(source_empty),
             probe_only=self.request.probe_only,
             state=str(state),
+            planned_listings=int(planned_listings),
+            planned_quantity=int(planned_quantity),
+            target_reached=bool(target_reached),
         )
         if self.result_reporter is not None:
             self.result_reporter(result.to_dict())
