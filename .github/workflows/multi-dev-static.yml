@@ -274,6 +274,8 @@ jobs:
               'while time.monotonic() - wait_started < 4.0:',
               '"clientjs_chest_selection_ready_wait"',
               'waited_seconds=round(time.monotonic() - wait_started, 3)',
+              'if score >= 8.0:',
+              'completion_threshold=8.0',
           ):
               assert token in clientjs_patch, token
           print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
