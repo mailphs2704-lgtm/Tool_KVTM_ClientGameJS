@@ -1061,3 +1061,18 @@ Mốc source `faa06a3` đã được kiểm tra độc lập:
 - Công thức nhân duration cũ, shared capture fallback và sleep DOWN/MOVE/UP cố định: không còn.
 
 Đây là static evidence, chưa thay cho Windows package build hoặc live AUTO recognition.
+
+
+## 12. Windows production package evidence
+
+Tại source HEAD `bf726669c866ac8246d0107c80b080f43a818362`:
+
+- Visual Studio 2026 x86 environment: READY.
+- Bridge V3 build: PASS.
+- Production DLL SHA256: `583297caa1b1e7c076f1a220dd385ecc8c3471e3c18247f90d45b9cc02b139f9`.
+- Package build: PASS.
+- Runtime source HEAD: `bf72666`, khớp repository source.
+- `profiles.json` và `settings.json`: DATA KEPT.
+- Live Multi/AUTO với binary production mới: PENDING.
+
+Hash này khác binary probe trước do được build lại bởi toolchain Windows hiện tại; vì vậy capture/swipe/AUTO phải được live-test lại trên binary production.
