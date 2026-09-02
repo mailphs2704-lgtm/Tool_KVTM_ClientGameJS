@@ -18,27 +18,11 @@ from adaptive_cv import set_capture_scale
 
 ROOT = Path(__file__).resolve().parent
 BIN = ROOT / "bin"
-LOADER = BIN / "kvtm_loader.exe"
-BRIDGE = BIN / "kvtm_bridge.dll"
+LOADER = BIN / "kvtm_loader_v3.exe"
+BRIDGE = BIN / "kvtm_bridge_v3.dll"
+_PROTOCOL_PREFIX = "OK PONG KVTM_BRIDGE_V3"
 _GESTURE_LOCK = threading.RLock()
 PROFILE_FILE = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi" / "profiles.json"
-SPEED_FILE = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi" / "engine_bridge.json"
-
-
-def load_swipe_speed() -> dict:
-    defaults = {"segment_ms": 55, "duration_multiplier": 2.0, "minimum_ms": 300}
-    try:
-        saved = json.loads(SPEED_FILE.read_text(encoding="utf-8"))
-        defaults["segment_ms"] = max(10, min(500, int(saved.get("segment_ms", 55))))
-        defaults["duration_multiplier"] = max(
-            0.1, min(10.0, float(saved.get("duration_multiplier", 2.0)))
-        )
-        defaults["minimum_ms"] = max(20, min(5000, int(saved.get("minimum_ms", 300))))
-    except (FileNotFoundError, ValueError, TypeError, json.JSONDecodeError):
-        pass
-    return defaults
-
-
 class DATA_BLOB(ctypes.Structure):
     _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
 
@@ -267,7 +251,7 @@ class EngineDriver(PCDriver):
 
     @property
     def pipe_name(self) -> str:
-        return rf"\\.\pipe\KVTM-Cocos-{self.pid}"
+        return rf"\\.\pipe\KVTM-CocosV3-{self.pid}"
 
     def _pipe(self, command: str, timeout_ms: int = 3000) -> str:
         payload = command.encode("ascii")
@@ -294,9 +278,9 @@ class EngineDriver(PCDriver):
 
     def _ensure_bridge(self) -> None:
         if not LOADER.is_file() or not BRIDGE.is_file():
-            raise RuntimeError("Thiếu bin\\kvtm_loader.exe hoặc bin\\kvtm_bridge.dll; chạy BUILD_X86.bat trước")
+            raise RuntimeError("Thiếu binary Bridge V3 trong AUTO_PRO\\bin; chạy Control Center build trước")
         try:
-            if self._pipe("PING\n", 150).startswith("OK"):
+            if self._pipe("PING\n", 150).startswith(_PROTOCOL_PREFIX):
                 return
         except Exception:
             pass
@@ -313,7 +297,9 @@ class EngineDriver(PCDriver):
         last_error = None
         for _ in range(50):
             try:
-                self._pipe("PING\n", 150)
+                response = self._pipe("PING\n", 150)
+                if not response.startswith(_PROTOCOL_PREFIX):
+                    raise RuntimeError(f"Protocol bridge không đúng V3: {response}")
                 return
             except Exception as exc:
                 last_error = exc
@@ -335,7 +321,7 @@ class EngineDriver(PCDriver):
 
     @property
     def capture_mapping_name(self) -> str:
-        return rf"Local\KVTM-Capture-{self.pid}"
+        return rf"Local\KVTM-CaptureV3-{self.pid}"
 
     def _capture_shared_bgra(self) -> tuple[bytes, int, int]:
         response = self._pipe("CAPTURE\n", 3000)
@@ -358,7 +344,7 @@ class EngineDriver(PCDriver):
                 magic, version, mapped_header_size, width, height, stride,
                 pixel_format, buffer_size, frame_id, status, _timestamp_ms,
             ) = values
-            if magic != b"KCAP" or version != 1 or mapped_header_size < header_size:
+            if magic != b"KCAP" or version != 3 or mapped_header_size < header_size:
                 raise RuntimeError("Shared capture header không hợp lệ")
             if status != 2 or frame_id != expected_frame:
                 raise RuntimeError("Shared capture frame chưa hoàn tất hoặc đã thay đổi")
@@ -366,7 +352,7 @@ class EngineDriver(PCDriver):
                 expected_width, expected_height, expected_stride
             ):
                 raise RuntimeError("Kích thước shared capture không khớp phản hồi")
-            if pixel_format != 1 or stride != width * 4 or buffer_size != stride * height:
+            if pixel_format != 2 or stride != width * 4 or buffer_size != stride * height:
                 raise RuntimeError("Định dạng shared capture không được hỗ trợ")
             raw = ctypes.string_at(int(view) + mapped_header_size, buffer_size)
             return raw, width, height
@@ -403,19 +389,8 @@ class EngineDriver(PCDriver):
                 image = image.resize(self.reference_size, Image.Resampling.LANCZOS)
             return image
         except Exception as exc:
-            self._trace("shared_capture_fallback", error=str(exc))
-            hwnd = find_window(self.pid)
-            rect = wintypes.RECT()
-            scale = 1.0
-            if hwnd and ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rect)):
-                width, height = rect.right - rect.left, rect.bottom - rect.top
-                scale = min(
-                    width / self.reference_size[0],
-                    height / self.reference_size[1],
-                    1.0,
-                )
-            set_capture_scale(scale)
-            return super().screenshot(format=format)
+            self._trace("v3_capture_error", error=str(exc), fallback="disabled")
+            raise RuntimeError(f"Bridge V3 capture thất bại; không dùng HWND fallback: {exc}") from exc
 
     def swipe_points(self, points, duration: float = 0.5) -> None:
         """uiautomator2-compatible continuous gesture through every point."""
@@ -436,25 +411,25 @@ class EngineDriver(PCDriver):
                 ratio = step / steps
                 replay_path.append((start[0] + dx * ratio, start[1] + dy * ratio))
 
-        requested_duration = max(0.0, float(duration))
-        # AUTO PRO is authoritative for gesture timing. For swipe_points its
-        # duration is the requested time of each logical segment, matching the
-        # old Android implementation. Shop drags use PCDriver.swipe directly.
-        speed = {"source": "auto_pro", "requested_seconds": requested_duration}
-        total_duration = max(0.02, requested_duration * (len(path) - 1))
-        interval = total_duration / max(1, len(replay_path) - 1)
+        requested_duration = max(0.02, float(duration))
+        # V3 contract: duration is total gesture time. One interpolation pass and
+        # one monotonic timing owner; never multiply by logical segment count.
         with _GESTURE_LOCK:
+            started = time.perf_counter()
             self._trace(
                 "swipe_points_attempt", logical_path=[list(point) for point in path],
                 point_count=len(path), requested_duration=requested_duration,
-                duration=total_duration, interval=interval,
                 replay_point_count=len(replay_path), interpolation_px=8,
-                speed_settings=speed, mode="engine_bridge",
+                timing_owner="engine_driver_v3", mode="engine_bridge_v3",
             )
             self._touch_event("down", *replay_path[0])
             try:
-                for point in replay_path[1:]:
-                    time.sleep(interval)
+                moves = replay_path[1:]
+                for index, point in enumerate(moves, start=1):
+                    deadline = started + requested_duration * index / len(moves)
+                    remaining = deadline - time.perf_counter()
+                    if remaining > 0:
+                        time.sleep(remaining)
                     self._touch_event("move", *point)
                 self._touch_event("up", *replay_path[-1])
             except Exception:
@@ -463,10 +438,14 @@ class EngineDriver(PCDriver):
                 except Exception:
                     pass
                 raise
+            actual_duration = time.perf_counter() - started
             self._trace(
                 "touch_path", logical_path=[list(point) for point in path],
                 point_count=len(path), replay_point_count=len(replay_path),
-                duration=total_duration, mode="engine_bridge",
+                requested_duration=requested_duration,
+                actual_duration=actual_duration,
+                timing_error_ms=(actual_duration - requested_duration) * 1000.0,
+                mode="engine_bridge_v3",
             )
 
     def app_stop(self, _package: str) -> None:
