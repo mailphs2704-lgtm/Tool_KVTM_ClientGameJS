@@ -229,12 +229,18 @@ echo  GUI LOG GATE DON QUAY LEN GITHUB
 echo  Chi gui activity.log, report.json va PNG cua lan Gate moi nhat.
 echo  KHONG gui profiles/settings/.kvtm/token/cookie/password/secret.
 echo ===============================================================================
-set "GATE_LATEST="
-for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_LOG_ROOT%' -Recurse -Filter report.json -File -ErrorAction SilentlyContinue ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty DirectoryName; if($p){$p}"`) do set "GATE_LATEST=%%D"
-if not defined GATE_LATEST (
-  echo [FAIL] Chua co report Gate. Hay bam nut Gate trong Multi truoc.
+set "GATE_ACTIVITY="
+set "GATE_PROFILE_ROOT="
+set "GATE_REPORT_DIR="
+for /f "usebackq delims=" %%F in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_LOG_ROOT%' -Recurse -Filter activity.log -File -ErrorAction SilentlyContinue ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty FullName; if($p){$p}"`) do set "GATE_ACTIVITY=%%F"
+if not defined GATE_ACTIVITY (
+  echo [FAIL] Chua co activity.log. Hay bam nut Gate trong Multi truoc.
   pause
   goto menu
+)
+for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$f=Get-Item -LiteralPath '%GATE_ACTIVITY%' -ErrorAction Stop; $f.Directory.Parent.FullName"`) do set "GATE_PROFILE_ROOT=%%D"
+if defined GATE_PROFILE_ROOT (
+  for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_PROFILE_ROOT%' -Recurse -Filter report.json -File -ErrorAction SilentlyContinue ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty DirectoryName; if($p){$p}"`) do set "GATE_REPORT_DIR=%%D"
 )
 for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%T"
 set "RUN_REL=diagnostics\clear-stall\gate-runs\%STAMP%"
@@ -257,18 +263,14 @@ if errorlevel 1 (
   goto menu
 )
 mkdir "%RUN_DIR%" >nul 2>&1
-set "GATE_PROFILE_ROOT="
-set "GATE_ACTIVITY="
-for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$d=Get-Item -LiteralPath '%GATE_LATEST%' -ErrorAction Stop; $d.Parent.FullName"`) do set "GATE_PROFILE_ROOT=%%D"
-if defined GATE_PROFILE_ROOT (
-  for /f "usebackq delims=" %%F in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_PROFILE_ROOT%' -Recurse -Filter activity.log -File -ErrorAction SilentlyContinue ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty FullName; if($p){$p}"`) do set "GATE_ACTIVITY=%%F"
-)
-if defined GATE_ACTIVITY copy /Y "%GATE_ACTIVITY%" "%RUN_DIR%\activity.log" >nul
-copy /Y "%GATE_LATEST%\report.json" "%RUN_DIR%\report.json" >nul
-for %%F in ("%GATE_LATEST%\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\%%~nxF" >nul
-if exist "%GATE_LATEST%\templates" (
-  mkdir "%RUN_DIR%\templates" >nul 2>&1
-  for %%F in ("%GATE_LATEST%\templates\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\templates\%%~nxF" >nul
+copy /Y "%GATE_ACTIVITY%" "%RUN_DIR%\activity.log" >nul
+if defined GATE_REPORT_DIR (
+  copy /Y "%GATE_REPORT_DIR%\report.json" "%RUN_DIR%\report.json" >nul
+  for %%F in ("%GATE_REPORT_DIR%\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\%%~nxF" >nul
+  if exist "%GATE_REPORT_DIR%\templates" (
+    mkdir "%RUN_DIR%\templates" >nul 2>&1
+    for %%F in ("%GATE_REPORT_DIR%\templates\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\templates\%%~nxF" >nul
+  )
 )
 powershell -NoProfile -Command "$files=Get-ChildItem -LiteralPath '%RUN_DIR%' -File -Include *.log,*.json -Recurse; $bad=$files ^| Select-String -Pattern '(?i)(authorization|password|cookie|token|profiles\.json|\.kvtm)' -ErrorAction SilentlyContinue; if($bad){$bad ^| ForEach-Object { Write-Host ('[BLOCK] '+$_.Path+':'+$_.LineNumber) }; exit 9}"
 if errorlevel 1 (
