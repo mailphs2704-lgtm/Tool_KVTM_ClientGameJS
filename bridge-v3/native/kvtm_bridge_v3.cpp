@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <sstream>
 
 namespace {
 constexpr UINT WM_KVTM_TOUCH = WM_APP + 0x417;
@@ -22,6 +23,12 @@ constexpr unsigned int GL_UNSIGNED_BYTE_VALUE = 0x1401;
 
 enum class Phase : int { Down = 1, Move = 2, Up = 3 };
 struct TouchCommand { Phase phase; float x; float y; LONG result; };
+struct GesturePoint { float x; float y; };
+struct GestureCommand {
+    int segment_steps;
+    int point_count;
+    GesturePoint points[32];
+};
 struct CaptureCommand {
     LONG result;
     DWORD frame_id;
@@ -274,6 +281,82 @@ bool parse_command(const char* line, TouchCommand& command) {
     return true;
 }
 
+bool parse_gesture(const char* line, GestureCommand& gesture) {
+    std::istringstream stream(line);
+    std::string name;
+    if (!(stream >> name >> gesture.segment_steps >> gesture.point_count))
+        return false;
+    if (name != "SWIPE" || gesture.segment_steps < 1 ||
+        gesture.segment_steps > 400 || gesture.point_count < 2 ||
+        gesture.point_count > 32)
+        return false;
+    for (int index = 0; index < gesture.point_count; ++index) {
+        auto& point = gesture.points[index];
+        if (!(stream >> point.x >> point.y) ||
+            point.x < 0 || point.x > 1000 ||
+            point.y < 0 || point.y > 1000)
+            return false;
+    }
+    stream >> std::ws;
+    return stream.eof();
+}
+
+LONG send_touch(Phase phase, float x, float y) {
+    TouchCommand command{phase, x, y, ERROR_SUCCESS};
+    SendMessageW(g_window, WM_KVTM_TOUCH, 0, reinterpret_cast<LPARAM>(&command));
+    return command.result;
+}
+
+void wait_until(LONGLONG deadline, LONGLONG frequency) {
+    LARGE_INTEGER now{};
+    for (;;) {
+        QueryPerformanceCounter(&now);
+        const LONGLONG remaining = deadline - now.QuadPart;
+        if (remaining <= 0) return;
+        const DWORD remaining_ms = static_cast<DWORD>(remaining * 1000 / frequency);
+        if (remaining_ms > 1) Sleep(remaining_ms - 1);
+        else SwitchToThread();
+    }
+}
+
+LONG dispatch_gesture(const GestureCommand& gesture, DWORD& actual_ms, DWORD& move_count) {
+    LARGE_INTEGER frequency{}, started{}, finished{};
+    if (!QueryPerformanceFrequency(&frequency) || !QueryPerformanceCounter(&started))
+        return ERROR_NOT_SUPPORTED;
+    LONG result = send_touch(
+        Phase::Down, gesture.points[0].x, gesture.points[0].y);
+    if (result != ERROR_SUCCESS) return result;
+
+    move_count = 0;
+    const LONGLONG step_ticks = frequency.QuadPart * 5 / 1000;
+    for (int segment = 1; segment < gesture.point_count; ++segment) {
+        const auto& start = gesture.points[segment - 1];
+        const auto& end = gesture.points[segment];
+        for (int step = 1; step <= gesture.segment_steps; ++step) {
+            ++move_count;
+            wait_until(
+                started.QuadPart + static_cast<LONGLONG>(move_count) * step_ticks,
+                frequency.QuadPart);
+            const float ratio =
+                static_cast<float>(step) / static_cast<float>(gesture.segment_steps);
+            result = send_touch(
+                Phase::Move,
+                start.x + (end.x - start.x) * ratio,
+                start.y + (end.y - start.y) * ratio);
+            if (result != ERROR_SUCCESS) {
+                send_touch(Phase::Up, end.x, end.y);
+                return result;
+            }
+        }
+    }
+    const auto& last = gesture.points[gesture.point_count - 1];
+    result = send_touch(Phase::Up, last.x, last.y);
+    QueryPerformanceCounter(&finished);
+    actual_ms = static_cast<DWORD>(
+        (finished.QuadPart - started.QuadPart) * 1000 / frequency.QuadPart);
+    return result;
+}
+
 DWORD WINAPI pipe_thread(void*) {
     if (!attach_window() || !resolve_cocos()) return 1;
     wchar_t pipe_name[128]{};
@@ -283,22 +366,22 @@ DWORD WINAPI pipe_thread(void*) {
         if (pipe == INVALID_HANDLE_VALUE) {
             pipe = CreateNamedPipeW(pipe_name, PIPE_ACCESS_DUPLEX,
                 PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-                1, 256, 256, 0, nullptr);
+                1, 4096, 4096, 0, nullptr);
             if (pipe == INVALID_HANDLE_VALUE) { Sleep(100); continue; }
         }
         BOOL connected = ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
         if (connected) {
-            // Keep one connection alive for the whole gesture. Python remains
-            // the timing owner, while repeated MOVE commands avoid reconnect cost.
+            // Keep one connection alive. SWIPE batches the complete AUTO PRO
+            // polyline so transport overhead cannot distort per-segment timing.
             for (;;) {
-                char input[128]{}; DWORD read = 0;
+                char input[4096]{}; DWORD read = 0;
                 if (!ReadFile(pipe, input, sizeof(input) - 1, &read, nullptr) || !read)
                     break;
                 input[read] = 0;
                 const char* response = "ERR PARSE\n";
                 char output[64]{};
                 if (std::strncmp(input, "PING", 4) == 0) {
-                    response = "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT3 NO_LAYOUT\n";
+                    response = "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT\n";
                 } else if (std::strncmp(input, "CAPTURE", 7) == 0) {
                     CaptureCommand command{};
                     SendMessageW(
@@ -313,6 +396,21 @@ DWORD WINAPI pipe_thread(void*) {
                         sprintf_s(output, "ERR %ld\n", command.result);
                     }
                     response = output;
+                } else if (std::strncmp(input, "SWIPE ", 6) == 0) {
+                    GestureCommand gesture{};
+                    if (parse_gesture(input, gesture)) {
+                        DWORD actual_ms = 0, move_count = 0;
+                        const LONG result =
+                            dispatch_gesture(gesture, actual_ms, move_count);
+                        if (result == ERROR_SUCCESS) {
+                            sprintf_s(
+                                output, "OK SWIPE %lu %lu\n",
+                                actual_ms, move_count);
+                        } else {
+                            sprintf_s(output, "ERR %ld\n", result);
+                        }
+                        response = output;
+                    }
                 } else {
                     TouchCommand command{};
                     if (parse_command(input, command)) {
