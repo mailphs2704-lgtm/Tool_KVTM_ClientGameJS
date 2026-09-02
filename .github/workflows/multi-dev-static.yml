@@ -212,6 +212,7 @@ jobs:
           pc = Path('test-candidates/auto-pro-clientjs-temp/pc_driver.py').read_text(encoding='utf-8')
           builder = Path('packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1').read_text(encoding='utf-8')
           worker = Path('components/clientjs-auto/worker/auto_worker.py').read_text(encoding='utf-8')
+          clean_automation = Path('components/clientjs-auto/kvtm_automation/automation.py').read_text(encoding='utf-8')
           clear_stall_worker = Path('components/clientjs-auto/worker/clear_stall_worker.py').read_text(encoding='utf-8')
           clear_stall_workflow = Path('components/clientjs-auto/kvtm_automation/workflows/clear_stall/workflow.py').read_text(encoding='utf-8')
           multi = Path('source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py').read_text(encoding='utf-8')
@@ -262,6 +263,12 @@ jobs:
               'install_clientjs_runtime(auto_root, args.profile_id)',
           ):
               assert token in worker, token
+          for token in (
+              '_IMAGE_RUNTIME_TIMEOUT_SECONDS = 60.0',
+              'Thư viện ảnh: bắt đầu cold-load; giới hạn an toàn',
+              'next_heartbeat = 2.0',
+          ):
+              assert token in clean_automation, token
           for token in (
               'EXECUTION_GATE = "READ_ONLY_SCAN"',
               'probe_only=True',
