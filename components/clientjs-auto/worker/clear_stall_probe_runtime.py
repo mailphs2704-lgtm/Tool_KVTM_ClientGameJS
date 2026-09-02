@@ -256,7 +256,7 @@ def run_probe(
                 "probe_progress",
                 message=(
                     f"Probe view {view}/4 • {len(observations)} ô mới có VP • "
-                    f"đã phủ {min(TOTAL_STALL_SLOTS, 8 + (view - 1) * 4)}/20"
+                    f"đã nhận {len(set(covered))}/{RENDERED_STALL_SLOTS} vị trí render"
                 ),
                 view=view,
                 capture=str(view_path),
@@ -264,18 +264,41 @@ def run_probe(
             if view < STALL_VIEW_COUNT:
                 automation.stall.next_view()
 
-        expected = list(range(1, TOTAL_STALL_SLOTS + 1))
+        expected = list(range(1, RENDERED_STALL_SLOTS + 1))
         if covered != expected:
-            raise RuntimeError(f"Mapping quầy không phủ đúng 20 ô: {covered}")
+            raise RuntimeError(
+                f"Mapping quầy không phủ đúng {RENDERED_STALL_SLOTS} vị trí render: "
+                f"{covered}"
+            )
 
-        occupied_total = len(set(occupied))
+        occupied_slots = sorted(set(occupied))
+        occupied_total = len(occupied_slots)
+        locked_slots = [
+            slot for slot in range(1, TOTAL_STALL_SLOTS + 1)
+            if slot not in occupied_slots
+        ]
+        slot_model_valid = (
+            occupied_total == EXPECTED_OPEN_OCCUPIED_SLOTS
+            and locked_slots == [18, 19, 20]
+        )
+        with report_lock:
+            report["rendered_physical_slots"] = expected
+            report["locked_physical_slots"] = locked_slots
+            report["slot_model_valid"] = slot_model_valid
+            persist()
+        if not slot_model_valid:
+            raise RuntimeError(
+                "Mô hình quầy 17 ô sai: "
+                f"occupied={occupied_total}, locked={locked_slots}"
+            )
+
         target_listings = int(config.buy_quantity) // 10
         planned_listings = min(occupied_total, target_listings)
         planned_quantity = planned_listings * 10
         target_reached = planned_listings == target_listings
         with report_lock:
             report["covered_physical_slots"] = covered
-            report["occupied_new_physical_slots"] = sorted(set(occupied))
+            report["occupied_new_physical_slots"] = occupied_slots
             report["occupied_new_total"] = occupied_total
             report["target_listings"] = target_listings
             report["planned_listings"] = planned_listings
@@ -290,6 +313,8 @@ def run_probe(
             profile_id=str(config.profile_id),
             report=str(report_path),
             occupied_new_total=occupied_total,
+            locked_physical_slots=locked_slots,
+            slot_model_valid=slot_model_valid,
             requested_quantity=int(config.buy_quantity),
             target_listings=target_listings,
             planned_listings=planned_listings,
