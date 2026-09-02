@@ -190,20 +190,17 @@ class TouchProxy:
             self._locked = False
             _INPUT_LOCK.release()
             raise
-        time.sleep(0.018)
         return self
 
     def move(self, x: int, y: int):
         self.driver._touch_path.append((float(x), float(y)))
         self.driver._touch_event("move", x, y)
-        time.sleep(0.014)
         return self
 
     def up(self, x: int, y: int):
         try:
             self.driver._touch_path.append((float(x), float(y)))
             self.driver._touch_event("up", x, y)
-            time.sleep(0.025)
             path = list(self.driver._touch_path)
             self.driver._trace(
                 "touch_path", logical_path=path,
@@ -364,17 +361,26 @@ class PCDriver:
                 "swipe_attempt", logical_start=[float(x1), float(y1)],
                 logical_end=[float(x2), float(y2)], mode="windows_touch",
             )
+            requested_duration = max(0.02, float(duration))
+            started = time.perf_counter()
             self._touch_event("down", x1, y1)
             for step in range(1, steps + 1):
+                deadline = started + requested_duration * step / steps
+                remaining = deadline - time.perf_counter()
+                if remaining > 0:
+                    time.sleep(remaining)
                 ratio = step / steps
                 self._touch_event("move", x1 + (x2 - x1) * ratio, y1 + (y2 - y1) * ratio)
-                time.sleep(float(duration) / steps)
             self._touch_event("up", x2, y2)
+            actual_duration = time.perf_counter() - started
         self._trace(
             "swipe", logical_start=[float(x1), float(y1)],
             logical_end=[float(x2), float(y2)],
             client_start=list(self._xy(x1, y1)), client_end=list(self._xy(x2, y2)),
-            duration=float(duration),
+            requested_duration=max(0.02, float(duration)),
+            actual_duration=actual_duration,
+            timing_error_ms=(actual_duration - max(0.02, float(duration))) * 1000.0,
+            timing_owner="pc_driver",
         )
 
     def press(self, key: str) -> None:
