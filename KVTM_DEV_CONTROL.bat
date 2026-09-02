@@ -180,7 +180,7 @@ if not exist "%STEP1_OUT%" mkdir "%STEP1_OUT%" >nul 2>&1
 del /q "%STEP1_OUT%\latest-console.log" >nul 2>&1
 echo [DEV] Bat dau STEP 1...
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Continue'; ^& py -3.11 '%STEP1%' --auto-root '%DIST%\AUTO_PRO' --work-dir '%STEP1_OUT%' 2^>^&1 ^| Tee-Object -FilePath '%STEP1_OUT%\latest-console.log'; exit $LASTEXITCODE"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Continue'; & py -3.11 '%STEP1%' --auto-root '%DIST%\AUTO_PRO' --work-dir '%STEP1_OUT%' 2>&1 | Tee-Object -FilePath '%STEP1_OUT%\latest-console.log'; exit $LASTEXITCODE"
 set "STEP_RC=%ERRORLEVEL%"
 >"%STEP1_OUT%\latest-result-code.txt" echo %STEP_RC%
 echo.
