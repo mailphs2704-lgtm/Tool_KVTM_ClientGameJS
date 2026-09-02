@@ -263,13 +263,26 @@ if errorlevel 1 (
   goto menu
 )
 mkdir "%RUN_DIR%" >nul 2>&1
-copy /Y "%GATE_ACTIVITY%" "%RUN_DIR%\activity.log" >nul
+powershell -NoProfile -Command "Copy-Item -LiteralPath $env:GATE_ACTIVITY -Destination (Join-Path $env:RUN_DIR 'activity.log') -Force -ErrorAction Stop"
+if errorlevel 1 (
+  echo [FAIL] Khong sao chep duoc activity.log. Khong upload metadata rong.
+  git worktree remove --force "%RESULT_WT%" >nul 2>&1
+  pause
+  goto menu
+)
+if not exist "%RUN_DIR%\activity.log" (
+  echo [FAIL] activity.log khong ton tai sau khi sao chep. Khong upload.
+  git worktree remove --force "%RESULT_WT%" >nul 2>&1
+  pause
+  goto menu
+)
 if defined GATE_REPORT_DIR (
-  copy /Y "%GATE_REPORT_DIR%\report.json" "%RUN_DIR%\report.json" >nul
-  for %%F in ("%GATE_REPORT_DIR%\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\%%~nxF" >nul
-  if exist "%GATE_REPORT_DIR%\templates" (
-    mkdir "%RUN_DIR%\templates" >nul 2>&1
-    for %%F in ("%GATE_REPORT_DIR%\templates\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\templates\%%~nxF" >nul
+  powershell -NoProfile -Command "$src=$env:GATE_REPORT_DIR; $dst=$env:RUN_DIR; Copy-Item -LiteralPath (Join-Path $src 'report.json') -Destination (Join-Path $dst 'report.json') -Force -ErrorAction Stop; Get-ChildItem -LiteralPath $src -Filter '*.png' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dst -Force; $templates=Join-Path $src 'templates'; if(Test-Path -LiteralPath $templates){$td=Join-Path $dst 'templates'; New-Item -ItemType Directory -Path $td -Force | Out-Null; Get-ChildItem -LiteralPath $templates -Filter '*.png' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $td -Force}"
+  if errorlevel 1 (
+    echo [FAIL] Co report Gate nhung khong sao chep duoc tron bo report/PNG.
+    git worktree remove --force "%RESULT_WT%" >nul 2>&1
+    pause
+    goto menu
   )
 )
 powershell -NoProfile -Command "$files=Get-ChildItem -LiteralPath '%RUN_DIR%' -File -Include *.log,*.json -Recurse; $bad=$files | Select-String -Pattern '(?i)(authorization|password|cookie|token|profiles\.json|\.kvtm)' -ErrorAction SilentlyContinue; if($bad){$bad | ForEach-Object { Write-Host ('[BLOCK] '+$_.Path+':'+$_.LineNumber) }; exit 9}"
