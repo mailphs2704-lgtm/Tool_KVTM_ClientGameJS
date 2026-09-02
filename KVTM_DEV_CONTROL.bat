@@ -229,103 +229,15 @@ echo  GUI LOG GATE DON QUAY LEN GITHUB
 echo  Chi gui activity.log, report.json va PNG cua lan Gate moi nhat.
 echo  KHONG gui profiles/settings/.kvtm/token/cookie/password/secret.
 echo ===============================================================================
-set "GATE_ACTIVITY="
-set "GATE_REPORT_DIR="
-for /f "usebackq delims=" %%F in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_LOG_ROOT%' -Recurse -Filter activity.log -File -ErrorAction SilentlyContinue ^| Where-Object Length -gt 0 ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty FullName; if($p){$p}"`) do set "GATE_ACTIVITY=%%F"
-for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_LOG_ROOT%' -Recurse -Filter report.json -File -ErrorAction SilentlyContinue ^| Where-Object Length -gt 0 ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty DirectoryName; if($p){$p}"`) do set "GATE_REPORT_DIR=%%D"
-if not defined GATE_ACTIVITY if not defined GATE_REPORT_DIR (
-  echo [FAIL] Chua co activity.log hoac report.json co noi dung. Hay bam Gate truoc.
+if not exist "tools\KVTM_GATE_LOG_UPLOAD.ps1" (
+  echo [FAIL] Thieu tools\KVTM_GATE_LOG_UPLOAD.ps1
   pause
   goto menu
 )
-for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%T"
-set "RUN_REL=diagnostics\clear-stall\gate-runs\%STAMP%"
-set "RUN_REL_GIT=diagnostics/clear-stall/gate-runs/%STAMP%"
-set "RUN_DIR=%RESULT_WT%\%RUN_REL%"
-if exist "%RESULT_WT%" (
-  git worktree remove --force "%RESULT_WT%" >nul 2>&1
-  rmdir /s /q "%RESULT_WT%" >nul 2>&1
-)
-git worktree prune >nul 2>&1
-git fetch origin "%RESULT_BRANCH%" >nul 2>&1
-git rev-parse --verify "refs/remotes/origin/%RESULT_BRANCH%" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_GATE_LOG_UPLOAD.ps1" -RepoRoot "%CD%"
 if errorlevel 1 (
-  git worktree add --detach "%RESULT_WT%" HEAD >nul 2>&1
-) else (
-  git worktree add --detach "%RESULT_WT%" "origin/%RESULT_BRANCH%" >nul 2>&1
-)
-if errorlevel 1 (
-  echo [FAIL] Khong tao duoc diagnostics worktree.
-  pause
-  goto menu
-)
-mkdir "%RUN_DIR%" >nul 2>&1
-if defined GATE_ACTIVITY (
-  copy /Y "%GATE_ACTIVITY%" "%RUN_DIR%\activity.log" >nul
-  if errorlevel 1 echo [WARN] Khong sao chep duoc activity.log; se thu gui report Gate.
-)
-if defined GATE_REPORT_DIR (
-  copy /Y "%GATE_REPORT_DIR%\report.json" "%RUN_DIR%\report.json" >nul
-  if not exist "%RUN_DIR%\report.json" (
-    echo [FAIL] Co report Gate nhung khong sao chep duoc report.json.
-    git worktree remove --force "%RESULT_WT%" >nul 2>&1
-    pause
-    goto menu
-  )
-  for %%F in ("%GATE_REPORT_DIR%\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\%%~nxF" >nul
-  if exist "%GATE_REPORT_DIR%\templates" (
-    mkdir "%RUN_DIR%\templates" >nul 2>&1
-    for %%F in ("%GATE_REPORT_DIR%\templates\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\templates\%%~nxF" >nul
-  )
-)
-powershell -NoProfile -Command "$files=Get-ChildItem -LiteralPath '%RUN_DIR%' -File -Include *.log,*.json -Recurse; $bad=$files | Select-String -Pattern '(?i)(authorization|password|cookie|token|profiles\.json|\.kvtm)' -ErrorAction SilentlyContinue; if($bad){$bad | ForEach-Object { Write-Host ('[BLOCK] '+$_.Path+':'+$_.LineNumber) }; exit 9}"
-if errorlevel 1 (
-  echo [BLOCK] Log Gate co chuoi nhay cam. Khong upload.
-  git worktree remove --force "%RESULT_WT%" >nul 2>&1
-  pause
-  goto menu
-)
-for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "SOURCE_HEAD=%%H"
-(
-  echo gate=READ_ONLY_SCAN
-  echo timestamp=%STAMP%
-  echo source_head=%SOURCE_HEAD%
-  echo note=Allowlisted Gate diagnostics only. No profiles/settings/secrets.
-)>"%RUN_DIR%\metadata.txt"
-if not exist "%RESULT_WT%\diagnostics\clear-stall" mkdir "%RESULT_WT%\diagnostics\clear-stall" >nul 2>&1
->"%RESULT_WT%\diagnostics\clear-stall\LATEST_GATE.txt" echo %RUN_REL:\=/%
-git -C "%RESULT_WT%" config user.name "KVTM DEV Diagnostics" >nul
-git -C "%RESULT_WT%" config user.email "kvtm-dev-diagnostics@local" >nul
-rem Force-add only the already allowlisted Gate run. Global ignore rules
-rem intentionally exclude logs/JSON/PNG elsewhere in the repository.
-git -C "%RESULT_WT%" add -f -- "%RUN_REL_GIT%" "diagnostics/clear-stall/LATEST_GATE.txt"
-git -C "%RESULT_WT%" diff --cached --name-only -- "%RUN_REL_GIT%/activity.log" "%RUN_REL_GIT%/report.json" | findstr /L /I /E "activity.log report.json" >nul
-if errorlevel 1 (
-  echo [FAIL] Khong co activity.log/report.json nao duoc Git stage.
-  git -C "%RESULT_WT%" status --short -- "%RUN_REL_GIT%"
-  git worktree remove --force "%RESULT_WT%" >nul 2>&1
-  pause
-  goto menu
-)
-echo [GIT] Allowlisted files da stage:
-git -C "%RESULT_WT%" diff --cached --name-only -- "%RUN_REL_GIT%"
-git -C "%RESULT_WT%" commit -m "Add clear stall Gate diagnostics %STAMP%" >nul 2>&1
-if errorlevel 1 (
-  echo [FAIL] Khong tao duoc Gate diagnostics commit.
-  git worktree remove --force "%RESULT_WT%" >nul 2>&1
-  pause
-  goto menu
-)
-git -C "%RESULT_WT%" push origin HEAD:refs/heads/%RESULT_BRANCH%
-set "PUSH_RC=%ERRORLEVEL%"
-git worktree remove --force "%RESULT_WT%" >nul 2>&1
-git worktree prune >nul 2>&1
-if not "%PUSH_RC%"=="0" (
-  echo [FAIL] Push log Gate that bai.
-) else (
-  echo [PASS] Da gui log Gate an toan.
-  echo [GIT] branch=%RESULT_BRANCH%
-  echo [GIT] latest=%RUN_REL:\=/%
+  echo.
+  echo [FAIL] Gui log Gate that bai.
 )
 pause
 goto menu
