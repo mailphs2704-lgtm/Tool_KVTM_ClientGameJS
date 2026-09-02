@@ -200,6 +200,7 @@ jobs:
           from pathlib import Path
 
           engine = Path('test-candidates/auto-pro-clientjs-temp/engine_driver.py').read_text(encoding='utf-8')
+          native_v3 = Path('bridge-v3/native/kvtm_bridge_v3.cpp').read_text(encoding='utf-8')
           pc = Path('test-candidates/auto-pro-clientjs-temp/pc_driver.py').read_text(encoding='utf-8')
           builder = Path('packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1').read_text(encoding='utf-8')
           worker = Path('components/clientjs-auto/worker/auto_worker.py').read_text(encoding='utf-8')
@@ -208,7 +209,8 @@ jobs:
               'KVTM-CocosV3-', 'KVTM-CaptureV3-', 'version != 3',
               'pixel_format != 2', 'time.perf_counter',
               'fallback="disabled"', 'kvtm_bridge_v3.dll', 'return timing',
-              'replay_path = path', 'interpolation="auto_pro_path"',
+              'math.ceil(math.hypot', 'interpolation_px=8',
+              'pipe_mode="persistent"', 'CreateFileW',
           )
           for token in required_engine:
               assert token in engine, token
@@ -217,11 +219,12 @@ jobs:
               'shared_capture_fallback',
               'KVTM-Cocos-{self.pid}',
               'KVTM-Capture-{self.pid}',
-              'math.ceil(math.hypot',
           ):
               assert token not in engine, token
           for token in ('time.sleep(0.018)', 'time.sleep(0.014)', 'time.sleep(0.025)'):
               assert token not in pc, token
+          for token in ('Keep one connection alive', 'for (;;)'):
+              assert token in native_v3, token
           for token in ('Build-KvtmBridgeV3', 'kvtm_bridge_v3.dll', 'kvtm_loader_v3.exe'):
               assert token in builder, token
           for token in ('setattr(automation, key, value)', 'setattr(controller, key, value)', 'synchronized_targets'):
