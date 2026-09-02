@@ -272,7 +272,7 @@ if defined GATE_REPORT_DIR (
     for %%F in ("%GATE_REPORT_DIR%\templates\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\templates\%%~nxF" >nul
   )
 )
-powershell -NoProfile -Command "$files=Get-ChildItem -LiteralPath '%RUN_DIR%' -File -Include *.log,*.json -Recurse; $bad=$files ^| Select-String -Pattern '(?i)(authorization|password|cookie|token|profiles\.json|\.kvtm)' -ErrorAction SilentlyContinue; if($bad){$bad ^| ForEach-Object { Write-Host ('[BLOCK] '+$_.Path+':'+$_.LineNumber) }; exit 9}"
+powershell -NoProfile -Command "$files=Get-ChildItem -LiteralPath '%RUN_DIR%' -File -Include *.log,*.json -Recurse; $bad=$files | Select-String -Pattern '(?i)(authorization|password|cookie|token|profiles\.json|\.kvtm)' -ErrorAction SilentlyContinue; if($bad){$bad | ForEach-Object { Write-Host ('[BLOCK] '+$_.Path+':'+$_.LineNumber) }; exit 9}"
 if errorlevel 1 (
   echo [BLOCK] Log Gate co chuoi nhay cam. Khong upload.
   git worktree remove --force "%RESULT_WT%" >nul 2>&1
