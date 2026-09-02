@@ -4,6 +4,7 @@ import base64
 import ctypes
 from ctypes import wintypes
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -67,6 +68,21 @@ if hasattr(ctypes, "windll"):
         wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.DWORD,
     ]
     kernel32.CallNamedPipeW.restype = wintypes.BOOL
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.ReadFile.argtypes = [
+        wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID,
+    ]
+    kernel32.ReadFile.restype = wintypes.BOOL
+    kernel32.WriteFile.argtypes = [
+        wintypes.HANDLE, wintypes.LPCVOID, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID,
+    ]
+    kernel32.WriteFile.restype = wintypes.BOOL
     kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     kernel32.OpenProcess.restype = wintypes.HANDLE
     kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
@@ -110,6 +126,8 @@ class EngineDriver(PCDriver):
                 self.profile_id = str(self._restart_profile.get("id") or "") or None
         self._restart_pending = False
         self._restart_window_rect = None
+        self._pipe_handle = None
+        self._pipe_lock = threading.RLock()
         self._ensure_bridge()
         self._trace(
             "engine_bridge_connected", pipe=self.pipe_name,
@@ -168,6 +186,7 @@ class EngineDriver(PCDriver):
                 f"Tài khoản {self._restart_profile.get('name', self.profile_id)} chưa khởi động lại"
             )
         old_pid = self.pid
+        self._close_pipe()
         self.pid = int(replacement)
         self._ensure_bridge()
         self._trace(
@@ -252,27 +271,54 @@ class EngineDriver(PCDriver):
     def pipe_name(self) -> str:
         return rf"\\.\pipe\KVTM-CocosV3-{self.pid}"
 
+    def _close_pipe(self) -> None:
+        handle = getattr(self, "_pipe_handle", None)
+        self._pipe_handle = None
+        if handle:
+            kernel32.CloseHandle(handle)
+
+    def _open_pipe(self):
+        invalid = ctypes.c_void_p(-1).value
+        handle = kernel32.CreateFileW(
+            self.pipe_name, 0xC0000000, 0, None, 3, 0, None,
+        )
+        if not handle or int(handle) == int(invalid):
+            raise ctypes.WinError()
+        self._pipe_handle = handle
+        return handle
+
     def _pipe(self, command: str, timeout_ms: int = 3000) -> str:
         payload = command.encode("ascii")
         deadline = time.monotonic() + max(0.15, timeout_ms / 1000.0)
         last_error = 2
-        while time.monotonic() < deadline:
-            output = ctypes.create_string_buffer(256)
-            read = wintypes.DWORD()
-            remaining_ms = max(25, min(250, int((deadline - time.monotonic()) * 1000)))
-            ok = kernel32.CallNamedPipeW(
-                self.pipe_name, ctypes.c_char_p(payload), len(payload), output,
-                len(output), ctypes.byref(read), remaining_ms,
-            )
-            if ok:
-                response = output.raw[:read.value].decode("ascii", "replace").strip()
-                if not response.startswith("OK"):
-                    raise RuntimeError(f"Engine bridge trả về: {response}")
-                return response
-            last_error = int(kernel32.GetLastError())
-            if last_error not in (2, 231):  # FILE_NOT_FOUND / PIPE_BUSY
-                raise ctypes.WinError(last_error)
-            time.sleep(0.005)
+        with self._pipe_lock:
+            while time.monotonic() < deadline:
+                try:
+                    handle = self._pipe_handle or self._open_pipe()
+                    written = wintypes.DWORD()
+                    if not kernel32.WriteFile(
+                        handle, ctypes.c_char_p(payload), len(payload),
+                        ctypes.byref(written), None,
+                    ):
+                        raise ctypes.WinError()
+                    output = ctypes.create_string_buffer(256)
+                    read = wintypes.DWORD()
+                    if not kernel32.ReadFile(
+                        handle, output, len(output), ctypes.byref(read), None,
+                    ):
+                        raise ctypes.WinError()
+                    response = output.raw[:read.value].decode("ascii", "replace").strip()
+                    if not response.startswith("OK"):
+                        raise RuntimeError(f"Engine bridge trả về: {response}")
+                    return response
+                except RuntimeError:
+                    raise
+                except Exception:
+                    last_error = int(kernel32.GetLastError()) or 2
+                    self._close_pipe()
+                    if last_error not in (2, 109, 231, 232, 233):
+                        raise ctypes.WinError(last_error)
+                    time.sleep(0.005)
         raise ctypes.WinError(last_error)
 
     def _ensure_bridge(self) -> None:
@@ -400,10 +446,16 @@ class EngineDriver(PCDriver):
             if not (0 <= x <= 1000 and 0 <= y <= 1000):
                 raise ValueError(f"Tọa độ swipe_points ngoài vùng 1000x1000: {(x, y)}")
 
-        # AUTO PRO's get_harvest_path/plant path is already authoritative.
-        # Re-interpolating every 8 px here duplicated layout points and made
-        # named-pipe overhead dominate the configured total duration.
-        replay_path = path
+        # AUTO PRO provides floor/turn waypoints, not every tree coordinate.
+        # Restore spatial interpolation so one drag crosses all six trees. The
+        # persistent V3 pipe removes the old reconnect overhead per MOVE.
+        replay_path = [path[0]]
+        for start, end in zip(path, path[1:]):
+            dx, dy = end[0] - start[0], end[1] - start[1]
+            steps = max(1, int(math.ceil(math.hypot(dx, dy) / 8.0)))
+            for step in range(1, steps + 1):
+                ratio = step / steps
+                replay_path.append((start[0] + dx * ratio, start[1] + dy * ratio))
 
         requested_duration = max(0.02, float(duration))
         # V3 contract: duration is total gesture time. One interpolation pass and
@@ -413,8 +465,8 @@ class EngineDriver(PCDriver):
             self._trace(
                 "swipe_points_attempt", logical_path=[list(point) for point in path],
                 point_count=len(path), requested_duration=requested_duration,
-                replay_point_count=len(replay_path), interpolation="auto_pro_path",
-                timing_owner="engine_driver_v3", mode="engine_bridge_v3",
+                replay_point_count=len(replay_path), interpolation_px=8,
+                pipe_mode="persistent", timing_owner="engine_driver_v3", mode="engine_bridge_v3",
             )
             self._touch_event("down", *replay_path[0])
             try:
@@ -469,6 +521,7 @@ class EngineDriver(PCDriver):
             [str(client), str(game_dir), *secret_args], cwd=str(game_dir),
         )
         old_pid = self.pid
+        self._close_pipe()
         self.pid = int(process.pid)
         self._process = process
         self._restart_pending = False
