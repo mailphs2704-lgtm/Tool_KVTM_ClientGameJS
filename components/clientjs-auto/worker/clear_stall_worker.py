@@ -15,6 +15,7 @@ from clean_worker_support import (
 
 WORKFLOW_NAME = "clear_stall_clean"
 REQUIRED_STALL_VIEWS = 4
+EXECUTION_GATE = "READ_ONLY_SCAN"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -44,8 +45,10 @@ def _validate(args: argparse.Namespace) -> None:
         )
     if not 1 <= int(args.resale_storage_id) <= 5:
         raise ValueError("Kho VP bán lại phải trong khoảng 1..5")
-    if not 1 <= int(args.quantity) <= 999:
-        raise ValueError("Số lượng mua phải trong khoảng 1..999")
+    if not 10 <= int(args.quantity) <= 1000:
+        raise ValueError("Số lượng mua phải trong khoảng 10..1000 VP")
+    if int(args.quantity) % 10:
+        raise ValueError("Số lượng Dọn quầy phải là bội số của 10 VP")
     if int(args.max_pages) < REQUIRED_STALL_VIEWS:
         raise ValueError("Dọn đủ 20 ô cần đúng 4 view quầy")
 
@@ -141,7 +144,9 @@ def main() -> int:
             resale_storage_id=args.resale_storage_id,
             buy_quantity=args.quantity,
             work_dir=Path(args.work_dir),
-            probe_only=False,
+            # Gate 1 is deliberately non-destructive. Purchase/resale stays
+            # locked until the read-only 20-slot scan passes on live ClientJS.
+            probe_only=True,
         )
         workflow = ClearStallWorkflow(request, automation)
         emit(
@@ -154,9 +159,16 @@ def main() -> int:
             resale_storage_id=args.resale_storage_id,
             quantity=args.quantity,
             stall_views=REQUIRED_STALL_VIEWS,
+            execution_gate=EXECUTION_GATE,
         )
 
-        result = workflow.run()
+        emit(
+            "progress",
+            workflow=WORKFLOW_NAME,
+            stage="READ_ONLY_SCAN",
+            message="GATE 1: chỉ quét quầy, KHÔNG click mua/bán",
+        )
+        result = workflow.probe()
         payload = result.to_dict()
         emit(
             "worker_finished",
