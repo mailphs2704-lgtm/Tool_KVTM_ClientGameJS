@@ -1,0 +1,6 @@
+step=1
+timestamp=20260902-140915
+source_branch=develop/multi-auto-dev
+source_head=cb1c8042ba74acd6fab1f11f2c708f85f566ab29
+result_branch=diagnostics/clear-stall
+note=Only allowlisted diagnostics uploaded. No profiles/settings/secrets.
