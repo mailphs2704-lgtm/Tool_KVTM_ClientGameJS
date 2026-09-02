@@ -122,30 +122,9 @@ goto menu
 
 :install
 cls
-if not exist "%ROOT%ALLOW_RUNTIME_INSTALL.txt" (
-  echo [LOCKED] Chua co ALLOW_RUNTIME_INSTALL.txt.
-  echo          Can PASS build + static + live capture + swipe timing truoc.
-  pause
-  goto menu
-)
-if not exist "%BIN%\kvtm_bridge_v3.dll" goto install_missing
-if not exist "%BIN%\kvtm_loader_v3.exe" goto install_missing
-if not exist "%DEV_BIN%\kvtm_bridge.dll" goto install_missing
-set "CONFIRM="
-set /p "CONFIRM=Da dong Multi va tat ca ClientJS? Go INSTALL-V3 de tiep tuc: "
-if not "%CONFIRM%"=="INSTALL-V3" goto menu
-for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%T"
-set "SAVE=%BACKUP%\%STAMP%"
-mkdir "%SAVE%" >nul 2>&1
-copy /Y "%DEV_BIN%\kvtm_bridge.dll" "%SAVE%\kvtm_bridge.dll" >nul
-copy /Y "%DEV_BIN%\kvtm_loader.exe" "%SAVE%\kvtm_loader.exe" >nul
-copy /Y "%BIN%\kvtm_bridge_v3.dll" "%DEV_BIN%\kvtm_bridge.dll" >nul
-copy /Y "%BIN%\kvtm_loader_v3.exe" "%DEV_BIN%\kvtm_loader.exe" >nul
-echo [PASS] V3 installed. Backup=%SAVE%
-pause
-goto menu
-:install_missing
-echo [FAIL] Thieu binary V3 hoac runtime DEV.
+echo [LOCKED] V3 da PASS build/static/live capture/swipe timing.
+echo          Chua cai runtime vi EngineDriver production van dung protocol V1.
+echo          Chi mo khoa sau khi adapter V3 + package CI PASS de tranh AUTO mat capture/input.
 pause
 goto menu
 
