@@ -448,12 +448,12 @@ class EngineDriver(PCDriver):
                 raise ValueError(f"Tọa độ swipe_points ngoài vùng 1000x1000: {(x, y)}")
 
         # AUTO PRO provides floor/turn waypoints, not every tree coordinate.
-        # Restore spatial interpolation so one drag crosses all six trees. The
-        # persistent V3 pipe removes the old reconnect overhead per MOVE.
+        # Sample at 64 px: dense enough to cross six tree hit areas without the
+        # hundreds of 8 px events that made pipe/game overhead dominate timing.
         replay_path = [path[0]]
         for start, end in zip(path, path[1:]):
             dx, dy = end[0] - start[0], end[1] - start[1]
-            steps = max(1, int(math.ceil(math.hypot(dx, dy) / 8.0)))
+            steps = max(1, int(math.ceil(math.hypot(dx, dy) / 64.0)))
             for step in range(1, steps + 1):
                 ratio = step / steps
                 replay_path.append((start[0] + dx * ratio, start[1] + dy * ratio))
@@ -470,7 +470,7 @@ class EngineDriver(PCDriver):
             self._trace(
                 "swipe_points_attempt", logical_path=[list(point) for point in path],
                 point_count=len(path), requested_duration=requested_duration,
-                replay_point_count=len(replay_path), interpolation_px=8,
+                replay_point_count=len(replay_path), interpolation_px=64,
                 pipe_mode="persistent", timing_owner="engine_driver_v3", mode="engine_bridge_v3",
             )
             self._touch_event("down", *replay_path[0])
