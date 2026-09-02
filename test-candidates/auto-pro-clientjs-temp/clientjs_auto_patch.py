@@ -335,10 +335,15 @@ def _install_controller_patch(adb_controller_module) -> None:
                             logical=[x, y],
                             attempt=attempt + 1,
                             screen_change=round(score, 3),
+                            completion_threshold=8.0,
                         )
                     except Exception:
                         pass
-                    if score >= 2.0:
+                    # The selected chest has a continuous idle animation.
+                    # After the 4-second render wait that animation alone can
+                    # move the mean difference above 2.0. A real open replaces
+                    # most of the modal region, producing a much larger change.
+                    if score >= 8.0:
                         chest_screen_changed = True
                         return True
                     before = after
