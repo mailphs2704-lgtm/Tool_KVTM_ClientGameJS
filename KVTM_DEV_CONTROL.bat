@@ -1,9 +1,19 @@
 @echo off
+if /I "%~1"=="--stable-copy" goto stable_copy
+set "KVTM_CONTROL_COPY=%TEMP%\KVTM_DEV_CONTROL_STABLE_%RANDOM%_%RANDOM%.bat"
+copy /Y "%~f0" "%KVTM_CONTROL_COPY%" >nul
+call "%KVTM_CONTROL_COPY%" --stable-copy "%~dp0"
+set "KVTM_CONTROL_RC=%ERRORLEVEL%"
+del /Q "%KVTM_CONTROL_COPY%" >nul 2>&1
+exit /b %KVTM_CONTROL_RC%
+
+:stable_copy
+set "KVTM_REPO_ROOT=%~2"
 setlocal EnableExtensions
 chcp 65001 >nul 2>&1
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
-cd /d "%~dp0"
+cd /d "%KVTM_REPO_ROOT%"
 title KVTM MULTI DEV - CONTROL CENTER
 
 set "EXPECTED_BRANCH=develop/multi-auto-dev"
