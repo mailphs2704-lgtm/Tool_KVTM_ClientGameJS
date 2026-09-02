@@ -230,17 +230,13 @@ echo  Chi gui activity.log, report.json va PNG cua lan Gate moi nhat.
 echo  KHONG gui profiles/settings/.kvtm/token/cookie/password/secret.
 echo ===============================================================================
 set "GATE_ACTIVITY="
-set "GATE_PROFILE_ROOT="
 set "GATE_REPORT_DIR="
 for /f "usebackq delims=" %%F in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_LOG_ROOT%' -Recurse -Filter activity.log -File -ErrorAction SilentlyContinue ^| Where-Object Length -gt 0 ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty FullName; if($p){$p}"`) do set "GATE_ACTIVITY=%%F"
-if not defined GATE_ACTIVITY (
-  echo [FAIL] Chua co activity.log. Hay bam nut Gate trong Multi truoc.
+for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_LOG_ROOT%' -Recurse -Filter report.json -File -ErrorAction SilentlyContinue ^| Where-Object Length -gt 0 ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty DirectoryName; if($p){$p}"`) do set "GATE_REPORT_DIR=%%D"
+if not defined GATE_ACTIVITY if not defined GATE_REPORT_DIR (
+  echo [FAIL] Chua co activity.log hoac report.json co noi dung. Hay bam Gate truoc.
   pause
   goto menu
-)
-for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$f=Get-Item -LiteralPath '%GATE_ACTIVITY%' -ErrorAction Stop; $f.Directory.Parent.FullName"`) do set "GATE_PROFILE_ROOT=%%D"
-if defined GATE_PROFILE_ROOT (
-  for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_PROFILE_ROOT%' -Recurse -Filter report.json -File -ErrorAction SilentlyContinue ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty DirectoryName; if($p){$p}"`) do set "GATE_REPORT_DIR=%%D"
 )
 for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%T"
 set "RUN_REL=diagnostics\clear-stall\gate-runs\%STAMP%"
@@ -264,24 +260,11 @@ if errorlevel 1 (
   goto menu
 )
 mkdir "%RUN_DIR%" >nul 2>&1
-powershell -NoProfile -Command "Copy-Item -LiteralPath $env:GATE_ACTIVITY -Destination (Join-Path $env:RUN_DIR 'activity.log') -Force -ErrorAction Stop"
-if errorlevel 1 (
-  echo [FAIL] Khong sao chep duoc activity.log. Khong upload metadata rong.
-  git worktree remove --force "%RESULT_WT%" >nul 2>&1
-  pause
-  goto menu
-)
-if not exist "%RUN_DIR%\activity.log" (
-  echo [FAIL] activity.log khong ton tai sau khi sao chep. Khong upload.
-  git worktree remove --force "%RESULT_WT%" >nul 2>&1
-  pause
-  goto menu
-)
-for %%Z in ("%RUN_DIR%\activity.log") do if %%~zZ LEQ 0 (
-  echo [FAIL] activity.log rong 0 byte. Khong upload.
-  git worktree remove --force "%RESULT_WT%" >nul 2>&1
-  pause
-  goto menu
+if defined GATE_ACTIVITY (
+  powershell -NoProfile -Command "Copy-Item -LiteralPath $env:GATE_ACTIVITY -Destination (Join-Path $env:RUN_DIR 'activity.log') -Force -ErrorAction Stop"
+  if errorlevel 1 (
+    echo [WARN] Khong sao chep duoc activity.log; se thu gui report Gate.
+  )
 )
 if defined GATE_REPORT_DIR (
   powershell -NoProfile -Command "$src=$env:GATE_REPORT_DIR; $dst=$env:RUN_DIR; Copy-Item -LiteralPath (Join-Path $src 'report.json') -Destination (Join-Path $dst 'report.json') -Force -ErrorAction Stop; Get-ChildItem -LiteralPath $src -Filter '*.png' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dst -Force; $templates=Join-Path $src 'templates'; if(Test-Path -LiteralPath $templates){$td=Join-Path $dst 'templates'; New-Item -ItemType Directory -Path $td -Force | Out-Null; Get-ChildItem -LiteralPath $templates -Filter '*.png' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $td -Force}"
@@ -313,9 +296,9 @@ git -C "%RESULT_WT%" config user.email "kvtm-dev-diagnostics@local" >nul
 rem Force-add only the already allowlisted Gate run. Global ignore rules
 rem intentionally exclude logs/JSON/PNG elsewhere in the repository.
 git -C "%RESULT_WT%" add -f -- "%RUN_REL_GIT%" "diagnostics/clear-stall/LATEST_GATE.txt"
-git -C "%RESULT_WT%" diff --cached --name-only -- "%RUN_REL_GIT%/activity.log" | findstr /L /I /X "%RUN_REL_GIT%/activity.log" >nul
+git -C "%RESULT_WT%" diff --cached --name-only -- "%RUN_REL_GIT%/activity.log" "%RUN_REL_GIT%/report.json" | findstr /L /I /E "activity.log report.json" >nul
 if errorlevel 1 (
-  echo [FAIL] activity.log chua duoc Git stage. Khong tao commit metadata rong.
+  echo [FAIL] Khong co activity.log/report.json nao duoc Git stage.
   git -C "%RESULT_WT%" status --short -- "%RUN_REL_GIT%"
   git worktree remove --force "%RESULT_WT%" >nul 2>&1
   pause
