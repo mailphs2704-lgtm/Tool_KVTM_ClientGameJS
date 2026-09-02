@@ -249,7 +249,12 @@ def _install_controller_patch(adb_controller_module) -> None:
             # valid success signal by itself on ClientJS.
             if name == "ruong_go" and fallback_used and not chest_screen_changed:
                 return False
-            if name != "mo_ruong" or result or fallback_used:
+            if name != "mo_ruong" or fallback_used:
+                return result
+            # Even when the LD template matches, its built-in click/legacy
+            # coordinate is not a reliable ClientJS confirmation. Continue
+            # with the ClientJS selected-chest center below.
+            if not kwargs.get("click"):
                 return result
 
             fallback_used = True
@@ -261,9 +266,6 @@ def _install_controller_patch(adb_controller_module) -> None:
             except Exception:
                 pass
 
-            if not kwargs.get("click"):
-                return False
-
             before = _chest_region()
             # AUTO PRO/LD clicks (433, 557), but ClientJS renders the
             # selected-chest modal lower. The live 1000-wide ClientJS capture
@@ -271,7 +273,7 @@ def _install_controller_patch(adb_controller_module) -> None:
             # ClientJS point first, then the legacy point. Repeat a point like
             # AUTO PRO (up to five taps), and stop immediately after a real
             # modal change so no tap can leak into the game behind it.
-            for x, y in ((500, 660), (433, 557)):
+            for x, y in ((500, 470), (433, 557)):
                 for attempt in range(5):
                     if _stopped(stop_event):
                         return False
