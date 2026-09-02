@@ -259,10 +259,12 @@ jobs:
           ):
               assert token in multi, token
           for token in (
-              'for x, y in ((500, 660), (433, 557))',
+              'for x, y in ((500, 470), (433, 557))',
               'for attempt in range(5)',
               'attempt=attempt + 1',
               'before = after',
+              'if name != "mo_ruong" or fallback_used:',
+              'if not kwargs.get("click"):',
           ):
               assert token in clientjs_patch, token
           print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
