@@ -9,7 +9,7 @@ import traceback
 from typing import Callable
 
 
-PROBE_VERSION = 8
+PROBE_VERSION = 9
 STALL_VIEW_COUNT = 4
 TOTAL_STALL_SLOTS = 20
 
@@ -237,6 +237,14 @@ def run_probe(
                 "new_local_slots": list(new_local),
                 "new_physical_slots": new_physical,
                 "occupied_new_physical_slots": observed_physical,
+                "observations": [
+                    {
+                        "physical_slot": int(item.physical_slot),
+                        "local_slot": int(item.local_slot),
+                        "occupancy_score": round(float(item.occupancy_score), 3),
+                    }
+                    for item in observations
+                ],
             }
             with report_lock:
                 views = report["views"]
