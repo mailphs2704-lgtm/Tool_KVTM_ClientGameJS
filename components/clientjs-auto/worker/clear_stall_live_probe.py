@@ -22,6 +22,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile-name", required=True)
     parser.add_argument("--friend-ordinal", type=int, required=True)
     parser.add_argument("--stall-id", dest="resale_storage_id", type=int, required=True)
+    parser.add_argument("--quantity", type=int, default=10)
     parser.add_argument("--work-dir", required=True)
     return parser
 
@@ -41,6 +42,7 @@ def main() -> int:
         profile_name=str(args.profile_name),
         friend_ordinal=int(args.friend_ordinal),
         resale_storage_id=int(args.resale_storage_id),
+        buy_quantity=int(args.quantity),
         work_dir=Path(args.work_dir),
     )
 
