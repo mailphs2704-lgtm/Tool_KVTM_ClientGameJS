@@ -102,6 +102,22 @@ class StallActions:
             self.waiter.sleep(0.55)
         raise NavigationError("Không mở được quầy nhà bạn")
 
+    def close_friend_stall(self, timeout: float = 12.0) -> None:
+        """Close the current friend stall before a refresh or house change."""
+        deadline = time.monotonic() + float(timeout)
+        while time.monotonic() < deadline:
+            self.context.ensure_running()
+            if self.vision.find(
+                "quay_hang_friend",
+                threshold=0.78,
+                zone=self.FRIEND_STALL_ZONE,
+            ) is None:
+                self.context.log("Đã thoát quầy nhà bạn")
+                return
+            self.vision.driver.click(965, 198)
+            self.waiter.sleep(0.55)
+        raise ScreenTimeout("Không thoát được quầy nhà bạn để tải lượt kế tiếp")
+
     def open_own_stall(self, timeout: float = 25.0) -> None:
         """Enter the clone's own sales stall using recovered makeBuyItems flow."""
         if self.vision.find(
