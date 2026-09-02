@@ -1076,3 +1076,16 @@ Tại source HEAD `bf726669c866ac8246d0107c80b080f43a818362`:
 - Live Multi/AUTO với binary production mới: PENDING.
 
 Hash này khác binary probe trước do được build lại bởi toolchain Windows hiện tại; vì vậy capture/swipe/AUTO phải được live-test lại trên binary production.
+
+
+## 13. Production EngineDriver capture và gesture gate
+
+Live evidence tại runtime HEAD `c769752`:
+
+- DEV target: đúng 1 profile `Cry`, PID 12152; client ngoài bộ DEV bị loại.
+- AUTO bootstrap: READY.
+- Driver: `EngineDriver` production.
+- Capture V3: PASS, 1000x1000, failures rỗng.
+- Diagnostic result code: 0; branch `diagnostics/clear-stall`, run `20260902-141617`.
+
+Gesture production là gate riêng [7] trong `KVTM_DEV_CONTROL.bat`. Nó từ chối nếu không có đúng một client DEV và chỉ chạy sau khi người dùng gõ `SWIPE-V3`. Gesture cố định 80px ở giữa game, tổng thời gian 0.50s; capture trước/sau đều phải PASS và timing sai số không vượt ngưỡng. Mục [3] vẫn tuyệt đối không click/swipe.
