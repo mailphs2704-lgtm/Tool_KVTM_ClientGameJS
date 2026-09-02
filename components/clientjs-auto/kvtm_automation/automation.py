@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import threading
 import time
 from typing import Any
 
@@ -21,52 +20,19 @@ from .runtime.vision import VisionEngine
 from .runtime.wait import Waiter
 
 
-_IMAGE_RUNTIME_TIMEOUT_SECONDS = 60.0
-
-
 def _load_image_runtime(context: AutomationContext) -> float:
-    """Load native image libraries with a bounded, observable worker thread."""
+    """Load native image libraries on the worker main thread.
 
+    Windows native extension initialization can deadlock when cv2/NumPy is
+    imported from a temporary background thread. The proven AUTO PRO/package
+    path imports these DLLs synchronously. The worker owns the outer watchdog,
+    so this function must not create another loader thread.
+    """
     started = time.monotonic()
-    done = threading.Event()
-    failure: list[BaseException] = []
+    context.log("Thư viện ảnh: cold-load đồng bộ trên worker main thread")
+    install_binary_dependencies(context.auto_root, logger=context.log)
+    return time.monotonic() - started
 
-    def run() -> None:
-        try:
-            install_binary_dependencies(context.auto_root, logger=context.log)
-        except BaseException as exc:
-            failure.append(exc)
-        finally:
-            done.set()
-
-    thread = threading.Thread(
-        target=run,
-        name="kvtm-clean-image-runtime",
-        daemon=True,
-    )
-    thread.start()
-
-    context.log(
-        "Thư viện ảnh: bắt đầu cold-load; giới hạn an toàn "
-        f"{_IMAGE_RUNTIME_TIMEOUT_SECONDS:.0f}s"
-    )
-    next_heartbeat = 2.0
-    while not done.wait(0.10):
-        context.ensure_running()
-        elapsed = time.monotonic() - started
-        if elapsed >= _IMAGE_RUNTIME_TIMEOUT_SECONDS:
-            raise RuntimeError(
-                "Clean image runtime không sẵn sàng sau "
-                f"{_IMAGE_RUNTIME_TIMEOUT_SECONDS:.0f}s; đã hủy thay vì treo vô hạn"
-            )
-        if elapsed >= next_heartbeat:
-            context.log(f"Thư viện ảnh: đang khởi tạo native runtime ({elapsed:.0f}s)")
-            next_heartbeat += 2.0
-
-    elapsed = time.monotonic() - started
-    if failure:
-        raise failure[0]
-    return elapsed
 
 
 class KVAutomation:
