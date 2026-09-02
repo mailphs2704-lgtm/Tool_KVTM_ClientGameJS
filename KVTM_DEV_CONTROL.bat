@@ -290,7 +290,9 @@ if not exist "%RESULT_WT%\diagnostics\clear-stall" mkdir "%RESULT_WT%\diagnostic
 >"%RESULT_WT%\diagnostics\clear-stall\LATEST_GATE.txt" echo %RUN_REL:\=/%
 git -C "%RESULT_WT%" config user.name "KVTM DEV Diagnostics" >nul
 git -C "%RESULT_WT%" config user.email "kvtm-dev-diagnostics@local" >nul
-git -C "%RESULT_WT%" add diagnostics/clear-stall
+rem Force-add only the already allowlisted Gate run. Global ignore rules
+rem intentionally exclude logs/JSON/PNG elsewhere in the repository.
+git -C "%RESULT_WT%" add -f -- "%RUN_REL%" "diagnostics\clear-stall\LATEST_GATE.txt"
 git -C "%RESULT_WT%" commit -m "Add clear stall Gate diagnostics %STAMP%" >nul 2>&1
 if errorlevel 1 (
   echo [FAIL] Khong tao duoc Gate diagnostics commit.
