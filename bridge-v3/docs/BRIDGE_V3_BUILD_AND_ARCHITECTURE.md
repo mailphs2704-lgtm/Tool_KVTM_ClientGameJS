@@ -1049,3 +1049,15 @@ Source adapter được chuẩn bị side-by-side, chưa cắt bỏ bridge V1 d�
 - Control BAT có chế độ build nội bộ không tương tác để builder/CI vẫn dùng đúng một BAT chính thức.
 
 Trạng thái: source ready; phải có package CI PASS và live AUTO recognition evidence trước khi mở khóa cài runtime.
+
+
+## 11. Local adapter validation
+
+Mốc source `faa06a3` đã được kiểm tra độc lập:
+
+- Python compile: PASS cho EngineDriver, PCDriver, V3 client, verifier và live probe.
+- Workflow YAML parse: PASS; job `bridge-v3-static` tồn tại.
+- Adapter contract static: PASS; protocol/mapping/KCAP V3 có mặt.
+- Công thức nhân duration cũ, shared capture fallback và sleep DOWN/MOVE/UP cố định: không còn.
+
+Đây là static evidence, chưa thay cho Windows package build hoặc live AUTO recognition.
