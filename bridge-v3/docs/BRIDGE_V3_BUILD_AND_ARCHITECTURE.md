@@ -89,8 +89,8 @@ Không chạy lệnh CMD thủ công. Các binary sinh ra nằm trong `bridge-v3
 | Giai đoạn | Nội dung | Trạng thái hiện tại |
 |---|---|---|
 | 1 | Tách source, protocol v3, bỏ layout | SOURCE_READY |
-| 2 | Build MSVC x86 + static verify | Chờ CI/máy Windows |
-| 3 | Live capture, frame id tăng, ảnh đúng chiều | Chưa test V3 |
+| 2 | Build MSVC x86 + static verify | LOCAL PASS, DLL SHA256 `74df4645...f893` |
+| 3 | Live capture, frame id tăng, ảnh đúng chiều | PARTIAL: inject PASS; Python pointer cleanup đã sửa, chờ retest |
 | 4 | Swipe 0.50 giây, sai số trong ngưỡng | Chưa test V3 |
 | 5 | Tối ưu SwapBuffers/PBO nếu profiler chứng minh cần | Chưa triển khai |
 | 6 | Cài runtime và test AUTO nhận diện | LOCKED |
@@ -565,6 +565,10 @@ class BridgeV3Client:
             wintypes.DWORD, ctypes.c_size_t,
         ]
         self.kernel32.MapViewOfFile.restype = wintypes.LPVOID
+        self.kernel32.UnmapViewOfFile.argtypes = [ctypes.c_void_p]
+        self.kernel32.UnmapViewOfFile.restype = wintypes.BOOL
+        self.kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        self.kernel32.CloseHandle.restype = wintypes.BOOL
 
     @property
     def pipe_name(self) -> str:
@@ -926,7 +930,7 @@ def main() -> int:
         if token in text:
             fail(f"forbidden layout/data token in V3 DLL: {token}")
     client_text = client.read_text(encoding="utf-8")
-    for token in ("time.perf_counter", "requested_seconds", "actual_seconds"):
+    for token in ("time.perf_counter", "requested_seconds", "actual_seconds", "UnmapViewOfFile.argtypes"):
         if token not in client_text:
             fail(f"timing client missing: {token}")
     if "duration * (len(" in client_text:
