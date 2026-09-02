@@ -24,6 +24,7 @@ set "SPEED_PROBE=components\clientjs-auto\worker\speed_binding_probe.py"
 set "STEP1_OUT=%DIST%\data-dev\clear-stall-step1"
 set "RESULT_BRANCH=diagnostics/clear-stall"
 set "RESULT_WT=%TEMP%\KVTM_DEV_DIAGNOSTICS_WORKTREE"
+set "GATE_LOG_ROOT=%DIST%\data-dev\clear-stall-probe"
 
 :menu
 cls
@@ -44,7 +45,7 @@ echo  [1] Cap nhat source + build runtime DEV
 echo  [2] Mo Multi DEV nen           ^(tu dong sync, khong hien CMD^)
 echo  [3] Don quay - BUOC HIEN TAI   ^(STEP 1 - capture bang AUTO chinh^)
 echo      Sau test se TU GUI log + anh len GitHub cho ChatGPT doc.
-echo  [4] Gui lai ket qua gan nhat len GitHub
+echo  [4] Gui log GATE Don quay len GitHub ^(SAFE whitelist^)
 echo  [5] Mo thu muc ket qua
 echo  [6] Kiem tra profile/login READ-ONLY
 echo  [7] Bridge V3 - gesture production 0.50s ^(can go SWIPE-V3^)
@@ -57,7 +58,7 @@ set /p "CHOICE=Chon: "
 if "%CHOICE%"=="1" goto update
 if "%CHOICE%"=="2" goto startmulti
 if "%CHOICE%"=="3" goto step1
-if "%CHOICE%"=="4" goto upload_latest
+if "%CHOICE%"=="4" goto upload_gate
 if "%CHOICE%"=="5" goto openstep1
 if "%CHOICE%"=="6" goto profile_diagnostic
 if "%CHOICE%"=="7" goto v3_gesture
@@ -217,6 +218,88 @@ if errorlevel 1 (
   echo [CANH BAO] Upload that bai. Ket qua local van con; co the chon [4] de gui lai.
 ) else (
   echo [OK] Da gui ket qua. ChatGPT co the doc truc tiep tren GitHub.
+)
+pause
+goto menu
+
+:upload_gate
+cls
+echo ===============================================================================
+echo  GUI LOG GATE DON QUAY LEN GITHUB
+echo  Chi gui activity.log, report.json va PNG cua lan Gate moi nhat.
+echo  KHONG gui profiles/settings/.kvtm/token/cookie/password/secret.
+echo ===============================================================================
+set "GATE_LATEST="
+for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_LOG_ROOT%' -Recurse -Filter report.json -File -ErrorAction SilentlyContinue ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty DirectoryName; if($p){$p}"`) do set "GATE_LATEST=%%D"
+if not defined GATE_LATEST (
+  echo [FAIL] Chua co report Gate. Hay bam nut Gate trong Multi truoc.
+  pause
+  goto menu
+)
+for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%T"
+set "RUN_REL=diagnostics\clear-stall\gate-runs\%STAMP%"
+set "RUN_DIR=%RESULT_WT%\%RUN_REL%"
+if exist "%RESULT_WT%" (
+  git worktree remove --force "%RESULT_WT%" >nul 2>&1
+  rmdir /s /q "%RESULT_WT%" >nul 2>&1
+)
+git worktree prune >nul 2>&1
+git fetch origin "%RESULT_BRANCH%" >nul 2>&1
+git rev-parse --verify "refs/remotes/origin/%RESULT_BRANCH%" >nul 2>&1
+if errorlevel 1 (
+  git worktree add --detach "%RESULT_WT%" HEAD >nul 2>&1
+) else (
+  git worktree add --detach "%RESULT_WT%" "origin/%RESULT_BRANCH%" >nul 2>&1
+)
+if errorlevel 1 (
+  echo [FAIL] Khong tao duoc diagnostics worktree.
+  pause
+  goto menu
+)
+mkdir "%RUN_DIR%" >nul 2>&1
+if exist "%GATE_LATEST%\activity.log" copy /Y "%GATE_LATEST%\activity.log" "%RUN_DIR%\activity.log" >nul
+copy /Y "%GATE_LATEST%\report.json" "%RUN_DIR%\report.json" >nul
+for %%F in ("%GATE_LATEST%\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\%%~nxF" >nul
+if exist "%GATE_LATEST%\templates" (
+  mkdir "%RUN_DIR%\templates" >nul 2>&1
+  for %%F in ("%GATE_LATEST%\templates\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\templates\%%~nxF" >nul
+)
+powershell -NoProfile -Command "$files=Get-ChildItem -LiteralPath '%RUN_DIR%' -File -Include *.log,*.json -Recurse; $bad=$files ^| Select-String -Pattern '(?i)(authorization|password|cookie|token|profiles\.json|\.kvtm)' -ErrorAction SilentlyContinue; if($bad){$bad ^| ForEach-Object { Write-Host ('[BLOCK] '+$_.Path+':'+$_.LineNumber) }; exit 9}"
+if errorlevel 1 (
+  echo [BLOCK] Log Gate co chuoi nhay cam. Khong upload.
+  git worktree remove --force "%RESULT_WT%" >nul 2>&1
+  pause
+  goto menu
+)
+for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "SOURCE_HEAD=%%H"
+(
+  echo gate=READ_ONLY_SCAN
+  echo timestamp=%STAMP%
+  echo source_head=%SOURCE_HEAD%
+  echo note=Allowlisted Gate diagnostics only. No profiles/settings/secrets.
+)>"%RUN_DIR%\metadata.txt"
+if not exist "%RESULT_WT%\diagnostics\clear-stall" mkdir "%RESULT_WT%\diagnostics\clear-stall" >nul 2>&1
+>"%RESULT_WT%\diagnostics\clear-stall\LATEST_GATE.txt" echo %RUN_REL:\=/%
+git -C "%RESULT_WT%" config user.name "KVTM DEV Diagnostics" >nul
+git -C "%RESULT_WT%" config user.email "kvtm-dev-diagnostics@local" >nul
+git -C "%RESULT_WT%" add diagnostics/clear-stall
+git -C "%RESULT_WT%" commit -m "Add clear stall Gate diagnostics %STAMP%" >nul 2>&1
+if errorlevel 1 (
+  echo [FAIL] Khong tao duoc Gate diagnostics commit.
+  git worktree remove --force "%RESULT_WT%" >nul 2>&1
+  pause
+  goto menu
+)
+git -C "%RESULT_WT%" push origin HEAD:refs/heads/%RESULT_BRANCH%
+set "PUSH_RC=%ERRORLEVEL%"
+git worktree remove --force "%RESULT_WT%" >nul 2>&1
+git worktree prune >nul 2>&1
+if not "%PUSH_RC%"=="0" (
+  echo [FAIL] Push log Gate that bai.
+) else (
+  echo [PASS] Da gui log Gate an toan.
+  echo [GIT] branch=%RESULT_BRANCH%
+  echo [GIT] latest=%RUN_REL:\=/%
 )
 pause
 goto menu
