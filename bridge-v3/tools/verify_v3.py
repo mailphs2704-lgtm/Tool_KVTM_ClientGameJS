@@ -9,7 +9,7 @@ import sys
 
 REQUIRED_SOURCE = (
     "KvtmBridgeProtocol",
-    "KVTM_BRIDGE_V3 CAPTURE3 INPUT3 NO_LAYOUT",
+    "KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT",
     "Local\\\\KVTM-CaptureV3-",
     "KVTM-CocosV3-",
     "kCaptureVersion = 3",
