@@ -226,8 +226,28 @@ def _install_controller_patch(adb_controller_module) -> None:
 
         processor = self.image_processor
         original_find = processor.find_image
+        original_click = self.driver.click
         fallback_used = False
         chest_screen_changed = False
+
+        def click_without_post_open_replay(x, y, *args, **kwargs):
+            # AUTO PRO replays its LD confirmation point after mo_ruong
+            # succeeds. Once ClientJS has visibly opened the chest, suppress
+            # that one legacy replay so it cannot leak into the home screen.
+            if (
+                chest_screen_changed
+                and abs(float(x) - 433.0) < 1.0
+                and abs(float(y) - 557.0) < 1.0
+            ):
+                try:
+                    self.driver._trace(
+                        "clientjs_chest_post_open_click_suppressed",
+                        logical=[float(x), float(y)],
+                    )
+                except Exception:
+                    pass
+                return None
+            return original_click(x, y, *args, **kwargs)
 
         def _chest_region():
             frame = self.driver.screenshot(format="opencv")
@@ -247,8 +267,11 @@ def _install_controller_patch(adb_controller_module) -> None:
 
             # ruong_go is visible both before and after opening. It is not a
             # valid success signal by itself on ClientJS.
-            if name == "ruong_go" and fallback_used and not chest_screen_changed:
-                return False
+            if name == "ruong_go" and fallback_used:
+                # Feed the legacy loop a deterministic completion signal.
+                # Its ruong_go template is not a valid post-open signal on
+                # ClientJS, while the captured modal change is.
+                return bool(chest_screen_changed)
             if name != "mo_ruong" or fallback_used:
                 return result
             # Even when the LD template matches, its built-in click/legacy
@@ -305,9 +328,11 @@ def _install_controller_patch(adb_controller_module) -> None:
             return False
 
         processor.find_image = find_with_clientjs_prompt
+        self.driver.click = click_without_post_open_replay
         try:
             return original_open_chests(self, stop_event)
         finally:
+            self.driver.click = original_click
             processor.find_image = original_find
 
     cls.openGame = open_game
