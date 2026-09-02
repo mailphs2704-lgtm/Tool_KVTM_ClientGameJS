@@ -42,11 +42,13 @@ $worktreeAdded = $false
 
 try {
     Set-Location -LiteralPath $repo
-    & git worktree remove --force $tempRoot 2>$null
-    & git worktree prune 2>$null
+    # The temp path may be a plain leftover directory rather than a
+    # registered Git worktree. Remove the exact temp directory first, then let
+    # prune clear any stale registration; do not call worktree remove blindly.
     if (Test-Path -LiteralPath $tempRoot) {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force
     }
+    Invoke-Git -GitArgs @("worktree", "prune")
 
     & git fetch origin $ResultBranch 2>$null
     & git rev-parse --verify "refs/remotes/origin/$ResultBranch" 2>$null
@@ -144,7 +146,15 @@ try {
 finally {
     Set-Location -LiteralPath $repo
     if ($worktreeAdded) {
-        & git worktree remove --force $tempRoot 2>$null
+        try {
+            Invoke-Git -GitArgs @("worktree", "remove", "--force", $tempRoot)
+        } catch {
+            Write-Warning "Không dọn được worktree tạm: $($_.Exception.Message)"
+        }
     }
-    & git worktree prune 2>$null
+    try {
+        Invoke-Git -GitArgs @("worktree", "prune")
+    } catch {
+        Write-Warning "Không prune được worktree tạm: $($_.Exception.Message)"
+    }
 }
