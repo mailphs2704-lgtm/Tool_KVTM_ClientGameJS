@@ -257,7 +257,13 @@ if errorlevel 1 (
   goto menu
 )
 mkdir "%RUN_DIR%" >nul 2>&1
-if exist "%GATE_LATEST%\activity.log" copy /Y "%GATE_LATEST%\activity.log" "%RUN_DIR%\activity.log" >nul
+set "GATE_PROFILE_ROOT="
+set "GATE_ACTIVITY="
+for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "$d=Get-Item -LiteralPath '%GATE_LATEST%' -ErrorAction Stop; $d.Parent.FullName"`) do set "GATE_PROFILE_ROOT=%%D"
+if defined GATE_PROFILE_ROOT (
+  for /f "usebackq delims=" %%F in (`powershell -NoProfile -Command "$p=Get-ChildItem -LiteralPath '%GATE_PROFILE_ROOT%' -Recurse -Filter activity.log -File -ErrorAction SilentlyContinue ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 -ExpandProperty FullName; if($p){$p}"`) do set "GATE_ACTIVITY=%%F"
+)
+if defined GATE_ACTIVITY copy /Y "%GATE_ACTIVITY%" "%RUN_DIR%\activity.log" >nul
 copy /Y "%GATE_LATEST%\report.json" "%RUN_DIR%\report.json" >nul
 for %%F in ("%GATE_LATEST%\*.png") do if exist "%%~fF" copy /Y "%%~fF" "%RUN_DIR%\%%~nxF" >nul
 if exist "%GATE_LATEST%\templates" (
