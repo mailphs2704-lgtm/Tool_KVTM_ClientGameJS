@@ -209,7 +209,7 @@ jobs:
               'KVTM-CocosV3-', 'KVTM-CaptureV3-', 'version != 3',
               'pixel_format != 2', 'time.perf_counter',
               'fallback="disabled"', 'kvtm_bridge_v3.dll', 'return timing',
-              'math.ceil(math.hypot', 'interpolation_px=8',
+              'math.ceil(math.hypot', 'interpolation_px=64',
               'pipe_mode="persistent"', 'CreateFileW',
               'caller_name = sys._getframe(1).f_code.co_name', 'gesture_observer',
           )
@@ -220,6 +220,7 @@ jobs:
               'shared_capture_fallback',
               'KVTM-Cocos-{self.pid}',
               'KVTM-Capture-{self.pid}',
+              'math.hypot(dx, dy) / 8.0',
           ):
               assert token not in engine, token
           for token in ('time.sleep(0.018)', 'time.sleep(0.014)', 'time.sleep(0.025)'):
