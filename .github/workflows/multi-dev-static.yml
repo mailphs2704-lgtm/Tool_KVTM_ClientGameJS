@@ -209,8 +209,9 @@ jobs:
               'KVTM-CocosV3-', 'KVTM-CaptureV3-', 'version != 3',
               'pixel_format != 2', 'time.perf_counter',
               'fallback="disabled"', 'kvtm_bridge_v3.dll', 'return timing',
-              'math.ceil(math.hypot', 'interpolation_px=64',
-              'pipe_mode="persistent"', 'CreateFileW',
+              'segment_steps = max(1, min(400, int(configured_duration / 0.005)))',
+              'pipe_mode="single_batch"', 'configured_seconds_per_segment',
+              'SWIPE {segment_steps}', 'CreateFileW',
               'caller_name = sys._getframe(1).f_code.co_name', 'gesture_observer',
           )
           for token in required_engine:
@@ -221,18 +222,26 @@ jobs:
               'KVTM-Cocos-{self.pid}',
               'KVTM-Capture-{self.pid}',
               'math.hypot(dx, dy) / 8.0',
+              'interpolation_px=64',
+              'math.ceil(math.hypot',
+              'pipe_mode="persistent"',
+              'replay_path =',
           ):
               assert token not in engine, token
           for token in ('time.sleep(0.018)', 'time.sleep(0.014)', 'time.sleep(0.025)'):
               assert token not in pc, token
-          for token in ('Keep one connection alive', 'for (;;)'):
+          for token in (
+              'Keep one connection alive', 'for (;;)',
+              'INPUT4 BATCH_SWIPE', 'parse_gesture',
+              'dispatch_gesture', 'segment_steps', 'step_ticks',
+          ):
               assert token in native_v3, token
           for token in ('Build-KvtmBridgeV3', 'kvtm_bridge_v3.dll', 'kvtm_loader_v3.exe'):
               assert token in builder, token
           for token in ('setattr(automation, key, value)', 'setattr(controller, key, value)', 'synchronized_targets', 'gesture_timing'):
               assert token in worker, token
           print('BRIDGE_V3_PRODUCTION_ADAPTER_STATIC_OK')
-          print('BRIDGE_V3_SINGLE_TIMING_OWNER_OK')
+          print('BRIDGE_V3_AUTO_PRO_BATCH_SEMANTICS_OK')
           print('BRIDGE_V3_STRICT_CAPTURE_NO_FALLBACK_OK')
           PY
 
