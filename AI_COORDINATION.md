@@ -164,6 +164,8 @@ Thêm bản ghi mới lên đầu bảng. Không sửa hoặc xóa lịch sử c
 
 | 2026-09-03 | AUTO/Multi | AUTO/Multi + Workspace | `20260903-200838` live + source lifecycle | Dọn quầy FULL LIVE PASS: mua 100/100, thu vàng 16 ô, treo đúng 100/100, chuyển own-stall view bằng hai nhịp, giá không đổi, exit0. Source tiếp theo nối PASS accounting vào đóng đúng ClientJS, reset countdown từ finished_at và scheduler hàng đợi toàn máy; thêm backup local [B] cùng docs/CLEAR_STALL_AUTO_HANDOFF.md. Lifecycle/backup mới chờ build + live verify; không sửa Workspace. |
 
+| 2026-09-03 | AUTO/Multi | AUTO/Multi + Workspace | source after `20260903-200838` live | Một lượt source sửa 4 nhóm: reset ClientJS nhận PID/bridge bằng 3 frame hợp lệ thay vì lệ thuộc 2 template; rương chờ modal ổn định 3–8s và xác nhận prompt/change; VongQuay giữ logic gốc rồi thoát overlay có xác nhận; Dọn quầy lặp nhà 1..N đến đủ target hoặc Stop, thêm whitelist GUI/runtime 5 VP (nước hoa hồng, tinh dầu hoa hồng, vải vàng, táo sấy, trà đá). GUI dành thêm chiều cao, verifier/docs cập nhật. Chưa LIVE PASS cho thay đổi mới; không sửa Workspace. |
+
 ## Mẫu cập nhật cho mỗi phiên
 
 ```text
