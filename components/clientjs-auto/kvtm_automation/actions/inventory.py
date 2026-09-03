@@ -50,13 +50,11 @@ class InventoryActions:
         self.waiter.sleep(0.40)
         self.context.log(f"Đã chọn kho bán {storage} ({template})")
 
-    def find_fingerprint(
+    def best_fingerprint_match(
         self,
         fingerprint: VisualFingerprint,
-        *,
-        threshold: float = 0.70,
     ) -> tuple[tuple[int, int], float] | None:
-        """Find a purchased item using the exact icon captured at friend stall."""
+        """Return the best inventory match, including scores below acceptance."""
         import cv2
 
         template_file = Path(fingerprint.template_file)
@@ -73,7 +71,7 @@ class InventoryActions:
 
         best_score = -1.0
         best_center = None
-        for scale in (0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15):
+        for scale in (0.75, 0.85, 0.95, 1.00, 1.05, 1.15, 1.25):
             tw = max(8, int(round(template.shape[1] * scale)))
             th = max(8, int(round(template.shape[0] * scale)))
             if tw > zone.shape[1] or th > zone.shape[0]:
@@ -92,6 +90,18 @@ class InventoryActions:
                     x + int(max_loc[0]) + tw // 2,
                     y + int(max_loc[1]) + th // 2,
                 )
-        if best_center is None or best_score < float(threshold):
+        if best_center is None:
             return None
         return best_center, best_score
+
+    def find_fingerprint(
+        self,
+        fingerprint: VisualFingerprint,
+        *,
+        threshold: float = 0.70,
+    ) -> tuple[tuple[int, int], float] | None:
+        """Find the normalized core icon captured from a verified purchase."""
+        match = self.best_fingerprint_match(fingerprint)
+        if match is None or match[1] < float(threshold):
+            return None
+        return match
