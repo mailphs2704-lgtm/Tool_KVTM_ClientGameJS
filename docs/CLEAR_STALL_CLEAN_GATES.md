@@ -80,7 +80,7 @@ Source đã hoàn thiện, chờ LIVE PASS. Lần live `20260903-125257` FAIL an
 
 1. Mở quầy nhà 1, quét và mua ngay các ô đang nhìn thấy; mỗi giao dịch chỉ cộng sau khi listing đổi.
 2. Sau khi xử lý xong view hiện tại mới vuốt đúng hai nhịp, rồi quét lại cả 8 ô của hai hàng và mua các ô có thể mua; lặp tới cuối quầy.
-3. Nếu chưa đủ, đóng quầy, về nhà rồi vào lại cùng quầy; tối đa `max_scan_pages` nhưng bị chặn cứng không quá 10 lượt mỗi nhà.
+3. Nếu chưa đủ, đóng quầy rồi mở lại ngay tại cùng nhà, không về nhà giữa các lượt; tối đa `max_scan_pages` nhưng bị chặn cứng không quá 10 lượt mỗi nhà.
 4. Một lượt không mua thêm được ô nào thì chuyển ngay sang nhà tiếp theo.
 5. Duyệt tuần tự nhà `1..N`, với N là “Số nhà cần duyệt”.
 6. Dừng ngay khi remaining bằng 0. Nếu hết nhà/lượt mà vẫn thiếu, FAIL rõ expected/actual/remaining và quay về nhà.
