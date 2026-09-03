@@ -71,7 +71,7 @@ LIVE PASS trên runtime `7e32160`, run `20260903-122225`: đúng profile PID 135
 
 ### Gate 3 — PURCHASE_TARGET
 
-Đã chuẩn bị sau Gate 2 LIVE PASS. Nút DEV và hộp xác nhận hiển thị chính xác target; mỗi lần chỉ gọi mua tối đa một listing, bắt buộc listing đổi/biến mất rồi mới cộng 10 VP, lưu PNG sau từng giao dịch và dừng khi đủ target. Gate 3 hiện chỉ kiểm chứng target trong một quầy đã quét; chưa thử tải lại quầy/chuyển nhiều nhà và tuyệt đối chưa thu vàng/treo bán.
+LIVE PASS trên runtime trước commit bố cục, run `20260903-123215`: target 40 VP, đúng bốn click vào physical slot 1..4, bốn PNG cho thấy từng ô chuyển sang “Đã bán”, accounting 10→20→30→40, `PURCHASE_TARGET`, quay về nhà và exit 0. Phạm vi PASS là target trong một quầy đã quét; chưa thử tải lại/chuyển nhiều nhà và chưa thu vàng/treo bán.
 
 ### Gate 4 — COLLECT_GOLD_AND_RESELL_ONE
 
