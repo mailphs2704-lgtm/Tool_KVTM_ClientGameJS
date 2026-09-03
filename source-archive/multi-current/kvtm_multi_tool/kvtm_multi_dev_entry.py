@@ -165,7 +165,7 @@ class MultiDevApp(production.MultiApp):
 
     def _refresh_clear_stall_panel(self) -> None:
         super()._refresh_clear_stall_panel()
-        if not hasattr(self, "auto_clear_stall_probe_button"):
+        if not hasattr(self, "auto_clear_stall_full_resale_probe_button"):
             return
         profile_id, profile = self._clear_stall_profile()
         gate_state = (
@@ -173,15 +173,7 @@ class MultiDevApp(production.MultiApp):
             if profile and not self._dev_probe_blocked(profile_id)
             else "disabled"
         )
-        self.auto_clear_stall_probe_button.configure(state=gate_state)
-        if hasattr(self, "auto_clear_stall_purchase_probe_button"):
-            self.auto_clear_stall_purchase_probe_button.configure(state=gate_state)
-        if hasattr(self, "auto_clear_stall_target_probe_button"):
-            self.auto_clear_stall_target_probe_button.configure(state=gate_state)
-        if hasattr(self, "auto_clear_stall_resale_probe_button"):
-            self.auto_clear_stall_resale_probe_button.configure(state=gate_state)
-        if hasattr(self, "auto_clear_stall_full_resale_probe_button"):
-            self.auto_clear_stall_full_resale_probe_button.configure(state=gate_state)
+        self.auto_clear_stall_full_resale_probe_button.configure(state=gate_state)
 
     def _new_live_log_paths(self, profile_id: str) -> tuple[Path, Path]:
         stamp = time.strftime("%Y%m%d-%H%M%S")
