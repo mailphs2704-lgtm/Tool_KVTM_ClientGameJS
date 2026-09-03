@@ -47,6 +47,7 @@ class StallActions:
     FRIEND_STALL_ZONE = (632, 230, 247, 230)
     OWN_STALL_ACTIVE_ZONE = (319, 249, 386, 120)
     OWN_STALL_ENTRY_POINT = (636, 857)
+    OWN_STALL_CONTENT_ZONE = (196, 340, 599, 395)
 
     def __init__(
         self,
@@ -175,7 +176,7 @@ class StallActions:
             match = self.vision.find(
                 "vang",
                 threshold=0.74,
-                zone=self.EMPTY_STALL_ZONE if hasattr(self, "EMPTY_STALL_ZONE") else (196, 340, 599, 395),
+                zone=self.OWN_STALL_CONTENT_ZONE,
                 click=True,
             )
             if match is None:
