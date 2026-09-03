@@ -9,7 +9,7 @@ import traceback
 from typing import Callable
 
 
-PROBE_VERSION = 11
+PROBE_VERSION = 12
 STALL_VIEW_COUNT = 4
 TOTAL_STALL_SLOTS = 20
 
