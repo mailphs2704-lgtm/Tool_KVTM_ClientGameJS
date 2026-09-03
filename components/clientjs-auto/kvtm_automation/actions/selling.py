@@ -162,8 +162,16 @@ class SellingActions:
             if key in seen:
                 continue
             seen.add(key)
-            match = self.inventory.find_fingerprint(fingerprint, threshold=0.68)
-            if match is None:
+            match = self.inventory.best_fingerprint_match(fingerprint)
+            score = float(match[1]) if match is not None else -1.0
+            self.context.log(
+                "GATE4 inventory candidate "
+                f"sha={fingerprint.sha256[:12]} score={score:.3f}"
+            )
+            # The template is a normalized item core with stall background and
+            # quantity text removed. Keep a conservative threshold so another
+            # visually unrelated inventory item is never substituted.
+            if match is None or score < 0.62:
                 continue
             center, score = match
             self._finish_batch_from_match(center, score)
