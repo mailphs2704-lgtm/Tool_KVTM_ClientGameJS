@@ -47,6 +47,7 @@ class BuyingActions:
         *,
         maximum: int,
         on_unit: Callable[[int], None] | None = None,
+        skip_unbuyable: bool = False,
     ) -> int:
         """Click the same source listing until target is met or it disappears.
 
@@ -79,6 +80,13 @@ class BuyingActions:
                     break
                 self.waiter.settle(0.20)
             if not changed:
+                if skip_unbuyable:
+                    self.context.log(
+                        "Bỏ qua VP ô vật lý "
+                        f"{observation.physical_slot}: click không đổi "
+                        "(có thể chưa đủ level); không cộng 10 VP"
+                    )
+                    return bought
                 raise TransactionError(
                     "Đã click nhưng ô quầy không đổi; không cộng 10 VP"
                 )
