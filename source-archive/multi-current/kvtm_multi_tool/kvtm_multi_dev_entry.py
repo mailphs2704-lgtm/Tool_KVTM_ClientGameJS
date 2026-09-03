@@ -102,6 +102,7 @@ class MultiDevApp(production.MultiApp):
         self._dev_probe_stop_events: dict[str, threading.Event] = {}
         self._clear_stall_probe_starting: set[str] = set()
         self._clear_stall_probe_terminal: dict[str, str] = {}
+        self._clear_stall_gate2_profiles: set[str] = set()
         super()._build_auto_panel()
         self._refresh_clear_stall_panel()
 
@@ -164,13 +165,14 @@ class MultiDevApp(production.MultiApp):
         if not hasattr(self, "auto_clear_stall_probe_button"):
             return
         profile_id, profile = self._clear_stall_profile()
-        self.auto_clear_stall_probe_button.configure(
-            state=(
-                "normal"
-                if profile and not self._dev_probe_blocked(profile_id)
-                else "disabled"
-            )
+        gate_state = (
+            "normal"
+            if profile and not self._dev_probe_blocked(profile_id)
+            else "disabled"
         )
+        self.auto_clear_stall_probe_button.configure(state=gate_state)
+        if hasattr(self, "auto_clear_stall_purchase_probe_button"):
+            self.auto_clear_stall_purchase_probe_button.configure(state=gate_state)
 
     def _new_live_log_paths(self, profile_id: str) -> tuple[Path, Path]:
         stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -199,8 +201,16 @@ class MultiDevApp(production.MultiApp):
             summary = f"STAGE  {stage}"
         elif event == "probe_progress" and message:
             summary = f"INFO   {message}"
+        elif event == "probe_purchase_ok":
+            summary = (
+                "PASS   GATE 2 mua đúng "
+                f"{int(payload.get('purchased_quantity') or 0)} VP"
+            )
         elif event == "probe_ok":
-            summary = f"PASS   probe hoàn tất • occupied={int(payload.get('occupied_new_total') or 0)}/20"
+            summary = (
+                "PASS   probe hoàn tất • sample_hits="
+                f"{int(payload.get('sample_hits_not_unique_inventory') or 0)}"
+            )
         elif event == "probe_error":
             summary = f"ERROR  {payload.get('error') or 'không xác định'}"
         elif event == "probe_stopped":
@@ -293,13 +303,30 @@ class MultiDevApp(production.MultiApp):
         if not paths:
             return
         self._append_probe_log(profile_id, reason)
+        self._clear_stall_gate2_profiles.discard(profile_id)
         try:
             paths[1].write_text("done\n", encoding="ascii")
         except OSError:
             pass
 
+    def _start_clear_stall_purchase_probe(self) -> None:
+        """Require explicit consent, then buy exactly one verified x10 listing."""
+        self._save_clear_stall_config()
+        profile_id, profile = self._clear_stall_profile()
+        if not profile_id or not profile:
+            core.messagebox.showinfo(core.APP_NAME, "Hãy chọn một tài khoản clone.")
+            return
+        if not core.messagebox.askyesno(
+            core.APP_NAME,
+            "GATE 2 sẽ mua thật đúng 1 ô x10 tại nhà bạn đầu tiên.\n"
+            "Sau khi ô quầy đổi, Gate dừng mua và quay về nhà. Tiếp tục?",
+        ):
+            return
+        self._clear_stall_gate2_profiles.add(str(profile_id))
+        self._start_clear_stall_probe()
+
     def _start_clear_stall_probe(self) -> None:
-        """Launch clone, then run the read-only probe inside this resident process."""
+        """Launch clone, then run the selected resident probe inside this process."""
         self._save_clear_stall_config()
         profile_id, profile = self._clear_stall_profile()
         log_profile_id = str(profile_id or "unresolved-profile")
@@ -372,6 +399,7 @@ class MultiDevApp(production.MultiApp):
             args=(
                 profile_id, profile, int(proc.pid), friend, storage,
                 quantity, work_dir, stop_event,
+                1 if profile_id in self._clear_stall_gate2_profiles else 0,
             ),
             name=f"kvtm-dev-clear-stall-probe-{profile_id[:8]}",
             daemon=True,
@@ -397,6 +425,7 @@ class MultiDevApp(production.MultiApp):
         quantity: int,
         work_dir: Path,
         stop_event: threading.Event,
+        purchase_limit: int,
     ) -> None:
         returncode = 1
         try:
@@ -412,6 +441,7 @@ class MultiDevApp(production.MultiApp):
                 resale_storage_id=int(storage),
                 buy_quantity=int(quantity),
                 work_dir=work_dir,
+                purchase_limit=int(purchase_limit),
             )
 
             def sink(payload: dict) -> None:
@@ -425,7 +455,10 @@ class MultiDevApp(production.MultiApp):
 
             sink({
                 "event": "probe_progress",
-                "message": "Resident runtime đã sẵn sàng; probe không import native lần hai",
+                "message": (
+                    "Resident runtime đã sẵn sàng • "
+                    + ("GATE 2 mua đúng 1 ô x10" if purchase_limit else "GATE 1 READ-ONLY")
+                ),
                 "stage": "resident-runtime-reused",
             })
             returncode = run_probe(
@@ -462,21 +495,39 @@ class MultiDevApp(production.MultiApp):
         event = str(payload.get("event") or "")
         message = str(payload.get("message") or "")
         stage = str(payload.get("stage") or "")
+        gate_name = (
+            "GATE 2"
+            if str(payload.get("transaction_gate") or "") == "PURCHASE_ONE_LISTING"
+            or profile_id in self._clear_stall_gate2_profiles
+            else "GATE 1"
+        )
         if event == "probe_boot":
             self._set_clear_stall_checkpoint(
-                profile_id, f"GATE 1 • {stage or 'đang khởi tạo'}"
+                profile_id, f"{gate_name} • {stage or 'đang khởi tạo'}"
             )
         elif event == "probe_progress":
             self._set_clear_stall_checkpoint(
                 profile_id, message or stage or "GATE 1 đang chạy"
             )
+        elif event == "probe_purchase_ok":
+            purchased = int(payload.get("purchased_quantity") or 0)
+            self._set_clear_stall_checkpoint(
+                profile_id,
+                f"GATE 2 • đã xác minh mua {purchased} VP; đang hoàn tất",
+            )
         elif event == "probe_ok":
             sample_hits = int(payload.get("sample_hits_not_unique_inventory") or 0)
             requested = int(payload.get("requested_quantity") or 0)
+            purchased = int(payload.get("purchased_quantity") or 0)
+            is_gate2 = str(payload.get("transaction_gate") or "") == "PURCHASE_ONE_LISTING"
             summary = (
-                "GATE 1 PASS • điều hướng/capture/4 view ổn định • "
-                f"{sample_hits} mẫu ảnh có VP (chỉ chẩn đoán) • "
-                f"mục tiêu {requested} VP dùng bộ đếm động"
+                (
+                    f"GATE 2 PASS • đã mua và xác minh đúng {purchased} VP"
+                    if is_gate2
+                    else "GATE 1 PASS • điều hướng/capture/4 view ổn định • "
+                    f"{sample_hits} mẫu ảnh có VP (chỉ chẩn đoán) • "
+                    f"mục tiêu {requested} VP dùng bộ đếm động"
+                )
             )
             self._clear_stall_probe_terminal[profile_id] = "PASS"
             self._set_clear_stall_checkpoint(
@@ -484,7 +535,9 @@ class MultiDevApp(production.MultiApp):
                 summary,
                 {
                     "ok": True,
-                    "probe_only": True,
+                    "probe_only": not is_gate2,
+                    "transaction_gate": str(payload.get("transaction_gate") or "READ_ONLY_SCAN"),
+                    "purchased_quantity": purchased,
                     "sample_hits_not_unique_inventory": sample_hits,
                     "capacity_model": str(
                         payload.get("capacity_model") or "DYNAMIC_REMAINING_COUNTER"
