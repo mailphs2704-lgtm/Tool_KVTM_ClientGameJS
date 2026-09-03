@@ -1101,6 +1101,11 @@ class MultiApp(tk.Tk):
         )
         self.auto_clear_stall_probe_button = self.auto_clear_stall_start_button
         self.auto_clear_stall_start_button.pack(side="left", padx=(0, 8))
+        self.auto_clear_stall_purchase_probe_button = ttk.Button(
+            action_row, text="▶ GATE 2: Mua thử đúng 1 ô x10",
+            style="Start.TButton", command=self._start_clear_stall_purchase_probe,
+        )
+        self.auto_clear_stall_purchase_probe_button.pack(side="left", padx=(0, 8))
         self.auto_clear_stall_stop_button = ttk.Button(
             action_row, text="■ Dừng",
             style="Stop.TButton", command=self._stop_clear_stall,
@@ -1422,6 +1427,7 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_interval_spin,
                 self.auto_clear_stall_close_button,
                 self.auto_clear_stall_start_button,
+                self.auto_clear_stall_purchase_probe_button,
                 self.auto_clear_stall_stop_button,
             ):
                 widget.configure(state=state)
@@ -1940,6 +1946,13 @@ class MultiApp(tk.Tk):
     def _start_clear_stall_probe(self) -> None:
         """Production fallback; DEV overrides this with the resident read-only probe."""
         self._start_clear_stall()
+
+    def _start_clear_stall_purchase_probe(self) -> None:
+        """Transaction probes are available only in the isolated DEV shell."""
+        messagebox.showinfo(
+            APP_NAME,
+            "GATE 2 chỉ được phép chạy trong Multi DEV.",
+        )
 
     def _start_clear_stall(
         self, profile_id: str | None = None, scheduled: bool = False
