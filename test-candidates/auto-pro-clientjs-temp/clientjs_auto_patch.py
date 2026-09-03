@@ -147,6 +147,41 @@ def _find(controller, name, threshold=0.85, click=False):
         return False
 
 
+def _game_anchor(controller) -> bool:
+    return any(
+        _find(controller, name, 0.78)
+        for name in (
+            "friend_off", "friend", "icon_home", "quay_hang",
+            "cua_hang", "clock",
+        )
+    )
+
+
+def _rendered_client_frame(controller):
+    """Return one valid 1000x1000 ClientJS frame, or None while bridge/loading fails."""
+    try:
+        import cv2
+        frame = controller.driver.screenshot(format="opencv")
+        if frame is None or getattr(frame, "size", 0) == 0:
+            return None
+        height, width = frame.shape[:2]
+        if width < 800 or height < 750:
+            return None
+        gray = cv2.cvtColor(
+            frame,
+            cv2.COLOR_BGRA2GRAY
+            if len(frame.shape) == 3 and frame.shape[2] == 4
+            else cv2.COLOR_BGR2GRAY,
+        )
+        mean = float(gray.mean())
+        deviation = float(gray.std())
+        if 5.0 < mean < 250.0 and deviation >= 18.0:
+            return frame
+    except Exception:
+        return None
+    return None
+
+
 def _pc_open_game(self, stop_event=None):
     """Restart ClientJS directly; never require the Android launcher icon."""
     self.update_progress("Khởi động lại ClientJS")
@@ -157,11 +192,13 @@ def _pc_open_game(self, stop_event=None):
     self.driver.app_start("vn.kvtm.js")
 
     deadline = time.monotonic() + 180.0
+    started = time.monotonic()
     clicked_intermediate = False
+    rendered_streak = 0
     while time.monotonic() < deadline:
         if _stopped(stop_event):
             return
-        if _find(self, "friend_off", 0.84) or _find(self, "icon_home", 0.84):
+        if _game_anchor(self):
             self.update_progress("Đã vào game ClientJS")
             break
 
@@ -170,18 +207,44 @@ def _pc_open_game(self, stop_event=None):
         if _find(self, "tai_khoan", 0.82, click=True):
             self.driver.click(984, 341)
             clicked_intermediate = True
+            rendered_streak = 0
         elif _find(self, "tai_khoan_on", 0.82):
             self.driver.click(981, 338)
             clicked_intermediate = True
+            rendered_streak = 0
         elif _find(self, "icon_game", 0.80, click=True):
             clicked_intermediate = True
+            rendered_streak = 0
+        elif time.monotonic() - started >= 8.0:
+            # Templates can change independently of the game. A replacement
+            # PID with three consecutive nonblank bridge frames is sufficient
+            # to hand control to the popup cleanup below.
+            rendered_streak = (
+                rendered_streak + 1
+                if _rendered_client_frame(self) is not None
+                else 0
+            )
+            if rendered_streak >= 3:
+                self.update_progress("ClientJS đã render game • tiếp tục AUTO")
+                try:
+                    self.driver._trace(
+                        "clientjs_game_ready_by_live_capture",
+                        profile_id=getattr(self.driver, "profile_id", None),
+                        pid=int(getattr(self.driver, "pid", 0)),
+                        consecutive_frames=rendered_streak,
+                    )
+                except Exception:
+                    pass
+                break
 
         self.update_progress(
             "Chờ giao diện game" if clicked_intermediate else "Chờ ClientJS vào game"
         )
         time.sleep(1.0)
     else:
-        raise RuntimeError("ClientJS đã mở nhưng không nhận được màn hình game sau 180 giây")
+        raise RuntimeError(
+            "ClientJS/PID mới không có template game và bridge không trả 3 frame hợp lệ"
+        )
 
     delay = max(0, int(getattr(self, "delay_vao_game", 0)))
     for remaining in range(delay, 0, -1):
@@ -213,6 +276,7 @@ def _install_controller_patch(adb_controller_module) -> None:
 
     original_open_game = cls.openGame
     original_open_chests = cls.openChests
+    original_vong_quay = cls.VongQuay
 
     def open_game(self, stop_event=None):
         if str(getattr(self, "device_id", "")).startswith(("PC:", "PCID:")):
@@ -260,15 +324,35 @@ def _install_controller_patch(adb_controller_module) -> None:
                 # doing so on ClientJS sends the open tap into a loading modal.
                 selection_wait_done = True
                 wait_started = time.monotonic()
-                while time.monotonic() - wait_started < 4.0:
+                previous = None
+                stable_frames = 0
+                # Real clients need roughly 3–5s, but animation/load varies.
+                # Wait at least 3s, then continue when the modal has rendered
+                # stably; cap at 8s so this cannot hang forever.
+                while time.monotonic() - wait_started < 8.0:
                     if _stopped(stop_event):
                         return result
-                    time.sleep(0.10)
+                    time.sleep(0.20)
+                    try:
+                        current = _chest_region()
+                        if previous is not None and _difference(previous, current) <= 2.2:
+                            stable_frames += 1
+                        else:
+                            stable_frames = 0
+                        previous = current
+                    except Exception:
+                        stable_frames = 0
+                    if (
+                        time.monotonic() - wait_started >= 3.0
+                        and stable_frames >= 3
+                    ):
+                        break
                 try:
                     self.driver._trace(
                         "clientjs_chest_selection_ready_wait",
                         logical=[float(x), float(y)],
                         waited_seconds=round(time.monotonic() - wait_started, 3),
+                        stable_frames=stable_frames,
                     )
                 except Exception:
                     pass
@@ -321,7 +405,7 @@ def _install_controller_patch(adb_controller_module) -> None:
             # Repeat a point like
             # AUTO PRO (up to five taps), and stop immediately after a real
             # modal change so no tap can leak into the game behind it.
-            for x, y in ((500, 470), (433, 557)):
+            for x, y in ((500, 470), (500, 520), (500, 590), (433, 557)):
                 for attempt in range(5):
                     if _stopped(stop_event):
                         return False
@@ -343,7 +427,10 @@ def _install_controller_patch(adb_controller_module) -> None:
                     # After the 4-second render wait that animation alone can
                     # move the mean difference above 2.0. A real open replaces
                     # most of the modal region, producing a much larger change.
-                    if score >= 8.0:
+                    prompt_visible = bool(
+                        original_find("mo_ruong", threshold=0.70, click=False)
+                    )
+                    if score >= 8.0 or not prompt_visible:
                         chest_screen_changed = True
                         return True
                     before = after
@@ -365,8 +452,46 @@ def _install_controller_patch(adb_controller_module) -> None:
             self.driver.click = original_click
             processor.find_image = original_find
 
+    def vong_quay(self, luotquay, stop_event=None):
+        """Run AUTO PRO spins, then always return ClientJS to the farm screen."""
+        result = original_vong_quay(self, luotquay, stop_event)
+        if not str(getattr(self, "device_id", "")).startswith(("PC:", "PCID:")):
+            return result
+        for attempt in range(1, 9):
+            if _stopped(stop_event) or _game_anchor(self):
+                return result
+            # Reward and wheel overlays do not close consistently with a
+            # single Android BACK on ClientJS. Prefer their visible close
+            # controls, then use the fixed top-right close and BACK fallback.
+            for name in ("close_game", "x_popup_event", "dong_y"):
+                if _find(self, name, 0.72, click=True):
+                    time.sleep(0.45)
+                    break
+            else:
+                self.driver.click(965, 198)
+                time.sleep(0.35)
+                self.press_back(stop_event)
+                time.sleep(0.45)
+            try:
+                self.driver._trace(
+                    "clientjs_wheel_exit_probe",
+                    attempt=attempt,
+                    home_ready=_game_anchor(self),
+                )
+            except Exception:
+                pass
+        try:
+            self.gui.log(
+                "ClientJS: đã quay/nhận quà nhưng chưa xác nhận thoát màn hình quay",
+                device_id=self.device_id,
+            )
+        except Exception:
+            pass
+        return result
+
     cls.openGame = open_game
     cls.openChests = open_chests
+    cls.VongQuay = vong_quay
     cls._clientjs_shop_patch_installed = True
 
 
