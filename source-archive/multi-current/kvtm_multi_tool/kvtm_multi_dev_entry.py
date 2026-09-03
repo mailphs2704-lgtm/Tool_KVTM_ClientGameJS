@@ -225,10 +225,9 @@ class MultiDevApp(production.MultiApp):
         elif event == "probe_resale_ok":
             sold = int(payload.get("quantity") or 0)
             fingerprint = str(payload.get("fingerprint_sha256") or "")
-            self._set_clear_stall_checkpoint(
-                profile_id,
-                f"GATE 4 • đã treo đúng {sold} VP vừa mua • "
-                f"fingerprint={fingerprint[:12]}",
+            summary = (
+                f"PASS   GATE 4 treo đúng {sold} VP vừa mua • "
+                f"fingerprint={fingerprint[:12]}"
             )
         elif event == "probe_ok":
             summary = (
@@ -595,50 +594,75 @@ class MultiDevApp(production.MultiApp):
         message = str(payload.get("message") or "")
         stage = str(payload.get("stage") or "")
         transaction_gate = str(payload.get("transaction_gate") or "")
-        gate_name = (
-            "GATE 3"
-            if transaction_gate == "PURCHASE_TARGET_MULTI_HOUSE"
-            or profile_id in self._clear_stall_gate3_profiles
-            else (
-                "GATE 2"
-                if transaction_gate == "PURCHASE_ONE_LISTING"
-                or profile_id in self._clear_stall_gate2_profiles
-                else "GATE 1"
-            )
+        is_gate4 = (
+            transaction_gate == "COLLECT_GOLD_RESELL_ONE_EXACT"
+            or profile_id in self._clear_stall_gate4_profiles
         )
+        is_gate3 = (
+            transaction_gate == "PURCHASE_TARGET_MULTI_HOUSE"
+            or profile_id in self._clear_stall_gate3_profiles
+        )
+        is_gate2 = (
+            transaction_gate == "PURCHASE_ONE_LISTING"
+            or profile_id in self._clear_stall_gate2_profiles
+        )
+        gate_name = (
+            "GATE 4" if is_gate4 else "GATE 3B" if is_gate3
+            else "GATE 2" if is_gate2 else "GATE 1"
+        )
+
         if event == "probe_boot":
             self._set_clear_stall_checkpoint(
                 profile_id, f"{gate_name} • {stage or 'đang khởi tạo'}"
             )
         elif event == "probe_progress":
             self._set_clear_stall_checkpoint(
-                profile_id, message or stage or "GATE 1 đang chạy"
+                profile_id, message or stage or f"{gate_name} đang chạy"
             )
         elif event == "probe_purchase_ok":
             purchased = int(payload.get("purchased_quantity") or 0)
             self._set_clear_stall_checkpoint(
                 profile_id,
-                f"GATE 2 • đã xác minh mua {purchased} VP; đang hoàn tất",
+                f"{gate_name} • đã xác minh mua {purchased} VP",
+            )
+        elif event == "probe_resale_ok":
+            sold = int(payload.get("quantity") or 0)
+            fingerprint = str(payload.get("fingerprint_sha256") or "")
+            self._set_clear_stall_checkpoint(
+                profile_id,
+                f"GATE 4 • đã treo đúng {sold} VP vừa mua • "
+                f"fingerprint={fingerprint[:12]}",
             )
         elif event == "probe_ok":
             sample_hits = int(payload.get("sample_hits_not_unique_inventory") or 0)
             requested = int(payload.get("requested_quantity") or 0)
             purchased = int(payload.get("purchased_quantity") or 0)
+            sold = int(payload.get("sold_quantity") or 0)
+            collected_gold = int(payload.get("collected_gold_slots") or 0)
             transaction_gate = str(payload.get("transaction_gate") or "")
+            is_gate4 = transaction_gate == "COLLECT_GOLD_RESELL_ONE_EXACT"
+            is_gate3 = transaction_gate == "PURCHASE_TARGET_MULTI_HOUSE"
             is_gate2 = transaction_gate == "PURCHASE_ONE_LISTING"
-            is_gate3 = transaction_gate == "PURCHASE_TARGET"
-            summary = (
-                f"GATE 3B PASS • đã mua đủ {purchased}/{requested} VP qua tải lại/chuyển nhà"
-                if is_gate3
-                else (
-                    f"GATE 2 PASS • đã mua và xác minh đúng {purchased} VP"
-                    if is_gate2
-                    else "GATE 1 PASS • điều hướng/capture/4 view ổn định • "
+
+            if is_gate4:
+                summary = (
+                    f"GATE 4 PASS • mua {purchased}/{requested} VP • "
+                    f"thu {collected_gold} ô vàng • treo đúng {sold} VP vừa mua"
+                )
+            elif is_gate3:
+                summary = (
+                    f"GATE 3B PASS • đã mua đủ {purchased}/{requested} VP "
+                    "qua tải lại/chuyển nhà"
+                )
+            elif is_gate2:
+                summary = f"GATE 2 PASS • đã mua và xác minh đúng {purchased} VP"
+            else:
+                summary = (
+                    "GATE 1 PASS • điều hướng/capture/4 view ổn định • "
                     f"{sample_hits} mẫu ảnh có VP (chỉ chẩn đoán) • "
                     f"mục tiêu {requested} VP dùng bộ đếm động"
-                    )
                 )
-            )
+
             self._clear_stall_probe_terminal[profile_id] = "PASS"
             self._set_clear_stall_checkpoint(
                 profile_id,
@@ -646,9 +670,10 @@ class MultiDevApp(production.MultiApp):
                 {
                     "ok": True,
                     "probe_only": not (is_gate2 or is_gate3 or is_gate4),
-                    "transaction_gate": str(payload.get("transaction_gate") or "READ_ONLY_SCAN"),
+                    "transaction_gate": transaction_gate or "READ_ONLY_SCAN",
                     "purchased_quantity": purchased,
                     "sold_quantity": sold,
+                    "collected_gold_slots": collected_gold,
                     "sample_hits_not_unique_inventory": sample_hits,
                     "capacity_model": str(
                         payload.get("capacity_model") or "DYNAMIC_REMAINING_COUNTER"
@@ -659,7 +684,9 @@ class MultiDevApp(production.MultiApp):
             )
         elif event == "probe_stopped":
             self._clear_stall_probe_terminal[profile_id] = "STOPPED"
-            self._set_clear_stall_checkpoint(profile_id, "GATE 1 đã dừng an toàn")
+            self._set_clear_stall_checkpoint(
+                profile_id, f"{gate_name} đã dừng an toàn"
+            )
         elif event == "probe_error":
             error = str(payload.get("error") or "Lỗi probe không xác định")
             self._clear_stall_probe_terminal[profile_id] = "FAIL"
@@ -668,7 +695,8 @@ class MultiDevApp(production.MultiApp):
                 f"{gate_name} FAIL",
                 {
                     "ok": False,
-                    "probe_only": True,
+                    "probe_only": not (is_gate2 or is_gate3 or is_gate4),
+                    "transaction_gate": transaction_gate or "UNKNOWN",
                     "error": error,
                     "report": str(payload.get("report") or ""),
                 },
