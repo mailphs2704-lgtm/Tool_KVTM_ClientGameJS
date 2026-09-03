@@ -103,6 +103,7 @@ class MultiDevApp(production.MultiApp):
         self._clear_stall_probe_starting: set[str] = set()
         self._clear_stall_probe_terminal: dict[str, str] = {}
         self._clear_stall_gate2_profiles: set[str] = set()
+        self._clear_stall_gate3_profiles: set[str] = set()
         super()._build_auto_panel()
         self._refresh_clear_stall_panel()
 
@@ -173,6 +174,8 @@ class MultiDevApp(production.MultiApp):
         self.auto_clear_stall_probe_button.configure(state=gate_state)
         if hasattr(self, "auto_clear_stall_purchase_probe_button"):
             self.auto_clear_stall_purchase_probe_button.configure(state=gate_state)
+        if hasattr(self, "auto_clear_stall_target_probe_button"):
+            self.auto_clear_stall_target_probe_button.configure(state=gate_state)
 
     def _new_live_log_paths(self, profile_id: str) -> tuple[Path, Path]:
         stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -304,10 +307,37 @@ class MultiDevApp(production.MultiApp):
             return
         self._append_probe_log(profile_id, reason)
         self._clear_stall_gate2_profiles.discard(profile_id)
+        self._clear_stall_gate3_profiles.discard(profile_id)
         try:
             paths[1].write_text("done\n", encoding="ascii")
         except OSError:
             pass
+
+    def _start_clear_stall_target_probe(self) -> None:
+        """Buy the configured x10 target, with no resale action."""
+        self._save_clear_stall_config()
+        profile_id, profile = self._clear_stall_profile()
+        if not profile_id or not profile:
+            core.messagebox.showinfo(core.APP_NAME, "Hãy chọn một tài khoản clone.")
+            return
+        job = self._clear_stall_job(profile_id)
+        quantity = max(10, min(1000, int(job.get("buy_quantity", 10) or 10)))
+        quantity = max(10, (quantity // 10) * 10)
+        if quantity <= 10:
+            core.messagebox.showinfo(
+                core.APP_NAME,
+                "GATE 3 cần Số lượng mua ít nhất 20 VP; target 10 đã thuộc Gate 2.",
+            )
+            return
+        if not core.messagebox.askyesno(
+            core.APP_NAME,
+            f"GATE 3 sẽ mua thật đúng {quantity} VP ({quantity // 10} ô x10).\n"
+            "Mỗi ô phải đổi trước khi cộng; đủ target sẽ dừng và quay về nhà.\n"
+            "Gate này CHƯA thu vàng và CHƯA treo bán. Tiếp tục?",
+        ):
+            return
+        self._clear_stall_gate3_profiles.add(str(profile_id))
+        self._start_clear_stall_probe()
 
     def _start_clear_stall_purchase_probe(self) -> None:
         """Require explicit consent, then buy exactly one verified x10 listing."""
@@ -399,7 +429,11 @@ class MultiDevApp(production.MultiApp):
             args=(
                 profile_id, profile, int(proc.pid), friend, storage,
                 quantity, work_dir, stop_event,
-                1 if profile_id in self._clear_stall_gate2_profiles else 0,
+                (
+                    quantity // 10
+                    if profile_id in self._clear_stall_gate3_profiles
+                    else (1 if profile_id in self._clear_stall_gate2_profiles else 0)
+                ),
             ),
             name=f"kvtm-dev-clear-stall-probe-{profile_id[:8]}",
             daemon=True,
@@ -457,7 +491,15 @@ class MultiDevApp(production.MultiApp):
                 "event": "probe_progress",
                 "message": (
                     "Resident runtime đã sẵn sàng • "
-                    + ("GATE 2 mua đúng 1 ô x10" if purchase_limit else "GATE 1 READ-ONLY")
+                    + (
+                        f"GATE 3 mua target {purchase_limit * 10} VP"
+                        if purchase_limit > 1
+                        else (
+                            "GATE 2 mua đúng 1 ô x10"
+                            if purchase_limit == 1
+                            else "GATE 1 READ-ONLY"
+                        )
+                    )
                 ),
                 "stage": "resident-runtime-reused",
             })
@@ -495,11 +537,17 @@ class MultiDevApp(production.MultiApp):
         event = str(payload.get("event") or "")
         message = str(payload.get("message") or "")
         stage = str(payload.get("stage") or "")
+        transaction_gate = str(payload.get("transaction_gate") or "")
         gate_name = (
-            "GATE 2"
-            if str(payload.get("transaction_gate") or "") == "PURCHASE_ONE_LISTING"
-            or profile_id in self._clear_stall_gate2_profiles
-            else "GATE 1"
+            "GATE 3"
+            if transaction_gate == "PURCHASE_TARGET"
+            or profile_id in self._clear_stall_gate3_profiles
+            else (
+                "GATE 2"
+                if transaction_gate == "PURCHASE_ONE_LISTING"
+                or profile_id in self._clear_stall_gate2_profiles
+                else "GATE 1"
+            )
         )
         if event == "probe_boot":
             self._set_clear_stall_checkpoint(
@@ -519,9 +567,13 @@ class MultiDevApp(production.MultiApp):
             sample_hits = int(payload.get("sample_hits_not_unique_inventory") or 0)
             requested = int(payload.get("requested_quantity") or 0)
             purchased = int(payload.get("purchased_quantity") or 0)
-            is_gate2 = str(payload.get("transaction_gate") or "") == "PURCHASE_ONE_LISTING"
+            transaction_gate = str(payload.get("transaction_gate") or "")
+            is_gate2 = transaction_gate == "PURCHASE_ONE_LISTING"
+            is_gate3 = transaction_gate == "PURCHASE_TARGET"
             summary = (
-                (
+                f"GATE 3 PASS • đã mua đủ và xác minh {purchased}/{requested} VP"
+                if is_gate3
+                else (
                     f"GATE 2 PASS • đã mua và xác minh đúng {purchased} VP"
                     if is_gate2
                     else "GATE 1 PASS • điều hướng/capture/4 view ổn định • "
@@ -535,7 +587,7 @@ class MultiDevApp(production.MultiApp):
                 summary,
                 {
                     "ok": True,
-                    "probe_only": not is_gate2,
+                    "probe_only": not (is_gate2 or is_gate3),
                     "transaction_gate": str(payload.get("transaction_gate") or "READ_ONLY_SCAN"),
                     "purchased_quantity": purchased,
                     "sample_hits_not_unique_inventory": sample_hits,
