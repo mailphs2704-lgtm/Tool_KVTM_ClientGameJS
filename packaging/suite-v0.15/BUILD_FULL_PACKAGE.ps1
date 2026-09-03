@@ -19,6 +19,16 @@ $PreservedClearStall = $false
 $PreservedClearStallProbe = $false
 New-Item -ItemType Directory -Path $DistRoot -Force | Out-Null
 
+$ClearStallVerifier = Join-Path $RepoRoot "tools\verify_clear_stall_contract.py"
+if (-not (Test-Path -LiteralPath $ClearStallVerifier -PathType Leaf)) {
+    throw "Missing clear-stall contract verifier: $ClearStallVerifier"
+}
+& py.exe -3.11 $ClearStallVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw "Clear-stall static contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "Clear-stall static contract: VERIFIED" -ForegroundColor Green
+
 function Test-GitLfsPointer {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -217,6 +227,14 @@ $CurrentClearStall = Join-Path $CurrentData "clear-stall"
 if (Test-Path -LiteralPath $CurrentClearStall -PathType Container) {
     $PreservedClearStallPath = Join-Path $PreserveRoot "clear-stall"
     Copy-Item -LiteralPath $CurrentClearStall -Destination $PreservedClearStallPath -Recurse -Force
+    # Keep diagnostic runs only. Dọn quầy deliberately has no cross-cycle
+    # carryover, so stale state/carryover files must not survive a rebuild.
+    Get-ChildItem -LiteralPath $PreservedClearStallPath -Directory -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq "state" } |
+        Remove-Item -Recurse -Force -ErrorAction Stop
+    Get-ChildItem -LiteralPath $PreservedClearStallPath -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq "carryover.json" } |
+        Remove-Item -Force -ErrorAction Stop
     $PreservedClearStall = $true
 }
 $CurrentClearStallProbe = Join-Path $CurrentData "clear-stall-probe"
@@ -430,7 +448,7 @@ Write-Host "ZIP:    $ZipPath"
 Write-Host "SOURCE HEAD: $($head.Trim())" -ForegroundColor Cyan
 Write-Host "Legacy AUTO PRO runtime kept only for other suite features/reference." -ForegroundColor DarkGray
 Write-Host "Dọn quầy CLEAN VERIFIED: no legacy pyc execution dependency" -ForegroundColor Green
-Write-Host "Dọn quầy CLEAN VERIFIED: KVAutomation + 4 views / 20 physical slots" -ForegroundColor Green
+Write-Host "Dọn quầy CLEAN VERIFIED: dynamic capacity + x10 remaining counter + serialized queue" -ForegroundColor Green
 if ($PreservedFiles.Count -gt 0) {
     foreach ($name in $PreservedFiles.Keys) {
         Write-Host ("DATA KEPT: {0} <- {1}" -f $name, $PreservedFiles[$name]) -ForegroundColor Cyan
@@ -439,7 +457,7 @@ if ($PreservedFiles.Count -gt 0) {
     Write-Host "DATA: no existing profile/settings found; data-dev created empty" -ForegroundColor Yellow
 }
 if ($PreservedClearStall) {
-    Write-Host "DATA KEPT: clear-stall state/carryover/templates/runs" -ForegroundColor Cyan
+    Write-Host "DATA KEPT: clear-stall diagnostic runs only; carryover purged" -ForegroundColor Cyan
 }
 if ($PreservedClearStallProbe) {
     Write-Host "DATA KEPT: clear-stall-probe screenshots/reports" -ForegroundColor Cyan
