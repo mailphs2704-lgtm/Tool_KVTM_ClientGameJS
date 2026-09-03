@@ -67,6 +67,13 @@ class StallActions:
         return (int(view) - 1) * STALL_SHIFT + int(local_slot)
 
     @staticmethod
+    def visible_local_slots(view: int) -> tuple[int, ...]:
+        """Every rendered view has two rows; both must be purchase-scanned."""
+        if not 1 <= int(view) <= STALL_VIEW_COUNT:
+            raise ValueError(f"Cửa sổ quầy không hợp lệ: {view}")
+        return tuple(range(1, 9))
+
+    @staticmethod
     def new_local_slots(view: int) -> tuple[int, ...]:
         # Diagnostic overlap only. Production purchase must use a remaining
         # counter and verified disappearance, never infer account capacity
@@ -240,7 +247,7 @@ class StallActions:
         template_dir = Path(template_dir)
         template_dir.mkdir(parents=True, exist_ok=True)
         observations: list[StallSlotObservation] = []
-        for local_slot in self.new_local_slots(view):
+        for local_slot in self.visible_local_slots(view):
             if not self.listing_is_available(source, local_slot):
                 continue
             cx, cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
