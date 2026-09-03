@@ -71,6 +71,11 @@ def main() -> int:
         "listing_is_available",
         "sold listings must be excluded before purchase planning",
     )
+    require(
+        (ROOT / "components/clientjs-auto/kvtm_automation/actions/stall.py").read_text(encoding="utf-8"),
+        "((495, 530) if slot <= 4 else (685, 720))",
+        "top/bottom price-band mapping missing",
+    )
     require(dev_entry, "askyesno", "Gate 2 requires explicit user consent")
     forbid(workflow, "CarryoverStore", "Dọn quầy must not carry inventory across cycles")
     require(builder, "carryover purged", "builder must purge stale carryover state")
