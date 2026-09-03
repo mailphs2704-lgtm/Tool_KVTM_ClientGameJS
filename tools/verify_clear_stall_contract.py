@@ -17,6 +17,9 @@ STALL = ROOT / "components/clientjs-auto/kvtm_automation/actions/stall.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 MULTI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 BUILDER = ROOT / "packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1"
+CONTROL = ROOT / "KVTM_DEV_CONTROL.bat"
+BACKUP = ROOT / "tools/KVTM_CREATE_LOCAL_BACKUP.ps1"
+HANDOFF = ROOT / "docs/CLEAR_STALL_AUTO_HANDOFF.md"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -46,6 +49,9 @@ def main() -> int:
     dev_entry = sources[DEV_ENTRY]
     multi = sources[MULTI]
     builder = BUILDER.read_text(encoding="utf-8")
+    control = CONTROL.read_text(encoding="utf-8")
+    backup = BACKUP.read_text(encoding="utf-8")
+    handoff = HANDOFF.read_text(encoding="utf-8")
 
     require(worker, 'EXECUTION_GATE = "READ_ONLY_SCAN"', "transaction gate must stay read-only")
     require(worker, "probe_only=True", "worker must not enable purchase/resale")
@@ -212,6 +218,39 @@ def main() -> int:
         "self.auto_clear_stall_probe_button = full_action",
         "DEV compatibility alias must point to the one full-action button",
     )
+    require(
+        dev_entry,
+        "def _start_scheduled_full_clear_stall",
+        "Due full-cycle scheduler entry missing",
+    )
+    require(
+        dev_entry,
+        "requested <= 0 or purchased != requested or sold != requested",
+        "Completion accounting guard missing",
+    )
+    require(
+        dev_entry,
+        'job["next_run_at"] = (',
+        "Successful cycle must reset its countdown",
+    )
+    require(
+        dev_entry,
+        "proc.terminate()",
+        "Successful cycle must support closing its ClientJS",
+    )
+    require(
+        dev_entry,
+        "for _due, profile_id in sorted(due_jobs):",
+        "Due accounts must keep deterministic queue order",
+    )
+    require(
+        control,
+        'if /I "%CHOICE%"=="B" goto local_backup',
+        "One-click backup menu action missing",
+    )
+    require(backup, "git bundle create", "Backup must snapshot source")
+    require(backup, "private_data_local_only", "Backup privacy marker missing")
+    require(handoff, "requested_quantity == purchased_quantity == sold_quantity", "AI handoff lifecycle contract missing")
 
     print("CLEAR STALL STATIC CONTRACT VERIFIED")
     print("gate=READ_ONLY_SCAN")
@@ -240,6 +279,8 @@ def main() -> int:
     print("gate5_own_stall_views=scan_collect_resell_then_swipe_1..4")
     print("gate5_own_stall_drag=two_pulses_per_view")
     print("gui=single_full_clear_stall_action")
+    print("cycle=pass_close_reset_countdown_release_queue")
+    print("backup=one_click_local_only")
     return 0
 
 
