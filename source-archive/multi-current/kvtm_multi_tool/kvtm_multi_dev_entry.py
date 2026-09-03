@@ -611,7 +611,7 @@ class MultiDevApp(production.MultiApp):
             self._clear_stall_probe_terminal[profile_id] = "FAIL"
             self._set_clear_stall_checkpoint(
                 profile_id,
-                "GATE 1 FAIL",
+                f"{gate_name} FAIL",
                 {
                     "ok": False,
                     "probe_only": True,
@@ -620,7 +620,7 @@ class MultiDevApp(production.MultiApp):
                 },
             )
             if profile_id == self._active_profile_id:
-                core.messagebox.showerror(core.APP_NAME, f"GATE 1 lỗi:\n{error}")
+                core.messagebox.showerror(core.APP_NAME, f"{gate_name} lỗi:\n{error}")
         elif event == "probe_exit":
             if profile_id not in self._clear_stall_probe_terminal:
                 code = int(payload.get("returncode") or 0)
