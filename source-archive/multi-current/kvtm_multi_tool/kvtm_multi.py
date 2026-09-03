@@ -551,7 +551,7 @@ class MultiApp(tk.Tk):
         initial_h = min(900, max(560, work_h))
         self.geometry(f"{initial_w}x{initial_h}")
         self.minsize(min(820, initial_w), min(520, initial_h))
-        self._workspace_height = 335
+        self._workspace_height = 305
         self.configure(background="#f3f6fa")
         self.option_add("*Font", ("Segoe UI", 10))
         self.profiles = load_profiles()
@@ -923,7 +923,7 @@ class MultiApp(tk.Tk):
 
         tab_bar = tk.Frame(panel, background="#ffffff", height=36)
         tab_bar.pack(fill="x", pady=(0, 8))
-        tab_host = ttk.Frame(panel, style="Detail.TFrame", height=190)
+        tab_host = ttk.Frame(panel, style="Detail.TFrame", height=220)
         tab_host.pack(fill="x")
         tab_host.pack_propagate(False)
 
