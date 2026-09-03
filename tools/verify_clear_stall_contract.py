@@ -165,8 +165,18 @@ def main() -> int:
     )
     require(
         probe,
+        '"SCAN_COLLECT_RESELL_THEN_SWIPE"',
+        "Own-stall per-view transaction order missing",
+    )
+    require(
+        probe,
+        "collected_gold_slots += scan_and_collect_own_view(",
+        "Each newly revealed view must collect gold before resale",
+    )
+    forbid(
+        probe,
         "automation.stall.rewind_to_first(STALL_VIEW_COUNT)",
-        "Gold collection must rewind before resale",
+        "Gate 5 must not pre-scan all views then rewind before resale",
     )
     forbid(workflow, "CarryoverStore", "Dọn quầy must not carry inventory across cycles")
     require(builder, "carryover purged", "builder must purge stale carryover state")
@@ -196,7 +206,7 @@ def main() -> int:
     print("gate5_limit=all_verified_purchases_up_to_20_batches")
     print("gate5_accounting=one_token_per_x10_sale")
     print("gate5_wrong_item=stop_before_substitution")
-    print("gate5_own_stall_views=collect_and_resell_1..4")
+    print("gate5_own_stall_views=scan_collect_resell_then_swipe_1..4")
     print("gate5_own_stall_drag=two_pulses_per_view")
     print("gui=single_full_clear_stall_action")
     return 0
