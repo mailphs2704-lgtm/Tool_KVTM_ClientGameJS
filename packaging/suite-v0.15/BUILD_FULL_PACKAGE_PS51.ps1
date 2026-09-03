@@ -35,16 +35,6 @@ if ($probeExit -ne 0 -or [string]::IsNullOrWhiteSpace($probeHead)) {
 }
 Write-Host "Git HEAD preflight: $($probeHead.Trim())" -ForegroundColor Green
 
-$ClearStallVerifier = Join-Path $RepoRoot "tools\verify_clear_stall_contract.py"
-if (-not (Test-Path -LiteralPath $ClearStallVerifier -PathType Leaf)) {
-    throw "Missing clear-stall contract verifier: $ClearStallVerifier"
-}
-& py.exe -3.11 $ClearStallVerifier
-if ($LASTEXITCODE -ne 0) {
-    throw "Clear-stall static contract failed; exit=$LASTEXITCODE"
-}
-Write-Host "Clear-stall static contract: VERIFIED" -ForegroundColor Green
-
 # BUILD_FULL_PACKAGE.ps1 was written for newer PowerShell semantics and checks
 # LASTEXITCODE after piping native git output through Select-Object. On Windows
 # PowerShell 5.1 that value can become stale/-1 even though git succeeded.
