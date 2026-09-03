@@ -1106,6 +1106,11 @@ class MultiApp(tk.Tk):
             style="Start.TButton", command=self._start_clear_stall_purchase_probe,
         )
         self.auto_clear_stall_purchase_probe_button.pack(side="left", padx=(0, 8))
+        self.auto_clear_stall_target_probe_button = ttk.Button(
+            action_row, text="▶ GATE 3: Mua đủ target (chưa bán)",
+            style="Start.TButton", command=self._start_clear_stall_target_probe,
+        )
+        self.auto_clear_stall_target_probe_button.pack(side="left", padx=(0, 8))
         self.auto_clear_stall_stop_button = ttk.Button(
             action_row, text="■ Dừng",
             style="Stop.TButton", command=self._stop_clear_stall,
@@ -1428,6 +1433,7 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_close_button,
                 self.auto_clear_stall_start_button,
                 self.auto_clear_stall_purchase_probe_button,
+                self.auto_clear_stall_target_probe_button,
                 self.auto_clear_stall_stop_button,
             ):
                 widget.configure(state=state)
@@ -1952,6 +1958,13 @@ class MultiApp(tk.Tk):
         messagebox.showinfo(
             APP_NAME,
             "GATE 2 chỉ được phép chạy trong Multi DEV.",
+        )
+
+    def _start_clear_stall_target_probe(self) -> None:
+        """Target-purchase probes are available only in the isolated DEV shell."""
+        messagebox.showinfo(
+            APP_NAME,
+            "GATE 3 chỉ được phép chạy trong Multi DEV.",
         )
 
     def _start_clear_stall(
