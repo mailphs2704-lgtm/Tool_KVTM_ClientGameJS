@@ -68,18 +68,46 @@ def run_probe(
             ),
         })
         return 2
-    if int(config.resale_batch_limit) not in (0, 1):
+    resale_batch_limit = int(config.resale_batch_limit)
+    if not 0 <= resale_batch_limit <= purchase_limit:
         emit_event({
             "event": "probe_error",
-            "error": "Gate 4 chỉ được treo tối đa một lô x10",
+            "error": (
+                "Giới hạn treo lại phải trong khoảng 0..số ô mua; "
+                f"resale={resale_batch_limit} purchase={purchase_limit}"
+            ),
         })
         return 2
-    if int(config.resale_batch_limit) and purchase_limit <= 1:
+    if resale_batch_limit and purchase_limit <= 1:
         emit_event({
             "event": "probe_error",
-            "error": "Gate 4 yêu cầu chạy mua target trước khi treo lại",
+            "error": "Gate treo lại yêu cầu chạy mua target trước",
         })
         return 2
+    if resale_batch_limit > 20:
+        emit_event({
+            "event": "probe_error",
+            "error": "Một vòng chỉ được treo tối đa 20 ô quầy x10",
+        })
+        return 2
+
+    transaction_gate = (
+        "READ_ONLY_SCAN"
+        if purchase_limit == 0
+        else (
+            "PURCHASE_ONE_LISTING"
+            if purchase_limit == 1
+            else (
+                "COLLECT_GOLD_RESELL_TARGET_EXACT"
+                if resale_batch_limit > 1
+                else (
+                    "COLLECT_GOLD_RESELL_ONE_EXACT"
+                    if resale_batch_limit == 1
+                    else "PURCHASE_TARGET_MULTI_HOUSE"
+                )
+            )
+        )
+    )
     if not 1 <= int(config.max_stall_passes) <= 10:
         emit_event({
             "event": "probe_error",
@@ -357,15 +385,7 @@ def run_probe(
                 emit(
                     "probe_purchase_ok",
                     profile_id=str(config.profile_id),
-                    transaction_gate=(
-                        "PURCHASE_ONE_LISTING"
-                        if purchase_limit == 1
-                        else (
-                            "COLLECT_GOLD_RESELL_ONE_EXACT"
-                            if int(config.resale_batch_limit) == 1
-                            else "PURCHASE_TARGET_MULTI_HOUSE"
-                        )
-                    ),
+                    transaction_gate=transaction_gate,
                     **evidence,
                 )
             return purchased_quantity - bought_before
@@ -558,60 +578,88 @@ def run_probe(
 
         sold_quantity = 0
         collected_gold_slots = 0
-        resale_evidence = None
-        if int(config.resale_batch_limit) == 1:
-            if not purchased_fingerprints:
+        resale_evidence: list[dict[str, object]] = []
+        if resale_batch_limit > 0:
+            if len(purchased_fingerprints) < resale_batch_limit:
                 raise RuntimeError(
-                    "GATE 4 không có fingerprint từ giao dịch mua đã xác minh"
+                    "Không đủ fingerprint từ các giao dịch mua đã xác minh"
                 )
+            gate_label = "gate5" if resale_batch_limit > 1 else "gate4"
             checkpoint(
-                "gate4-returning-home",
+                f"{gate_label}-returning-home",
                 purchased_quantity=purchased_quantity,
+                resale_batches=resale_batch_limit,
             )
             automation.stall.close_friend_stall()
             automation.navigation.return_home(timeout=30.0)
             current_view = 1
-            checkpoint("gate4-opening-own-stall")
+            checkpoint(f"{gate_label}-opening-own-stall")
             automation.stall.open_own_stall()
-            checkpoint("gate4-collecting-gold")
+            checkpoint(f"{gate_label}-collecting-gold")
             collected_gold_slots = automation.stall.collect_own_stall_gold(
                 maximum=20
             )
 
-            # Open the empty stall slot first; only then does the inventory
-            # grid exist. The selling action accepts exclusively fingerprints
-            # frozen from verified purchases made in this same run.
-            checkpoint(
-                "gate4-resell-one-start",
-                verified_purchase_fingerprints=len(purchased_fingerprints),
-                quantity=10,
-            )
-            selected_resale = automation.selling.sell_one_of_exact_purchases(
-                purchased_fingerprints,
-                storage_id=int(config.resale_storage_id),
-            )
-            sold_quantity = 10
-            resale_capture = work_dir / "gate4-resale-one-pass.png"
-            save_frame(resale_capture, automation.vision.frame())
-            resale_evidence = {
-                "quantity": 10,
-                "fingerprint_sha256": selected_resale.sha256,
-                "fingerprint_group": selected_resale.group_key,
-                "source": "VERIFIED_PURCHASE_THIS_RUN",
-                "price_changed": False,
-                "collected_gold_slots": collected_gold_slots,
-                "capture_after": str(resale_capture),
-            }
-            checkpoint("gate4-resell-one-pass", **resale_evidence)
-            emit(
-                "probe_resale_ok",
-                profile_id=str(config.profile_id),
-                transaction_gate="COLLECT_GOLD_RESELL_ONE_EXACT",
-                **resale_evidence,
-            )
-            with report_lock:
-                report["resale_evidence"] = resale_evidence
-                persist()
+            remaining_fingerprints = list(purchased_fingerprints)
+            for batch_index in range(1, resale_batch_limit + 1):
+                context.ensure_running()
+                checkpoint(
+                    f"{gate_label}-resell-{batch_index:02d}-start",
+                    remaining_verified_fingerprints=len(remaining_fingerprints),
+                    quantity=10,
+                )
+                selected_resale = automation.selling.sell_one_of_exact_purchases(
+                    remaining_fingerprints,
+                    storage_id=int(config.resale_storage_id),
+                )
+
+                removed = False
+                for index, candidate in enumerate(remaining_fingerprints):
+                    if candidate.sha256 == selected_resale.sha256:
+                        remaining_fingerprints.pop(index)
+                        removed = True
+                        break
+                if not removed:
+                    raise RuntimeError(
+                        "Không tiêu thụ được fingerprint sau khi treo; dừng kế toán"
+                    )
+
+                sold_quantity += 10
+                resale_capture = (
+                    work_dir / f"{gate_label}-resale-{batch_index:02d}-pass.png"
+                )
+                save_frame(resale_capture, automation.vision.frame())
+                evidence = {
+                    "batch_index": batch_index,
+                    "quantity": 10,
+                    "sold_quantity": sold_quantity,
+                    "fingerprint_sha256": selected_resale.sha256,
+                    "fingerprint_group": selected_resale.group_key,
+                    "source": "VERIFIED_PURCHASE_THIS_RUN",
+                    "price_changed": False,
+                    "collected_gold_slots": collected_gold_slots,
+                    "capture_after": str(resale_capture),
+                }
+                resale_evidence.append(evidence)
+                checkpoint(
+                    f"{gate_label}-resell-{batch_index:02d}-pass",
+                    **evidence,
+                )
+                emit(
+                    "probe_resale_ok",
+                    profile_id=str(config.profile_id),
+                    transaction_gate=transaction_gate,
+                    **evidence,
+                )
+                with report_lock:
+                    report["resale_evidence"] = list(resale_evidence)
+                    report["sold_quantity"] = sold_quantity
+                    persist()
+
+            if sold_quantity != resale_batch_limit * 10:
+                raise RuntimeError(
+                    "Kế toán treo lại không khớp số lô x10 đã yêu cầu"
+                )
 
         occupied_slots = sorted(set(occupied))
         occupied_total = len(occupied_slots)
@@ -633,19 +681,7 @@ def run_probe(
             report["purchased_quantity"] = purchased_quantity
             report["sold_quantity"] = sold_quantity
             report["collected_gold_slots"] = collected_gold_slots
-            report["transaction_gate"] = (
-                "READ_ONLY_SCAN"
-                if purchase_limit == 0
-                else (
-                    "PURCHASE_ONE_LISTING"
-                    if purchase_limit == 1
-                    else (
-                        "COLLECT_GOLD_RESELL_ONE_EXACT"
-                        if int(config.resale_batch_limit) == 1
-                        else "PURCHASE_TARGET_MULTI_HOUSE"
-                    )
-                )
-            )
+            report["transaction_gate"] = transaction_gate
             report["ok"] = True
             report["completed_at"] = time.time()
             report["last_stage"] = "completed"
@@ -665,19 +701,7 @@ def run_probe(
             purchased_quantity=purchased_quantity,
             sold_quantity=sold_quantity,
             collected_gold_slots=collected_gold_slots,
-            transaction_gate=(
-                "READ_ONLY_SCAN"
-                if purchase_limit == 0
-                else (
-                    "PURCHASE_ONE_LISTING"
-                    if purchase_limit == 1
-                    else (
-                        "COLLECT_GOLD_RESELL_ONE_EXACT"
-                        if int(config.resale_batch_limit) == 1
-                        else "PURCHASE_TARGET_MULTI_HOUSE"
-                    )
-                )
-            ),
+            transaction_gate=transaction_gate,
             frame_size=[1000, 1000],
         )
         return 0
