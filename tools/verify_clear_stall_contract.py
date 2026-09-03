@@ -20,6 +20,7 @@ BUILDER = ROOT / "packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1"
 CONTROL = ROOT / "KVTM_DEV_CONTROL.bat"
 BACKUP = ROOT / "tools/KVTM_CREATE_LOCAL_BACKUP.ps1"
 HANDOFF = ROOT / "docs/CLEAR_STALL_AUTO_HANDOFF.md"
+CLIENT_PATCH = ROOT / "test-candidates/auto-pro-clientjs-temp/clientjs_auto_patch.py"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -52,6 +53,8 @@ def main() -> int:
     control = CONTROL.read_text(encoding="utf-8")
     backup = BACKUP.read_text(encoding="utf-8")
     handoff = HANDOFF.read_text(encoding="utf-8")
+    client_patch = CLIENT_PATCH.read_text(encoding="utf-8")
+    ast.parse(client_patch, filename=str(CLIENT_PATCH))
 
     require(worker, 'EXECUTION_GATE = "READ_ONLY_SCAN"', "transaction gate must stay read-only")
     require(worker, "probe_only=True", "worker must not enable purchase/resale")
@@ -67,8 +70,8 @@ def main() -> int:
     require(probe, "maximum=1", "each purchase call must buy at most one listing")
     require(probe, '"PURCHASE_TARGET_MULTI_HOUSE"', "Gate 3B target mode missing")
     require(probe, "range(1, int(config.friend_ordinal) + 1)", "Gate 3B must visit friends 1..N")
-    require(probe, "first_pass = 2 if friend_index == 1 else 1", "Gate 3B first-house reload policy missing")
-    require(probe, "int(config.max_stall_passes) + 1", "Gate 3B bounded stall reload loop missing")
+    require(probe, "while purchased_quantity < expected_quantity:", "Gate 3B must repeat until target or Stop")
+    require(probe, "for local_pass in range(1, int(config.max_stall_passes) + 1)", "Gate 3B per-visit reload loop missing")
     require(probe, "remaining_quantity", "Gate 3B remaining x10 counter missing")
     require(probe, "automation.stall.close_friend_stall()", "Gate 3B must close before reload/house change")
     require(probe, "purchase_evidence", "Gate 3 must save per-listing evidence")
@@ -251,6 +254,25 @@ def main() -> int:
     require(backup, "bundle create $bundle HEAD", "Backup must snapshot source")
     require(backup, "private_data_local_only", "Backup privacy marker missing")
     require(handoff, "requested_quantity == purchased_quantity == sold_quantity", "AI handoff lifecycle contract missing")
+    require(
+        probe,
+        'policy="UNTIL_TARGET_OR_STOP"',
+        "Dọn quầy stock polling policy missing",
+    )
+    forbid(
+        probe,
+        "đã duyệt hết giới hạn nhưng chưa đủ target",
+        "Dọn quầy must not fail only because one configured round is exhausted",
+    )
+    for item_id in ("nuoc_hoa_hong", "tinh_dau_hh", "vai_vang", "tao_say", "tra_da"):
+        require(probe, f'"{item_id}"', f"Missing selected-item template: {item_id}")
+        require(multi, f'"{item_id}"', f"Missing selected-item GUI option: {item_id}")
+    require(probe, "eligible_observations", "Purchase whitelist filter missing")
+    require(dev_entry, "allowed_item_ids=allowed_item_ids", "Selected items not passed to resident runtime")
+    require(client_patch, "clientjs_game_ready_by_live_capture", "PID reset live-frame readiness missing")
+    require(client_patch, "stable_frames >= 3", "Chest adaptive render wait missing")
+    require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
+    require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
 
     print("CLEAR STALL STATIC CONTRACT VERIFIED")
     print("gate=READ_ONLY_SCAN")
@@ -263,7 +285,7 @@ def main() -> int:
     print("purchase_verification=listing_disappearance")
     print("sold_listing_filter=coin_price_marker")
     print("gate3_limit=configured_x10_target")
-    print("gate3_reload=bounded_per_house")
+    print("gate3_reload=per_visit_bound_repeat_until_target_or_stop")
     print("gate3_friend_order=1..N")
     print("gate3_view_order=scan_buy_then_swipe_both_rows")
     print("gate3_same_friend_reload=in_place")
@@ -281,6 +303,10 @@ def main() -> int:
     print("gui=single_full_clear_stall_action")
     print("cycle=pass_close_reset_countdown_release_queue")
     print("backup=one_click_local_only")
+    print("selected_items=rose_water,rose_oil,yellow_fabric,dried_apple,iced_tea")
+    print("clientjs_reset=live_capture_ready")
+    print("chest=adaptive_render_wait")
+    print("wheel=verified_exit_cleanup")
     return 0
 
 
