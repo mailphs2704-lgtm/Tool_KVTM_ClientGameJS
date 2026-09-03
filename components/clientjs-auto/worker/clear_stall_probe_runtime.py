@@ -49,6 +49,7 @@ def run_probe(
 
     from kvtm_automation import AutomationContext, KVAutomation
     from kvtm_automation.errors import AutomationStopped
+    from kvtm_automation.models import VisualFingerprint
 
     if not 1 <= int(config.friend_ordinal) <= 7:
         emit_event({"event": "probe_error", "error": "Bạn bè số phải trong khoảng 1..7"})
@@ -319,14 +320,33 @@ def run_probe(
                     work_dir / "purchased-icons" / f"purchase-{sequence:02d}.png"
                 )
                 icon_target.parent.mkdir(parents=True, exist_ok=True)
-                icon_target.write_bytes(icon_source.read_bytes())
-                frozen_fingerprint = replace(
-                    selected.fingerprint,
+                import cv2
+
+                listing_icon = cv2.imread(str(icon_source), cv2.IMREAD_COLOR)
+                if listing_icon is None or listing_icon.size == 0:
+                    raise RuntimeError(
+                        "Không đọc được icon VP ngay sau giao dịch đã xác minh"
+                    )
+                icon_height, icon_width = listing_icon.shape[:2]
+                # A friend-stall tile contains the pedestal and quantity label
+                # (x10), while inventory shows another background/quantity.
+                # Preserve only the upper-left item core so identity survives
+                # that UI-context change.
+                core = listing_icon[
+                    2 : max(10, int(round(icon_height * 0.60))),
+                    2 : max(10, int(round(icon_width * 0.73))),
+                ].copy()
+                if core.size == 0 or not cv2.imwrite(str(icon_target), core):
+                    raise RuntimeError("Không lưu được lõi icon VP đã mua")
+                frozen_fingerprint = VisualFingerprint.from_image(
+                    core,
                     template_file=str(icon_target),
                 )
                 purchased_fingerprints.append(frozen_fingerprint)
+                evidence["source_listing_sha256"] = selected.fingerprint.sha256
                 evidence["fingerprint_sha256"] = frozen_fingerprint.sha256
                 evidence["fingerprint_group"] = frozen_fingerprint.group_key
+                evidence["fingerprint_normalization"] = "ITEM_CORE_NO_PRICE_OR_PEDESTAL"
                 evidence["frozen_template"] = str(icon_target)
                 checkpoint(
                     "gate2-purchase-one-pass"
