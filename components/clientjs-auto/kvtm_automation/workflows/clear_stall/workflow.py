@@ -14,7 +14,6 @@ from ...models import StallSlotObservation
 from .config import ClearStallRequest, LISTING_QUANTITY
 from .manifest import ClearStallManifest, PurchasedRecord
 from .result import ClearStallResult
-from .state import CarryoverStore
 
 
 class ClearStallWorkflow:
@@ -26,9 +25,9 @@ class ClearStallWorkflow:
     3. re-enter/scroll stalls as needed; account slot capacity is never assumed;
     4. count each verified x10 listing as ten VP toward `buy_quantity`;
     5. return to the clone home;
-    6. group identical VP with carryover from previous runs;
+    6. group only VP confirmed during this run; never load prior-run carryover;
     7. sell only full groups of ten into empty own-stall slots;
-    8. keep every remainder below ten (or temporarily unsellable batch) for a later run.
+    8. skip every remainder below ten and end this client cycle without carryover.
     """
 
     def __init__(
@@ -49,29 +48,12 @@ class ClearStallWorkflow:
         self.capture_dir = self.work_dir / "captures"
         self.manifest_path = self.work_dir / "transaction.json"
 
-        # Preferred layout is <profile>/runs/<timestamp>. Accept a direct run
-        # directory as well so tests/tools do not depend on filesystem naming.
-        if self.work_dir.parent.name.lower() == "runs":
-            self.profile_root = self.work_dir.parent.parent
-        else:
-            self.profile_root = self.work_dir.parent
-        self.carryover = CarryoverStore(self.profile_root)
-
         self.manifest = ClearStallManifest(
             profile_id=request.profile_id,
             friend_ordinal=request.friend_ordinal,
             resale_storage_id=request.resale_storage_id,
             requested_total=request.buy_quantity,
         )
-        if not request.probe_only:
-            loaded = self.carryover.load(request.profile_id)
-            for record in loaded:
-                self.manifest.add_carryover(record)
-            if loaded:
-                self.context.log(
-                    f"Đã nạp {sum(item.remaining_quantity for item in loaded)} "
-                    "VP carryover từ phiên trước"
-                )
         self._save_manifest()
 
     def probe(self) -> ClearStallResult:
@@ -351,14 +333,10 @@ class ClearStallWorkflow:
     def _checkpoint(self, state: str, *, save_state: bool = True) -> None:
         self.manifest.state = str(state)
         self._save_manifest()
-        if save_state and not self.request.probe_only:
-            self.carryover.save(self.manifest)
         self.context.stage(str(state))
 
     def _persist_state(self) -> None:
         self._save_manifest()
-        if not self.request.probe_only:
-            self.carryover.save(self.manifest)
 
     def _save_manifest(self) -> None:
         self.manifest.save(self.manifest_path)
