@@ -166,6 +166,29 @@ class StallActions:
             self.waiter.sleep(0.55)
         raise ScreenTimeout("Không vào được quầy bán của clone")
 
+    def collect_own_stall_gold(self, *, maximum: int = 20) -> int:
+        """Collect completed own-stall gold before placing resale batches."""
+        collected = 0
+        stable_misses = 0
+        while collected < max(0, int(maximum)) and stable_misses < 3:
+            self.context.ensure_running()
+            match = self.vision.find(
+                "vang",
+                threshold=0.74,
+                zone=self.EMPTY_STALL_ZONE if hasattr(self, "EMPTY_STALL_ZONE") else (196, 340, 599, 395),
+                click=True,
+            )
+            if match is None:
+                stable_misses += 1
+                self.waiter.sleep(0.25)
+                continue
+            stable_misses = 0
+            collected += 1
+            self.context.log(f"Thu vàng quầy clone • ô {collected}")
+            self.waiter.sleep(0.40)
+        self.context.log(f"Thu vàng quầy clone hoàn tất • {collected} ô")
+        return collected
+
     def next_view(self) -> None:
         """Move four slots using AUTO PRO's proven stall-drag timing."""
         for step in range(1, 3):
