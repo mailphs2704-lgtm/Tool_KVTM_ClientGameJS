@@ -25,6 +25,11 @@ class SellingActions:
     CONFIRM_ZONE = (390, 552, 211, 102)
     PLACE_BUTTON = (771, 692)
 
+    # LIVE_CALIBRATED 20260903-195708: the last two verified x10 batches
+    # matched at 0.612 and 0.605 after the own-stall view transition. 0.60 is
+    # the smallest calibration that accepts both while retaining provenance.
+    EXACT_PURCHASE_MATCH_THRESHOLD = 0.60
+
     def __init__(
         self,
         context: AutomationContext,
@@ -165,13 +170,15 @@ class SellingActions:
             match = self.inventory.best_fingerprint_match(fingerprint)
             score = float(match[1]) if match is not None else -1.0
             self.context.log(
-                "GATE4 inventory candidate "
-                f"sha={fingerprint.sha256[:12]} score={score:.3f}"
+                "CLEAR_STALL inventory candidate "
+                f"sha={fingerprint.sha256[:12]} score={score:.3f} "
+                f"threshold={self.EXACT_PURCHASE_MATCH_THRESHOLD:.3f}"
             )
             # The template is a normalized item core with stall background and
-            # quantity text removed. Keep a conservative threshold so another
-            # visually unrelated inventory item is never substituted.
-            if match is None or score < 0.62:
+            # quantity text removed. Only fingerprints proven by a successful
+            # purchase in this run enter this loop; screen change is verified
+            # again after placement before the token is consumed.
+            if match is None or score < self.EXACT_PURCHASE_MATCH_THRESHOLD:
                 continue
             center, score = match
             self._finish_batch_from_match(center, score)
