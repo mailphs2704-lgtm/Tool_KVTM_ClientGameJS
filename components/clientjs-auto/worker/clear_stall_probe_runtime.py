@@ -548,6 +548,7 @@ def run_probe(
                 "gate4-returning-home",
                 purchased_quantity=purchased_quantity,
             )
+            automation.stall.close_friend_stall()
             automation.navigation.return_home(timeout=30.0)
             current_view = 1
             checkpoint("gate4-opening-own-stall")
@@ -557,30 +558,16 @@ def run_probe(
                 maximum=20
             )
 
-            # Select only a fingerprint frozen from a verified purchase in this
-            # run. Never substitute another inventory item or prior-run state.
-            automation.inventory.select_storage(int(config.resale_storage_id))
-            selected_resale = None
-            for fingerprint in purchased_fingerprints:
-                if automation.inventory.find_fingerprint(
-                    fingerprint, threshold=0.68
-                ) is not None:
-                    selected_resale = fingerprint
-                    break
-            if selected_resale is None:
-                raise RuntimeError(
-                    "GATE 4 không tìm thấy đúng VP vừa mua trong kho đã chọn; "
-                    "không treo VP khác"
-                )
-
+            # Open the empty stall slot first; only then does the inventory
+            # grid exist. The selling action accepts exclusively fingerprints
+            # frozen from verified purchases made in this same run.
             checkpoint(
                 "gate4-resell-one-start",
-                fingerprint_sha256=selected_resale.sha256,
-                fingerprint_group=selected_resale.group_key,
+                verified_purchase_fingerprints=len(purchased_fingerprints),
                 quantity=10,
             )
-            automation.selling.sell_batch_of_ten(
-                selected_resale,
+            selected_resale = automation.selling.sell_one_of_exact_purchases(
+                purchased_fingerprints,
                 storage_id=int(config.resale_storage_id),
             )
             sold_quantity = 10
