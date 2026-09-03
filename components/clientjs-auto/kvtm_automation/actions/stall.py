@@ -189,6 +189,38 @@ class StallActions:
         for _ in range(max(0, int(current_view) - 1)):
             self.previous_view()
 
+    @staticmethod
+    def listing_is_available(frame: Any, local_slot: int) -> bool:
+        """Reject sold cells before purchase planning.
+
+        A purchasable friend listing always shows the orange coin icon at the
+        right side of its price bar. A sold cell shows "Đã bán" in the same
+        area and has no coin. This is intentionally independent from item
+        artwork/fingerprint so repeated item types remain valid.
+        """
+        slot = int(local_slot)
+        if not 1 <= slot <= len(VISIBLE_SLOT_CENTERS):
+            return False
+        cx, _cy = VISIBLE_SLOT_CENTERS[slot - 1]
+        top, bottom = ((455, 495) if slot <= 4 else (685, 720))
+        roi = frame[top:bottom, cx + 10 : cx + 48]
+        if roi is None or getattr(roi, "size", 0) == 0:
+            return False
+        # BGR/BGRA channel test for the orange/yellow coin. Live Gate 3B
+        # evidence separated sold cells (<=72 pixels) from available x10
+        # listings (>=184 pixels); threshold 120 keeps a wide margin.
+        blue = roi[:, :, 0]
+        green = roi[:, :, 1]
+        red = roi[:, :, 2]
+        coin_pixels = (
+            (red > 160)
+            & (green > 80)
+            & (green < 220)
+            & (blue < 80)
+            & (red.astype("float32") > green.astype("float32") * 1.10)
+        )
+        return int(coin_pixels.sum()) >= 120
+
     def scan_view(
         self,
         view: int,
@@ -208,6 +240,8 @@ class StallActions:
         template_dir.mkdir(parents=True, exist_ok=True)
         observations: list[StallSlotObservation] = []
         for local_slot in self.new_local_slots(view):
+            if not self.listing_is_available(source, local_slot):
+                continue
             cx, cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
             icon = source[
                 cy - ICON_HALF_HEIGHT : cy + ICON_HALF_HEIGHT,
