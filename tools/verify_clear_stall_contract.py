@@ -182,6 +182,22 @@ def main() -> int:
     require(builder, "carryover purged", "builder must purge stale carryover state")
     forbid(builder, "4 views / 20 physical slots", "builder must not claim fixed stall capacity")
 
+    require(
+        multi,
+        "self.auto_clear_stall_start_button = (",
+        "Production entry compatibility anchor missing",
+    )
+    require(
+        dev_entry,
+        "legacy_probe.destroy()",
+        "DEV must hide the legacy passed-probe button",
+    )
+    require(
+        dev_entry,
+        "self.auto_clear_stall_probe_button = full_action",
+        "DEV compatibility alias must point to the one full-action button",
+    )
+
     print("CLEAR STALL STATIC CONTRACT VERIFIED")
     print("gate=READ_ONLY_SCAN")
     print("quantity_unit=10")
