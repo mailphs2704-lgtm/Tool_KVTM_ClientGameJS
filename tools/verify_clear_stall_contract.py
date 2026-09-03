@@ -114,6 +114,21 @@ def main() -> int:
         "PLACE_BUTTON",
         "Gate 4 must reuse the existing sale placement flow",
     )
+    require(
+        selling,
+        "EXACT_PURCHASE_MATCH_THRESHOLD = 0.60",
+        "Live-calibrated exact resale threshold missing",
+    )
+    require(
+        selling,
+        "score < self.EXACT_PURCHASE_MATCH_THRESHOLD",
+        "Exact resale selector must use the calibrated named threshold",
+    )
+    forbid(
+        selling,
+        "score < 0.62",
+        "Obsolete threshold rejects live-verified exact purchases",
+    )
     forbid(selling, "price_changed = True", "Gate 4 must never alter price")
     require(dev_entry, "_start_clear_stall_resale_probe", "Gate 4 DEV action missing")
     require(dev_entry, "_clear_stall_gate4_profiles", "Gate 4 state tracking missing")
@@ -221,7 +236,7 @@ def main() -> int:
     print("gate4_price=unchanged")
     print("gate5_limit=all_verified_purchases_up_to_20_batches")
     print("gate5_accounting=one_token_per_x10_sale")
-    print("gate5_wrong_item=stop_before_substitution")
+    print("gate5_wrong_item=provenance_only_threshold_0.60")
     print("gate5_own_stall_views=scan_collect_resell_then_swipe_1..4")
     print("gate5_own_stall_drag=two_pulses_per_view")
     print("gui=single_full_clear_stall_action")
