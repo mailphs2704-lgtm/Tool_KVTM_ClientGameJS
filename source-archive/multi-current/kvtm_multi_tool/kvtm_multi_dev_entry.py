@@ -548,12 +548,16 @@ class MultiDevApp(production.MultiApp):
                 "message": (
                     "Resident runtime đã sẵn sàng • "
                     + (
-                        f"GATE 3 mua target {purchase_limit * 10} VP"
-                        if purchase_limit > 1
+                        f"GATE 4 mua {purchase_limit * 10} VP + thu vàng + treo đúng x10"
+                        if profile_id in self._clear_stall_gate4_profiles
                         else (
-                            "GATE 2 mua đúng 1 ô x10"
-                            if purchase_limit == 1
-                            else "GATE 1 READ-ONLY"
+                            f"GATE 3B mua target {purchase_limit * 10} VP"
+                            if purchase_limit > 1
+                            else (
+                                "GATE 2 mua đúng 1 ô x10"
+                                if purchase_limit == 1
+                                else "GATE 1 READ-ONLY"
+                            )
                         )
                     )
                 ),
