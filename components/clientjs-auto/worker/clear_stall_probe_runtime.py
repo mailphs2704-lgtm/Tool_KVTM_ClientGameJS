@@ -428,10 +428,14 @@ def run_probe(
             )
 
         if purchase_limit > 1 and purchased_quantity < expected_quantity:
+            # Stay at the current friend's home while refreshing the same
+            # stall. Only return home once when advancing to another friend.
             automation.stall.close_friend_stall()
-            automation.navigation.return_home(timeout=30.0)
             current_view = 1
             for friend_index in range(1, int(config.friend_ordinal) + 1):
+                if friend_index > 1:
+                    automation.navigation.return_home(timeout=30.0)
+                    automation.navigation.go_to_friend(friend_index)
                 first_pass = 2 if friend_index == 1 else 1
                 for stall_pass in range(
                     first_pass, int(config.max_stall_passes) + 1
@@ -445,8 +449,12 @@ def run_probe(
                         remaining_quantity=(
                             expected_quantity - purchased_quantity
                         ),
+                        navigation=(
+                            "REOPEN_CURRENT_STALL"
+                            if stall_pass > 1
+                            else "ENTER_NEXT_FRIEND_ONCE"
+                        ),
                     )
-                    automation.navigation.go_to_friend(friend_index)
                     automation.stall.open_friend_stall()
                     bought_this_pass = scan_buy_stall(
                         friend_index,
@@ -454,7 +462,6 @@ def run_probe(
                         primary_report=False,
                     )
                     automation.stall.close_friend_stall()
-                    automation.navigation.return_home(timeout=30.0)
                     current_view = 1
                     checkpoint(
                         "gate3b-stall-pass-finish",
@@ -468,8 +475,9 @@ def run_probe(
                     )
                     if purchased_quantity >= expected_quantity:
                         break
-                    if bought_this_pass == 0:
-                        break
+                    # Do not abandon this friend after one empty pass. Reload
+                    # exactly the configured bounded number of times; a
+                    # level-locked or temporarily unavailable view may yield 0.
                 if purchased_quantity >= expected_quantity:
                     break
 
