@@ -1122,6 +1122,17 @@ class MultiApp(tk.Tk):
             command=self._start_clear_stall_resale_probe,
         )
         self.auto_clear_stall_resale_probe_button.pack(side="left")
+        full_resale_row = ttk.Frame(clear_stall_body, style="Detail.TFrame")
+        full_resale_row.grid(
+            row=4, column=0, columnspan=7, sticky="w", pady=(6, 0)
+        )
+        self.auto_clear_stall_full_resale_probe_button = ttk.Button(
+            full_resale_row,
+            text="▶ GATE 5: Thu vàng + treo toàn bộ VP đã mua",
+            style="Start.TButton",
+            command=self._start_clear_stall_full_resale_probe,
+        )
+        self.auto_clear_stall_full_resale_probe_button.pack(side="left")
         self.auto_clear_stall_stop_button = ttk.Button(
             action_row, text="■ Dừng",
             style="Stop.TButton", command=self._stop_clear_stall,
@@ -1983,6 +1994,13 @@ class MultiApp(tk.Tk):
         messagebox.showinfo(
             APP_NAME,
             "GATE 4 chỉ được phép chạy trong Multi DEV.",
+        )
+
+    def _start_clear_stall_full_resale_probe(self) -> None:
+        """Full exact-resale probes are available only in the DEV shell."""
+        messagebox.showinfo(
+            APP_NAME,
+            "GATE 5 chỉ được phép chạy trong Multi DEV.",
         )
 
     def _start_clear_stall(
