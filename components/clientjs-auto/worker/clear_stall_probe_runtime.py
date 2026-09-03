@@ -667,7 +667,11 @@ def run_probe(
         target_listings = int(config.buy_quantity) // 10
         planned_listings = min(occupied_total, target_listings)
         planned_quantity = planned_listings * 10
-        target_reached = planned_listings == target_listings
+        target_reached = (
+            purchased_quantity == target_listings * 10
+            if purchase_limit > 0
+            else planned_listings == target_listings
+        )
         with report_lock:
             report["covered_physical_slots"] = covered
             report["occupied_new_physical_slots"] = occupied_slots
