@@ -107,6 +107,14 @@ class MultiDevApp(production.MultiApp):
         self._clear_stall_gate4_profiles: set[str] = set()
         self._clear_stall_gate5_profiles: set[str] = set()
         super()._build_auto_panel()
+        # Production entry adds its historical check button after resolving the
+        # compatibility anchor. DEV exposes only the single full-action button.
+        legacy_probe = getattr(self, "auto_clear_stall_probe_button", None)
+        full_action = self.auto_clear_stall_full_resale_probe_button
+        if legacy_probe is not None and legacy_probe is not full_action:
+            legacy_probe.destroy()
+        self.auto_clear_stall_probe_button = full_action
+        self.auto_clear_stall_start_button = full_action
         self._refresh_clear_stall_panel()
 
     def _poll_clear_stall_schedule(self) -> None:
