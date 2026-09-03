@@ -76,7 +76,7 @@ LIVE PASS trên runtime trước commit bố cục, run `20260903-123215`: targe
 
 ### Gate 3B — PURCHASE_TARGET_MULTI_HOUSE
 
-Source đã hoàn thiện, chờ LIVE PASS. Lần live `20260903-125257` FAIL an toàn trước accounting vì scanner nhận ô “Đã bán” là listing; ảnh xác nhận hàng trên đã bán và hàng dưới còn x10. Patch mới chỉ tạo observation khi vùng giá có coin marker (ngưỡng live: sold ≤72 pixel, available ≥184 pixel; cutoff 120), nên không click ô sold. Gate dùng target còn thiếu theo đơn vị x10, không suy luận sức chứa quầy. Luồng thực hiện:
+Source đã hoàn thiện, chờ LIVE PASS. Lần live `20260903-125257` FAIL an toàn trước accounting vì scanner nhận ô “Đã bán” là listing; ảnh xác nhận hàng trên đã bán và hàng dưới còn x10. Patch mới chỉ tạo observation khi vùng giá có coin marker (vùng giá đúng: hàng trên y=495..530, hàng dưới y=685..720; ảnh live mới cho empty/sold=0 và available=130..199 pixel; cutoff 120), nên không click ô sold. Gate dùng target còn thiếu theo đơn vị x10, không suy luận sức chứa quầy. Luồng thực hiện:
 
 1. Mở quầy nhà 1, quét và mua ngay các ô đang nhìn thấy; mỗi giao dịch chỉ cộng sau khi listing đổi.
 2. Sau khi xử lý xong view hiện tại mới vuốt đúng hai nhịp, rồi quét/mua các ô mới xuất hiện; lặp tới cuối quầy.
