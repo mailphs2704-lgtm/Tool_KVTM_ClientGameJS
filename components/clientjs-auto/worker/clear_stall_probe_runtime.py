@@ -25,6 +25,7 @@ class ProbeConfig:
     buy_quantity: int
     work_dir: Path
     purchase_limit: int = 0
+    max_stall_passes: int = 10
 
 
 EventSink = Callable[[dict], None]
@@ -65,6 +66,12 @@ def run_probe(
             ),
         })
         return 2
+    if not 1 <= int(config.max_stall_passes) <= 10:
+        emit_event({
+            "event": "probe_error",
+            "error": "Số lượt tải lại mỗi nhà phải trong khoảng 1..10",
+        })
+        return 2
     if not 10 <= int(config.buy_quantity) <= 1000 or int(config.buy_quantity) % 10:
         emit_event({
             "event": "probe_error",
@@ -93,6 +100,7 @@ def run_probe(
         "resale_storage_id": int(config.resale_storage_id),
         "requested_quantity": int(config.buy_quantity),
         "purchase_limit": int(config.purchase_limit),
+        "max_stall_passes": int(config.max_stall_passes),
         "image_runtime_ready_before_probe": bool(image_runtime_ready),
         "started_at": time.time(),
         "checkpoints": [],
@@ -215,8 +223,13 @@ def run_probe(
         automation.ensure_main_screen(timeout=90.0)
         capture("main-screen", automation.driver)
 
-        checkpoint("navigating-friend", friend_ordinal=int(config.friend_ordinal))
-        automation.navigation.go_to_friend(int(config.friend_ordinal))
+        initial_friend = 1 if purchase_limit > 1 else int(config.friend_ordinal)
+        checkpoint(
+            "navigating-friend",
+            friend_ordinal=initial_friend,
+            configured_friend_count=int(config.friend_ordinal),
+        )
+        automation.navigation.go_to_friend(initial_friend)
         capture("friend-home", automation.driver)
 
         checkpoint("opening-friend-stall")
@@ -290,30 +303,21 @@ def run_probe(
         capacity_model = "DYNAMIC_REMAINING_COUNTER"
 
         purchased_quantity = 0
+        purchase_evidence = []
         purchase_limit = int(config.purchase_limit)
-        if purchase_limit > 0:
+        expected_quantity = purchase_limit * 10
+
+        def buy_observations(observations, friend_index: int, stall_pass: int) -> None:
+            nonlocal purchased_quantity, current_view
             gate_name = "GATE 2" if purchase_limit == 1 else "GATE 3"
-            checkpoint(
-                "gate2-purchase-one-start"
-                if purchase_limit == 1
-                else "gate3-purchase-target-start",
-                purchase_limit=purchase_limit,
-            )
             ordered = sorted(
-                all_observations,
+                observations,
                 key=lambda item: (int(item.view), int(item.physical_slot)),
             )
-            if len(ordered) < purchase_limit:
-                raise RuntimeError(
-                    f"{gate_name} chỉ thấy {len(ordered)} mẫu VP, "
-                    f"không đủ target {purchase_limit} ô"
-                )
-
             automation.stall.rewind_to_first(current_view)
             current_view = 1
-            purchase_evidence = []
             for selected in ordered:
-                if purchased_quantity >= purchase_limit * 10:
+                if purchased_quantity >= expected_quantity:
                     break
                 while current_view < int(selected.view):
                     automation.stall.next_view()
@@ -339,15 +343,19 @@ def run_probe(
                     )
 
                 purchased_quantity += confirmed
+                sequence = purchased_quantity // 10
                 evidence_path = (
                     work_dir
-                    / f"purchase-{purchased_quantity // 10:02d}-"
-                    f"slot-{int(selected.physical_slot):02d}.png"
+                    / f"purchase-{sequence:02d}-friend-{friend_index:02d}-"
+                    f"pass-{stall_pass:02d}-slot-{int(selected.physical_slot):02d}.png"
                 )
                 save_frame(evidence_path, automation.vision.frame())
                 evidence = {
-                    "sequence": purchased_quantity // 10,
+                    "sequence": sequence,
                     "purchased_quantity": purchased_quantity,
+                    "remaining_quantity": max(0, expected_quantity - purchased_quantity),
+                    "friend_ordinal": int(friend_index),
+                    "stall_pass": int(stall_pass),
                     "physical_slot": int(selected.physical_slot),
                     "view": int(selected.view),
                     "capture_after": str(evidence_path),
@@ -356,7 +364,7 @@ def run_probe(
                 checkpoint(
                     "gate2-purchase-one-pass"
                     if purchase_limit == 1
-                    else f"gate3-purchase-{purchased_quantity // 10:02d}-pass",
+                    else f"gate3-purchase-{sequence:02d}-pass",
                     **evidence,
                 )
                 emit(
@@ -365,19 +373,92 @@ def run_probe(
                     transaction_gate=(
                         "PURCHASE_ONE_LISTING"
                         if purchase_limit == 1
-                        else "PURCHASE_TARGET"
+                        else "PURCHASE_TARGET_MULTI_HOUSE"
                     ),
                     **evidence,
                 )
 
-            expected_quantity = purchase_limit * 10
+        if purchase_limit > 0:
+            checkpoint(
+                "gate2-purchase-one-start"
+                if purchase_limit == 1
+                else "gate3b-purchase-target-start",
+                purchase_limit=purchase_limit,
+                target_quantity=expected_quantity,
+                friend_count=(1 if purchase_limit == 1 else int(config.friend_ordinal)),
+                max_stall_passes=int(config.max_stall_passes),
+            )
+            buy_observations(all_observations, initial_friend, 1)
+
+            if purchase_limit > 1 and purchased_quantity < expected_quantity:
+                # Gate 3B: capacity is dynamic. Re-enter the current stall, then
+                # advance through configured friends 1..N until remaining=0.
+                automation.stall.close_friend_stall()
+                automation.navigation.return_home(timeout=30.0)
+                current_view = 1
+                for friend_index in range(1, int(config.friend_ordinal) + 1):
+                    first_pass = 2 if friend_index == 1 else 1
+                    for stall_pass in range(first_pass, int(config.max_stall_passes) + 1):
+                        context.ensure_running()
+                        checkpoint(
+                            "gate3b-stall-pass-start",
+                            friend_ordinal=friend_index,
+                            stall_pass=stall_pass,
+                            purchased_quantity=purchased_quantity,
+                            remaining_quantity=expected_quantity - purchased_quantity,
+                        )
+                        automation.navigation.go_to_friend(friend_index)
+                        automation.stall.open_friend_stall()
+                        capture_dir = (
+                            work_dir
+                            / f"friend-{friend_index:02d}"
+                            / f"pass-{stall_pass:02d}"
+                        )
+                        refreshed = automation.stall.scan_all_20(
+                            templates_dir
+                            / f"friend-{friend_index:02d}"
+                            / f"pass-{stall_pass:02d}",
+                            capture_dir=capture_dir,
+                        )
+                        current_view = STALL_VIEW_COUNT
+                        before = purchased_quantity
+                        buy_observations(refreshed, friend_index, stall_pass)
+                        automation.stall.close_friend_stall()
+                        automation.navigation.return_home(timeout=30.0)
+                        current_view = 1
+                        checkpoint(
+                            "gate3b-stall-pass-finish",
+                            friend_ordinal=friend_index,
+                            stall_pass=stall_pass,
+                            bought_quantity=purchased_quantity - before,
+                            purchased_quantity=purchased_quantity,
+                            remaining_quantity=max(
+                                0, expected_quantity - purchased_quantity
+                            ),
+                        )
+                        if purchased_quantity >= expected_quantity:
+                            break
+                        if purchased_quantity == before:
+                            break
+                    if purchased_quantity >= expected_quantity:
+                        break
+
             if purchased_quantity != expected_quantity:
                 raise RuntimeError(
-                    f"{gate_name} chưa đủ target: "
-                    f"expected={expected_quantity} actual={purchased_quantity}"
+                    "GATE 3B đã duyệt hết giới hạn nhưng chưa đủ target: "
+                    f"expected={expected_quantity} actual={purchased_quantity} "
+                    f"remaining={expected_quantity - purchased_quantity}"
                 )
             with report_lock:
                 report["purchase_evidence"] = purchase_evidence
+                report["friend_count_scanned"] = (
+                    1
+                    if purchase_limit == 1
+                    else max(
+                        (int(item["friend_ordinal"]) for item in purchase_evidence),
+                        default=0,
+                    )
+                )
                 persist()
 
 
@@ -402,7 +483,7 @@ def run_probe(
                 else (
                     "PURCHASE_ONE_LISTING"
                     if purchase_limit == 1
-                    else "PURCHASE_TARGET"
+                    else "PURCHASE_TARGET_MULTI_HOUSE"
                 )
             )
             report["ok"] = True
@@ -428,7 +509,7 @@ def run_probe(
                 else (
                     "PURCHASE_ONE_LISTING"
                     if purchase_limit == 1
-                    else "PURCHASE_TARGET"
+                    else "PURCHASE_TARGET_MULTI_HOUSE"
                 )
             ),
             frame_size=[1000, 1000],
