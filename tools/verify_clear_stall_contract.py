@@ -139,7 +139,35 @@ def main() -> int:
     )
     require(dev_entry, "_start_clear_stall_full_resale_probe", "Gate 5 DEV action missing")
     require(dev_entry, "_clear_stall_gate5_profiles", "Gate 5 state tracking missing")
-    require(multi, "GATE 5: Thu vàng + treo toàn bộ VP đã mua", "Gate 5 button missing")
+    require(
+        multi,
+        "Dọn quầy: Mua đủ + thu vàng + treo lại toàn bộ",
+        "Full clear-stall button missing",
+    )
+    forbid(multi, "▶ GATE 1: Kiểm tra quầy", "Passed Gate 1 button must be removed")
+    forbid(multi, "▶ GATE 2: Mua thử", "Passed Gate 2 button must be removed")
+    forbid(multi, "▶ GATE 3: Mua đủ", "Passed Gate 3 button must be removed")
+    forbid(multi, "▶ GATE 4: Thu vàng", "Passed Gate 4 button must be removed")
+    require(
+        probe,
+        "except NoEmptyStallSlot:",
+        "Full resale must detect a full visible own-stall view",
+    )
+    require(
+        probe,
+        "automation.stall.next_view()",
+        "Full resale must drag the own stall to later views",
+    )
+    require(
+        probe,
+        "swipe_pulses=2",
+        "Own-stall transition must document the proven two-pulse drag",
+    )
+    require(
+        probe,
+        "automation.stall.rewind_to_first(STALL_VIEW_COUNT)",
+        "Gold collection must rewind before resale",
+    )
     forbid(workflow, "CarryoverStore", "Dọn quầy must not carry inventory across cycles")
     require(builder, "carryover purged", "builder must purge stale carryover state")
     forbid(builder, "4 views / 20 physical slots", "builder must not claim fixed stall capacity")
@@ -168,6 +196,9 @@ def main() -> int:
     print("gate5_limit=all_verified_purchases_up_to_20_batches")
     print("gate5_accounting=one_token_per_x10_sale")
     print("gate5_wrong_item=stop_before_substitution")
+    print("gate5_own_stall_views=collect_and_resell_1..4")
+    print("gate5_own_stall_drag=two_pulses_per_view")
+    print("gui=single_full_clear_stall_action")
     return 0
 
 
