@@ -117,6 +117,29 @@ def main() -> int:
     forbid(selling, "price_changed = True", "Gate 4 must never alter price")
     require(dev_entry, "_start_clear_stall_resale_probe", "Gate 4 DEV action missing")
     require(dev_entry, "_clear_stall_gate4_profiles", "Gate 4 state tracking missing")
+    require(
+        probe,
+        '"COLLECT_GOLD_RESELL_TARGET_EXACT"',
+        "Gate 5 transaction mode missing",
+    )
+    require(
+        probe,
+        "for batch_index in range(1, resale_batch_limit + 1)",
+        "Gate 5 bounded per-x10 resale loop missing",
+    )
+    require(
+        probe,
+        "remaining_fingerprints.pop(index)",
+        "Gate 5 must consume each verified purchase token once",
+    )
+    require(
+        probe,
+        "sold_quantity != resale_batch_limit * 10",
+        "Gate 5 exact accounting assertion missing",
+    )
+    require(dev_entry, "_start_clear_stall_full_resale_probe", "Gate 5 DEV action missing")
+    require(dev_entry, "_clear_stall_gate5_profiles", "Gate 5 state tracking missing")
+    require(multi, "GATE 5: Thu vàng + treo toàn bộ VP đã mua", "Gate 5 button missing")
     forbid(workflow, "CarryoverStore", "Dọn quầy must not carry inventory across cycles")
     require(builder, "carryover purged", "builder must purge stale carryover state")
     forbid(builder, "4 views / 20 physical slots", "builder must not claim fixed stall capacity")
@@ -142,6 +165,9 @@ def main() -> int:
     print("gate4_gold=collect_before_resale")
     print("gate4_inventory_scan=after_empty_slot_open")
     print("gate4_price=unchanged")
+    print("gate5_limit=all_verified_purchases_up_to_20_batches")
+    print("gate5_accounting=one_token_per_x10_sale")
+    print("gate5_wrong_item=stop_before_substitution")
     return 0
 
 
