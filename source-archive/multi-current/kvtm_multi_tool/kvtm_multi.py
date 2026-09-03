@@ -1095,44 +1095,15 @@ class MultiApp(tk.Tk):
 
         action_row = ttk.Frame(clear_stall_body, style="Detail.TFrame")
         action_row.grid(row=2, column=0, columnspan=7, sticky="w")
-        self.auto_clear_stall_start_button = ttk.Button(
-            action_row, text="▶ GATE 1: Kiểm tra quầy (không mua)",
-            style="Start.TButton", command=self._start_clear_stall_probe,
-        )
-        self.auto_clear_stall_probe_button = self.auto_clear_stall_start_button
-        self.auto_clear_stall_start_button.pack(side="left", padx=(0, 8))
-        self.auto_clear_stall_purchase_probe_button = ttk.Button(
-            action_row, text="▶ GATE 2: Mua thử đúng 1 ô x10",
-            style="Start.TButton", command=self._start_clear_stall_purchase_probe,
-        )
-        self.auto_clear_stall_purchase_probe_button.pack(side="left", padx=(0, 8))
-        target_action_row = ttk.Frame(clear_stall_body, style="Detail.TFrame")
-        target_action_row.grid(
-            row=3, column=0, columnspan=7, sticky="w", pady=(6, 0)
-        )
-        self.auto_clear_stall_target_probe_button = ttk.Button(
-            target_action_row, text="▶ GATE 3: Mua đủ target (chưa bán)",
-            style="Start.TButton", command=self._start_clear_stall_target_probe,
-        )
-        self.auto_clear_stall_target_probe_button.pack(side="left", padx=(0, 8))
-        self.auto_clear_stall_resale_probe_button = ttk.Button(
-            target_action_row,
-            text="▶ GATE 4: Thu vàng + treo đúng 1 lô x10",
-            style="Start.TButton",
-            command=self._start_clear_stall_resale_probe,
-        )
-        self.auto_clear_stall_resale_probe_button.pack(side="left")
-        full_resale_row = ttk.Frame(clear_stall_body, style="Detail.TFrame")
-        full_resale_row.grid(
-            row=4, column=0, columnspan=7, sticky="w", pady=(6, 0)
-        )
         self.auto_clear_stall_full_resale_probe_button = ttk.Button(
-            full_resale_row,
-            text="▶ GATE 5: Thu vàng + treo toàn bộ VP đã mua",
+            action_row,
+            text="▶ Dọn quầy: Mua đủ + thu vàng + treo lại toàn bộ",
             style="Start.TButton",
             command=self._start_clear_stall_full_resale_probe,
         )
-        self.auto_clear_stall_full_resale_probe_button.pack(side="left")
+        self.auto_clear_stall_full_resale_probe_button.pack(
+            side="left", padx=(0, 8)
+        )
         self.auto_clear_stall_stop_button = ttk.Button(
             action_row, text="■ Dừng",
             style="Stop.TButton", command=self._stop_clear_stall,
@@ -1152,7 +1123,7 @@ class MultiApp(tk.Tk):
                 "<Return>", lambda _event: self._save_clear_stall_config(), add="+"
             )
         self.auto_clear_stall_status = tk.StringVar(
-            value="GATE 1 READ-ONLY • kiểm tra 4 view, không suy số ô"
+            value="Dọn quầy DEV • mua đủ, thu vàng và treo lại đúng VP"
         )
         ttk.Label(
             clear_stall_tab, textvariable=self.auto_clear_stall_status,
@@ -1453,9 +1424,7 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_pages_spin,
                 self.auto_clear_stall_interval_spin,
                 self.auto_clear_stall_close_button,
-                self.auto_clear_stall_start_button,
-                self.auto_clear_stall_purchase_probe_button,
-                self.auto_clear_stall_target_probe_button,
+                self.auto_clear_stall_full_resale_probe_button,
                 self.auto_clear_stall_stop_button,
             ):
                 widget.configure(state=state)
@@ -1469,7 +1438,7 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_close.set(True)
                 self.auto_clear_stall_context.set("Chọn tài khoản clone")
                 self.auto_clear_stall_status.set(
-                    "GATE 1 READ-ONLY • kiểm tra 4 view, không suy số ô"
+                    "Dọn quầy DEV • mua đủ, thu vàng và treo lại đúng VP"
                 )
                 return
             jobs = self.settings.setdefault("clear_stall_jobs", {})
