@@ -141,3 +141,22 @@ quét kho sau, ghi score của từng ứng viên, chỉ nhận score >= 0.62 v�
 fingerprint được tạo trong chính lượt mua. Giá bán không bị tác động.
 
 Đây là SOURCE/STATIC READY; chỉ nâng thành LIVE PASS sau một run GATE 4 mới.
+
+
+## GATE 4 — LIVE PASS (2026-09-03 18:52:55)
+
+Evidence run: `20260903-185255`.
+
+- requested/purchased: `20/20 VP`
+- normalized inventory fingerprint score: `0.763` (threshold `0.62`)
+- gold collection actions before resale: `20`
+- resale: exactly one `x10` batch
+- fingerprint source: `VERIFIED_PURCHASE_THIS_RUN`
+- price changed: `false`
+- final state: `ok=true`, `last_stage=completed`, `returncode=0`
+- visual evidence: `gate4-resale-one-pass.png` shows the x10 item on the own stall
+
+Conclusion: cross-screen fingerprint normalization (friend stall -> inventory) and the
+bounded one-batch resale transaction are LIVE VERIFIED. This gate does not yet authorize
+unbounded/full-cycle resale; later expansion must retain per-purchase provenance,
+x10 accounting, unchanged price, and stop-before-wrong-item behavior.
