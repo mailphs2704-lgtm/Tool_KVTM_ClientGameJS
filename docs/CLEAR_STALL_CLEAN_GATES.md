@@ -88,6 +88,8 @@ Source đã hoàn thiện, chờ LIVE PASS. Lần live `20260903-125257` FAIL an
 8. VP hiện còn hàng nhưng click không đổi (ví dụ clone chưa đủ level) bị bỏ qua, không cộng 10 VP và tiếp tục ô kế tiếp.
 9. Gate 3B vẫn cấm thu vàng, treo bán và đổi giá.
 
+**LIVE PASS Gate 3B:** run `20260903-132654`, target `130 VP`, mua xác minh đủ `130/130`, remaining `0`, transaction `PURCHASE_TARGET_MULTI_HOUSE`, purchase order `SCAN_BUY_THEN_SWIPE`. Nhà 1 mua 60 VP qua các lượt 1 và 3; sau đủ bốn lượt mới chuyển nhà 2. Nhà 2 mua 70 VP và dừng ngay khi đủ target. Report `ok=true`, exit code 0; chưa thu vàng/treo bán.
+
 ### Gate 4 — COLLECT_GOLD_AND_RESELL_ONE
 
 Chỉ mở sau Gate 3 live PASS. Thu vàng, treo đúng một loại x10, không đổi giá,
