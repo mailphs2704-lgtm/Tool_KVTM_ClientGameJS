@@ -11,6 +11,7 @@ WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/clear_stal
 CONFIG = ROOT / "components/clientjs-auto/kvtm_automation/workflows/clear_stall/config.py"
 WORKER = ROOT / "components/clientjs-auto/worker/clear_stall_worker.py"
 MULTI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
+BUILDER = ROOT / "packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -25,7 +26,7 @@ def forbid(source: str, needle: str, message: str) -> None:
 
 def main() -> int:
     sources = {}
-    for path in (WORKFLOW, CONFIG, WORKER, MULTI):
+    for path in (WORKFLOW, CONFIG, WORKER, MULTI, BUILDER):
         text = path.read_text(encoding="utf-8")
         ast.parse(text, filename=str(path))
         sources[path] = text
@@ -34,6 +35,7 @@ def main() -> int:
     config = sources[CONFIG]
     worker = sources[WORKER]
     multi = sources[MULTI]
+    builder = sources[BUILDER]
 
     require(worker, 'EXECUTION_GATE = "READ_ONLY_SCAN"', "transaction gate must stay read-only")
     require(worker, "probe_only=True", "worker must not enable purchase/resale")
@@ -46,6 +48,8 @@ def main() -> int:
     require(multi, "busy_profiles", "machine-wide account serialization missing")
     require(multi, "Đang xếp hàng", "queued-account status missing")
     forbid(workflow, "CarryoverStore", "Dọn quầy must not carry inventory across cycles")
+    require(builder, "carryover purged", "builder must purge stale carryover state")
+    forbid(builder, "4 views / 20 physical slots", "builder must not claim fixed stall capacity")
 
     print("CLEAR STALL STATIC CONTRACT VERIFIED")
     print("gate=READ_ONLY_SCAN")
