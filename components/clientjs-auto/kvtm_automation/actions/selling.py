@@ -51,23 +51,12 @@ class SellingActions:
                 return True
         return False
 
-    def sell_batch_of_ten(
+    def _finish_batch_from_match(
         self,
-        fingerprint: VisualFingerprint,
-        *,
-        storage_id: int,
+        center: tuple[int, int],
+        score: float,
     ) -> None:
-        self.context.ensure_running()
-        if not self._find_empty_slot():
-            raise NoEmptyStallSlot("Quầy clone không còn ô trống")
-        self.waiter.sleep(0.25)
-
-        self.inventory.select_storage(storage_id)
-        match = self.inventory.find_fingerprint(fingerprint, threshold=0.68)
-        if match is None:
-            self._cancel_dialog()
-            raise TransactionError("Không tìm thấy đúng loại VP cần treo trong kho")
-        center, score = match
+        """Finish the x10 sale after one exact inventory match is selected."""
         self.vision.driver.click(*center)
         self.waiter.sleep(0.30)
 
@@ -86,9 +75,8 @@ class SellingActions:
             self._cancel_dialog()
             raise TransactionError("VP không mở được màn hình đặt bán") from exc
 
-        # LIVE_VERIFIED/AUTO_PRO_REFERENCE: old live traces showed sl10 around
-        # 0.639; 0.62 keeps the intended x10 gate without treating other VP as
-        # interchangeable. Missing x10 is a deferred remainder, not fatal.
+        # LIVE_VERIFIED/AUTO_PRO_REFERENCE: x10 is the only quantity Gate 4 may
+        # place. The existing price controls are intentionally never touched.
         sl10 = None
         deadline = time.monotonic() + 2.5
         while time.monotonic() < deadline:
@@ -104,9 +92,8 @@ class SellingActions:
         before = self.vision.frame()[330:760, 180:820].copy()
         self.vision.driver.click(*self.PLACE_BUTTON)
 
-        # The destructive click has already been sent. Finish this short
-        # verification window before honoring stop so manifest accounting stays
-        # atomic with the game-side action.
+        # The destructive click has already been sent. Keep accounting atomic
+        # until the screen-change verification finishes.
         self.waiter.settle(0.20)
         self.vision.find(
             "dong_y",
@@ -129,6 +116,63 @@ class SellingActions:
             self.waiter.settle(0.20)
         self._cancel_dialog(cancelable=False)
         raise TransactionError("Không xác nhận được thay đổi sau khi treo 10 VP")
+
+    def sell_batch_of_ten(
+        self,
+        fingerprint: VisualFingerprint,
+        *,
+        storage_id: int,
+    ) -> None:
+        self.context.ensure_running()
+        if not self._find_empty_slot():
+            raise NoEmptyStallSlot("Quầy clone không còn ô trống")
+        self.waiter.sleep(0.25)
+
+        self.inventory.select_storage(storage_id)
+        match = self.inventory.find_fingerprint(fingerprint, threshold=0.68)
+        if match is None:
+            self._cancel_dialog()
+            raise TransactionError("Không tìm thấy đúng loại VP cần treo trong kho")
+        center, score = match
+        self._finish_batch_from_match(center, score)
+
+    def sell_one_of_exact_purchases(
+        self,
+        fingerprints: list[VisualFingerprint],
+        *,
+        storage_id: int,
+    ) -> VisualFingerprint:
+        """Sell one x10 batch chosen only from this run's verified purchases.
+
+        The empty stall slot is opened before scanning the inventory. This is
+        important: the inventory item grid does not exist on the own-stall
+        screen, so a pre-scan there can never reliably identify the item.
+        """
+        self.context.ensure_running()
+        if not fingerprints:
+            raise TransactionError("Không có dấu vân tay VP đã mua trong lượt này")
+        if not self._find_empty_slot():
+            raise NoEmptyStallSlot("Quầy clone không còn ô trống")
+        self.waiter.sleep(0.25)
+        self.inventory.select_storage(storage_id)
+
+        seen: set[tuple[str, str]] = set()
+        for fingerprint in fingerprints:
+            key = (fingerprint.group, fingerprint.sha256)
+            if key in seen:
+                continue
+            seen.add(key)
+            match = self.inventory.find_fingerprint(fingerprint, threshold=0.68)
+            if match is None:
+                continue
+            center, score = match
+            self._finish_batch_from_match(center, score)
+            return fingerprint
+
+        self._cancel_dialog()
+        raise TransactionError(
+            "Không tìm thấy đúng VP đã xác minh mua trong lượt này; dừng trước khi treo"
+        )
 
     def _cancel_dialog(self, *, cancelable: bool = True) -> None:
         for name in ("huy", "close_game", "close", "x_popup_event"):
