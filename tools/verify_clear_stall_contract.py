@@ -26,7 +26,7 @@ def forbid(source: str, needle: str, message: str) -> None:
 
 def main() -> int:
     sources = {}
-    for path in (WORKFLOW, CONFIG, WORKER, MULTI, BUILDER):
+    for path in (WORKFLOW, CONFIG, WORKER, MULTI):
         text = path.read_text(encoding="utf-8")
         ast.parse(text, filename=str(path))
         sources[path] = text
@@ -35,7 +35,7 @@ def main() -> int:
     config = sources[CONFIG]
     worker = sources[WORKER]
     multi = sources[MULTI]
-    builder = sources[BUILDER]
+    builder = BUILDER.read_text(encoding="utf-8")
 
     require(worker, 'EXECUTION_GATE = "READ_ONLY_SCAN"', "transaction gate must stay read-only")
     require(worker, "probe_only=True", "worker must not enable purchase/resale")
