@@ -54,10 +54,15 @@ def run_probe(
     if not 1 <= int(config.resale_storage_id) <= 5:
         emit_event({"event": "probe_error", "error": "Kho VP bán lại phải trong khoảng 1..5"})
         return 2
-    if int(config.purchase_limit) not in (0, 1):
+    purchase_limit = int(config.purchase_limit)
+    target_listing_count = int(config.buy_quantity) // 10
+    if purchase_limit < 0 or purchase_limit > target_listing_count:
         emit_event({
             "event": "probe_error",
-            "error": "Gate transaction chỉ cho phép purchase_limit 0 hoặc 1",
+            "error": (
+                "Giới hạn mua Gate phải trong khoảng 0..target listings; "
+                f"limit={purchase_limit} target={target_listing_count}"
+            ),
         })
         return 2
     if not 10 <= int(config.buy_quantity) <= 1000 or int(config.buy_quantity) % 10:
@@ -285,50 +290,96 @@ def run_probe(
         capacity_model = "DYNAMIC_REMAINING_COUNTER"
 
         purchased_quantity = 0
-        if int(config.purchase_limit) == 1:
-            checkpoint("gate2-purchase-one-start")
-            if not all_observations:
-                raise RuntimeError("GATE 2 không tìm thấy ô VP để mua thử")
+        purchase_limit = int(config.purchase_limit)
+        if purchase_limit > 0:
+            gate_name = "GATE 2" if purchase_limit == 1 else "GATE 3"
+            checkpoint(
+                "gate2-purchase-one-start"
+                if purchase_limit == 1
+                else "gate3-purchase-target-start",
+                purchase_limit=purchase_limit,
+            )
+            ordered = sorted(
+                all_observations,
+                key=lambda item: (int(item.view), int(item.physical_slot)),
+            )
+            if len(ordered) < purchase_limit:
+                raise RuntimeError(
+                    f"{gate_name} chỉ thấy {len(ordered)} mẫu VP, "
+                    f"không đủ target {purchase_limit} ô"
+                )
 
             automation.stall.rewind_to_first(current_view)
             current_view = 1
-            selected = sorted(
-                all_observations,
-                key=lambda item: (int(item.view), int(item.physical_slot)),
-            )[0]
-            while current_view < int(selected.view):
-                automation.stall.next_view()
-                current_view += 1
+            purchase_evidence = []
+            for selected in ordered:
+                if purchased_quantity >= purchase_limit * 10:
+                    break
+                while current_view < int(selected.view):
+                    automation.stall.next_view()
+                    current_view += 1
 
-            confirmed = 0
+                confirmed = 0
 
-            def on_purchase(_listing_count: int) -> None:
-                nonlocal confirmed
-                confirmed += 10
+                def on_purchase(_listing_count: int) -> None:
+                    nonlocal confirmed
+                    confirmed += 10
 
-            automation.buying.buy_from_listing(
-                selected,
-                maximum=1,
-                on_unit=on_purchase,
-            )
-            if confirmed != 10:
-                raise RuntimeError(
-                    f"GATE 2 sai bộ đếm: expected=10 actual={confirmed}"
+                bought_listings = automation.buying.buy_from_listing(
+                    selected,
+                    maximum=1,
+                    on_unit=on_purchase,
                 )
-            purchased_quantity = confirmed
-            checkpoint(
-                "gate2-purchase-one-pass",
-                purchased_quantity=purchased_quantity,
-                physical_slot=int(selected.physical_slot),
-                view=int(selected.view),
-            )
-            emit(
-                "probe_purchase_ok",
-                profile_id=str(config.profile_id),
-                purchased_quantity=purchased_quantity,
-                physical_slot=int(selected.physical_slot),
-                view=int(selected.view),
-            )
+                if bought_listings == 0:
+                    continue
+                if confirmed != 10:
+                    raise RuntimeError(
+                        f"{gate_name} sai bộ đếm ô {selected.physical_slot}: "
+                        f"expected=10 actual={confirmed}"
+                    )
+
+                purchased_quantity += confirmed
+                evidence_path = (
+                    work_dir
+                    / f"purchase-{purchased_quantity // 10:02d}-"
+                    f"slot-{int(selected.physical_slot):02d}.png"
+                )
+                save_frame(evidence_path, automation.vision.frame())
+                evidence = {
+                    "sequence": purchased_quantity // 10,
+                    "purchased_quantity": purchased_quantity,
+                    "physical_slot": int(selected.physical_slot),
+                    "view": int(selected.view),
+                    "capture_after": str(evidence_path),
+                }
+                purchase_evidence.append(evidence)
+                checkpoint(
+                    "gate2-purchase-one-pass"
+                    if purchase_limit == 1
+                    else f"gate3-purchase-{purchased_quantity // 10:02d}-pass",
+                    **evidence,
+                )
+                emit(
+                    "probe_purchase_ok",
+                    profile_id=str(config.profile_id),
+                    transaction_gate=(
+                        "PURCHASE_ONE_LISTING"
+                        if purchase_limit == 1
+                        else "PURCHASE_TARGET"
+                    ),
+                    **evidence,
+                )
+
+            expected_quantity = purchase_limit * 10
+            if purchased_quantity != expected_quantity:
+                raise RuntimeError(
+                    f"{gate_name} chưa đủ target: "
+                    f"expected={expected_quantity} actual={purchased_quantity}"
+                )
+            with report_lock:
+                report["purchase_evidence"] = purchase_evidence
+                persist()
+
 
         target_listings = int(config.buy_quantity) // 10
         planned_listings = min(occupied_total, target_listings)
@@ -346,8 +397,13 @@ def run_probe(
             report["target_reached"] = target_reached
             report["purchased_quantity"] = purchased_quantity
             report["transaction_gate"] = (
-                "PURCHASE_ONE_LISTING" if int(config.purchase_limit) == 1
-                else "READ_ONLY_SCAN"
+                "READ_ONLY_SCAN"
+                if purchase_limit == 0
+                else (
+                    "PURCHASE_ONE_LISTING"
+                    if purchase_limit == 1
+                    else "PURCHASE_TARGET"
+                )
             )
             report["ok"] = True
             report["completed_at"] = time.time()
@@ -367,8 +423,13 @@ def run_probe(
             target_reached=target_reached,
             purchased_quantity=purchased_quantity,
             transaction_gate=(
-                "PURCHASE_ONE_LISTING" if int(config.purchase_limit) == 1
-                else "READ_ONLY_SCAN"
+                "READ_ONLY_SCAN"
+                if purchase_limit == 0
+                else (
+                    "PURCHASE_ONE_LISTING"
+                    if purchase_limit == 1
+                    else "PURCHASE_TARGET"
+                )
             ),
             frame_size=[1000, 1000],
         )
