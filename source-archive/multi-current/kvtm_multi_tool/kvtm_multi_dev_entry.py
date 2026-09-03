@@ -213,12 +213,16 @@ class MultiDevApp(production.MultiApp):
         elif event == "probe_purchase_ok":
             transaction_gate = str(payload.get("transaction_gate") or "")
             purchase_gate = (
-                "GATE 4"
-                if transaction_gate == "COLLECT_GOLD_RESELL_ONE_EXACT"
+                "GATE 5"
+                if transaction_gate == "COLLECT_GOLD_RESELL_TARGET_EXACT"
                 else (
-                    "GATE 3B"
-                    if transaction_gate == "PURCHASE_TARGET_MULTI_HOUSE"
-                    else "GATE 2"
+                    "GATE 4"
+                    if transaction_gate == "COLLECT_GOLD_RESELL_ONE_EXACT"
+                    else (
+                        "GATE 3B"
+                        if transaction_gate == "PURCHASE_TARGET_MULTI_HOUSE"
+                        else "GATE 2"
+                    )
                 )
             )
             summary = (
@@ -228,8 +232,15 @@ class MultiDevApp(production.MultiApp):
         elif event == "probe_resale_ok":
             sold = int(payload.get("quantity") or 0)
             fingerprint = str(payload.get("fingerprint_sha256") or "")
+            gate = (
+                "GATE 5"
+                if str(payload.get("transaction_gate") or "")
+                == "COLLECT_GOLD_RESELL_TARGET_EXACT"
+                else "GATE 4"
+            )
+            cumulative = int(payload.get("sold_quantity") or sold)
             summary = (
-                f"PASS   GATE 4 treo đúng {sold} VP vừa mua • "
+                f"PASS   {gate} treo lô {sold} VP • tổng={cumulative} • "
                 f"fingerprint={fingerprint[:12]}"
             )
         elif event == "probe_ok":
@@ -634,6 +645,10 @@ class MultiDevApp(production.MultiApp):
         message = str(payload.get("message") or "")
         stage = str(payload.get("stage") or "")
         transaction_gate = str(payload.get("transaction_gate") or "")
+        is_gate5 = (
+            transaction_gate == "COLLECT_GOLD_RESELL_TARGET_EXACT"
+            or profile_id in self._clear_stall_gate5_profiles
+        )
         is_gate4 = (
             transaction_gate == "COLLECT_GOLD_RESELL_ONE_EXACT"
             or profile_id in self._clear_stall_gate4_profiles
@@ -647,8 +662,8 @@ class MultiDevApp(production.MultiApp):
             or profile_id in self._clear_stall_gate2_profiles
         )
         gate_name = (
-            "GATE 4" if is_gate4 else "GATE 3B" if is_gate3
-            else "GATE 2" if is_gate2 else "GATE 1"
+            "GATE 5" if is_gate5 else "GATE 4" if is_gate4
+            else "GATE 3B" if is_gate3 else "GATE 2" if is_gate2 else "GATE 1"
         )
 
         if event == "probe_boot":
@@ -662,16 +677,14 @@ class MultiDevApp(production.MultiApp):
         elif event == "probe_purchase_ok":
             purchased = int(payload.get("purchased_quantity") or 0)
             self._set_clear_stall_checkpoint(
-                profile_id,
-                f"{gate_name} • đã xác minh mua {purchased} VP",
+                profile_id, f"{gate_name} • đã xác minh mua {purchased} VP"
             )
         elif event == "probe_resale_ok":
-            sold = int(payload.get("quantity") or 0)
+            sold = int(payload.get("sold_quantity") or payload.get("quantity") or 0)
             fingerprint = str(payload.get("fingerprint_sha256") or "")
             self._set_clear_stall_checkpoint(
                 profile_id,
-                f"GATE 4 • đã treo đúng {sold} VP vừa mua • "
-                f"fingerprint={fingerprint[:12]}",
+                f"{gate_name} • đã treo {sold} VP • fingerprint={fingerprint[:12]}",
             )
         elif event == "probe_ok":
             sample_hits = int(payload.get("sample_hits_not_unique_inventory") or 0)
@@ -680,11 +693,17 @@ class MultiDevApp(production.MultiApp):
             sold = int(payload.get("sold_quantity") or 0)
             collected_gold = int(payload.get("collected_gold_slots") or 0)
             transaction_gate = str(payload.get("transaction_gate") or "")
+            is_gate5 = transaction_gate == "COLLECT_GOLD_RESELL_TARGET_EXACT"
             is_gate4 = transaction_gate == "COLLECT_GOLD_RESELL_ONE_EXACT"
             is_gate3 = transaction_gate == "PURCHASE_TARGET_MULTI_HOUSE"
             is_gate2 = transaction_gate == "PURCHASE_ONE_LISTING"
 
-            if is_gate4:
+            if is_gate5:
+                summary = (
+                    f"GATE 5 PASS • mua {purchased}/{requested} VP • "
+                    f"thu vàng • treo lại toàn bộ {sold} VP"
+                )
+            elif is_gate4:
                 summary = (
                     f"GATE 4 PASS • mua {purchased}/{requested} VP • "
                     f"thu {collected_gold} ô vàng • treo đúng {sold} VP vừa mua"
@@ -709,7 +728,9 @@ class MultiDevApp(production.MultiApp):
                 summary,
                 {
                     "ok": True,
-                    "probe_only": not (is_gate2 or is_gate3 or is_gate4),
+                    "probe_only": not (
+                        is_gate2 or is_gate3 or is_gate4 or is_gate5
+                    ),
                     "transaction_gate": transaction_gate or "READ_ONLY_SCAN",
                     "purchased_quantity": purchased,
                     "sold_quantity": sold,
@@ -735,7 +756,9 @@ class MultiDevApp(production.MultiApp):
                 f"{gate_name} FAIL",
                 {
                     "ok": False,
-                    "probe_only": not (is_gate2 or is_gate3 or is_gate4),
+                    "probe_only": not (
+                        is_gate2 or is_gate3 or is_gate4 or is_gate5
+                    ),
                     "transaction_gate": transaction_gate or "UNKNOWN",
                     "error": error,
                     "report": str(payload.get("report") or ""),
