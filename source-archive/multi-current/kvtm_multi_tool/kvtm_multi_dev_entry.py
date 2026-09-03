@@ -331,8 +331,8 @@ class MultiDevApp(production.MultiApp):
             return
         if not core.messagebox.askyesno(
             core.APP_NAME,
-            f"GATE 3 sẽ mua thật đúng {quantity} VP ({quantity // 10} ô x10).\n"
-            "Mỗi ô phải đổi trước khi cộng; đủ target sẽ dừng và quay về nhà.\n"
+            f"GATE 3B sẽ mua thật đúng {quantity} VP ({quantity // 10} ô x10).\n"
+            "Tự tải lại quầy và duyệt nhà 1→N; mỗi ô phải đổi trước khi cộng.\n"
             "Gate này CHƯA thu vàng và CHƯA treo bán. Tiếp tục?",
         ):
             return
@@ -417,6 +417,9 @@ class MultiDevApp(production.MultiApp):
         storage = max(1, min(5, int(job.get("target_stall_id", 2) or 2)))
         quantity = max(10, min(1000, int(job.get("buy_quantity", 10) or 10)))
         quantity = max(10, (quantity // 10) * 10)
+        max_stall_passes = max(
+            1, min(10, int(job.get("max_scan_pages", 10) or 10))
+        )
         run_id = time.strftime("%Y%m%d-%H%M%S")
         work_dir = core.APP_DIR / "clear-stall-probe" / profile_id / run_id
         stop_event = threading.Event()
@@ -428,7 +431,7 @@ class MultiDevApp(production.MultiApp):
             target=self._run_probe_thread,
             args=(
                 profile_id, profile, int(proc.pid), friend, storage,
-                quantity, work_dir, stop_event,
+                quantity, max_stall_passes, work_dir, stop_event,
                 (
                     quantity // 10
                     if profile_id in self._clear_stall_gate3_profiles
@@ -457,6 +460,7 @@ class MultiDevApp(production.MultiApp):
         friend: int,
         storage: int,
         quantity: int,
+        max_stall_passes: int,
         work_dir: Path,
         stop_event: threading.Event,
         purchase_limit: int,
@@ -476,6 +480,7 @@ class MultiDevApp(production.MultiApp):
                 buy_quantity=int(quantity),
                 work_dir=work_dir,
                 purchase_limit=int(purchase_limit),
+                max_stall_passes=int(max_stall_passes),
             )
 
             def sink(payload: dict) -> None:
@@ -540,7 +545,7 @@ class MultiDevApp(production.MultiApp):
         transaction_gate = str(payload.get("transaction_gate") or "")
         gate_name = (
             "GATE 3"
-            if transaction_gate == "PURCHASE_TARGET"
+            if transaction_gate == "PURCHASE_TARGET_MULTI_HOUSE"
             or profile_id in self._clear_stall_gate3_profiles
             else (
                 "GATE 2"
@@ -571,7 +576,7 @@ class MultiDevApp(production.MultiApp):
             is_gate2 = transaction_gate == "PURCHASE_ONE_LISTING"
             is_gate3 = transaction_gate == "PURCHASE_TARGET"
             summary = (
-                f"GATE 3 PASS • đã mua đủ và xác minh {purchased}/{requested} VP"
+                f"GATE 3B PASS • đã mua đủ {purchased}/{requested} VP qua tải lại/chuyển nhà"
                 if is_gate3
                 else (
                     f"GATE 2 PASS • đã mua và xác minh đúng {purchased} VP"
