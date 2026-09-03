@@ -181,3 +181,28 @@ Safety/accounting contract:
 - Gate 5 remains DEV/manual-consent only until live evidence passes.
 
 Status: AST/static source ready; LIVE NOT YET VERIFIED.
+
+
+## GATE 5 — OWN-STALL FOUR-VIEW EXPANSION
+
+The full action now uses the same proven overlapping stall geometry on the clone's
+own stall:
+
+1. collect visible gold;
+2. drag exactly two pulses to the next view;
+3. repeat through views 1..4;
+4. rewind to view 1;
+5. place x10 batches into visible empty slots;
+6. when the current view has no empty slot, drag exactly two pulses and continue;
+7. stop after the verified target is sold or after view 4 has no empty slot.
+
+The transaction never scrolls in response to a missing item or insufficient x10
+quantity; those conditions remain hard stops. Scrolling is allowed only after
+`NoEmptyStallSlot`, preventing a recognition failure from being mistaken for a
+full view.
+
+GUI contract: passed Gate 1–4 buttons are removed. The clear-stall panel exposes
+one full-action button and one Stop button. Legacy handlers remain internal only
+for compatibility and are not user-visible.
+
+Status: AST and static source checks PASS; multi-view resale still requires live evidence.
