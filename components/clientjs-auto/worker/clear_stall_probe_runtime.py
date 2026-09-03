@@ -9,7 +9,7 @@ import traceback
 from typing import Callable
 
 
-PROBE_VERSION = 12
+PROBE_VERSION = 13
 STALL_VIEW_COUNT = 4
 TOTAL_STALL_SLOTS = 20
 
@@ -48,7 +48,7 @@ def run_probe(
     """
 
     from kvtm_automation import AutomationContext, KVAutomation
-    from kvtm_automation.errors import AutomationStopped
+    from kvtm_automation.errors import AutomationStopped, NoEmptyStallSlot
     from kvtm_automation.models import VisualFingerprint
 
     if not 1 <= int(config.friend_ordinal) <= 7:
@@ -596,22 +596,66 @@ def run_probe(
             checkpoint(f"{gate_label}-opening-own-stall")
             automation.stall.open_own_stall()
             checkpoint(f"{gate_label}-collecting-gold")
-            collected_gold_slots = automation.stall.collect_own_stall_gold(
-                maximum=20
-            )
+            if resale_batch_limit > 1:
+                # Own stall has the same overlapping four-view geometry as a
+                # friend stall. Collect visible gold, drag exactly two pulses,
+                # then collect the newly revealed slots.
+                for gold_view in range(1, STALL_VIEW_COUNT + 1):
+                    context.ensure_running()
+                    collected_here = automation.stall.collect_own_stall_gold(
+                        maximum=8
+                    )
+                    collected_gold_slots += collected_here
+                    checkpoint(
+                        f"gate5-collect-gold-view-{gold_view:02d}",
+                        collected_here=collected_here,
+                        collected_total=collected_gold_slots,
+                    )
+                    if gold_view < STALL_VIEW_COUNT:
+                        automation.stall.next_view()
+                automation.stall.rewind_to_first(STALL_VIEW_COUNT)
+                current_view = 1
+            else:
+                collected_gold_slots = automation.stall.collect_own_stall_gold(
+                    maximum=20
+                )
 
             remaining_fingerprints = list(purchased_fingerprints)
+            sale_view = 1
             for batch_index in range(1, resale_batch_limit + 1):
                 context.ensure_running()
                 checkpoint(
                     f"{gate_label}-resell-{batch_index:02d}-start",
                     remaining_verified_fingerprints=len(remaining_fingerprints),
+                    sale_view=sale_view,
                     quantity=10,
                 )
-                selected_resale = automation.selling.sell_one_of_exact_purchases(
-                    remaining_fingerprints,
-                    storage_id=int(config.resale_storage_id),
-                )
+                while True:
+                    try:
+                        selected_resale = (
+                            automation.selling.sell_one_of_exact_purchases(
+                                remaining_fingerprints,
+                                storage_id=int(config.resale_storage_id),
+                            )
+                        )
+                        break
+                    except NoEmptyStallSlot:
+                        if sale_view >= STALL_VIEW_COUNT:
+                            raise RuntimeError(
+                                "Đã kéo đến cuối quầy nhà nhưng không còn ô trống"
+                            )
+                        checkpoint(
+                            f"gate5-resell-view-{sale_view:02d}-full",
+                            next_view=sale_view + 1,
+                            swipe_pulses=2,
+                        )
+                        automation.stall.next_view()
+                        sale_view += 1
+                        current_view = sale_view
+                        checkpoint(
+                            f"gate5-resell-view-{sale_view:02d}-ready",
+                            sale_view=sale_view,
+                        )
 
                 removed = False
                 for index, candidate in enumerate(remaining_fingerprints):
