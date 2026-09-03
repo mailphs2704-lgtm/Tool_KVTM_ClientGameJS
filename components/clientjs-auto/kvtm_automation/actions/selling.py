@@ -158,7 +158,7 @@ class SellingActions:
 
         seen: set[tuple[str, str]] = set()
         for fingerprint in fingerprints:
-            key = (fingerprint.group, fingerprint.sha256)
+            key = (fingerprint.group_key, fingerprint.sha256)
             if key in seen:
                 continue
             seen.add(key)
