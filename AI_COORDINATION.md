@@ -116,6 +116,7 @@ Workspace không sở hữu vòng đời Auto. Auto không phụ thuộc việc 
 Thêm bản ghi mới lên đầu bảng. Không sửa hoặc xóa lịch sử cũ.
 
 | Thời gian UTC | Từ phiên | Đến phiên | Commit | Nội dung / hành động cần làm |
+| 2026-09-03 | AUTO/Multi | AUTO/Multi + Workspace | `b42e189` | Build ac65a5d bị static verifier false-negative vì reload range được format nhiều dòng. Đã sửa verifier kiểm tra policy + bound bằng hai invariant bền vững; verifier/probe AST PASS và 5 Gate3B needles đều FOUND. Đây là build-gate fix, không đổi runtime behavior. NEXT pull/build [1]. |
 | 2026-09-03 | AUTO/Multi | AUTO/Multi + Workspace | `c59a139`..`c9c5b0c` | ZIP 20260903-125935 xác nhận Gate3B cũ quét đủ 4 view rồi rewind, gây bỏ view giữa khi mua. Đã đổi hoàn toàn sang SCAN_BUY_THEN_SWIPE: mua view hiện tại, vuốt 2 nhịp, mua view mới tới cuối. Listing click không đổi do thiếu level nay skip không accounting và tiếp tục. AST PASS; chưa live PASS. Không sửa Workspace. NEXT [1], chạy lại target150/2 nhà/4 lượt. |
 |---|---|---|---|---|
 | 2026-09-03 | AUTO/Multi | AUTO/Multi + Workspace | `bd05c8b`..`653ffc5` | Gate3B live run 20260903-125257 FAIL an toàn: click physical slot1 đang là “Đã bán”, UI không đổi nên không cộng 10 VP. Root cause scanner chỉ đo artwork occupancy. Đã thêm coin-price marker filter trước planning (evidence sold<=72, available>=184, cutoff120), sửa popup hiện đúng Gate3B và static guard; AST PASS. NEXT update/build và chạy lại cùng target 150, nhà1..2, max4. Chưa thu vàng/bán. |
