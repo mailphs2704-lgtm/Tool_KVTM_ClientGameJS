@@ -383,8 +383,14 @@ class MultiDevApp(production.MultiApp):
             core.messagebox.showinfo(core.APP_NAME, "Hãy chọn một tài khoản clone.")
             return
         job = self._clear_stall_job(profile_id)
-        quantity = max(20, min(200, int(job.get("buy_quantity", 20) or 20)))
-        quantity = max(20, (quantity // 10) * 10)
+        requested_quantity = int(job.get("buy_quantity", 20) or 20)
+        if requested_quantity > 200:
+            core.messagebox.showinfo(
+                core.APP_NAME,
+                "GATE 5 hỗ trợ tối đa 200 VP (20 ô x10) trong một vòng.",
+            )
+            return
+        quantity = max(20, (requested_quantity // 10) * 10)
         storage = max(1, min(5, int(job.get("target_stall_id", 2) or 2)))
         batch_count = quantity // 10
         if not core.messagebox.askyesno(
