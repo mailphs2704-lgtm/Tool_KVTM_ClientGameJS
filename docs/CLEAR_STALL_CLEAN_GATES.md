@@ -67,7 +67,7 @@ không mua VP và báo kế hoạch/target chính xác.
 
 ### Gate 2 — PURCHASE_ONE_LISTING
 
-Đã chuẩn bị trong source sau Gate 1 live PASS. Chỉ chạy bằng nút DEV riêng và hộp xác nhận rõ giao dịch thật. Giới hạn cứng `maximum=1`; chỉ cộng 10 VP sau khi ô nguồn đổi/biến mất, sau đó dừng mua và quay về nhà.
+LIVE PASS trên runtime `7e32160`, run `20260903-122225`: đúng profile PID 13536, transaction gate `PURCHASE_ONE_LISTING`, chỉ một DOWN/UP tại ô (290,435), listing đổi trước khi cộng, `purchased_quantity=10`, quay về nhà và exit 0. Không có click mua thứ hai, không bán lại.
 
 ### Gate 3 — PURCHASE_TARGET
 
