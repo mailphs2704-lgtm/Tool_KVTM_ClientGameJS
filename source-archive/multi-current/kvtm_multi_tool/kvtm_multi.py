@@ -33,6 +33,14 @@ PROFILE_BACKUP_DIR = APP_DIR / "profile-backups"
 DEFAULT_CLIENT = Path(r"C:\Program Files\ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")
 DEFAULT_GAME = Path(os.environ.get("APPDATA", Path.home())) / "VNG Corporation" / "ZingPlay" / "zpp" / GAME_ID / "game"
 DEFAULT_DISPLAY = {"width": 1000, "height": 1000, "dpi": 240}
+CLEAR_STALL_ITEM_OPTIONS = (
+    ("nuoc_hoa_hong", "Nước hoa hồng"),
+    ("tinh_dau_hh", "Tinh dầu hoa hồng"),
+    ("vai_vang", "Vải vàng"),
+    ("tao_say", "Táo sấy"),
+    ("tra_da", "Trà đá"),
+)
+
 DEFAULT_AUTO_TUNING = {
     "harvest_speed": 0.045,
     "go_up_wait": 0.7,
@@ -1093,8 +1101,27 @@ class MultiApp(tk.Tk):
             row=1, column=6, sticky="w", pady=(0, 6)
         )
 
+        ttk.Label(
+            clear_stall_body, text="Chỉ mua VP:", style="AutoValue.TLabel"
+        ).grid(row=2, column=0, sticky="e", padx=(0, 5), pady=(0, 6))
+        item_row = ttk.Frame(clear_stall_body, style="Detail.TFrame")
+        item_row.grid(row=2, column=1, columnspan=6, sticky="w", pady=(0, 6))
+        self.auto_clear_stall_items = {}
+        self.auto_clear_stall_item_buttons = []
+        for item_id, item_label in CLEAR_STALL_ITEM_OPTIONS:
+            variable = tk.BooleanVar(value=True)
+            button = ttk.Checkbutton(
+                item_row,
+                text=item_label,
+                variable=variable,
+                command=self._save_clear_stall_config,
+            )
+            button.pack(side="left", padx=(0, 9))
+            self.auto_clear_stall_items[item_id] = variable
+            self.auto_clear_stall_item_buttons.append(button)
+
         action_row = ttk.Frame(clear_stall_body, style="Detail.TFrame")
-        action_row.grid(row=2, column=0, columnspan=7, sticky="w")
+        action_row.grid(row=3, column=0, columnspan=7, sticky="w")
         self.auto_clear_stall_full_resale_probe_button = ttk.Button(
             action_row,
             text="▶ Dọn quầy: Mua đủ + thu vàng + treo lại toàn bộ",
@@ -1433,6 +1460,8 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_stop_button,
             ):
                 widget.configure(state=state)
+            for widget in self.auto_clear_stall_item_buttons:
+                widget.configure(state=state)
             if not profile:
                 self.auto_clear_stall_enabled.set(False)
                 self.auto_clear_stall_friend.set(1)
@@ -1441,6 +1470,8 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_pages.set(10)
                 self.auto_clear_stall_interval.set(65)
                 self.auto_clear_stall_close.set(True)
+                for item_id, _label in CLEAR_STALL_ITEM_OPTIONS:
+                    self.auto_clear_stall_items[item_id].set(True)
                 self.auto_clear_stall_context.set("Chọn tài khoản clone")
                 self.auto_clear_stall_status.set(
                     "Dọn quầy DEV • mua đủ, thu vàng và treo lại đúng VP"
@@ -1468,6 +1499,15 @@ class MultiApp(tk.Tk):
             self.auto_clear_stall_close.set(
                 bool(saved.get("close_client_after_run", True))
             )
+            allowed_items = saved.get(
+                "allowed_item_ids",
+                [item_id for item_id, _label in CLEAR_STALL_ITEM_OPTIONS],
+            )
+            if not isinstance(allowed_items, list):
+                allowed_items = [item_id for item_id, _label in CLEAR_STALL_ITEM_OPTIONS]
+            allowed_set = {str(item) for item in allowed_items}
+            for item_id, _label in CLEAR_STALL_ITEM_OPTIONS:
+                self.auto_clear_stall_items[item_id].set(item_id in allowed_set)
             self.auto_clear_stall_context.set(
                 f"Clone: {profile.get('name') or profile_id}"
             )
@@ -1510,6 +1550,18 @@ class MultiApp(tk.Tk):
         self.auto_clear_stall_quantity.set(quantity)
         self.auto_clear_stall_pages.set(pages)
         self.auto_clear_stall_interval.set(interval)
+        allowed_items = [
+            item_id
+            for item_id, _label in CLEAR_STALL_ITEM_OPTIONS
+            if bool(self.auto_clear_stall_items[item_id].get())
+        ]
+        if not allowed_items:
+            first_item = CLEAR_STALL_ITEM_OPTIONS[0][0]
+            self.auto_clear_stall_items[first_item].set(True)
+            allowed_items = [first_item]
+            self.auto_clear_stall_status.set(
+                "Phải chọn ít nhất một VP • đã giữ Nước hoa hồng"
+            )
         jobs = self.settings.setdefault("clear_stall_jobs", {})
         previous = jobs.get(profile_id, {})
         if not isinstance(previous, dict):
@@ -1536,6 +1588,7 @@ class MultiApp(tk.Tk):
             "interval_minutes": interval,
             "next_run_at": next_run,
             "close_client_after_run": bool(self.auto_clear_stall_close.get()),
+            "allowed_item_ids": allowed_items,
             "enabled": enabled,
             "last_checkpoint": str(previous.get("last_checkpoint") or "WAITING"),
             "last_result": previous.get("last_result"),
