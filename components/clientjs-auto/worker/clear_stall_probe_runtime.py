@@ -238,91 +238,24 @@ def run_probe(
 
         covered: list[int] = []
         occupied: list[int] = []
-        for view in range(1, STALL_VIEW_COUNT + 1):
-            context.ensure_running()
-            current_view = view
-            checkpoint(f"scanning-view-{view:02d}")
-            frame = automation.vision.frame()
-            view_path = work_dir / f"view-{view:02d}.png"
-            save_frame(view_path, frame)
-            observations = automation.stall.scan_view(
-                view,
-                templates_dir,
-                frame=frame,
-            )
-            all_observations.extend(observations)
-            new_local = automation.stall.new_local_slots(view)
-            new_physical = [
-                automation.stall.physical_slot(view, slot)
-                for slot in new_local
-            ]
-            observed_physical = [int(item.physical_slot) for item in observations]
-            covered.extend(new_physical)
-            occupied.extend(observed_physical)
-            view_entry = {
-                "view": view,
-                "capture": str(view_path),
-                "new_local_slots": list(new_local),
-                "new_physical_slots": new_physical,
-                "occupied_new_physical_slots": observed_physical,
-                "observations": [
-                    {
-                        "physical_slot": int(item.physical_slot),
-                        "local_slot": int(item.local_slot),
-                        "occupancy_score": round(float(item.occupancy_score), 3),
-                    }
-                    for item in observations
-                ],
-            }
-            with report_lock:
-                views = report["views"]
-                assert isinstance(views, list)
-                views.append(view_entry)
-                report["last_stage"] = f"view-{view:02d}"
-                persist()
-            emit(
-                "probe_progress",
-                message=(
-                    f"Probe view {view}/4 • {len(observations)} ô mới có VP • "
-                    f"đã lấy {len(set(occupied))} mẫu có VP (không suy ra sức chứa)"
-                ),
-                view=view,
-                capture=str(view_path),
-            )
-            if view < STALL_VIEW_COUNT:
-                automation.stall.next_view()
-
-        expected = list(range(1, TOTAL_STALL_SLOTS + 1))
-        if covered != expected:
-            raise RuntimeError(f"Mapping mẫu quầy không phủ đủ 4 view: {covered}")
-
-        occupied_slots = sorted(set(occupied))
-        occupied_total = len(occupied_slots)
-        # Capacity varies by account. Gate 1 never infers unlocked/locked counts
-        # from overlapping screenshots; production stops by remaining quantity.
-        capacity_model = "DYNAMIC_REMAINING_COUNTER"
-
         purchased_quantity = 0
         purchase_evidence = []
-        purchase_limit = int(config.purchase_limit)
         expected_quantity = purchase_limit * 10
+        capacity_model = "DYNAMIC_REMAINING_COUNTER"
 
-        def buy_observations(observations, friend_index: int, stall_pass: int) -> None:
-            nonlocal purchased_quantity, current_view
-            gate_name = "GATE 2" if purchase_limit == 1 else "GATE 3"
-            ordered = sorted(
-                observations,
-                key=lambda item: (int(item.view), int(item.physical_slot)),
-            )
-            automation.stall.rewind_to_first(current_view)
-            current_view = 1
-            for selected in ordered:
+        def buy_visible(
+            observations,
+            friend_index: int,
+            stall_pass: int,
+        ) -> int:
+            """Buy available cells in the current view before any next swipe."""
+            nonlocal purchased_quantity
+            bought_before = purchased_quantity
+            for selected in sorted(
+                observations, key=lambda item: int(item.local_slot)
+            ):
                 if purchased_quantity >= expected_quantity:
                     break
-                while current_view < int(selected.view):
-                    automation.stall.next_view()
-                    current_view += 1
-
                 confirmed = 0
 
                 def on_purchase(_listing_count: int) -> None:
@@ -338,22 +271,24 @@ def run_probe(
                     continue
                 if confirmed != 10:
                     raise RuntimeError(
-                        f"{gate_name} sai bộ đếm ô {selected.physical_slot}: "
+                        f"GATE sai bộ đếm ô {selected.physical_slot}: "
                         f"expected=10 actual={confirmed}"
                     )
-
                 purchased_quantity += confirmed
                 sequence = purchased_quantity // 10
                 evidence_path = (
                     work_dir
                     / f"purchase-{sequence:02d}-friend-{friend_index:02d}-"
-                    f"pass-{stall_pass:02d}-slot-{int(selected.physical_slot):02d}.png"
+                    f"pass-{stall_pass:02d}-view-{int(selected.view):02d}-"
+                    f"slot-{int(selected.physical_slot):02d}.png"
                 )
                 save_frame(evidence_path, automation.vision.frame())
                 evidence = {
                     "sequence": sequence,
                     "purchased_quantity": purchased_quantity,
-                    "remaining_quantity": max(0, expected_quantity - purchased_quantity),
+                    "remaining_quantity": max(
+                        0, expected_quantity - purchased_quantity
+                    ),
                     "friend_ordinal": int(friend_index),
                     "stall_pass": int(stall_pass),
                     "physical_slot": int(selected.physical_slot),
@@ -364,7 +299,7 @@ def run_probe(
                 checkpoint(
                     "gate2-purchase-one-pass"
                     if purchase_limit == 1
-                    else f"gate3-purchase-{sequence:02d}-pass",
+                    else f"gate3b-purchase-{sequence:02d}-pass",
                     **evidence,
                 )
                 emit(
@@ -377,6 +312,99 @@ def run_probe(
                     ),
                     **evidence,
                 )
+            return purchased_quantity - bought_before
+
+        def scan_buy_stall(
+            friend_index: int,
+            stall_pass: int,
+            *,
+            primary_report: bool,
+        ) -> int:
+            """Process one stall strictly as view1 buy, swipe, view2 buy..."""
+            nonlocal current_view
+            bought_before = purchased_quantity
+            current_view = 1
+            for view in range(1, STALL_VIEW_COUNT + 1):
+                context.ensure_running()
+                current_view = view
+                checkpoint(
+                    f"friend-{friend_index:02d}-pass-{stall_pass:02d}-"
+                    f"scan-view-{view:02d}"
+                )
+                frame = automation.vision.frame()
+                if primary_report:
+                    view_path = work_dir / f"view-{view:02d}.png"
+                    template_root = templates_dir
+                else:
+                    pass_root = (
+                        work_dir
+                        / f"friend-{friend_index:02d}"
+                        / f"pass-{stall_pass:02d}"
+                    )
+                    pass_root.mkdir(parents=True, exist_ok=True)
+                    view_path = pass_root / f"view-{view:02d}.png"
+                    template_root = pass_root / "templates"
+                save_frame(view_path, frame)
+                observations = automation.stall.scan_view(
+                    view,
+                    template_root,
+                    frame=frame,
+                )
+                observed_physical = [
+                    int(item.physical_slot) for item in observations
+                ]
+                if primary_report:
+                    new_local = automation.stall.new_local_slots(view)
+                    new_physical = [
+                        automation.stall.physical_slot(view, slot)
+                        for slot in new_local
+                    ]
+                    covered.extend(new_physical)
+                    occupied.extend(observed_physical)
+                    view_entry = {
+                        "view": view,
+                        "capture": str(view_path),
+                        "new_local_slots": list(new_local),
+                        "new_physical_slots": new_physical,
+                        "available_new_physical_slots": observed_physical,
+                        "observations": [
+                            {
+                                "physical_slot": int(item.physical_slot),
+                                "local_slot": int(item.local_slot),
+                                "occupancy_score": round(
+                                    float(item.occupancy_score), 3
+                                ),
+                            }
+                            for item in observations
+                        ],
+                    }
+                    with report_lock:
+                        views = report["views"]
+                        assert isinstance(views, list)
+                        views.append(view_entry)
+                        report["last_stage"] = f"view-{view:02d}"
+                        persist()
+                emit(
+                    "probe_progress",
+                    message=(
+                        f"Nhà {friend_index} lượt {stall_pass} • "
+                        f"view {view}/4 • {len(observations)} ô có thể mua"
+                    ),
+                    friend_ordinal=friend_index,
+                    stall_pass=stall_pass,
+                    view=view,
+                    capture=str(view_path),
+                )
+
+                # Critical order: buy everything visible in this view first.
+                # Only then move the stall by the proven two-swipe step.
+                if purchase_limit > 0:
+                    buy_visible(observations, friend_index, stall_pass)
+                    if purchased_quantity >= expected_quantity:
+                        break
+                if view < STALL_VIEW_COUNT:
+                    automation.stall.next_view()
+            return purchased_quantity - bought_before
 
         if purchase_limit > 0:
             checkpoint(
@@ -387,79 +415,85 @@ def run_probe(
                 target_quantity=expected_quantity,
                 friend_count=(1 if purchase_limit == 1 else int(config.friend_ordinal)),
                 max_stall_passes=int(config.max_stall_passes),
+                order="SCAN_BUY_THEN_SWIPE",
             )
-            buy_observations(all_observations, initial_friend, 1)
 
-            if purchase_limit > 1 and purchased_quantity < expected_quantity:
-                # Gate 3B: capacity is dynamic. Re-enter the current stall, then
-                # advance through configured friends 1..N until remaining=0.
-                automation.stall.close_friend_stall()
-                automation.navigation.return_home(timeout=30.0)
-                current_view = 1
-                for friend_index in range(1, int(config.friend_ordinal) + 1):
-                    first_pass = 2 if friend_index == 1 else 1
-                    for stall_pass in range(first_pass, int(config.max_stall_passes) + 1):
-                        context.ensure_running()
-                        checkpoint(
-                            "gate3b-stall-pass-start",
-                            friend_ordinal=friend_index,
-                            stall_pass=stall_pass,
-                            purchased_quantity=purchased_quantity,
-                            remaining_quantity=expected_quantity - purchased_quantity,
-                        )
-                        automation.navigation.go_to_friend(friend_index)
-                        automation.stall.open_friend_stall()
-                        capture_dir = (
-                            work_dir
-                            / f"friend-{friend_index:02d}"
-                            / f"pass-{stall_pass:02d}"
-                        )
-                        refreshed = automation.stall.scan_all_20(
-                            templates_dir
-                            / f"friend-{friend_index:02d}"
-                            / f"pass-{stall_pass:02d}",
-                            capture_dir=capture_dir,
-                        )
-                        current_view = STALL_VIEW_COUNT
-                        before = purchased_quantity
-                        buy_observations(refreshed, friend_index, stall_pass)
-                        automation.stall.close_friend_stall()
-                        automation.navigation.return_home(timeout=30.0)
-                        current_view = 1
-                        checkpoint(
-                            "gate3b-stall-pass-finish",
-                            friend_ordinal=friend_index,
-                            stall_pass=stall_pass,
-                            bought_quantity=purchased_quantity - before,
-                            purchased_quantity=purchased_quantity,
-                            remaining_quantity=max(
-                                0, expected_quantity - purchased_quantity
-                            ),
-                        )
-                        if purchased_quantity >= expected_quantity:
-                            break
-                        if purchased_quantity == before:
-                            break
+        scan_buy_stall(initial_friend, 1, primary_report=True)
+
+        expected_slots = list(range(1, TOTAL_STALL_SLOTS + 1))
+        if purchase_limit == 0 and covered != expected_slots:
+            raise RuntimeError(
+                f"Mapping mẫu quầy không phủ đủ 4 view: {covered}"
+            )
+
+        if purchase_limit > 1 and purchased_quantity < expected_quantity:
+            automation.stall.close_friend_stall()
+            automation.navigation.return_home(timeout=30.0)
+            current_view = 1
+            for friend_index in range(1, int(config.friend_ordinal) + 1):
+                first_pass = 2 if friend_index == 1 else 1
+                for stall_pass in range(
+                    first_pass, int(config.max_stall_passes) + 1
+                ):
+                    context.ensure_running()
+                    checkpoint(
+                        "gate3b-stall-pass-start",
+                        friend_ordinal=friend_index,
+                        stall_pass=stall_pass,
+                        purchased_quantity=purchased_quantity,
+                        remaining_quantity=(
+                            expected_quantity - purchased_quantity
+                        ),
+                    )
+                    automation.navigation.go_to_friend(friend_index)
+                    automation.stall.open_friend_stall()
+                    bought_this_pass = scan_buy_stall(
+                        friend_index,
+                        stall_pass,
+                        primary_report=False,
+                    )
+                    automation.stall.close_friend_stall()
+                    automation.navigation.return_home(timeout=30.0)
+                    current_view = 1
+                    checkpoint(
+                        "gate3b-stall-pass-finish",
+                        friend_ordinal=friend_index,
+                        stall_pass=stall_pass,
+                        bought_quantity=bought_this_pass,
+                        purchased_quantity=purchased_quantity,
+                        remaining_quantity=max(
+                            0, expected_quantity - purchased_quantity
+                        ),
+                    )
                     if purchased_quantity >= expected_quantity:
                         break
+                    if bought_this_pass == 0:
+                        break
+                if purchased_quantity >= expected_quantity:
+                    break
 
-            if purchased_quantity != expected_quantity:
-                raise RuntimeError(
-                    "GATE 3B đã duyệt hết giới hạn nhưng chưa đủ target: "
-                    f"expected={expected_quantity} actual={purchased_quantity} "
-                    f"remaining={expected_quantity - purchased_quantity}"
-                )
+        if purchase_limit > 0 and purchased_quantity != expected_quantity:
+            raise RuntimeError(
+                "GATE 3B đã duyệt hết giới hạn nhưng chưa đủ target: "
+                f"expected={expected_quantity} actual={purchased_quantity} "
+                f"remaining={expected_quantity - purchased_quantity}"
+            )
+
+        if purchase_limit > 0:
             with report_lock:
                 report["purchase_evidence"] = purchase_evidence
-                report["friend_count_scanned"] = (
-                    1
-                    if purchase_limit == 1
-                    else max(
-                        (int(item["friend_ordinal"]) for item in purchase_evidence),
-                        default=0,
-                    )
+                report["purchase_order"] = "SCAN_BUY_THEN_SWIPE"
+                report["friend_count_scanned"] = max(
+                    (
+                        int(item["friend_ordinal"])
+                        for item in purchase_evidence
+                    ),
+                    default=0,
                 )
                 persist()
+
+        occupied_slots = sorted(set(occupied))
+        occupied_total = len(occupied_slots)
 
 
         target_listings = int(config.buy_quantity) // 10
