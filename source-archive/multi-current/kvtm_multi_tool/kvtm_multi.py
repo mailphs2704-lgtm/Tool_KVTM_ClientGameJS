@@ -1104,6 +1104,11 @@ class MultiApp(tk.Tk):
         self.auto_clear_stall_full_resale_probe_button.pack(
             side="left", padx=(0, 8)
         )
+        # Compatibility anchor for kvtm_multi_entry. This is an alias to the
+        # single visible full-action button, not a restored legacy Gate button.
+        self.auto_clear_stall_start_button = (
+            self.auto_clear_stall_full_resale_probe_button
+        )
         self.auto_clear_stall_stop_button = ttk.Button(
             action_row, text="■ Dừng",
             style="Stop.TButton", command=self._stop_clear_stall,
