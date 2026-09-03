@@ -585,29 +585,24 @@ class MultiDevApp(production.MultiApp):
                     lambda event_data=dict(data): self._handle_clear_stall_probe_event(event_data),
                 )
 
+            if profile_id in self._clear_stall_gate5_profiles:
+                resident_mode = (
+                    f"GATE 5 mua và treo lại toàn bộ {purchase_limit * 10} VP"
+                )
+            elif profile_id in self._clear_stall_gate4_profiles:
+                resident_mode = (
+                    f"GATE 4 mua {purchase_limit * 10} VP + thu vàng + "
+                    "treo đúng x10"
+                )
+            elif purchase_limit > 1:
+                resident_mode = f"GATE 3B mua target {purchase_limit * 10} VP"
+            elif purchase_limit == 1:
+                resident_mode = "GATE 2 mua đúng 1 ô x10"
+            else:
+                resident_mode = "GATE 1 READ-ONLY"
             sink({
                 "event": "probe_progress",
-                "message": (
-                    "Resident runtime đã sẵn sàng • "
-                    + (
-                        f"GATE 5 mua và treo lại toàn bộ {purchase_limit * 10} VP"
-                        if profile_id in self._clear_stall_gate5_profiles
-                        else (
-                            f"GATE 4 mua {purchase_limit * 10} VP + thu vàng + treo đúng x10"
-                            if profile_id in self._clear_stall_gate4_profiles
-                            else (
-                            f"GATE 3B mua target {purchase_limit * 10} VP"
-                            if purchase_limit > 1
-                            else (
-                                "GATE 2 mua đúng 1 ô x10"
-                                if purchase_limit == 1
-                                else "GATE 1 READ-ONLY"
-                            )
-                        )
-                            )
-                        )
-                    )
-                ),
+                "message": f"Resident runtime đã sẵn sàng • {resident_mode}",
                 "stage": "resident-runtime-reused",
             })
             returncode = run_probe(
