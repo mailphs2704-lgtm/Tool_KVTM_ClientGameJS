@@ -27,6 +27,7 @@ bridge_token.txt
 data-profile-diagnostic/
 data-machine-diagnostic/
 data-machine-sync/
+local-backups/
 
 # AUTO PRO authoritative runtime is intentionally versioned through Git LFS.
 !source-archive/auto-pro-reference/runtime/
