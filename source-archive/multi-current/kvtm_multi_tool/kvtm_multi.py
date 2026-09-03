@@ -543,7 +543,7 @@ class MultiApp(tk.Tk):
         initial_h = min(900, max(560, work_h))
         self.geometry(f"{initial_w}x{initial_h}")
         self.minsize(min(820, initial_w), min(520, initial_h))
-        self._workspace_height = 380
+        self._workspace_height = 335
         self.configure(background="#f3f6fa")
         self.option_add("*Font", ("Segoe UI", 10))
         self.profiles = load_profiles()
@@ -771,7 +771,7 @@ class MultiApp(tk.Tk):
 
         # The control/account center has a fixed height and no scrollbar.
         # AUTO controls remain directly below it and are always visible.
-        body = ttk.Frame(self, style="App.TFrame", height=520)
+        body = ttk.Frame(self, style="App.TFrame", height=475)
         body.pack(fill="x")
         body.pack_propagate(False)
         self.content_frame = ttk.Frame(body, style="App.TFrame")
@@ -915,7 +915,7 @@ class MultiApp(tk.Tk):
 
         tab_bar = tk.Frame(panel, background="#ffffff", height=36)
         tab_bar.pack(fill="x", pady=(0, 8))
-        tab_host = ttk.Frame(panel, style="Detail.TFrame", height=142)
+        tab_host = ttk.Frame(panel, style="Detail.TFrame", height=190)
         tab_host.pack(fill="x")
         tab_host.pack_propagate(False)
 
@@ -1106,11 +1106,15 @@ class MultiApp(tk.Tk):
             style="Start.TButton", command=self._start_clear_stall_purchase_probe,
         )
         self.auto_clear_stall_purchase_probe_button.pack(side="left", padx=(0, 8))
+        target_action_row = ttk.Frame(clear_stall_body, style="Detail.TFrame")
+        target_action_row.grid(
+            row=3, column=0, columnspan=7, sticky="w", pady=(6, 0)
+        )
         self.auto_clear_stall_target_probe_button = ttk.Button(
-            action_row, text="▶ GATE 3: Mua đủ target (chưa bán)",
+            target_action_row, text="▶ GATE 3: Mua đủ target (chưa bán)",
             style="Start.TButton", command=self._start_clear_stall_target_probe,
         )
-        self.auto_clear_stall_target_probe_button.pack(side="left", padx=(0, 8))
+        self.auto_clear_stall_target_probe_button.pack(side="left")
         self.auto_clear_stall_stop_button = ttk.Button(
             action_row, text="■ Dừng",
             style="Stop.TButton", command=self._stop_clear_stall,
