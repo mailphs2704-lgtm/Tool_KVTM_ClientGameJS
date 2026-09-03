@@ -63,6 +63,11 @@ def main() -> int:
     require(probe, "purchase_evidence", "Gate 3 must save per-listing evidence")
     require(buying, "if not self.listing_matches(observation)", "purchase must verify listing disappearance")
     require(buying, "không cộng 10 VP", "unverified click must not increment quantity")
+    require(
+        (ROOT / "components/clientjs-auto/kvtm_automation/actions/stall.py").read_text(encoding="utf-8"),
+        "listing_is_available",
+        "sold listings must be excluded before purchase planning",
+    )
     require(dev_entry, "askyesno", "Gate 2 requires explicit user consent")
     forbid(workflow, "CarryoverStore", "Dọn quầy must not carry inventory across cycles")
     require(builder, "carryover purged", "builder must purge stale carryover state")
@@ -77,6 +82,7 @@ def main() -> int:
     print("carryover=disabled")
     print("gate2_limit=one_x10_listing")
     print("purchase_verification=listing_disappearance")
+    print("sold_listing_filter=coin_price_marker")
     print("gate3_limit=configured_x10_target")
     print("gate3_reload=bounded_per_house")
     print("gate3_friend_order=1..N")
