@@ -55,7 +55,11 @@ def main() -> int:
     require(multi, "Đang xếp hàng", "queued-account status missing")
     require(probe, "if purchase_limit > 0:", "transaction probes must require a positive hard limit")
     require(probe, "maximum=1", "each purchase call must buy at most one listing")
-    require(probe, '"PURCHASE_TARGET"', "Gate 3 target mode missing")
+    require(probe, '"PURCHASE_TARGET_MULTI_HOUSE"', "Gate 3B target mode missing")
+    require(probe, "range(1, int(config.friend_ordinal) + 1)", "Gate 3B must visit friends 1..N")
+    require(probe, "range(first_pass, int(config.max_stall_passes) + 1)", "Gate 3B bounded stall reload loop missing")
+    require(probe, "remaining_quantity", "Gate 3B remaining x10 counter missing")
+    require(probe, "automation.stall.close_friend_stall()", "Gate 3B must close before reload/house change")
     require(probe, "purchase_evidence", "Gate 3 must save per-listing evidence")
     require(buying, "if not self.listing_matches(observation)", "purchase must verify listing disappearance")
     require(buying, "không cộng 10 VP", "unverified click must not increment quantity")
@@ -74,6 +78,8 @@ def main() -> int:
     print("gate2_limit=one_x10_listing")
     print("purchase_verification=listing_disappearance")
     print("gate3_limit=configured_x10_target")
+    print("gate3_reload=bounded_per_house")
+    print("gate3_friend_order=1..N")
     print("gate3_resale=disabled")
     return 0
 
