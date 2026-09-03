@@ -53,7 +53,8 @@ Không gửi các file này lên GitHub hoặc cho AI.
 - **Số nhà cần duyệt**: đi lần lượt nhà 1 đến N.
 - **Kho VP**: kho dùng để chọn lại đúng VP đã mua.
 - **Số lượng mua**: đơn vị VP, bắt buộc bội số 10.
-- **Quét tối đa**: số lần tải lại quầy ở mỗi nhà.
+- **Quét tối đa**: số lần tải lại trong một lượt ghé mỗi nhà; hết lượt mà chưa đủ thì bắt đầu vòng nhà mới, không kết thúc job.
+- **Chỉ mua VP**: chọn ít nhất một trong 5 loại: Nước hoa hồng, Tinh dầu hoa hồng, Vải vàng, Táo sấy, Trà đá.
 - **Chu kỳ**: phút chờ tính từ lúc vòng trước hoàn thành PASS.
 - **Đóng clone sau khi xong**: nếu bật, ClientJS của đúng profile tự đóng sau PASS.
 
@@ -73,9 +74,11 @@ Nút chạy đầy đủ:
 6. Mở quầy: scan cả hàng trên và hàng dưới, mua ngay các ô hợp lệ.
 7. Kéo quầy đúng hai nhịp.
 8. Lặp `scan -> mua -> kéo hai nhịp` đến cuối quầy.
-9. Nếu chưa đủ target: đóng/mở lại quầy trong giới hạn cấu hình; sau đó chuyển nhà tiếp.
-10. Ô không mua được (khóa level/đã bán) bị bỏ qua và tuyệt đối không được cộng 10 VP.
-11. Chỉ kết thúc pha mua khi số lượng xác minh đạt target.
+9. Nếu chưa đủ target: đóng/mở lại quầy trong giới hạn mỗi lượt ghé; sau đó chuyển nhà tiếp.
+10. Duyệt hết nhà 1..N vẫn chưa đủ thì chờ ngắn và bắt đầu vòng mới; chỉ dừng khi đủ target hoặc người dùng bấm Dừng.
+11. Chỉ mua những ô khớp một loại VP đang được chọn trong cấu hình.
+12. Ô không mua được (khóa level/đã bán) bị bỏ qua và tuyệt đối không được cộng 10 VP.
+13. Chỉ kết thúc pha mua khi số lượng xác minh đạt target.
 
 ### Treo lại tại nhà mình
 
@@ -86,6 +89,16 @@ Nút chạy đầy đủ:
 5. Mỗi fingerprint mua thành công chỉ được tiêu thụ một lần.
 6. Chỉ PASS khi `requested_quantity == purchased_quantity == sold_quantity`.
 7. Giá bán không được thay đổi.
+
+## 4A. Tương thích ClientJS của AUTO chính
+
+Ba wrapper trong `test-candidates/auto-pro-clientjs-temp/clientjs_auto_patch.py` chỉ áp dụng cho device `PC:/PCID:`:
+
+- **Reset ClientJS**: EngineDriver giữ immutable profile ID và chuyển sang PID mới. `openGame` ưu tiên template, nhưng cũng chấp nhận PID/bridge có ba frame 1000x1000 hợp lệ liên tiếp; không nhấn BACK khỏi một client khỏe chỉ vì template home đổi.
+- **Mở rương**: sau chọn rương, chờ modal render ổn định tối thiểu 3 giây, tối đa 8 giây; thử các tâm rương ClientJS và chỉ chốt khi prompt biến mất hoặc vùng modal đổi đủ lớn.
+- **Quay hề**: giữ nguyên `ADBController.VongQuay` của AUTO PRO để quay/nhận quà, sau đó đóng reward/wheel overlay và xác nhận đã trở lại màn hình game.
+
+Các thay đổi này đang ở trạng thái SOURCE READY; phải có live log mới được nâng lên LIVE PASS.
 
 ## 5. Kết thúc chu kỳ và hàng đợi
 
