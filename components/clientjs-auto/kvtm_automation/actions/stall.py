@@ -202,13 +202,14 @@ class StallActions:
         if not 1 <= slot <= len(VISIBLE_SLOT_CENTERS):
             return False
         cx, _cy = VISIBLE_SLOT_CENTERS[slot - 1]
-        top, bottom = ((455, 495) if slot <= 4 else (685, 720))
+        top, bottom = ((495, 530) if slot <= 4 else (685, 720))
         roi = frame[top:bottom, cx + 10 : cx + 48]
         if roi is None or getattr(roi, "size", 0) == 0:
             return False
         # BGR/BGRA channel test for the orange/yellow coin. Live Gate 3B
-        # evidence separated sold cells (<=72 pixels) from available x10
-        # listings (>=184 pixels); threshold 120 keeps a wide margin.
+        # evidence: correct top price band y=495..530 and bottom band
+        # y=685..720 separate empty/sold cells (0 pixels) from available x10
+        # listings (130..199 pixels); threshold 120 keeps a safe margin.
         blue = roi[:, :, 0]
         green = roi[:, :, 1]
         red = roi[:, :, 2]
