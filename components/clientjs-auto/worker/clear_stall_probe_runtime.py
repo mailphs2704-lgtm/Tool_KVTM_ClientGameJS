@@ -467,6 +467,8 @@ def run_probe(
                             item_id,
                             threshold=0.64,
                             zone=zone,
+                            scales=(0.90, 1.0, 1.10),
+                            frame=frame,
                         ) is not None:
                             matched_item_id = item_id
                             break
