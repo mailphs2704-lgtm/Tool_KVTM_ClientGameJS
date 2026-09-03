@@ -589,6 +589,18 @@ class MultiDevApp(production.MultiApp):
         max_stall_passes = max(
             1, min(10, int(job.get("max_scan_pages", 10) or 10))
         )
+        default_items = [item_id for item_id, _label in core.CLEAR_STALL_ITEM_OPTIONS]
+        raw_items = job.get("allowed_item_ids", default_items)
+        allowed_item_ids = tuple(
+            item_id
+            for item_id in default_items
+            if isinstance(raw_items, list) and item_id in raw_items
+        )
+        if not allowed_item_ids:
+            self._clear_stall_probe_starting.discard(profile_id)
+            self._mark_probe_console_done(profile_id, "ERROR chưa chọn VP Dọn quầy")
+            self.auto_clear_stall_status.set("Dọn quầy lỗi: phải chọn ít nhất một VP")
+            return
         run_id = time.strftime("%Y%m%d-%H%M%S")
         work_dir = core.APP_DIR / "clear-stall-probe" / profile_id / run_id
         stop_event = threading.Event()
@@ -616,7 +628,8 @@ class MultiDevApp(production.MultiApp):
             f"probe_thread_start pid={proc.pid} report_dir={work_dir}",
         )
         self.auto_clear_stall_status.set(
-            f"Kiểm tra resident • Nhà bạn {friend} • kế hoạch {quantity} VP"
+            f"Kiểm tra resident • Nhà 1..{friend} • {quantity} VP • "
+            f"{len(allowed_item_ids)} loại được chọn"
         )
         thread.start()
         self._refresh_clear_stall_panel()
@@ -650,6 +663,7 @@ class MultiDevApp(production.MultiApp):
                 work_dir=work_dir,
                 purchase_limit=int(purchase_limit),
                 max_stall_passes=int(max_stall_passes),
+                allowed_item_ids=allowed_item_ids,
                 resale_batch_limit=(
                     purchase_limit
                     if profile_id in self._clear_stall_gate5_profiles
