@@ -12,6 +12,8 @@ CONFIG = ROOT / "components/clientjs-auto/kvtm_automation/workflows/clear_stall/
 WORKER = ROOT / "components/clientjs-auto/worker/clear_stall_worker.py"
 PROBE = ROOT / "components/clientjs-auto/worker/clear_stall_probe_runtime.py"
 BUYING = ROOT / "components/clientjs-auto/kvtm_automation/actions/buying.py"
+SELLING = ROOT / "components/clientjs-auto/kvtm_automation/actions/selling.py"
+STALL = ROOT / "components/clientjs-auto/kvtm_automation/actions/stall.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 MULTI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 BUILDER = ROOT / "packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1"
@@ -29,7 +31,7 @@ def forbid(source: str, needle: str, message: str) -> None:
 
 def main() -> int:
     sources = {}
-    for path in (WORKFLOW, CONFIG, WORKER, PROBE, BUYING, DEV_ENTRY, MULTI):
+    for path in (WORKFLOW, CONFIG, WORKER, PROBE, BUYING, SELLING, STALL, DEV_ENTRY, MULTI):
         text = path.read_text(encoding="utf-8")
         ast.parse(text, filename=str(path))
         sources[path] = text
@@ -39,6 +41,8 @@ def main() -> int:
     worker = sources[WORKER]
     probe = sources[PROBE]
     buying = sources[BUYING]
+    selling = sources[SELLING]
+    stall = sources[STALL]
     dev_entry = sources[DEV_ENTRY]
     multi = sources[MULTI]
     builder = BUILDER.read_text(encoding="utf-8")
@@ -65,7 +69,7 @@ def main() -> int:
     require(probe, '"SCAN_BUY_THEN_SWIPE"', "Gate 3B must buy each view before swiping")
     require(probe, '"REOPEN_CURRENT_STALL"', "same-friend stall reload must stay in place")
     require(
-        (ROOT / "components/clientjs-auto/kvtm_automation/actions/stall.py").read_text(encoding="utf-8"),
+        stall,
         "return tuple(range(1, 9))",
         "every stall view must scan both visible rows",
     )
@@ -73,16 +77,40 @@ def main() -> int:
     require(buying, "if not self.listing_matches(observation)", "purchase must verify listing disappearance")
     require(buying, "không cộng 10 VP", "unverified click must not increment quantity")
     require(
-        (ROOT / "components/clientjs-auto/kvtm_automation/actions/stall.py").read_text(encoding="utf-8"),
+        stall,
         "listing_is_available",
         "sold listings must be excluded before purchase planning",
     )
     require(
-        (ROOT / "components/clientjs-auto/kvtm_automation/actions/stall.py").read_text(encoding="utf-8"),
+        stall,
         "((495, 530) if slot <= 4 else (685, 720))",
         "top/bottom price-band mapping missing",
     )
     require(dev_entry, "askyesno", "Gate 2 requires explicit user consent")
+    require(probe, '"COLLECT_GOLD_RESELL_ONE_EXACT"', "Gate 4 transaction mode missing")
+    require(probe, "purchased-icons", "Gate 4 must freeze purchased icons")
+    require(probe, "replace(selected.fingerprint", "Gate 4 fingerprint freeze missing")
+    require(probe, '"VERIFIED_PURCHASE_THIS_RUN"', "Gate 4 provenance marker missing")
+    require(probe, "resale_batch_limit", "Gate 4 hard resale limit missing")
+    require(stall, "collect_own_stall_gold", "Gate 4 must collect own-stall gold first")
+    require(
+        selling,
+        "sell_one_of_exact_purchases",
+        "Gate 4 exact purchased-fingerprint selector missing",
+    )
+    require(
+        selling,
+        "The empty stall slot is opened before scanning the inventory",
+        "Gate 4 inventory must be scanned only after opening a stall slot",
+    )
+    require(
+        selling,
+        "PLACE_BUTTON",
+        "Gate 4 must reuse the existing sale placement flow",
+    )
+    forbid(selling, "price_changed = True", "Gate 4 must never alter price")
+    require(dev_entry, "_start_clear_stall_resale_probe", "Gate 4 DEV action missing")
+    require(dev_entry, "_clear_stall_gate4_profiles", "Gate 4 state tracking missing")
     forbid(workflow, "CarryoverStore", "Dọn quầy must not carry inventory across cycles")
     require(builder, "carryover purged", "builder must purge stale carryover state")
     forbid(builder, "4 views / 20 physical slots", "builder must not claim fixed stall capacity")
@@ -104,6 +132,10 @@ def main() -> int:
     print("gate3_same_friend_reload=in_place")
     print("gate3_unbuyable=skip_without_accounting")
     print("gate3_resale=disabled")
+    print("gate4_limit=one_exact_purchased_x10_batch")
+    print("gate4_gold=collect_before_resale")
+    print("gate4_inventory_scan=after_empty_slot_open")
+    print("gate4_price=unchanged")
     return 0
 
 
