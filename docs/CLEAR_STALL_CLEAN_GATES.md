@@ -78,13 +78,15 @@ LIVE PASS trên runtime trước commit bố cục, run `20260903-123215`: targe
 
 Source đã hoàn thiện, chờ LIVE PASS. Lần live `20260903-125257` FAIL an toàn trước accounting vì scanner nhận ô “Đã bán” là listing; ảnh xác nhận hàng trên đã bán và hàng dưới còn x10. Patch mới chỉ tạo observation khi vùng giá có coin marker (ngưỡng live: sold ≤72 pixel, available ≥184 pixel; cutoff 120), nên không click ô sold. Gate dùng target còn thiếu theo đơn vị x10, không suy luận sức chứa quầy. Luồng thực hiện:
 
-1. Quét và mua tại nhà 1; mỗi giao dịch chỉ cộng sau khi listing đổi.
-2. Nếu chưa đủ, đóng quầy, về nhà rồi vào lại cùng quầy; tối đa `max_scan_pages` nhưng bị chặn cứng không quá 10 lượt mỗi nhà.
-3. Một lượt không mua thêm được ô nào thì chuyển ngay sang nhà tiếp theo.
-4. Duyệt tuần tự nhà `1..N`, với N là “Số nhà cần duyệt”.
-5. Dừng ngay khi remaining bằng 0. Nếu hết nhà/lượt mà vẫn thiếu, FAIL rõ expected/actual/remaining và quay về nhà.
-6. Mỗi ô mua lưu PNG cùng `friend_ordinal`, `stall_pass`, view, physical slot và bộ đếm remaining.
-7. Gate 3B vẫn cấm thu vàng, treo bán và đổi giá.
+1. Mở quầy nhà 1, quét và mua ngay các ô đang nhìn thấy; mỗi giao dịch chỉ cộng sau khi listing đổi.
+2. Sau khi xử lý xong view hiện tại mới vuốt đúng hai nhịp, rồi quét/mua các ô mới xuất hiện; lặp tới cuối quầy.
+3. Nếu chưa đủ, đóng quầy, về nhà rồi vào lại cùng quầy; tối đa `max_scan_pages` nhưng bị chặn cứng không quá 10 lượt mỗi nhà.
+4. Một lượt không mua thêm được ô nào thì chuyển ngay sang nhà tiếp theo.
+5. Duyệt tuần tự nhà `1..N`, với N là “Số nhà cần duyệt”.
+6. Dừng ngay khi remaining bằng 0. Nếu hết nhà/lượt mà vẫn thiếu, FAIL rõ expected/actual/remaining và quay về nhà.
+7. Mỗi ô mua lưu PNG cùng `friend_ordinal`, `stall_pass`, view, physical slot và bộ đếm remaining.
+8. VP hiện còn hàng nhưng click không đổi (ví dụ clone chưa đủ level) bị bỏ qua, không cộng 10 VP và tiếp tục ô kế tiếp.
+9. Gate 3B vẫn cấm thu vàng, treo bán và đổi giá.
 
 ### Gate 4 — COLLECT_GOLD_AND_RESELL_ONE
 
