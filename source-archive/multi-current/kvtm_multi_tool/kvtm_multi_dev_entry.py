@@ -118,9 +118,31 @@ class MultiDevApp(production.MultiApp):
         self._refresh_clear_stall_panel()
 
     def _poll_clear_stall_schedule(self) -> None:
-        """Never auto-start transaction-capable Dọn quầy jobs in Multi DEV."""
+        """Start at most one due full Dọn quầy cycle across the whole machine."""
         if self._bridge_stop.is_set():
             return
+        now = time.time()
+        jobs = self.settings.get("clear_stall_jobs", {})
+        if isinstance(jobs, dict):
+            due_jobs = []
+            for profile_id, job in tuple(jobs.items()):
+                if not isinstance(job, dict) or not job.get("enabled", False):
+                    continue
+                try:
+                    due = float(job.get("next_run_at", 0) or 0)
+                except (TypeError, ValueError):
+                    due = 0
+                if due > 0 and due <= now:
+                    due_jobs.append((due, str(profile_id)))
+            for _due, profile_id in sorted(due_jobs):
+                if self._dev_probe_blocked(profile_id):
+                    job = self._clear_stall_job(profile_id)
+                    waiting = "Đang xếp hàng • chờ tài khoản trước hoàn thành"
+                    if job.get("last_checkpoint") != waiting:
+                        self._set_clear_stall_checkpoint(profile_id, waiting)
+                    continue
+                self._start_scheduled_full_clear_stall(profile_id)
+                break
         self.after(1000, self._poll_clear_stall_schedule)
 
     def _clear_stall_profile(self) -> tuple[str | None, dict | None]:
@@ -160,6 +182,12 @@ class MultiDevApp(production.MultiApp):
             return True
         if self._probe_thread_alive(profile_id):
             return True
+        if any(
+            thread.is_alive()
+            for other_id, thread in self._dev_probe_threads.items()
+            if str(other_id) != str(profile_id)
+        ):
+            return True
         auto_worker = self._auto_workers.get(profile_id)
         if self._worker_alive(auto_worker):
             return True
@@ -170,6 +198,48 @@ class MultiDevApp(production.MultiApp):
         if any(self._worker_alive(w) for w in self._clear_stall_workers.values()):
             return True
         return False
+
+    def _start_scheduled_full_clear_stall(self, profile_id: str) -> None:
+        """Open one due clone and run the same live-verified full transaction."""
+        profile = next(
+            (item for item in self.profiles if str(item.get("id") or "") == profile_id),
+            None,
+        )
+        job = self._clear_stall_job(profile_id)
+        if not profile or not job.get("enabled", False):
+            return
+        self._prepare_probe_console(profile_id, profile)
+        self._clear_stall_gate3_profiles.add(profile_id)
+        self._clear_stall_gate5_profiles.add(profile_id)
+        job["next_run_at"] = 0
+        job["last_checkpoint"] = "Đến lịch • đang tự mở clone"
+        self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+        core.save_settings(self.settings)
+        self._clear_stall_probe_starting.add(profile_id)
+        try:
+            proc = self.processes.get(profile_id)
+            if not proc or proc.poll() is not None:
+                self._launch(profile)
+                proc = self.processes.get(profile_id)
+            if not proc or proc.poll() is not None:
+                raise RuntimeError("Không mở được ClientJS của clone đến lịch")
+        except Exception as exc:
+            self._clear_stall_probe_starting.discard(profile_id)
+            self._clear_stall_gate3_profiles.discard(profile_id)
+            self._clear_stall_gate5_profiles.discard(profile_id)
+            interval = max(5, int(job.get("interval_minutes", 65) or 65))
+            job["next_run_at"] = time.time() + min(5, interval) * 60
+            job["last_checkpoint"] = f"Lỗi tự mở clone • thử lại sau 5 phút: {exc}"
+            self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+            core.save_settings(self.settings)
+            self._mark_probe_console_done(profile_id, f"ERROR mở clone đến lịch: {exc}")
+            return
+        self._append_probe_log(profile_id, f"scheduled_clone_pid={proc.pid}")
+        self.auto_clear_stall_status.set("Đến lịch • đang chờ ClientJS sẵn sàng")
+        self.after(
+            2500,
+            lambda pid=profile_id: self._launch_clear_stall_probe_worker(pid),
+        )
 
     def _refresh_clear_stall_panel(self) -> None:
         super()._refresh_clear_stall_panel()
@@ -476,6 +546,11 @@ class MultiDevApp(production.MultiApp):
             )
             return
 
+        job = self._clear_stall_job(profile_id)
+        job["next_run_at"] = 0
+        job["last_checkpoint"] = "Đang mở clone để dọn quầy"
+        self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+        core.save_settings(self.settings)
         self._clear_stall_probe_starting.add(profile_id)
         try:
             proc = self.processes.get(profile_id)
@@ -700,9 +775,47 @@ class MultiDevApp(production.MultiApp):
             is_gate2 = transaction_gate == "PURCHASE_ONE_LISTING"
 
             if is_gate5:
+                if requested <= 0 or purchased != requested or sold != requested:
+                    self._clear_stall_probe_terminal[profile_id] = "FAIL"
+                    self._set_clear_stall_checkpoint(
+                        profile_id,
+                        "Dọn quầy chưa đủ số lượng • giữ clone để kiểm tra",
+                        {
+                            "ok": False,
+                            "requested_quantity": requested,
+                            "purchased_quantity": purchased,
+                            "sold_quantity": sold,
+                        },
+                    )
+                    return
+                job = self._clear_stall_job(profile_id)
+                interval = max(5, int(job.get("interval_minutes", 65) or 65))
+                finished_at = time.time()
+                job["last_checkpoint"] = (
+                    f"Hoàn thành • mua {purchased}/{requested} • treo {sold}; "
+                    f"chờ {interval} phút"
+                )
+                job["last_result"] = {
+                    "ok": True,
+                    "finished_at": finished_at,
+                    "requested_quantity": requested,
+                    "purchased_quantity": purchased,
+                    "sold_quantity": sold,
+                    "collected_gold_slots": collected_gold,
+                    "transaction_gate": transaction_gate,
+                }
+                job["next_run_at"] = (
+                    finished_at + interval * 60 if job.get("enabled", False) else 0
+                )
+                self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+                core.save_settings(self.settings)
+                if bool(job.get("close_client_after_run", True)):
+                    proc = self.processes.get(profile_id)
+                    if proc and proc.poll() is None:
+                        proc.terminate()
                 summary = (
-                    f"GATE 5 PASS • mua {purchased}/{requested} VP • "
-                    f"thu vàng • treo lại toàn bộ {sold} VP"
+                    f"DỌN QUẦY PASS • mua {purchased}/{requested} VP • "
+                    f"thu {collected_gold} ô vàng • treo đủ {sold} VP"
                 )
             elif is_gate4:
                 summary = (
