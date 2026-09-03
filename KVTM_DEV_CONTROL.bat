@@ -51,6 +51,7 @@ echo  [6] Kiem tra profile/login READ-ONLY
 echo  [7] Bridge V3 - gesture production 0.50s ^(can go SWIPE-V3^)
 echo  [8] Audit mapping toc do AUTO PRO READ-ONLY
 echo  [9] Full rebuild package        ^(CHI dung khi ChatGPT yeu cau^)
+echo  [B] Backup cuc bo ban hien tai  ^(source + runtime + profile/settings^)
 echo  [0] Thoat
 echo -------------------------------------------------------------------------------
 set "CHOICE="
@@ -64,6 +65,7 @@ if "%CHOICE%"=="6" goto profile_diagnostic
 if "%CHOICE%"=="7" goto v3_gesture
 if "%CHOICE%"=="8" goto speed_probe
 if "%CHOICE%"=="9" goto fullbuild
+if /I "%CHOICE%"=="B" goto local_backup
 if "%CHOICE%"=="0" goto end
 goto menu
 
@@ -394,6 +396,29 @@ if errorlevel 1 (
   echo [FAIL] SPEED BINDING PROBE
 ) else (
   echo [PASS] SPEED BINDING PROBE
+)
+pause
+goto menu
+
+:local_backup
+cls
+echo ===============================================================================
+echo  BACKUP CUC BO BAN HIEN TAI
+echo  Luu source + runtime + profile/settings vao local-backups.
+echo  KHONG upload backup, profile hoac settings len GitHub.
+echo ===============================================================================
+if not exist "tools\KVTM_CREATE_LOCAL_BACKUP.ps1" (
+  echo [FAIL] Thieu tools\KVTM_CREATE_LOCAL_BACKUP.ps1
+  pause
+  goto menu
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_CREATE_LOCAL_BACKUP.ps1" -RepoRoot "%CD%"
+if errorlevel 1 (
+  echo.
+  echo [FAIL] Tao backup cuc bo that bai.
+) else (
+  echo.
+  echo [PASS] Backup san sang de quay lai ban nay khi can.
 )
 pause
 goto menu
