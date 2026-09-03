@@ -54,7 +54,9 @@ def main() -> int:
     require(multi, "busy_profiles", "machine-wide account serialization missing")
     require(multi, "Đang xếp hàng", "queued-account status missing")
     require(probe, "if purchase_limit > 0:", "transaction probes must require a positive hard limit")
-    require(probe, "maximum=1", "each purchase call must buy at most one listing")\n    require(probe, '"PURCHASE_TARGET"', "Gate 3 target mode missing")\n    require(probe, "purchase_evidence", "Gate 3 must save per-listing evidence")
+    require(probe, "maximum=1", "each purchase call must buy at most one listing")
+    require(probe, '"PURCHASE_TARGET"', "Gate 3 target mode missing")
+    require(probe, "purchase_evidence", "Gate 3 must save per-listing evidence")
     require(buying, "if not self.listing_matches(observation)", "purchase must verify listing disappearance")
     require(buying, "không cộng 10 VP", "unverified click must not increment quantity")
     require(dev_entry, "askyesno", "Gate 2 requires explicit user consent")
@@ -70,7 +72,9 @@ def main() -> int:
     print("account_concurrency=1")
     print("carryover=disabled")
     print("gate2_limit=one_x10_listing")
-    print("purchase_verification=listing_disappearance")\n    print("gate3_limit=configured_x10_target")\n    print("gate3_resale=disabled")
+    print("purchase_verification=listing_disappearance")
+    print("gate3_limit=configured_x10_target")
+    print("gate3_resale=disabled")
     return 0
 
 
