@@ -195,6 +195,7 @@ def _pc_open_game(self, stop_event=None):
     started = time.monotonic()
     clicked_intermediate = False
     rendered_streak = 0
+    ready_by_capture = False
     while time.monotonic() < deadline:
         if _stopped(stop_event):
             return
@@ -225,6 +226,7 @@ def _pc_open_game(self, stop_event=None):
                 else 0
             )
             if rendered_streak >= 3:
+                ready_by_capture = True
                 self.update_progress("ClientJS đã render game • tiếp tục AUTO")
                 try:
                     self.driver._trace(
@@ -256,11 +258,18 @@ def _pc_open_game(self, stop_event=None):
     for _ in range(10):
         if _stopped(stop_event):
             return
-        if _find(self, "close_game", 0.80, click=True):
+        if _find(self, "close_game", 0.80, click=True) or _find(
+            self, "x_popup_event", 0.76, click=True
+        ):
             time.sleep(0.3)
             continue
-        if _find(self, "friend_off", 0.84) or _find(self, "icon_home", 0.84):
+        if _game_anchor(self):
             self.update_progress("Bắt Đầu Cào")
+            return
+        if ready_by_capture and _rendered_client_frame(self) is not None:
+            # A changed home template must not cause ten BACK presses that
+            # close an otherwise healthy freshly rebound ClientJS.
+            self.update_progress("Bắt Đầu AUTO trên PID ClientJS mới")
             return
         self.press_back(stop_event)
         time.sleep(0.5)
