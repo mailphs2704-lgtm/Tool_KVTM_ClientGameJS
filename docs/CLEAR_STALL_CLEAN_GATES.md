@@ -127,3 +127,17 @@ Giới hạn an toàn:
 - Không thay một vật phẩm gần giống khi đối chiếu thất bại.
 - Không tự động chạy theo lịch trong DEV; phải bấm GATE 4 và xác nhận.
 - Trạng thái hiện tại là SOURCE READY, chưa được gọi LIVE PASS cho đến khi có report chạy thật.
+
+
+## GATE 4 — Hiệu chỉnh fingerprint liên màn hình (2026-09-03)
+
+Live run `20260903-184154` xác nhận mua đủ 130/130 VP và mở đúng kho 2,
+nhưng fingerprint 84x84 cũ chứa nền quầy và nhãn `x10`, trong khi cùng VP ở kho
+có nền khác và nhãn `x150`. Vì vậy khớp nguyên ô bị loại dù vật phẩm tồn tại.
+
+Bản sửa chuẩn hóa mỗi giao dịch đã xác minh thành lõi biểu tượng phía trên-trái,
+loại nền quầy/giá/số lượng trước khi lập fingerprint. Luồng bán mở ô trống trước,
+quét kho sau, ghi score của từng ứng viên, chỉ nhận score >= 0.62 và vẫn chỉ xét
+fingerprint được tạo trong chính lượt mua. Giá bán không bị tác động.
+
+Đây là SOURCE/STATIC READY; chỉ nâng thành LIVE PASS sau một run GATE 4 mới.
