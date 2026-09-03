@@ -107,3 +107,23 @@ Mua target, về nhà, thu vàng, duyệt các nhóm đủ 10, bỏ qua nhóm th
 - Diagnostic chỉ chứa stage, số ô, số lượng, fingerprint hash và ảnh game được
   whitelist.
 - Không sửa Workspace.
+
+
+## GATE 4 — Thu vàng và treo đúng vật phẩm vừa mua (SOURCE READY)
+
+Phạm vi kiểm thử có chủ đích:
+
+1. Chạy nguyên quy trình GATE 3B cho đến khi mua đủ target.
+2. Mỗi giao dịch chỉ được cộng sau khi ô quầy biến mất; icon của chính giao dịch đó được đóng băng thành fingerprint riêng trong thư mục run.
+3. Đóng quầy nhà bạn, về nhà, mở quầy nhà và thu vàng trước.
+4. Bấm một ô quầy trống rồi mới quét kho đã cấu hình.
+5. Chỉ chấp nhận một fingerprint thuộc danh sách giao dịch mua đã xác minh trong cùng lượt.
+6. Treo đúng một lô x10, không chạm điều khiển giá.
+7. Chỉ ghi sold_quantity=10 sau khi màn hình xác nhận thay đổi; không tìm thấy đúng VP thì dừng trước khi treo.
+
+Giới hạn an toàn:
+
+- Không dùng carryover hoặc fingerprint của lượt cũ.
+- Không thay một vật phẩm gần giống khi đối chiếu thất bại.
+- Không tự động chạy theo lịch trong DEV; phải bấm GATE 4 và xác nhận.
+- Trạng thái hiện tại là SOURCE READY, chưa được gọi LIVE PASS cho đến khi có report chạy thật.
