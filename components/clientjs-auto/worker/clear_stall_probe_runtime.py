@@ -266,6 +266,7 @@ def run_probe(
                     selected,
                     maximum=1,
                     on_unit=on_purchase,
+                    skip_unbuyable=(purchase_limit > 1),
                 )
                 if bought_listings == 0:
                     continue
