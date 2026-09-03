@@ -63,6 +63,12 @@ def main() -> int:
     require(probe, "automation.stall.close_friend_stall()", "Gate 3B must close before reload/house change")
     require(probe, "purchase_evidence", "Gate 3 must save per-listing evidence")
     require(probe, '"SCAN_BUY_THEN_SWIPE"', "Gate 3B must buy each view before swiping")
+    require(probe, '"REOPEN_CURRENT_STALL"', "same-friend stall reload must stay in place")
+    require(
+        (ROOT / "components/clientjs-auto/kvtm_automation/actions/stall.py").read_text(encoding="utf-8"),
+        "return tuple(range(1, 9))",
+        "every stall view must scan both visible rows",
+    )
     require(probe, "skip_unbuyable=(purchase_limit > 1)", "Gate 3B must skip level-locked listings")
     require(buying, "if not self.listing_matches(observation)", "purchase must verify listing disappearance")
     require(buying, "không cộng 10 VP", "unverified click must not increment quantity")
@@ -94,7 +100,8 @@ def main() -> int:
     print("gate3_limit=configured_x10_target")
     print("gate3_reload=bounded_per_house")
     print("gate3_friend_order=1..N")
-    print("gate3_view_order=scan_buy_then_swipe")
+    print("gate3_view_order=scan_buy_then_swipe_both_rows")
+    print("gate3_same_friend_reload=in_place")
     print("gate3_unbuyable=skip_without_accounting")
     print("gate3_resale=disabled")
     return 0
