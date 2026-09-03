@@ -205,8 +205,14 @@ class MultiDevApp(production.MultiApp):
         elif event == "probe_progress" and message:
             summary = f"INFO   {message}"
         elif event == "probe_purchase_ok":
+            transaction_gate = str(payload.get("transaction_gate") or "")
+            purchase_gate = (
+                "GATE 3B"
+                if transaction_gate == "PURCHASE_TARGET_MULTI_HOUSE"
+                else "GATE 2"
+            )
             summary = (
-                "PASS   GATE 2 mua đúng "
+                f"PASS   {purchase_gate} mua đúng "
                 f"{int(payload.get('purchased_quantity') or 0)} VP"
             )
         elif event == "probe_ok":
