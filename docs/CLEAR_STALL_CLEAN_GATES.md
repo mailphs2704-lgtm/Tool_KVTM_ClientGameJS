@@ -185,24 +185,24 @@ Status: AST/static source ready; LIVE NOT YET VERIFIED.
 
 ## GATE 5 — OWN-STALL FOUR-VIEW EXPANSION
 
-The full action now uses the same proven overlapping stall geometry on the clone's
-own stall:
+The full action processes each own-stall view atomically in this exact order:
 
-1. collect visible gold;
-2. drag exactly two pulses to the next view;
-3. repeat through views 1..4;
-4. rewind to view 1;
-5. place x10 batches into visible empty slots;
-6. when the current view has no empty slot, drag exactly two pulses and continue;
-7. stop after the verified target is sold or after view 4 has no empty slot.
+1. capture/scan the current view;
+2. collect every visible completed-gold slot;
+3. place verified purchased VP x10 into visible empty slots;
+4. stop immediately when the configured resale target is reached;
+5. only if VP remains and the current view is full, drag exactly two pulses;
+6. repeat scan -> collect -> resale on the newly revealed view;
+7. fail safely if view 4 is full while verified VP remains.
 
-The transaction never scrolls in response to a missing item or insufficient x10
-quantity; those conditions remain hard stops. Scrolling is allowed only after
-`NoEmptyStallSlot`, preventing a recognition failure from being mistaken for a
-full view.
+There is no pre-scan of all views and no rewind between gold collection and
+resale. Scrolling is allowed only after `NoEmptyStallSlot`; missing item,
+insufficient x10 quantity, or fingerprint mismatch remain hard stops and can
+never trigger a swipe or item substitution.
 
 GUI contract: passed Gate 1–4 buttons are removed. The clear-stall panel exposes
 one full-action button and one Stop button. Legacy handlers remain internal only
 for compatibility and are not user-visible.
 
-Status: AST and static source checks PASS; multi-view resale still requires live evidence.
+Status: AST and static source checks PASS; this corrected per-view order still
+requires live evidence.
