@@ -43,7 +43,7 @@ Mỗi click mua/treo phải được xác minh trước khi manifest tăng số 
 
 ### Gate 1 — READ_ONLY_SCAN
 
-Đã mở trong source. Worker bị khóa `probe_only=True`.
+Đã LIVE PASS trên runtime `2e9cfc3`: đúng profile/nhà, DLL capture 1000x1000, bốn view khác nhau, quay về nhà và không có sự kiện mua/bán. Worker lịch tự động vẫn khóa `probe_only=True`.
 
 Cho phép:
 
@@ -67,8 +67,7 @@ không mua VP và báo kế hoạch/target chính xác.
 
 ### Gate 2 — PURCHASE_ONE_LISTING
 
-Chỉ mở sau Gate 1 live PASS. Cho phép mua đúng một ô x10, xác minh ô/giao dịch
-thay đổi và dừng ngay.
+Đã chuẩn bị trong source sau Gate 1 live PASS. Chỉ chạy bằng nút DEV riêng và hộp xác nhận rõ giao dịch thật. Giới hạn cứng `maximum=1`; chỉ cộng 10 VP sau khi ô nguồn đổi/biến mất, sau đó dừng mua và quay về nhà.
 
 ### Gate 3 — PURCHASE_TARGET
 
