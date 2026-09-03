@@ -160,3 +160,24 @@ Conclusion: cross-screen fingerprint normalization (friend stall -> inventory) a
 bounded one-batch resale transaction are LIVE VERIFIED. This gate does not yet authorize
 unbounded/full-cycle resale; later expansion must retain per-purchase provenance,
 x10 accounting, unchanged price, and stop-before-wrong-item behavior.
+
+
+## GATE 5 — SOURCE READY (2026-09-03)
+
+Purpose: expand the LIVE-verified Gate 4 transaction from one x10 batch to every
+verified purchase token in the current run.
+
+Safety/accounting contract:
+
+- maximum one cycle is 20 batches / 200 VP;
+- purchase target must be reached before returning home;
+- collect own-stall gold before opening resale inventory;
+- one verified purchase fingerprint is consumed for each successful x10 sale;
+- each batch saves a separate post-sale screenshot and cumulative sold quantity;
+- final success requires `sold_quantity == resale_batch_limit * 10`;
+- price controls remain untouched;
+- missing exact VP, insufficient x10 quantity, or no empty stall slot stops the run
+  before substituting another item;
+- Gate 5 remains DEV/manual-consent only until live evidence passes.
+
+Status: AST/static source ready; LIVE NOT YET VERIFIED.
