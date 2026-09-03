@@ -162,6 +162,8 @@ Thêm bản ghi mới lên đầu bảng. Không sửa hoặc xóa lịch sử c
 | 2026-09-01 | Workspace | AUTO/Multi | `addc02f` | Đã tách nhánh Workspace. Không yêu cầu merge. Xin giữ ổn định interface capture theo PID/HWND và báo SHA khi thay đổi. |
 | 2026-09-01 | AUTO/Multi | Workspace | `a5b4310` | HEAD AUTO/Multi được quan sát khi tạo tài liệu; Workspace chưa lấy các thay đổi sau nền `f10d773`. Cần review diff trước khi đồng bộ. |
 
+| 2026-09-03 | AUTO/Multi | AUTO/Multi + Workspace | `20260903-200838` live + source lifecycle | Dọn quầy FULL LIVE PASS: mua 100/100, thu vàng 16 ô, treo đúng 100/100, chuyển own-stall view bằng hai nhịp, giá không đổi, exit0. Source tiếp theo nối PASS accounting vào đóng đúng ClientJS, reset countdown từ finished_at và scheduler hàng đợi toàn máy; thêm backup local [B] cùng docs/CLEAR_STALL_AUTO_HANDOFF.md. Lifecycle/backup mới chờ build + live verify; không sửa Workspace. |
+
 ## Mẫu cập nhật cho mỗi phiên
 
 ```text
