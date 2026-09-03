@@ -9,7 +9,7 @@ import traceback
 from typing import Callable
 
 
-PROBE_VERSION = 13
+PROBE_VERSION = 14
 STALL_VIEW_COUNT = 4
 TOTAL_STALL_SLOTS = 20
 
@@ -595,30 +595,35 @@ def run_probe(
             current_view = 1
             checkpoint(f"{gate_label}-opening-own-stall")
             automation.stall.open_own_stall()
-            checkpoint(f"{gate_label}-collecting-gold")
-            if resale_batch_limit > 1:
-                # Own stall has the same overlapping four-view geometry as a
-                # friend stall. Collect visible gold, drag exactly two pulses,
-                # then collect the newly revealed slots.
-                for gold_view in range(1, STALL_VIEW_COUNT + 1):
-                    context.ensure_running()
-                    collected_here = automation.stall.collect_own_stall_gold(
-                        maximum=8
-                    )
-                    collected_gold_slots += collected_here
-                    checkpoint(
-                        f"gate5-collect-gold-view-{gold_view:02d}",
-                        collected_here=collected_here,
-                        collected_total=collected_gold_slots,
-                    )
-                    if gold_view < STALL_VIEW_COUNT:
-                        automation.stall.next_view()
-                automation.stall.rewind_to_first(STALL_VIEW_COUNT)
-                current_view = 1
-            else:
-                collected_gold_slots = automation.stall.collect_own_stall_gold(
-                    maximum=20
+            def scan_and_collect_own_view(view: int) -> int:
+                context.ensure_running()
+                before_path = (
+                    work_dir / f"{gate_label}-own-view-{view:02d}-scan.png"
                 )
+                save_frame(before_path, automation.vision.frame())
+                checkpoint(
+                    f"{gate_label}-own-view-{view:02d}-scan",
+                    view=view,
+                    capture=str(before_path),
+                    order="SCAN_COLLECT_RESELL_THEN_SWIPE",
+                )
+                collected_here = automation.stall.collect_own_stall_gold(
+                    maximum=8 if resale_batch_limit > 1 else 20
+                )
+                checkpoint(
+                    f"{gate_label}-own-view-{view:02d}-gold-collected",
+                    view=view,
+                    collected_here=collected_here,
+                    collected_total=collected_gold_slots + collected_here,
+                )
+                return collected_here
+
+            # Process one view completely before moving: scan -> collect gold ->
+            # fill its empty slots. Only a full visible view with batches still
+            # remaining is allowed to trigger the proven two-pulse drag.
+            sale_view = 1
+            checkpoint(f"{gate_label}-collecting-gold", sale_view=sale_view)
+            collected_gold_slots += scan_and_collect_own_view(sale_view)
 
             remaining_fingerprints = list(purchased_fingerprints)
             sale_view = 1
@@ -655,6 +660,10 @@ def run_probe(
                         checkpoint(
                             f"gate5-resell-view-{sale_view:02d}-ready",
                             sale_view=sale_view,
+                            swipe_pulses=2,
+                        )
+                        collected_gold_slots += scan_and_collect_own_view(
+                            sale_view
                         )
 
                 removed = False
