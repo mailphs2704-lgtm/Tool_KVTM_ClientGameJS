@@ -18,7 +18,8 @@ Module clean Python độc lập, không gọi `FarmAutomation`, `ADBController`
 8. Treo lại đúng loại VP đã mua, mỗi lượt đúng 10. Không thay đổi giá.
 9. Nếu một loại không đủ 10, bỏ qua loại đó và thử loại tiếp theo.
 10. Khi không còn loại nào đủ 10, đóng ClientJS và bắt đầu chu kỳ đếm ngược mới.
-11. Không carry-over phần lẻ sang vòng sau và không bán lẻ dưới 10.\n12. Toàn máy chỉ chạy một job Dọn quầy; tài khoản đến giờ sau xếp hàng đến khi job trước thoát.
+11. Không carry-over phần lẻ sang vòng sau và không bán lẻ dưới 10.
+12. Toàn máy chỉ chạy một job Dọn quầy; tài khoản đến giờ sau xếp hàng đến khi job trước thoát.
 
 ## State machine mục tiêu
 
@@ -71,7 +72,19 @@ LIVE PASS trên runtime `7e32160`, run `20260903-122225`: đúng profile PID 135
 
 ### Gate 3 — PURCHASE_TARGET
 
-LIVE PASS trên runtime trước commit bố cục, run `20260903-123215`: target 40 VP, đúng bốn click vào physical slot 1..4, bốn PNG cho thấy từng ô chuyển sang “Đã bán”, accounting 10→20→30→40, `PURCHASE_TARGET`, quay về nhà và exit 0. Phạm vi PASS là target trong một quầy đã quét; chưa thử tải lại/chuyển nhiều nhà và chưa thu vàng/treo bán.
+LIVE PASS trên runtime trước commit bố cục, run `20260903-123215`: target 40 VP, đúng bốn click vào physical slot 1..4, bốn PNG cho thấy từng ô chuyển sang “Đã bán”, accounting 10→20→30→40, `PURCHASE_TARGET`, quay về nhà và exit 0. Phạm vi PASS là target trong một quầy đã quét.
+
+### Gate 3B — PURCHASE_TARGET_MULTI_HOUSE
+
+Source đã hoàn thiện, chờ LIVE PASS. Gate dùng target còn thiếu theo đơn vị x10, không suy luận sức chứa quầy. Luồng thực hiện:
+
+1. Quét và mua tại nhà 1; mỗi giao dịch chỉ cộng sau khi listing đổi.
+2. Nếu chưa đủ, đóng quầy, về nhà rồi vào lại cùng quầy; tối đa `max_scan_pages` nhưng bị chặn cứng không quá 10 lượt mỗi nhà.
+3. Một lượt không mua thêm được ô nào thì chuyển ngay sang nhà tiếp theo.
+4. Duyệt tuần tự nhà `1..N`, với N là “Số nhà cần duyệt”.
+5. Dừng ngay khi remaining bằng 0. Nếu hết nhà/lượt mà vẫn thiếu, FAIL rõ expected/actual/remaining và quay về nhà.
+6. Mỗi ô mua lưu PNG cùng `friend_ordinal`, `stall_pass`, view, physical slot và bộ đếm remaining.
+7. Gate 3B vẫn cấm thu vàng, treo bán và đổi giá.
 
 ### Gate 4 — COLLECT_GOLD_AND_RESELL_ONE
 
