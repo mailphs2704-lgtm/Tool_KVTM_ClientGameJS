@@ -105,6 +105,7 @@ class MultiDevApp(production.MultiApp):
         self._clear_stall_gate2_profiles: set[str] = set()
         self._clear_stall_gate3_profiles: set[str] = set()
         self._clear_stall_gate4_profiles: set[str] = set()
+        self._clear_stall_gate5_profiles: set[str] = set()
         super()._build_auto_panel()
         self._refresh_clear_stall_panel()
 
@@ -179,6 +180,8 @@ class MultiDevApp(production.MultiApp):
             self.auto_clear_stall_target_probe_button.configure(state=gate_state)
         if hasattr(self, "auto_clear_stall_resale_probe_button"):
             self.auto_clear_stall_resale_probe_button.configure(state=gate_state)
+        if hasattr(self, "auto_clear_stall_full_resale_probe_button"):
+            self.auto_clear_stall_full_resale_probe_button.configure(state=gate_state)
 
     def _new_live_log_paths(self, profile_id: str) -> tuple[Path, Path]:
         stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -329,6 +332,7 @@ class MultiDevApp(production.MultiApp):
         self._clear_stall_gate2_profiles.discard(profile_id)
         self._clear_stall_gate3_profiles.discard(profile_id)
         self._clear_stall_gate4_profiles.discard(profile_id)
+        self._clear_stall_gate5_profiles.discard(profile_id)
         try:
             paths[1].write_text("done\n", encoding="ascii")
         except OSError:
@@ -357,6 +361,31 @@ class MultiDevApp(production.MultiApp):
             "Gate này CHƯA thu vàng và CHƯA treo bán. Tiếp tục?",
         ):
             return
+        self._clear_stall_gate3_profiles.add(str(profile_id))
+        self._start_clear_stall_probe()
+
+    def _start_clear_stall_full_resale_probe(self) -> None:
+        """Buy target, collect gold and resell every verified x10 purchase."""
+        self._save_clear_stall_config()
+        profile_id, profile = self._clear_stall_profile()
+        if not profile_id or not profile:
+            core.messagebox.showinfo(core.APP_NAME, "Hãy chọn một tài khoản clone.")
+            return
+        job = self._clear_stall_job(profile_id)
+        quantity = max(20, min(200, int(job.get("buy_quantity", 20) or 20)))
+        quantity = max(20, (quantity // 10) * 10)
+        storage = max(1, min(5, int(job.get("target_stall_id", 2) or 2)))
+        batch_count = quantity // 10
+        if not core.messagebox.askyesno(
+            core.APP_NAME,
+            f"GATE 5 sẽ mua đủ {quantity} VP rồi treo lại toàn bộ "
+            f"{batch_count} lô x10.\n"
+            f"Chỉ dùng fingerprint đã mua trong lượt này tại kho {storage}.\n"
+            "Thu vàng trước, không đổi giá; sai/thiếu VP hoặc hết ô trống sẽ "
+            "dừng ngay. Tiếp tục?",
+        ):
+            return
+        self._clear_stall_gate5_profiles.add(str(profile_id))
         self._clear_stall_gate3_profiles.add(str(profile_id))
         self._start_clear_stall_probe()
 
@@ -530,7 +559,9 @@ class MultiDevApp(production.MultiApp):
                 purchase_limit=int(purchase_limit),
                 max_stall_passes=int(max_stall_passes),
                 resale_batch_limit=(
-                    1 if profile_id in self._clear_stall_gate4_profiles else 0
+                    purchase_limit
+                    if profile_id in self._clear_stall_gate5_profiles
+                    else (1 if profile_id in self._clear_stall_gate4_profiles else 0)
                 ),
             )
 
@@ -548,15 +579,20 @@ class MultiDevApp(production.MultiApp):
                 "message": (
                     "Resident runtime đã sẵn sàng • "
                     + (
-                        f"GATE 4 mua {purchase_limit * 10} VP + thu vàng + treo đúng x10"
-                        if profile_id in self._clear_stall_gate4_profiles
+                        f"GATE 5 mua và treo lại toàn bộ {purchase_limit * 10} VP"
+                        if profile_id in self._clear_stall_gate5_profiles
                         else (
+                            f"GATE 4 mua {purchase_limit * 10} VP + thu vàng + treo đúng x10"
+                            if profile_id in self._clear_stall_gate4_profiles
+                            else (
                             f"GATE 3B mua target {purchase_limit * 10} VP"
                             if purchase_limit > 1
                             else (
                                 "GATE 2 mua đúng 1 ô x10"
                                 if purchase_limit == 1
                                 else "GATE 1 READ-ONLY"
+                            )
+                        )
                             )
                         )
                     )
