@@ -89,8 +89,8 @@ def main() -> int:
     require(dev_entry, "askyesno", "Gate 2 requires explicit user consent")
     require(probe, '"COLLECT_GOLD_RESELL_ONE_EXACT"', "Gate 4 transaction mode missing")
     require(probe, "purchased-icons", "Gate 4 must freeze purchased icons")
-    require(probe, "frozen_fingerprint = replace(", "Gate 4 fingerprint freeze missing")
-    require(probe, "selected.fingerprint,", "Gate 4 must freeze the purchased fingerprint")
+    require(probe, "VisualFingerprint.from_image(", "Gate 4 normalized fingerprint missing")
+    require(probe, "ITEM_CORE_NO_PRICE_OR_PEDESTAL", "Gate 4 must remove stall context")
     require(probe, '"VERIFIED_PURCHASE_THIS_RUN"', "Gate 4 provenance marker missing")
     require(probe, "resale_batch_limit", "Gate 4 hard resale limit missing")
     require(stall, "collect_own_stall_gold", "Gate 4 must collect own-stall gold first")
@@ -103,6 +103,11 @@ def main() -> int:
         selling,
         "The empty stall slot is opened before scanning the inventory",
         "Gate 4 inventory must be scanned only after opening a stall slot",
+    )
+    require(
+        selling,
+        "best_fingerprint_match",
+        "Gate 4 must record candidate scores before exact selection",
     )
     require(
         selling,
