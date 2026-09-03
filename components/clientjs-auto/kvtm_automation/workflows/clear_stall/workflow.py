@@ -279,7 +279,7 @@ class ClearStallWorkflow:
         if not batches:
             remainder = self.manifest.remaining_total
             self.context.log(
-                f"Không có loại VP nào đủ 10; giữ {remainder} VP trong kho và hoàn thành"
+                f"Không có loại VP nào đủ 10; bỏ qua {remainder} VP và kết thúc chu kỳ"
             )
             self._checkpoint("RESALE_SKIPPED_NO_FULL_BATCH")
             return 0, False
@@ -309,13 +309,13 @@ class ClearStallWorkflow:
                 skipped_groups.add(key)
                 self.context.log(
                     "VP này không còn đủ 10 theo xác nhận của game; "
-                    "giữ lại và bỏ qua trong phiên hiện tại"
+                    "bỏ qua loại này trong phiên hiện tại"
                 )
                 continue
             except NoEmptyStallSlot:
                 deferred = True
                 self.context.log(
-                    "Quầy clone không còn ô trống; giữ lại các VP chưa treo cho phiên sau"
+                    "Quầy clone không còn ô trống; kết thúc treo bán, không tạo carry-over"
                 )
                 break
 
@@ -326,7 +326,10 @@ class ClearStallWorkflow:
 
         remaining = self.manifest.remaining_total
         if remaining:
-            self.context.log(f"Còn {remaining} VP trong kho sau giai đoạn treo bán")
+            self.context.log(
+                f"Còn {remaining} VP không treo được trong chu kỳ; "
+                "không chuyển trạng thái sang vòng sau"
+            )
         self._checkpoint("RESALE_COMPLETE")
         return sold, deferred
 
