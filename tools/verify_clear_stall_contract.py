@@ -248,7 +248,7 @@ def main() -> int:
         'if /I "%CHOICE%"=="B" goto local_backup',
         "One-click backup menu action missing",
     )
-    require(backup, "git bundle create", "Backup must snapshot source")
+    require(backup, "bundle create $bundle HEAD", "Backup must snapshot source")
     require(backup, "private_data_local_only", "Backup privacy marker missing")
     require(handoff, "requested_quantity == purchased_quantity == sold_quantity", "AI handoff lifecycle contract missing")
 
