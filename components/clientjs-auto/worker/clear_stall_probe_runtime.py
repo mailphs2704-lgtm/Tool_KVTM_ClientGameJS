@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import threading
@@ -26,6 +26,7 @@ class ProbeConfig:
     work_dir: Path
     purchase_limit: int = 0
     max_stall_passes: int = 10
+    resale_batch_limit: int = 0
 
 
 EventSink = Callable[[dict], None]
@@ -66,6 +67,18 @@ def run_probe(
             ),
         })
         return 2
+    if int(config.resale_batch_limit) not in (0, 1):
+        emit_event({
+            "event": "probe_error",
+            "error": "Gate 4 chỉ được treo tối đa một lô x10",
+        })
+        return 2
+    if int(config.resale_batch_limit) and purchase_limit <= 1:
+        emit_event({
+            "event": "probe_error",
+            "error": "Gate 4 yêu cầu chạy mua target trước khi treo lại",
+        })
+        return 2
     if not 1 <= int(config.max_stall_passes) <= 10:
         emit_event({
             "event": "probe_error",
@@ -101,6 +114,7 @@ def run_probe(
         "requested_quantity": int(config.buy_quantity),
         "purchase_limit": int(config.purchase_limit),
         "max_stall_passes": int(config.max_stall_passes),
+        "resale_batch_limit": int(config.resale_batch_limit),
         "image_runtime_ready_before_probe": bool(image_runtime_ready),
         "started_at": time.time(),
         "checkpoints": [],
@@ -240,6 +254,7 @@ def run_probe(
         occupied: list[int] = []
         purchased_quantity = 0
         purchase_evidence = []
+        purchased_fingerprints = []
         expected_quantity = purchase_limit * 10
         capacity_model = "DYNAMIC_REMAINING_COUNTER"
 
@@ -297,6 +312,22 @@ def run_probe(
                     "capture_after": str(evidence_path),
                 }
                 purchase_evidence.append(evidence)
+                # Freeze the exact icon that produced this verified purchase.
+                # Scan templates may be overwritten by overlapping later views.
+                icon_source = Path(selected.fingerprint.template_file)
+                icon_target = (
+                    work_dir / "purchased-icons" / f"purchase-{sequence:02d}.png"
+                )
+                icon_target.parent.mkdir(parents=True, exist_ok=True)
+                icon_target.write_bytes(icon_source.read_bytes())
+                frozen_fingerprint = replace(
+                    selected.fingerprint,
+                    template_file=str(icon_target),
+                )
+                purchased_fingerprints.append(frozen_fingerprint)
+                evidence["fingerprint_sha256"] = frozen_fingerprint.sha256
+                evidence["fingerprint_group"] = frozen_fingerprint.group_key
+                evidence["frozen_template"] = str(icon_target)
                 checkpoint(
                     "gate2-purchase-one-pass"
                     if purchase_limit == 1
@@ -309,7 +340,11 @@ def run_probe(
                     transaction_gate=(
                         "PURCHASE_ONE_LISTING"
                         if purchase_limit == 1
-                        else "PURCHASE_TARGET_MULTI_HOUSE"
+                        else (
+                            "COLLECT_GOLD_RESELL_ONE_EXACT"
+                            if int(config.resale_batch_limit) == 1
+                            else "PURCHASE_TARGET_MULTI_HOUSE"
+                        )
                     ),
                     **evidence,
                 )
@@ -501,9 +536,78 @@ def run_probe(
                 )
                 persist()
 
+        sold_quantity = 0
+        collected_gold_slots = 0
+        resale_evidence = None
+        if int(config.resale_batch_limit) == 1:
+            if not purchased_fingerprints:
+                raise RuntimeError(
+                    "GATE 4 không có fingerprint từ giao dịch mua đã xác minh"
+                )
+            checkpoint(
+                "gate4-returning-home",
+                purchased_quantity=purchased_quantity,
+            )
+            automation.navigation.return_home(timeout=30.0)
+            current_view = 1
+            checkpoint("gate4-opening-own-stall")
+            automation.stall.open_own_stall()
+            checkpoint("gate4-collecting-gold")
+            collected_gold_slots = automation.stall.collect_own_stall_gold(
+                maximum=20
+            )
+
+            # Select only a fingerprint frozen from a verified purchase in this
+            # run. Never substitute another inventory item or prior-run state.
+            automation.inventory.select_storage(int(config.resale_storage_id))
+            selected_resale = None
+            for fingerprint in purchased_fingerprints:
+                if automation.inventory.find_fingerprint(
+                    fingerprint, threshold=0.68
+                ) is not None:
+                    selected_resale = fingerprint
+                    break
+            if selected_resale is None:
+                raise RuntimeError(
+                    "GATE 4 không tìm thấy đúng VP vừa mua trong kho đã chọn; "
+                    "không treo VP khác"
+                )
+
+            checkpoint(
+                "gate4-resell-one-start",
+                fingerprint_sha256=selected_resale.sha256,
+                fingerprint_group=selected_resale.group_key,
+                quantity=10,
+            )
+            automation.selling.sell_batch_of_ten(
+                selected_resale,
+                storage_id=int(config.resale_storage_id),
+            )
+            sold_quantity = 10
+            resale_capture = work_dir / "gate4-resale-one-pass.png"
+            save_frame(resale_capture, automation.vision.frame())
+            resale_evidence = {
+                "quantity": 10,
+                "fingerprint_sha256": selected_resale.sha256,
+                "fingerprint_group": selected_resale.group_key,
+                "source": "VERIFIED_PURCHASE_THIS_RUN",
+                "price_changed": False,
+                "collected_gold_slots": collected_gold_slots,
+                "capture_after": str(resale_capture),
+            }
+            checkpoint("gate4-resell-one-pass", **resale_evidence)
+            emit(
+                "probe_resale_ok",
+                profile_id=str(config.profile_id),
+                transaction_gate="COLLECT_GOLD_RESELL_ONE_EXACT",
+                **resale_evidence,
+            )
+            with report_lock:
+                report["resale_evidence"] = resale_evidence
+                persist()
+
         occupied_slots = sorted(set(occupied))
         occupied_total = len(occupied_slots)
-
 
         target_listings = int(config.buy_quantity) // 10
         planned_listings = min(occupied_total, target_listings)
@@ -520,13 +624,19 @@ def run_probe(
             report["planned_quantity"] = planned_quantity
             report["target_reached"] = target_reached
             report["purchased_quantity"] = purchased_quantity
+            report["sold_quantity"] = sold_quantity
+            report["collected_gold_slots"] = collected_gold_slots
             report["transaction_gate"] = (
                 "READ_ONLY_SCAN"
                 if purchase_limit == 0
                 else (
                     "PURCHASE_ONE_LISTING"
                     if purchase_limit == 1
-                    else "PURCHASE_TARGET_MULTI_HOUSE"
+                    else (
+                        "COLLECT_GOLD_RESELL_ONE_EXACT"
+                        if int(config.resale_batch_limit) == 1
+                        else "PURCHASE_TARGET_MULTI_HOUSE"
+                    )
                 )
             )
             report["ok"] = True
@@ -546,13 +656,19 @@ def run_probe(
             planned_quantity=planned_quantity,
             target_reached=target_reached,
             purchased_quantity=purchased_quantity,
+            sold_quantity=sold_quantity,
+            collected_gold_slots=collected_gold_slots,
             transaction_gate=(
                 "READ_ONLY_SCAN"
                 if purchase_limit == 0
                 else (
                     "PURCHASE_ONE_LISTING"
                     if purchase_limit == 1
-                    else "PURCHASE_TARGET_MULTI_HOUSE"
+                    else (
+                        "COLLECT_GOLD_RESELL_ONE_EXACT"
+                        if int(config.resale_batch_limit) == 1
+                        else "PURCHASE_TARGET_MULTI_HOUSE"
+                    )
                 )
             ),
             frame_size=[1000, 1000],
