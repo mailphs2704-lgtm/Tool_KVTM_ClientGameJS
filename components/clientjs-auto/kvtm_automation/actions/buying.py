@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ..context import AutomationContext
-from ..errors import InventoryFull
+from ..errors import InventoryFull, TransactionError
 from ..models import StallSlotObservation, VisualFingerprint, hamming_distance
 from ..runtime.vision import VisionEngine
 from ..runtime.wait import Waiter
@@ -68,6 +68,20 @@ class BuyingActions:
                 zone=self.STORAGE_FULL_ZONE,
             ) is not None:
                 raise InventoryFull("Kho clone đã đầy trong lúc mua VP")
+
+            # Never account a click as a purchase by timing alone. The source
+            # listing must disappear/change first; otherwise stop before the
+            # manifest counter is incremented.
+            changed = False
+            for _ in range(10):
+                if not self.listing_matches(observation):
+                    changed = True
+                    break
+                self.waiter.settle(0.20)
+            if not changed:
+                raise TransactionError(
+                    "Đã click nhưng ô quầy không đổi; không cộng 10 VP"
+                )
             bought += 1
             if on_unit is not None:
                 on_unit(bought)
