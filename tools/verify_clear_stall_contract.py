@@ -294,8 +294,18 @@ def main() -> int:
     require(client_patch, '"clientjs_post_reset_cleanup"', "Post-reset popup cleanup missing")
     require(
         client_patch,
-        "Never resume AUTO\n    # from capture alone",
-        "Live capture must not bypass the ClientJS reopen popup",
+        "post_popup_frame_streak >= 3",
+        "AUTO must resume after stable post-popup game frames",
+    )
+    require(
+        client_patch,
+        '"clientjs_post_reset_ready"',
+        "Post-reset AUTO resume trace missing",
+    )
+    forbid(
+        client_patch,
+        "clicked_intermediate = True\n            rendered_streak = 0\n            try:",
+        "Popup click must not reset the readiness streak forever",
     )
     require(client_patch, "stable_frames >= 3", "Chest adaptive render wait missing")
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
