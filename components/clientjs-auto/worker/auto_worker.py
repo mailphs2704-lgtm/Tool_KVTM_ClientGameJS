@@ -331,6 +331,7 @@ def main() -> int:
     parser.add_argument("--pid", required=True, type=int)
     parser.add_argument("--profile-id", required=True)
     parser.add_argument("--profile-name", required=True)
+    parser.add_argument("--profile-file", required=True)
     parser.add_argument("--function-id", type=int, default=136)
     parser.add_argument("--options-json", default="{}")
     parser.add_argument("--tuning-json", default="{}")
@@ -515,6 +516,11 @@ def main() -> int:
         return 2
 
     auto_root = Path(args.auto_root).resolve()
+    profile_file = Path(args.profile_file).resolve()
+    if not profile_file.is_file():
+        emit("worker_error", error=f"Không tìm thấy profile DEV chỉ-đọc: {profile_file}")
+        return 2
+    os.environ["KVTM_MULTI_PROFILE_FILE"] = str(profile_file)
     try:
         automation_module = install_clientjs_runtime(auto_root, args.profile_id)
         automation_class = automation_module.FarmAutomation
