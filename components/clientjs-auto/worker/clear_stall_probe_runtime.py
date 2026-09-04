@@ -278,7 +278,7 @@ def run_probe(
             context,
             image_runtime_ready=bool(image_runtime_ready),
         )
-        designer_policy = load_runtime_policy(designer_config_path())
+        designer_policy = load_runtime_policy(designer_config_path(config.work_dir.parents[2]))
         automation.stall.apply_runtime_policy(designer_policy)
         automation.inventory.storage_open_wait = designer_policy.storage_open_wait
         checkpoint(
