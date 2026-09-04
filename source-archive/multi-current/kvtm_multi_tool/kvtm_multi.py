@@ -936,6 +936,7 @@ class MultiApp(tk.Tk):
             ("deliver_sheep", "Giao cừu"),
             ("produce_gems", "Sản xuất ngọc"),
             ("clear_stall", "Dọn quầy"),
+            ("clear_stall_designer", "Thiết kế"),
         )
         self.auto_feature_tabs = {}
         self.auto_tab_buttons = {}
@@ -1322,6 +1323,19 @@ class MultiApp(tk.Tk):
             delete_tab, textvariable=self.auto_delete_note,
             style="AutoValue.TLabel", anchor="w",
         ).pack(fill="x", padx=8, pady=(7, 0))
+
+        designer_tab = self.auto_feature_tabs["clear_stall_designer"]
+        try:
+            from clear_stall_designer import build_clear_stall_designer
+            self.clear_stall_designer = build_clear_stall_designer(
+                designer_tab, APP_DIR, TOOL_DIR
+            )
+        except Exception as exc:
+            ttk.Label(
+                designer_tab,
+                text=f"Không mở được trình thiết kế Dọn quầy: {exc}",
+                foreground="#b42318",
+            ).pack(anchor="w", padx=8, pady=8)
 
         self._show_auto_tab("main")
 
