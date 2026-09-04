@@ -144,11 +144,22 @@ def install_clientjs_runtime(auto_root: Path, profile_id: str):
 
     original_connect = u2.connect
 
+    # Resolve the exact profile/PID and Bridge V3 before recovered AUTO wraps
+    # connection errors in its generic ADB/BlueStacks message. One worker owns
+    # one driver instance, so concurrent accounts cannot exchange transports.
+    profile_driver = EngineDriver(str(profile_id), reference_size=(1000, 1000))
+    emit(
+        "pc_transport_ready",
+        profile_id=str(profile_id),
+        pid=int(profile_driver.pid),
+        driver_type=type(profile_driver).__name__,
+        profile_storage="READ_ONLY",
+    )
+
     def pc_connect(device_id=None, *args, **kwargs):
         value = str(device_id or "")
         if value.startswith("PC:"):
-            # Read the immutable profile only; never rewrite profile storage.
-            return EngineDriver(str(profile_id), reference_size=(1000, 1000))
+            return profile_driver
         return original_connect(device_id, *args, **kwargs)
 
     u2.connect = pc_connect
