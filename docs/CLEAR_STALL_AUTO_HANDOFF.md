@@ -207,3 +207,11 @@ LIVE_TEST: <run/log thật>
 NEXT: <một hành động>
 DO_NOT_TOUCH: components/workspace/**, KVTM_WORKSPACE_CONTROL.bat
 ```
+
+
+## Cập nhật vòng mua khi đầy kho
+
+- Mỗi lần chuyển quầy chỉ vuốt **một nhịp**, chờ render rồi scan/mua ngay.
+- Khi kho clone đầy giữa lúc mua, Gate 5 chỉ treo các fingerprint VP đã xác minh mua trong chính lượt hiện tại.
+- Sau khi giải phóng kho, clone quay lại đúng nhà đang dọn, mở lại quầy và tiếp tục cho đến đủ target.
+- Không cộng số lượng cho click thất bại và không bán vật phẩm ngoài manifest đã mua.
