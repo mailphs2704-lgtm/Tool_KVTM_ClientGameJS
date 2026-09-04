@@ -728,7 +728,7 @@ def run_probe(
                             *automation.stall.swipe_end,
                             duration=automation.stall.swipe_duration,
                         )
-                        automation.context.log(
+                        context.log(
                             f"Kéo quầy • swipe {swipe_index}/"
                             f"{automation.stall.swipe_pulses} • "
                             f"duration={automation.stall.swipe_duration:.2f}s"
