@@ -30,6 +30,7 @@ PROFILE_FILE = APP_DIR / "profiles.json"
 SETTINGS_FILE = APP_DIR / "settings.json"
 RUNNING_MAP_FILE = APP_DIR / "running_clients.json"
 PROFILE_BACKUP_DIR = APP_DIR / "profile-backups"
+CLEAR_STALL_HISTORY_FILE = APP_DIR / "clear-stall-history.jsonl"
 DEFAULT_CLIENT = Path(r"C:\Program Files\ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")
 DEFAULT_GAME = Path(os.environ.get("APPDATA", Path.home())) / "VNG Corporation" / "ZingPlay" / "zpp" / GAME_ID / "game"
 DEFAULT_DISPLAY = {"width": 1000, "height": 1000, "dpi": 240}
@@ -1146,7 +1147,12 @@ class MultiApp(tk.Tk):
             action_row, text="☷ Danh sách hàng chờ", width=25,
             style="Action.TButton", command=self._show_clear_stall_queue,
         )
-        self.auto_clear_stall_queue_button.pack(side="left")
+        self.auto_clear_stall_queue_button.pack(side="left", padx=(0, 8))
+        self.auto_clear_stall_log_button = ttk.Button(
+            action_row, text="≡ Log Dọn quầy", width=25,
+            style="Action.TButton", command=self._show_clear_stall_log,
+        )
+        self.auto_clear_stall_log_button.pack(side="left")
         for widget in (
             self.auto_clear_stall_friend_spin,
             self.auto_clear_stall_stall_spin,
@@ -2008,6 +2014,243 @@ class MultiApp(tk.Tk):
         prefix = f"{days} ngày " if days else ""
         return f"{prefix}{hours:02d}:{minutes:02d}:{secs:02d}"
 
+    def _clear_stall_account_name(self, profile_id: str) -> str:
+        profile = next(
+            (item for item in self.profiles if str(item.get("id") or "") == profile_id),
+            None,
+        )
+        return str(
+            (profile or {}).get("name") or profile_id or "Tài khoản không xác định"
+        )
+
+    def _append_clear_stall_history(self, record: dict) -> None:
+        """Append a safe, profile-independent Dọn quầy history record."""
+        allowed = (
+            "timestamp", "profile_id", "account", "result", "activity",
+            "requested_quantity", "purchased_quantity", "sold_quantity",
+            "collected_gold_slots",
+        )
+        safe = {key: record.get(key) for key in allowed if key in record}
+        try:
+            CLEAR_STALL_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with CLEAR_STALL_HISTORY_FILE.open(
+                "a", encoding="utf-8", errors="replace"
+            ) as stream:
+                stream.write(json.dumps(safe, ensure_ascii=False, default=str) + "\n")
+        except OSError:
+            pass
+
+    def _record_clear_stall_activity(self, payload: dict) -> None:
+        profile_id = str(payload.get("profile_id") or "")
+        event = str(payload.get("event") or "")
+        if not profile_id or not event:
+            return
+        account = self._clear_stall_account_name(profile_id)
+        stamp = float(payload.get("at") or time.time())
+        message = str(payload.get("message") or payload.get("stage") or "").strip()
+        purchased = int(payload.get("purchased_quantity") or 0)
+        sold = int(payload.get("sold_quantity") or payload.get("quantity") or 0)
+        gold = int(payload.get("collected_gold_slots") or 0)
+        requested = int(payload.get("requested_quantity") or 0)
+        friend = payload.get("friend_ordinal")
+        item_name = str(payload.get("item_name") or payload.get("item_id") or "VP")
+
+        if event in {"worker_started", "probe_boot"}:
+            activity = message or "đã đăng nhập, bắt đầu Dọn quầy"
+        elif event == "probe_purchase_ok":
+            where = f" tại nhà bạn {friend}" if friend else ""
+            activity = f"đã thu {item_name}{where}; tổng thu {purchased} VP"
+        elif event == "probe_resale_ok":
+            activity = f"đã treo {sold} VP"
+        elif event == "probe_ok":
+            activity = (
+                f"hoàn thành: mua {purchased}/{requested} VP, "
+                f"thu vàng {gold} ô, treo {sold} VP"
+            )
+        elif event in {"worker_error", "probe_error"}:
+            activity = "lỗi: " + str(payload.get("error") or message or "không xác định")
+        elif event in {"worker_stopping", "probe_stopped"}:
+            activity = message or "đã dừng an toàn"
+        elif event in {"progress", "probe_progress", "log"}:
+            activity = message
+        elif event == "worker_finished":
+            activity = "hoàn thành lượt Dọn quầy"
+        else:
+            return
+        if not activity:
+            return
+
+        rows = getattr(self, "_clear_stall_live_log", None)
+        if rows is None:
+            rows = []
+            self._clear_stall_live_log = rows
+        rows.append({
+            "timestamp": stamp,
+            "profile_id": profile_id,
+            "account": account,
+            "activity": activity,
+        })
+        del rows[:-500]
+
+        result = ""
+        if event in {"worker_started", "probe_boot"}:
+            result = "BẮT ĐẦU"
+        elif event in {"worker_finished", "probe_ok"}:
+            result = "HOÀN THÀNH"
+        elif event in {"worker_error", "probe_error"}:
+            result = "LỖI"
+        elif event in {"worker_stopping", "probe_stopped"}:
+            result = "ĐÃ DỪNG"
+        if result:
+            self._append_clear_stall_history({
+                "timestamp": stamp,
+                "profile_id": profile_id,
+                "account": account,
+                "result": result,
+                "activity": activity,
+                "requested_quantity": requested,
+                "purchased_quantity": purchased,
+                "sold_quantity": sold,
+                "collected_gold_slots": gold,
+            })
+
+    def _read_clear_stall_history(self) -> list[dict]:
+        if not CLEAR_STALL_HISTORY_FILE.is_file():
+            return []
+        rows = []
+        try:
+            with CLEAR_STALL_HISTORY_FILE.open(
+                "r", encoding="utf-8", errors="replace"
+            ) as stream:
+                for line in stream:
+                    try:
+                        value = json.loads(line)
+                    except (TypeError, ValueError):
+                        continue
+                    if isinstance(value, dict):
+                        rows.append(value)
+        except OSError:
+            return []
+        return rows[-1000:]
+
+    def _show_clear_stall_log(self) -> None:
+        current = getattr(self, "_clear_stall_log_window", None)
+        if current is not None and current.winfo_exists():
+            current.deiconify()
+            current.lift()
+            current.focus_force()
+            return
+
+        window = tk.Toplevel(self)
+        self._clear_stall_log_window = window
+        window.title("Log Dọn quầy")
+        window.geometry("820x460")
+        window.minsize(680, 360)
+        window.transient(self)
+        window.configure(background="#f3f6fa")
+
+        header = ttk.Frame(
+            window, padding=(12, 10, 12, 6), style="Detail.TFrame"
+        )
+        header.pack(fill="x")
+        ttk.Label(
+            header, text="LOG DỌN QUẦY", style="Section.TLabel"
+        ).pack(side="left")
+        ttk.Label(
+            header, text="Tự cập nhật mỗi giây", style="AutoValue.TLabel"
+        ).pack(side="right")
+
+        notebook = ttk.Notebook(window)
+        notebook.pack(fill="both", expand=True, padx=12, pady=(4, 12))
+        total_tab = ttk.Frame(notebook, padding=8, style="Detail.TFrame")
+        live_tab = ttk.Frame(notebook, padding=8, style="Detail.TFrame")
+        notebook.add(total_tab, text="Nhật ký tổng")
+        notebook.add(live_tab, text="Acc đang dọn")
+
+        total_tree = ttk.Treeview(
+            total_tab,
+            columns=("time", "account", "result", "bought", "sold", "gold"),
+            show="headings", style="Queue.Treeview",
+        )
+        for key, label, width, anchor in (
+            ("time", "THỜI GIAN", 145, "center"),
+            ("account", "TÀI KHOẢN", 190, "w"),
+            ("result", "KẾT QUẢ", 105, "center"),
+            ("bought", "VP MUA", 90, "center"),
+            ("sold", "VP TREO", 90, "center"),
+            ("gold", "Ô VÀNG", 80, "center"),
+        ):
+            total_tree.heading(key, text=label)
+            total_tree.column(key, width=width, anchor=anchor)
+        total_scroll = ttk.Scrollbar(
+            total_tab, orient="vertical", command=total_tree.yview
+        )
+        total_tree.configure(yscrollcommand=total_scroll.set)
+        total_tree.pack(side="left", fill="both", expand=True)
+        total_scroll.pack(side="right", fill="y")
+
+        live_tree = ttk.Treeview(
+            live_tab, columns=("time", "account", "activity"),
+            show="headings", style="Queue.Treeview",
+        )
+        live_tree.heading("time", text="THỜI GIAN")
+        live_tree.heading("account", text="TÀI KHOẢN")
+        live_tree.heading("activity", text="THÔNG TIN ĐANG THỰC HIỆN")
+        live_tree.column("time", width=90, anchor="center")
+        live_tree.column("account", width=170, anchor="w")
+        live_tree.column("activity", width=500, anchor="w")
+        live_scroll = ttk.Scrollbar(
+            live_tab, orient="vertical", command=live_tree.yview
+        )
+        live_tree.configure(yscrollcommand=live_scroll.set)
+        live_tree.pack(side="left", fill="both", expand=True)
+        live_scroll.pack(side="right", fill="y")
+
+        self._clear_stall_total_log_tree = total_tree
+        self._clear_stall_live_log_tree = live_tree
+
+        def close_log() -> None:
+            self._clear_stall_log_window = None
+            self._clear_stall_total_log_tree = None
+            self._clear_stall_live_log_tree = None
+            window.destroy()
+
+        window.protocol("WM_DELETE_WINDOW", close_log)
+        self._refresh_clear_stall_log()
+
+    def _refresh_clear_stall_log(self) -> None:
+        window = getattr(self, "_clear_stall_log_window", None)
+        total_tree = getattr(self, "_clear_stall_total_log_tree", None)
+        live_tree = getattr(self, "_clear_stall_live_log_tree", None)
+        if window is None or not window.winfo_exists():
+            return
+        if total_tree is not None:
+            total_tree.delete(*total_tree.get_children())
+            for row in reversed(self._read_clear_stall_history()):
+                stamp = float(row.get("timestamp") or 0)
+                total_tree.insert("", "end", values=(
+                    time.strftime("%d/%m/%Y %H:%M", time.localtime(stamp)),
+                    row.get("account") or row.get("profile_id") or "",
+                    row.get("result") or "",
+                    int(row.get("purchased_quantity") or 0),
+                    int(row.get("sold_quantity") or 0),
+                    int(row.get("collected_gold_slots") or 0),
+                ))
+        if live_tree is not None:
+            live_tree.delete(*live_tree.get_children())
+            live_rows = list(getattr(self, "_clear_stall_live_log", []))[-300:]
+            for row in live_rows:
+                stamp = float(row.get("timestamp") or 0)
+                live_tree.insert("", "end", values=(
+                    time.strftime("%H:%M:%S", time.localtime(stamp)),
+                    row.get("account") or row.get("profile_id") or "",
+                    row.get("activity") or "",
+                ))
+            children = live_tree.get_children()
+            if children:
+                live_tree.see(children[-1])
+        window.after(1000, self._refresh_clear_stall_log)
+
     def _show_clear_stall_queue(self) -> None:
         current = getattr(self, "_clear_stall_queue_window", None)
         if current is not None and current.winfo_exists():
@@ -2390,6 +2633,7 @@ class MultiApp(tk.Tk):
         self.after(150, self._poll_clear_stall_workers)
 
     def _handle_clear_stall_worker_event(self, payload: dict) -> None:
+        self._record_clear_stall_activity(payload)
         profile_id = str(payload.get("profile_id") or "")
         event = str(payload.get("event") or "")
         message = str(payload.get("message") or "")
