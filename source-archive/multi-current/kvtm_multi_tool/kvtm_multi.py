@@ -2609,6 +2609,18 @@ class MultiApp(tk.Tk):
             self.auto_scope_note.set(
                 f"Function {payload.get('function_id')} • PID {payload.get('pid')} • đang chạy"
             )
+        elif event == "client_pid_changed":
+            new_pid = int(payload.get("new_pid") or 0)
+            old_pid = int(payload.get("old_pid") or 0)
+            if profile_id and new_pid > 0:
+                self.processes[profile_id] = RunningProcessRef(new_pid)
+                self.note.set(
+                    f"ClientJS đã reset: PID {old_pid} → {new_pid}; AUTO tiếp tục"
+                )
+                self.auto_scope_note.set(
+                    f"Function {payload.get('function_id') or ''} • PID {new_pid} • đã nhận lại"
+                )
+                self.refresh()
         elif event == "progress":
             self.auto_status.set(message or "Đang chạy")
             self.note.set(message or "AUTO đang chạy")
