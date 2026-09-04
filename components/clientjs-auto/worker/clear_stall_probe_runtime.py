@@ -280,6 +280,7 @@ def run_probe(
         )
         designer_policy = load_runtime_policy(designer_config_path())
         automation.stall.apply_runtime_policy(designer_policy)
+        automation.inventory.storage_open_wait = designer_policy.storage_open_wait
         checkpoint(
             "clear-stall-designer-policy-applied",
             **{
