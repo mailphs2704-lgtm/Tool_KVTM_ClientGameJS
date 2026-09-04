@@ -354,6 +354,10 @@ def main() -> int:
     require(auto_worker, "Bootstrap bundled dependencies, then lock every PC transport alias", "Bundled PC bootstrap missing")
     require(auto_worker, 'for alias in ("connect", "u2_connect", "uiautomator_connect")', "Recovered ADB connect-alias patch missing")
     require(auto_worker, "EngineDriver(str(profile_id)", "AUTO worker must bind EngineDriver by immutable profile")
+    require(auto_worker, "profile_driver = EngineDriver(str(profile_id)", "Per-worker EngineDriver preflight missing")
+    require(auto_worker, '"pc_transport_ready"', "Verified PC transport event missing")
+    require(auto_worker, "return profile_driver", "PC constructor must reuse its isolated verified driver")
+    require(auto_worker, 'profile_storage="READ_ONLY"', "AUTO bootstrap profile read-only marker missing")
     client_runtime = auto_worker.split(
         "def install_clientjs_runtime", 1
     )[1].split("def install_headless_clientjs_runtime", 1)[0]
