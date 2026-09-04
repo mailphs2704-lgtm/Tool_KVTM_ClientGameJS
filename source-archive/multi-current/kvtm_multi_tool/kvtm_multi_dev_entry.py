@@ -732,6 +732,7 @@ class MultiDevApp(production.MultiApp):
             self.after(0, lambda data=exit_payload: self._finish_inprocess_probe(data))
 
     def _handle_clear_stall_probe_event(self, payload: dict) -> None:
+        self._record_clear_stall_activity(payload)
         profile_id = str(payload.get("profile_id") or "")
         event = str(payload.get("event") or "")
         message = str(payload.get("message") or "")
