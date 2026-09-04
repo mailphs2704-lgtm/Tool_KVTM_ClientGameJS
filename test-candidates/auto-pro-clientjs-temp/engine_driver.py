@@ -23,7 +23,11 @@ LOADER = BIN / "kvtm_loader_v3.exe"
 BRIDGE = BIN / "kvtm_bridge_v3.dll"
 _PROTOCOL_PREFIX = "OK PONG KVTM_BRIDGE_V3"
 _GESTURE_LOCK = threading.RLock()
-PROFILE_FILE = Path(\n    os.environ.get("KVTM_MULTI_PROFILE_FILE")\n    or (Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi" / "profiles.json")\n)
+PROFILE_FILE = Path(
+    os.environ.get("KVTM_MULTI_PROFILE_FILE")
+    or (Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi" / "profiles.json")
+)
+
 class DATA_BLOB(ctypes.Structure):
     _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
 
