@@ -58,6 +58,18 @@ class StallActions:
         self.context = context
         self.vision = vision
         self.waiter = waiter
+        self.swipe_pulses = 2
+        self.swipe_duration = STALL_SWIPE_DURATION
+        self.swipe_settle = STALL_RENDER_SETTLE
+        self.swipe_start = (633, 546)
+        self.swipe_end = (540, 540)
+
+    def apply_runtime_policy(self, policy) -> None:
+        self.swipe_pulses = int(policy.swipe_pulses)
+        self.swipe_duration = float(policy.swipe_duration)
+        self.swipe_settle = float(policy.swipe_settle)
+        self.swipe_start = (int(policy.swipe_start_x), int(policy.swipe_start_y))
+        self.swipe_end = (int(policy.swipe_end_x), int(policy.swipe_end_y))
 
     @staticmethod
     def physical_slot(view: int, local_slot: int) -> int:
@@ -192,27 +204,27 @@ class StallActions:
 
     def next_view(self) -> None:
         """One logical stall step is exactly two swipes, then the caller scans."""
-        for swipe_index in range(1, 3):
+        for swipe_index in range(1, self.swipe_pulses + 1):
             self.context.ensure_running()
             self.vision.driver.swipe(
-                633, 546, 540, 540, duration=STALL_SWIPE_DURATION
+                *self.swipe_start, *self.swipe_end, duration=self.swipe_duration
             )
             self.context.log(
-                f"Kéo quầy • swipe {swipe_index}/2 trong một nhịp • "
-                f"duration={STALL_SWIPE_DURATION:.2f}s"
+                f"Kéo quầy • swipe {swipe_index}/{self.swipe_pulses} trong một nhịp • "
+                f"duration={self.swipe_duration:.2f}s"
             )
-            self.waiter.sleep(STALL_RENDER_SETTLE)
+            self.waiter.sleep(self.swipe_settle)
 
     def previous_view(self) -> None:
         """Return one logical stall step using exactly two reverse swipes."""
         for swipe_index in range(1, 3):
             self.context.ensure_running()
             self.vision.driver.swipe(
-                540, 540, 633, 546, duration=STALL_SWIPE_DURATION
+                *self.swipe_end, *self.swipe_start, duration=self.swipe_duration
             )
             self.context.log(
-                f"Kéo quầy về • swipe {swipe_index}/2 trong một nhịp • "
-                f"duration={STALL_SWIPE_DURATION:.2f}s"
+                f"Kéo quầy về • swipe {swipe_index}/{self.swipe_pulses} trong một nhịp • "
+                f"duration={self.swipe_duration:.2f}s"
             )
             self.waiter.sleep(STALL_RENDER_SETTLE)
 
