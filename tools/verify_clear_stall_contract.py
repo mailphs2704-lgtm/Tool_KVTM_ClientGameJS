@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/clear_stall/workflow.py"
 CONFIG = ROOT / "components/clientjs-auto/kvtm_automation/workflows/clear_stall/config.py"
 WORKER = ROOT / "components/clientjs-auto/worker/clear_stall_worker.py"
+AUTO_WORKER = ROOT / "components/clientjs-auto/worker/auto_worker.py"
 PROBE = ROOT / "components/clientjs-auto/worker/clear_stall_probe_runtime.py"
 BUYING = ROOT / "components/clientjs-auto/kvtm_automation/actions/buying.py"
 SELLING = ROOT / "components/clientjs-auto/kvtm_automation/actions/selling.py"
@@ -35,7 +36,7 @@ def forbid(source: str, needle: str, message: str) -> None:
 
 def main() -> int:
     sources = {}
-    for path in (WORKFLOW, CONFIG, WORKER, PROBE, BUYING, SELLING, STALL, DEV_ENTRY, MULTI):
+    for path in (WORKFLOW, CONFIG, WORKER, AUTO_WORKER, PROBE, BUYING, SELLING, STALL, DEV_ENTRY, MULTI):
         text = path.read_text(encoding="utf-8")
         ast.parse(text, filename=str(path))
         sources[path] = text
@@ -43,6 +44,7 @@ def main() -> int:
     workflow = sources[WORKFLOW]
     config = sources[CONFIG]
     worker = sources[WORKER]
+    auto_worker = sources[AUTO_WORKER]
     probe = sources[PROBE]
     buying = sources[BUYING]
     selling = sources[SELLING]
