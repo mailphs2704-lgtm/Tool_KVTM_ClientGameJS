@@ -301,6 +301,235 @@ foreach ($required in @(
 Assert-CleanClearStallWorker -Path $ClearStallWorker
 Assert-CleanClearStallWorker -Path $ClearStallProbe
 
+# A hidden DEV worker or a restarted GameClientJS may still own the injected
+# bridge even after the visible windows have closed. Stop only processes that
+# are authoritatively associated with this OutputRoot; never kill unrelated
+# ClientJS instances.
+$BridgeInUse = Join-Path $OutputRoot "AUTO_PRO\bin\kvtm_bridge.dll"
+$DevPids = New-Object 'System.Collections.Generic.HashSet[int]'
+$RunningMap = Join-Path $CurrentData "running_clients.json"
+if (Test-Path -LiteralPath $RunningMap -PathType Leaf) {
+    try {
+        $MapData = Get-Content -LiteralPath $RunningMap -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($ClientEntry in @($MapData.clients)) {
+            $MappedPid = 0
+            if ([int]::TryParse([string]$ClientEntry.pid, [ref]$MappedPid) -and $MappedPid -gt 0) {
+                [void]$DevPids.Add($MappedPid)
+            }
+        }
+    } catch {
+        Write-Host "[WARN] Khong doc duoc running_clients.json; se kiem tra module DLL." -ForegroundColor Yellow
+    }
+}
+foreach ($GameProcess in @(Get-Process -Name "GameClientJS" -ErrorAction SilentlyContinue)) {
+    try {
+        $OwnsBridge = @($GameProcess.Modules | Where-Object {
+            [string]::Equals($_.FileName, $BridgeInUse, [System.StringComparison]::OrdinalIgnoreCase)
+        }).Count -gt 0
+        if ($OwnsBridge) {
+            [void]$DevPids.Add([int]$GameProcess.Id)
+        }
+    } catch {
+        # Access-denied module inspection is not permission to stop a process.
+    }
+}
+foreach ($ProcessId in @($DevPids)) {
+    $Candidate = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -ne $Candidate -and $Candidate.ProcessName -eq "GameClientJS") {
+        Write-Host "[DEV] Dong ClientJS DEV PID $ProcessId de giai phong bridge..." -ForegroundColor Yellow
+        Stop-Process -Id $ProcessId -Force -ErrorAction Stop
+    }
+}
+$EscapedOutputRoot = [regex]::Escape($OutputRoot)
+foreach ($RuntimeProcess in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -match '^python(w)?\.exe
+    Remove-Item -LiteralPath $OutputRoot -Recurse -Force
+}
+
+$AutoOut = Join-Path $OutputRoot "AUTO_PRO"
+$MultiOut = Join-Path $OutputRoot "Multi"
+New-Item -ItemType Directory -Path $AutoOut, $MultiOut -Force | Out-Null
+Copy-Item -Path (Join-Path $AutoSource "*") -Destination $AutoOut -Recurse -Force
+Copy-Item -Path (Join-Path $MultiSource "*") -Destination $MultiOut -Recurse -Force
+
+# AUTO reference contains the legacy frame-lock bridge. Always overlay the
+# freshly built CAPTURE1/KCAP bridge so Workspace and AUTO share frames by PID.
+$BridgeOut = Join-Path $AutoOut "bin"
+New-Item -ItemType Directory -Path $BridgeOut -Force | Out-Null
+foreach ($name in @("kvtm_loader.exe", "kvtm_bridge.dll")) {
+    Copy-Item -LiteralPath (Join-Path $PatchSource ("bin\" + $name)) -Destination (Join-Path $BridgeOut $name) -Force
+}
+foreach ($name in @("kvtm_loader_v3.exe", "kvtm_bridge_v3.dll")) {
+    Copy-Item -LiteralPath (Join-Path $BridgeV3Source ("bin\" + $name)) -Destination (Join-Path $BridgeOut $name) -Force
+}
+
+$packagedPointers = @(Get-GitLfsPointers -Root $AutoOut)
+if ($packagedPointers.Count -gt 0) {
+    $sample = ($packagedPointers | Select-Object -First 12 | ForEach-Object { $_.FullName }) -join "`n  - "
+    throw (
+        "Package blocked: AUTO_PRO output still contains {0} Git LFS pointers.`n  - {1}" -f
+        $packagedPointers.Count, $sample
+    )
+}
+
+$PatchFiles = @(
+    "adaptive_cv.py",
+    "BUILD_X86.bat",
+    "clientjs_auto_patch.py",
+    "engine_driver.py",
+    "pc_auto_engine_launcher.py",
+    "pc_auto_launcher.py",
+    "pc_driver.py",
+    "RUN_ENGINE_AUTO.bat"
+)
+foreach ($name in $PatchFiles) {
+    $source = Join-Path $PatchSource $name
+    if (-not (Test-Path -LiteralPath $source)) {
+        throw "Missing ClientJS adapter file: $source"
+    }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $AutoOut $name) -Force
+}
+
+$ComponentsOut = Join-Path $OutputRoot "components"
+$ClientJsAutoOut = Join-Path $ComponentsOut "clientjs-auto"
+New-Item -ItemType Directory -Path $ClientJsAutoOut -Force | Out-Null
+Copy-Item -Path (Join-Path $ClientJsAutoSource "*") -Destination $ClientJsAutoOut -Recurse -Force
+
+$NativeOut = Join-Path $AutoOut "native"
+New-Item -ItemType Directory -Path $NativeOut -Force | Out-Null
+Copy-Item -Path (Join-Path $PatchSource "native\*") -Destination $NativeOut -Force
+
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "README.txt") -Destination $OutputRoot
+foreach ($name in @("01_BUILD_BRIDGE.bat", "02_START_MULTI.bat", "02_START_MULTI_DEV.bat", "START_MULTI_DEV_SILENT.ps1", "03_START_AUTO.bat", "04_BUILD_MULTI_EXE.bat", "05_IMPORT_PROFILES_TO_DEV.ps1")) {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $OutputRoot
+}
+
+$PackagedClean = Join-Path $ClientJsAutoOut "kvtm_automation"
+$checks = @(
+    (Join-Path $AutoOut "runtime\pyc\gui_base.pyc"),
+    (Join-Path $AutoOut "runtime\pyc\gui.pyc"),
+    (Join-Path $AutoOut "runtime\pyc\adb_controller.pyc"),
+    (Join-Path $AutoOut "runtime\pyc\uiautomator2\__init__.pyc"),
+    (Join-Path $AutoOut "_internal\cv2\cv2.pyd"),
+    (Join-Path $AutoOut "clientjs_auto_patch.py"),
+    (Join-Path $AutoOut "pc_driver.py"),
+    (Join-Path $AutoOut "engine_driver.py"),
+    (Join-Path $AutoOut "bin\kvtm_loader.exe"),
+    (Join-Path $AutoOut "bin\kvtm_bridge.dll"),
+    (Join-Path $AutoOut "bin\kvtm_loader_v3.exe"),
+    (Join-Path $AutoOut "bin\kvtm_bridge_v3.dll"),
+    (Join-Path $MultiOut "kvtm_multi.py"),
+    (Join-Path $MultiOut "kvtm_multi_entry.py"),
+    (Join-Path $MultiOut "kvtm_multi_dev_entry.py"),
+    (Join-Path $MultiOut "kvtm_multi_dev_host.py"),
+    (Join-Path $MultiOut "clear_stall_probe_console.py"),
+    (Join-Path $ClientJsAutoOut "catalog\functions.json"),
+    (Join-Path $ClientJsAutoOut "worker\runtime_probe.py"),
+    (Join-Path $ClientJsAutoOut "worker\bridge_v3_gesture_probe.py"),
+    (Join-Path $ClientJsAutoOut "worker\speed_binding_probe.py"),
+    (Join-Path $ClientJsAutoOut "worker\auto_worker.py"),
+    (Join-Path $ClientJsAutoOut "worker\clean_worker_support.py"),
+    (Join-Path $ClientJsAutoOut "worker\clear_stall_worker.py"),
+    (Join-Path $ClientJsAutoOut "worker\clear_stall_live_probe.py"),
+    (Join-Path $ClientJsAutoOut "worker\clear_stall_step1_probe.py"),
+    (Join-Path $PackagedClean "automation.py"),
+    (Join-Path $PackagedClean "runtime\bootstrap.py"),
+    (Join-Path $PackagedClean "actions\navigation.py"),
+    (Join-Path $PackagedClean "actions\stall.py"),
+    (Join-Path $PackagedClean "workflows\clear_stall\manifest.py"),
+    (Join-Path $PackagedClean "workflows\clear_stall\state.py"),
+    (Join-Path $PackagedClean "workflows\clear_stall\workflow.py")
+)
+foreach ($file in $checks) {
+    if (-not (Test-Path -LiteralPath $file)) {
+        throw "Incomplete package: $file"
+    }
+    if (Test-GitLfsPointer -Path $file) {
+        throw "Package contains Git LFS pointer instead of real data: $file"
+    }
+}
+Assert-CleanClearStallWorker -Path (Join-Path $ClientJsAutoOut "worker\clear_stall_worker.py")
+Assert-CleanClearStallWorker -Path (Join-Path $ClientJsAutoOut "worker\clear_stall_live_probe.py")
+
+$head = (& git -C $RepoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($head)) {
+    throw "Cannot determine repository HEAD for package stamp."
+}
+[System.IO.File]::WriteAllText(
+    (Join-Path $OutputRoot ".source-head.txt"),
+    ($head.Trim() + "`n"),
+    [System.Text.Encoding]::ASCII
+)
+
+$ZipPath = "$OutputRoot.zip"
+if (Test-Path -LiteralPath $ZipPath) {
+    Remove-Item -LiteralPath $ZipPath -Force
+}
+Compress-Archive -LiteralPath $OutputRoot -DestinationPath $ZipPath -CompressionLevel Optimal
+
+$DevDataOut = Join-Path $OutputRoot "data-dev"
+New-Item -ItemType Directory -Path $DevDataOut -Force | Out-Null
+foreach ($name in @("profiles.json", "settings.json")) {
+    $preserved = Join-Path $PreserveRoot $name
+    if (Test-Path -LiteralPath $preserved -PathType Leaf) {
+        Copy-Item -LiteralPath $preserved -Destination (Join-Path $DevDataOut $name) -Force
+    }
+}
+if ($PreservedClearStall) {
+    Copy-Item -LiteralPath (Join-Path $PreserveRoot "clear-stall") -Destination (Join-Path $DevDataOut "clear-stall") -Recurse -Force
+}
+if ($PreservedClearStallProbe) {
+    Copy-Item -LiteralPath (Join-Path $PreserveRoot "clear-stall-probe") -Destination (Join-Path $DevDataOut "clear-stall-probe") -Recurse -Force
+}
+Remove-Item -LiteralPath $PreserveRoot -Recurse -Force
+
+Write-Host "PACKAGE OK" -ForegroundColor Green
+Write-Host "Folder: $OutputRoot"
+Write-Host "ZIP:    $ZipPath"
+Write-Host "SOURCE HEAD: $($head.Trim())" -ForegroundColor Cyan
+Write-Host "Legacy AUTO PRO runtime kept only for other suite features/reference." -ForegroundColor DarkGray
+Write-Host "Dọn quầy CLEAN VERIFIED: no legacy pyc execution dependency" -ForegroundColor Green
+Write-Host "Dọn quầy CLEAN VERIFIED: dynamic capacity + x10 remaining counter + serialized queue" -ForegroundColor Green
+if ($PreservedFiles.Count -gt 0) {
+    foreach ($name in $PreservedFiles.Keys) {
+        Write-Host ("DATA KEPT: {0} <- {1}" -f $name, $PreservedFiles[$name]) -ForegroundColor Cyan
+    }
+} else {
+    Write-Host "DATA: no existing profile/settings found; data-dev created empty" -ForegroundColor Yellow
+}
+if ($PreservedClearStall) {
+    Write-Host "DATA KEPT: clear-stall diagnostic runs only; carryover purged" -ForegroundColor Cyan
+}
+if ($PreservedClearStallProbe) {
+    Write-Host "DATA KEPT: clear-stall-probe screenshots/reports" -ForegroundColor Cyan
+}
+Write-Host "FIXED DEV: use this same folder for every build" -ForegroundColor Cyan
+ -and
+    [string]$_.CommandLine -match $EscapedOutputRoot
+})) {
+    Write-Host "[DEV] Dong worker Multi DEV PID $($RuntimeProcess.ProcessId)..." -ForegroundColor Yellow
+    Stop-Process -Id ([int]$RuntimeProcess.ProcessId) -Force -ErrorAction SilentlyContinue
+}
+if (Test-Path -LiteralPath $BridgeInUse -PathType Leaf) {
+    $Released = $false
+    for ($Attempt = 1; $Attempt -le 20; $Attempt++) {
+        try {
+            $Stream = [System.IO.File]::Open(
+                $BridgeInUse, [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None
+            )
+            $Stream.Dispose()
+            $Released = $true
+            break
+        } catch {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    if (-not $Released) {
+        throw "kvtm_bridge.dll van bi khoa sau 5s; chi tien trinh DEV duoc phep tu dong dong"
+    }
+}
+
 if (Test-Path -LiteralPath $OutputRoot) {
     Remove-Item -LiteralPath $OutputRoot -Recurse -Force
 }
