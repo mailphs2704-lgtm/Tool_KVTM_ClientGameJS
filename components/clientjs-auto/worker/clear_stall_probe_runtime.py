@@ -11,6 +11,9 @@ from typing import Callable
 
 PROBE_VERSION = 15
 STALL_VIEW_COUNT = 4
+# The last two own-stall cells can remain just outside the fourth nominal view.
+# Permit one terminal two-swipe alignment and force a final scan before failing.
+OWN_STALL_RESALE_SCAN_LIMIT = STALL_VIEW_COUNT + 1
 TOTAL_STALL_SLOTS = 20
 ALLOWED_ITEM_TEMPLATES = {
     "nuoc_hoa_hong": "Nước hoa hồng",
@@ -476,23 +479,42 @@ def run_probe(
             collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=designer_policy.collect_gold_maximum)
             while pending_resale_fingerprints:
                 context.ensure_running()
+                checkpoint(
+                    "gate5-own-stall-scan",
+                    sale_view=sale_view,
+                    pending_batches=len(pending_resale_fingerprints),
+                    terminal_alignment=(sale_view > STALL_VIEW_COUNT),
+                )
                 try:
                     selected_resale = automation.selling.sell_one_of_exact_purchases(
                         pending_resale_fingerprints,
                         storage_id=int(config.resale_storage_id),
                     )
                 except NoEmptyStallSlot:
-                    if sale_view >= STALL_VIEW_COUNT:
-                        raise RuntimeError("Đã kéo đến cuối quầy nhà nhưng không còn ô trống")
+                    if sale_view >= OWN_STALL_RESALE_SCAN_LIMIT:
+                        raise RuntimeError(
+                            "Đã thực hiện cả lượt căn mép cuối và scan lại nhưng "
+                            "quầy nhà không còn ô trống"
+                        )
+                    next_sale_view = sale_view + 1
                     checkpoint(
                         "gate5-inventory-flush-next-view",
-                        next_view=sale_view + 1, swipe_pulses=2,
+                        next_view=next_sale_view,
+                        swipe_pulses=2,
+                        terminal_alignment=(next_sale_view > STALL_VIEW_COUNT),
                         order="TWO_SWIPES_THEN_SCAN_COLLECT_RESELL",
                     )
                     automation.stall.next_view()
-                    sale_view += 1
+                    sale_view = next_sale_view
                     current_view = sale_view
-                    collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=designer_policy.collect_gold_maximum)
+                    checkpoint(
+                        "gate5-own-stall-post-swipe-scan-required",
+                        sale_view=sale_view,
+                        pending_batches=len(pending_resale_fingerprints),
+                    )
+                    collected_gold_slots += automation.stall.collect_own_stall_gold(
+                        maximum=designer_policy.collect_gold_maximum
+                    )
                     continue
                 index = next((
                     i for i, item in enumerate(pending_resale_fingerprints)
