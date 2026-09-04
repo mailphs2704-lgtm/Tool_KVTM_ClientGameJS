@@ -472,8 +472,8 @@ def run_probe(
                         raise RuntimeError("Đã kéo đến cuối quầy nhà nhưng không còn ô trống")
                     checkpoint(
                         "gate5-inventory-flush-next-view",
-                        next_view=sale_view + 1, swipe_pulses=1,
-                        order="SWIPE_ONCE_SCAN_COLLECT_RESELL",
+                        next_view=sale_view + 1, swipe_pulses=2,
+                        order="TWO_SWIPES_THEN_SCAN_COLLECT_RESELL",
                     )
                     automation.stall.next_view()
                     sale_view += 1
@@ -631,7 +631,28 @@ def run_probe(
                     if purchased_quantity >= expected_quantity:
                         break
                 if view < STALL_VIEW_COUNT:
+                    checkpoint(
+                        "stall-step-start",
+                        friend_ordinal=friend_index,
+                        stall_pass=stall_pass,
+                        from_view=view,
+                        to_view=view + 1,
+                        swipe_pulses=2,
+                    )
                     automation.stall.next_view()
+                    transition_path = (
+                        work_dir / f"friend-{friend_index:02d}-pass-"
+                        f"{stall_pass:02d}-after-step-{view:02d}.png"
+                    )
+                    save_frame(transition_path, automation.vision.frame())
+                    checkpoint(
+                        "stall-step-finished-scan-required",
+                        friend_ordinal=friend_index,
+                        stall_pass=stall_pass,
+                        next_view=view + 1,
+                        swipe_pulses=2,
+                        capture=str(transition_path),
+                    )
             return purchased_quantity - bought_before
 
         if purchase_limit > 0:
