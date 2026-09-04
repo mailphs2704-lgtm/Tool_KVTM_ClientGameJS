@@ -459,7 +459,7 @@ def run_probe(
             automation.stall.open_own_stall()
             sale_view = 1
             current_view = 1
-            collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=20)
+            collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=8)
             while pending_resale_fingerprints:
                 context.ensure_running()
                 try:
@@ -565,7 +565,7 @@ def run_probe(
                     for item_id in allowed_item_ids:
                         if automation.vision.find(
                             item_id,
-                            threshold=0.64,
+                            threshold=0.60,
                             zone=zone,
                             scales=(0.90, 1.0, 1.10),
                             frame=frame,
@@ -577,6 +577,46 @@ def run_probe(
                             (observation, matched_item_id)
                         )
                         item_matches[int(observation.physical_slot)] = matched_item_id
+
+                # ClientJS item sprites keep animating for a short time after
+                # the two-swipe step. Retry only still-unmatched occupied cells
+                # on two fresh frames before declaring the view ineligible.
+                for recognition_retry in range(1, 3):
+                    unmatched = [
+                        observation for observation in observations
+                        if int(observation.physical_slot) not in item_matches
+                    ]
+                    if not unmatched:
+                        break
+                    automation.waiter.sleep(0.35)
+                    retry_frame = automation.vision.frame()
+                    newly_matched = 0
+                    for observation in unmatched:
+                        cx, cy = observation.center
+                        zone = (cx - 50, cy - 58, 100, 108)
+                        for item_id in allowed_item_ids:
+                            if automation.vision.find(
+                                item_id,
+                                threshold=0.60,
+                                zone=zone,
+                                scales=(0.85, 0.90, 1.0, 1.10, 1.15),
+                                frame=retry_frame,
+                            ) is not None:
+                                eligible_observations.append(
+                                    (observation, item_id)
+                                )
+                                item_matches[int(observation.physical_slot)] = item_id
+                                newly_matched += 1
+                                break
+                    checkpoint(
+                        "stall-view-recognition-retry",
+                        friend_ordinal=friend_index,
+                        stall_pass=stall_pass,
+                        view=view,
+                        retry=recognition_retry,
+                        newly_matched=newly_matched,
+                        still_unmatched=len(unmatched) - newly_matched,
+                    )
                 if primary_report:
                     new_local = automation.stall.new_local_slots(view)
                     new_physical = [
