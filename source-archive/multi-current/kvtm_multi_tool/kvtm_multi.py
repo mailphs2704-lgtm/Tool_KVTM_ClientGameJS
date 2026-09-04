@@ -2069,6 +2069,8 @@ class MultiApp(tk.Tk):
             )
         elif event in {"worker_error", "probe_error"}:
             activity = "lỗi: " + str(payload.get("error") or message or "không xác định")
+        elif event == "probe_temp_pass":
+            activity = message or "watchdog phát hiện đơ; đã đóng ClientJS và trả hàng chờ"
         elif event in {"worker_stopping", "probe_stopped"}:
             activity = message or "đã dừng an toàn"
         elif event in {"progress", "probe_progress", "log"}:
@@ -2100,6 +2102,8 @@ class MultiApp(tk.Tk):
             result = "BẮT ĐẦU"
         elif event in {"worker_finished", "probe_ok"}:
             result = "HOÀN THÀNH"
+        elif event == "probe_temp_pass":
+            result = "TẠM PASS"
         elif event in {"worker_error", "probe_error"}:
             result = "LỖI"
         elif event in {"worker_stopping", "probe_stopped"}:
