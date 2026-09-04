@@ -605,7 +605,20 @@ def main() -> int:
     task = threading.Thread(target=run_auto, daemon=True)
     task.start()
 
+    reported_client_pid = int(
+        getattr(getattr(controller, "driver", None), "pid", args.pid)
+    )
     while not finished.wait(0.20):
+        current_driver = getattr(controller, "driver", None)
+        current_client_pid = int(getattr(current_driver, "pid", reported_client_pid))
+        if current_client_pid != reported_client_pid:
+            emit(
+                "client_pid_changed",
+                profile_id=args.profile_id,
+                old_pid=reported_client_pid,
+                new_pid=current_client_pid,
+            )
+            reported_client_pid = current_client_pid
         try:
             command = commands.get_nowait()
         except queue.Empty:
