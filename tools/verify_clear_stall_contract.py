@@ -227,6 +227,21 @@ def main() -> int:
         '"stall-step-finished-scan-required"',
         "Every completed stall step must force the next view scan",
     )
+    require(
+        probe,
+        '"stall-view-recognition-retry"',
+        "Post-swipe animated item recognition retries missing",
+    )
+    require(
+        probe,
+        "collect_own_stall_gold(maximum=8)",
+        "Gold collection must be bounded to the eight visible slots",
+    )
+    forbid(
+        probe,
+        "collect_own_stall_gold(maximum=20)",
+        "Twenty gold attempts per view cause unnecessary resale delay",
+    )
     forbid(
         probe,
         "automation.stall.rewind_to_first(STALL_VIEW_COUNT)",
