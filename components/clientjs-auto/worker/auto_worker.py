@@ -615,6 +615,7 @@ def main() -> int:
             emit(
                 "client_pid_changed",
                 profile_id=args.profile_id,
+                function_id=args.function_id,
                 old_pid=reported_client_pid,
                 new_pid=current_client_pid,
             )
