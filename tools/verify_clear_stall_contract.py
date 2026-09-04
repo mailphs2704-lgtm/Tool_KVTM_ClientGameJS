@@ -182,7 +182,7 @@ def main() -> int:
     require(dev_entry, "_clear_stall_gate5_profiles", "Gate 5 state tracking missing")
     require(
         multi,
-        "Dọn quầy: Mua đủ + thu vàng + treo lại toàn bộ",
+        "▶ Bắt đầu Dọn quầy",
         "Full clear-stall button missing",
     )
     forbid(multi, "▶ GATE 1: Kiểm tra quầy", "Passed Gate 1 button must be removed")
@@ -358,6 +358,11 @@ def main() -> int:
     require(auto_worker, 'parser.add_argument("--profile-file", required=True)', "AUTO worker profile path argument missing")
     require(auto_worker, 'os.environ["KVTM_MULTI_PROFILE_FILE"] = str(profile_file)', "Active DEV profile path publication missing")
     require(multi, '"--profile-file", str(PROFILE_FILE)', "Multi must pass its active data-dev profile path")
+    require(multi, '"☷ Danh sách hàng chờ"', "Clear-stall queue button missing")
+    require(multi, "def _refresh_clear_stall_queue", "Live clear-stall queue refresh missing")
+    require(multi, "rows.sort(key=lambda row: (row[0]", "Queue must sort by least remaining time")
+    require(multi, "window.after(1000, self._refresh_clear_stall_queue)", "Queue countdown refresh missing")
+    require(multi, '"THỜI GIAN CÒN LẠI"', "Queue countdown column missing")
     require(engine_driver, 'os.environ.get("KVTM_MULTI_PROFILE_FILE")', "EngineDriver explicit DEV profile path missing")
     require(auto_worker, '"pc_transport_ready"', "Verified PC transport event missing")
     require(auto_worker, "return profile_driver", "PC constructor must reuse its isolated verified driver")
