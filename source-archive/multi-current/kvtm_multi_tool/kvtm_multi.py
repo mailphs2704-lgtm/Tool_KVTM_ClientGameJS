@@ -1083,24 +1083,13 @@ class MultiApp(tk.Tk):
             row=0, column=6, sticky="w", pady=(0, 6)
         )
 
-        ttk.Label(
-            clear_stall_body, text="Quét tối đa:", style="AutoValue.TLabel"
-        ).grid(row=1, column=0, sticky="e", padx=(0, 5), pady=(0, 6))
-        self.auto_clear_stall_pages = tk.IntVar(value=10)
-        self.auto_clear_stall_pages_spin = ttk.Spinbox(
-            clear_stall_body, from_=1, to=50, width=5,
-            textvariable=self.auto_clear_stall_pages,
-            command=self._save_clear_stall_config,
-        )
-        self.auto_clear_stall_pages_spin.grid(
-            row=1, column=1, sticky="w", pady=(0, 6)
-        )
-        ttk.Label(
-            clear_stall_body, text="trang", style="AutoValue.TLabel"
-        ).grid(row=1, column=2, sticky="w", pady=(0, 6))
+        # Compatibility state remains internal; the workflow always scans its
+        # verified four views and closes the clone after a successful cycle.
+        self.auto_clear_stall_pages = tk.IntVar(value=4)
+        self.auto_clear_stall_close = tk.BooleanVar(value=True)
         ttk.Label(
             clear_stall_body, text="Chu kỳ:", style="AutoValue.TLabel"
-        ).grid(row=1, column=3, sticky="e", padx=(0, 5), pady=(0, 6))
+        ).grid(row=1, column=0, sticky="e", padx=(0, 5), pady=(0, 6))
         self.auto_clear_stall_interval = tk.IntVar(value=65)
         self.auto_clear_stall_interval_spin = ttk.Spinbox(
             clear_stall_body, from_=5, to=1440, width=6,
@@ -1108,19 +1097,11 @@ class MultiApp(tk.Tk):
             command=self._save_clear_stall_config,
         )
         self.auto_clear_stall_interval_spin.grid(
-            row=1, column=4, sticky="w", pady=(0, 6)
+            row=1, column=1, sticky="w", pady=(0, 6)
         )
         ttk.Label(
             clear_stall_body, text="phút", style="AutoValue.TLabel"
-        ).grid(row=1, column=5, sticky="w", padx=(4, 10), pady=(0, 6))
-        self.auto_clear_stall_close = tk.BooleanVar(value=True)
-        self.auto_clear_stall_close_button = self._make_toggle_button(
-            clear_stall_body, "Đóng clone sau khi xong",
-            self.auto_clear_stall_close, self._save_clear_stall_config,
-        )
-        self.auto_clear_stall_close_button.grid(
-            row=1, column=6, sticky="w", pady=(0, 6)
-        )
+        ).grid(row=1, column=2, sticky="w", padx=(4, 10), pady=(0, 6))
 
         ttk.Label(
             clear_stall_body, text="Chỉ mua VP:", style="AutoValue.TLabel"
@@ -1131,14 +1112,11 @@ class MultiApp(tk.Tk):
         self.auto_clear_stall_item_buttons = []
         for item_id, item_label in CLEAR_STALL_ITEM_OPTIONS:
             variable = tk.BooleanVar(value=True)
-            button = ttk.Checkbutton(
-                item_row,
-                text=item_label,
-                variable=variable,
-                style="AutoOption.TCheckbutton",
-                command=self._save_clear_stall_config,
+            button = self._make_toggle_button(
+                item_row, item_label, variable, self._save_clear_stall_config
             )
-            button.pack(side="left", padx=(0, 9))
+            button.configure(anchor="center", padx=9, pady=4)
+            button.pack(side="left", padx=(0, 6))
             self.auto_clear_stall_items[item_id] = variable
             self.auto_clear_stall_item_buttons.append(button)
 
@@ -1173,7 +1151,6 @@ class MultiApp(tk.Tk):
             self.auto_clear_stall_friend_spin,
             self.auto_clear_stall_stall_spin,
             self.auto_clear_stall_quantity_spin,
-            self.auto_clear_stall_pages_spin,
             self.auto_clear_stall_interval_spin,
         ):
             widget.bind(
@@ -1494,9 +1471,7 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_friend_spin,
                 self.auto_clear_stall_stall_spin,
                 self.auto_clear_stall_quantity_spin,
-                self.auto_clear_stall_pages_spin,
                 self.auto_clear_stall_interval_spin,
-                self.auto_clear_stall_close_button,
                 self.auto_clear_stall_full_resale_probe_button,
                 self.auto_clear_stall_stop_button,
             ):
@@ -1508,7 +1483,7 @@ class MultiApp(tk.Tk):
                 self.auto_clear_stall_friend.set(1)
                 self.auto_clear_stall_stall.set(2)
                 self.auto_clear_stall_quantity.set(10)
-                self.auto_clear_stall_pages.set(10)
+                self.auto_clear_stall_pages.set(4)
                 self.auto_clear_stall_interval.set(65)
                 self.auto_clear_stall_close.set(True)
                 for item_id, _label in CLEAR_STALL_ITEM_OPTIONS:
@@ -1533,13 +1508,11 @@ class MultiApp(tk.Tk):
             )
             self.auto_clear_stall_stall.set(bounded("target_stall_id", 2, 1, 4))
             self.auto_clear_stall_quantity.set(bounded("buy_quantity", 10, 10, 1000))
-            self.auto_clear_stall_pages.set(bounded("max_scan_pages", 10, 1, 50))
+            self.auto_clear_stall_pages.set(4)
             self.auto_clear_stall_interval.set(
                 bounded("interval_minutes", 65, 5, 1440)
             )
-            self.auto_clear_stall_close.set(
-                bool(saved.get("close_client_after_run", True))
-            )
+            self.auto_clear_stall_close.set(True)
             allowed_items = saved.get(
                 "allowed_item_ids",
                 [item_id for item_id, _label in CLEAR_STALL_ITEM_OPTIONS],
@@ -1582,7 +1555,7 @@ class MultiApp(tk.Tk):
             stall = max(1, min(4, int(self.auto_clear_stall_stall.get())))
             quantity = max(10, min(1000, int(self.auto_clear_stall_quantity.get())))
             quantity = max(10, (quantity // 10) * 10)
-            pages = max(1, min(50, int(self.auto_clear_stall_pages.get())))
+            pages = 4
             interval = max(5, min(1440, int(self.auto_clear_stall_interval.get())))
         except (tk.TclError, TypeError, ValueError):
             friend, stall, quantity, pages, interval = 1, 2, 10, 10, 65
@@ -1628,7 +1601,7 @@ class MultiApp(tk.Tk):
             "max_scan_pages": pages,
             "interval_minutes": interval,
             "next_run_at": next_run,
-            "close_client_after_run": bool(self.auto_clear_stall_close.get()),
+            "close_client_after_run": True,
             "allowed_item_ids": allowed_items,
             "enabled": enabled,
             "last_checkpoint": str(previous.get("last_checkpoint") or "WAITING"),
