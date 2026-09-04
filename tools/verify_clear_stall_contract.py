@@ -290,6 +290,13 @@ def main() -> int:
         "Chest must not report success from an absent LD template",
     )
     require(client_patch, "clientjs_game_ready_by_live_capture", "PID reset live-frame readiness missing")
+    require(client_patch, '"clientjs_reopen_popup_probe"', "ClientJS reopen popup probe missing")
+    require(client_patch, '"clientjs_post_reset_cleanup"', "Post-reset popup cleanup missing")
+    require(
+        client_patch,
+        "Never resume AUTO\n    # from capture alone",
+        "Live capture must not bypass the ClientJS reopen popup",
+    )
     require(client_patch, "stable_frames >= 3", "Chest adaptive render wait missing")
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
     require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
