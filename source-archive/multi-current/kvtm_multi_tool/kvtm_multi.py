@@ -1539,7 +1539,7 @@ class MultiApp(tk.Tk):
                 )
             else:
                 self.auto_clear_stall_status.set(
-                    "GATE 1 sẵn sàng • chỉ quét, không mua/bán"
+                    "Sẵn sàng Dọn quầy • mua đủ, thu vàng và treo lại đúng VP"
                 )
         finally:
             self._clear_stall_refreshing = False
