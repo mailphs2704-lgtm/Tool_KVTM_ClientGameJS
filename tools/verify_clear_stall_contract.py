@@ -236,7 +236,7 @@ def main() -> int:
     require(builder, "carryover purged", "builder must purge stale carryover state")
     require(builder, "$BridgeInUse", "Builder bridge lock target missing")
     require(builder, "running_clients.json", "Builder DEV PID map cleanup missing")
-    require(builder, "$OwnsBridge", "Builder exact loaded bridge detection missing")
+    require(builder, "$LoadedModule.FileName", "Builder exact loaded bridge detection missing")
     require(builder, "[System.IO.FileShare]::None", "Builder bridge release verification missing")
     require(
         builder,
