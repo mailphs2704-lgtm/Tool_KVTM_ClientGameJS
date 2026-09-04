@@ -2536,6 +2536,7 @@ class MultiApp(tk.Tk):
                 "--pid", str(proc.pid),
                 "--profile-id", str(profile["id"]),
                 "--profile-name", str(profile.get("name") or profile["id"]),
+                "--profile-file", str(PROFILE_FILE),
                 "--function-id", str(function_spec["auto_pro_function_id"]),
                 "--options-json", json.dumps(
                     self._collect_auto_options(profile["id"], function_spec),
