@@ -381,7 +381,13 @@ def _install_controller_patch(adb_controller_module) -> None:
         def find_with_clientjs_prompt(*args, **kwargs):
             nonlocal fallback_used, chest_screen_changed
             name = str(args[0]) if args else str(kwargs.get("tree_type", ""))
-            result = original_find(*args, **kwargs)
+            # AUTO PRO's find_image(click=True) clicks the LD template centre
+            # before ClientJS-specific confirmation runs. Probe only here so
+            # there is exactly one controlled click path.
+            find_kwargs = dict(kwargs)
+            if name == "mo_ruong" and find_kwargs.get("click"):
+                find_kwargs["click"] = False
+            result = original_find(*args, **find_kwargs)
 
             # ruong_go is visible both before and after opening. It is not a
             # valid success signal by itself on ClientJS.
@@ -414,12 +420,12 @@ def _install_controller_patch(adb_controller_module) -> None:
             # Repeat a point like
             # AUTO PRO (up to five taps), and stop immediately after a real
             # modal change so no tap can leak into the game behind it.
-            for x, y in ((500, 470), (500, 520), (500, 590), (433, 557)):
+            for x, y in ((433, 557), (497, 575), (500, 590), (500, 520)):
                 for attempt in range(5):
                     if _stopped(stop_event):
                         return False
                     self.driver.click(x, y)
-                    time.sleep(0.65)
+                    time.sleep(1.0)
                     after = _chest_region()
                     score = _difference(before, after)
                     try:
@@ -436,10 +442,11 @@ def _install_controller_patch(adb_controller_module) -> None:
                     # After the 4-second render wait that animation alone can
                     # move the mean difference above 2.0. A real open replaces
                     # most of the modal region, producing a much larger change.
-                    prompt_visible = bool(
-                        original_find("mo_ruong", threshold=0.70, click=False)
-                    )
-                    if score >= 8.0 or not prompt_visible:
+                    # mo_ruong is an LD asset and can be absent on ClientJS
+                    # even while the touch prompt is still present. Therefore
+                    # disappearance of that template is never success; only a
+                    # real modal-frame transition may complete the operation.
+                    if score >= 8.0:
                         chest_screen_changed = True
                         return True
                     before = after
