@@ -59,6 +59,10 @@ def run_probe(
     from kvtm_automation import AutomationContext, KVAutomation
     from kvtm_automation.errors import AutomationStopped, InventoryFull, NoEmptyStallSlot
     from kvtm_automation.models import VisualFingerprint
+    from kvtm_automation.workflows.clear_stall.designer_policy import (
+        config_path as designer_config_path,
+        load_runtime_policy,
+    )
 
     if not 1 <= int(config.friend_ordinal) <= 7:
         emit_event({"event": "probe_error", "error": "Bạn bè số phải trong khoảng 1..7"})
@@ -274,6 +278,15 @@ def run_probe(
             context,
             image_runtime_ready=bool(image_runtime_ready),
         )
+        designer_policy = load_runtime_policy(designer_config_path())
+        automation.stall.apply_runtime_policy(designer_policy)
+        checkpoint(
+            "clear-stall-designer-policy-applied",
+            **{
+                key: getattr(designer_policy, key)
+                for key in designer_policy.__dataclass_fields__
+            },
+        )
         with report_lock:
             report["bridge_mode"] = str(automation.bridge_mode)
             report["bridge_root"] = str(automation.bridge_root)
@@ -459,7 +472,7 @@ def run_probe(
             automation.stall.open_own_stall()
             sale_view = 1
             current_view = 1
-            collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=8)
+            collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=designer_policy.collect_gold_maximum)
             while pending_resale_fingerprints:
                 context.ensure_running()
                 try:
@@ -478,7 +491,7 @@ def run_probe(
                     automation.stall.next_view()
                     sale_view += 1
                     current_view = sale_view
-                    collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=8)
+                    collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=designer_policy.collect_gold_maximum)
                     continue
                 index = next((
                     i for i, item in enumerate(pending_resale_fingerprints)
@@ -565,7 +578,7 @@ def run_probe(
                     for item_id in allowed_item_ids:
                         if automation.vision.find(
                             item_id,
-                            threshold=0.60,
+                            threshold=designer_policy.recognition_threshold,
                             zone=zone,
                             scales=(0.90, 1.0, 1.10),
                             frame=frame,
@@ -581,7 +594,7 @@ def run_probe(
                 # ClientJS item sprites keep animating for a short time after
                 # the two-swipe step. Retry only still-unmatched occupied cells
                 # on two fresh frames before declaring the view ineligible.
-                for recognition_retry in range(1, 3):
+                for recognition_retry in range(1, designer_policy.recognition_retries + 1):
                     unmatched = [
                         observation for observation in observations
                         if int(observation.physical_slot) not in item_matches
@@ -589,7 +602,7 @@ def run_probe(
                     if not unmatched:
                         break
                     context.ensure_running()
-                    time.sleep(0.35)
+                    time.sleep(designer_policy.recognition_retry_wait)
                     retry_frame = automation.vision.frame()
                     newly_matched = 0
                     for observation in unmatched:
@@ -598,7 +611,7 @@ def run_probe(
                         for item_id in allowed_item_ids:
                             if automation.vision.find(
                                 item_id,
-                                threshold=0.60,
+                                threshold=designer_policy.recognition_threshold,
                                 zone=zone,
                                 scales=(0.85, 0.90, 1.0, 1.10, 1.15),
                                 frame=retry_frame,
