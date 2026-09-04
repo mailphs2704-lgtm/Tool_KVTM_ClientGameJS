@@ -775,6 +775,26 @@ class MultiApp(tk.Tk):
             "AutoOption.TCheckbutton", background="#ffffff",
             foreground="#263653", font=("Segoe UI", 9), padding=(4, 2),
         )
+        style.map(
+            "AutoOption.TCheckbutton",
+            background=[("active", "#edf2f8")],
+            foreground=[("disabled", "#9aa6b8"), ("active", "#1768c4")],
+        )
+        style.configure(
+            "Queue.Treeview", background="#ffffff", fieldbackground="#ffffff",
+            foreground="#263653", rowheight=28, bordercolor="#cbd6e6",
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "Queue.Treeview.Heading", background="#e8eef7",
+            foreground="#174a7e", relief="flat",
+            font=("Segoe UI Semibold", 9), padding=(8, 6),
+        )
+        style.map(
+            "Queue.Treeview",
+            background=[("selected", "#2f80ed")],
+            foreground=[("selected", "#ffffff")],
+        )
         style.configure("Sash", sashthickness=6, background="#dbe3ef")
 
         # The control/account center has a fixed height and no scrollbar.
@@ -1115,6 +1135,7 @@ class MultiApp(tk.Tk):
                 item_row,
                 text=item_label,
                 variable=variable,
+                style="AutoOption.TCheckbutton",
                 command=self._save_clear_stall_config,
             )
             button.pack(side="left", padx=(0, 9))
@@ -1127,7 +1148,7 @@ class MultiApp(tk.Tk):
             action_row,
             text="▶ Bắt đầu Dọn quầy",
             width=25,
-            style="Start.TButton",
+            style="AutoStart.TButton",
             command=self._start_clear_stall_full_resale_probe,
         )
         self.auto_clear_stall_full_resale_probe_button.pack(
@@ -1140,7 +1161,7 @@ class MultiApp(tk.Tk):
         )
         self.auto_clear_stall_stop_button = ttk.Button(
             action_row, text="■ Dừng Dọn quầy", width=25,
-            style="Stop.TButton", command=self._stop_clear_stall,
+            style="AutoStop.TButton", command=self._stop_clear_stall,
         )
         self.auto_clear_stall_stop_button.pack(side="left", padx=(0, 8))
         self.auto_clear_stall_queue_button = ttk.Button(
@@ -2028,8 +2049,11 @@ class MultiApp(tk.Tk):
         window.geometry("620x360")
         window.minsize(560, 300)
         window.transient(self)
+        window.configure(background="#f3f6fa")
 
-        header = ttk.Frame(window, padding=(12, 10, 12, 6))
+        header = ttk.Frame(
+            window, padding=(12, 10, 12, 6), style="Detail.TFrame"
+        )
         header.pack(fill="x")
         ttk.Label(
             header, text="HÀNG CHỜ DỌN QUẦY", style="Section.TLabel"
@@ -2040,13 +2064,16 @@ class MultiApp(tk.Tk):
             style="AutoValue.TLabel",
         ).pack(side="right")
 
-        body = ttk.Frame(window, padding=(12, 4, 12, 8))
+        body = ttk.Frame(
+            window, padding=(12, 4, 12, 8), style="Detail.TFrame"
+        )
         body.pack(fill="both", expand=True)
         tree = ttk.Treeview(
             body,
             columns=("account", "state", "countdown"),
             show="headings",
             selectmode="browse",
+            style="Queue.Treeview",
         )
         tree.heading("account", text="TÊN TÀI KHOẢN")
         tree.heading("state", text="TRẠNG THÁI")
