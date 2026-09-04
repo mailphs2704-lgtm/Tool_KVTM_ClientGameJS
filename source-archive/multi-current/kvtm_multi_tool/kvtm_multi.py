@@ -2093,7 +2093,10 @@ class MultiApp(tk.Tk):
         del rows[:-500]
 
         result = ""
-        if event in {"worker_started", "probe_boot"}:
+        if event == "worker_started" or (
+            event == "probe_boot"
+            and str(payload.get("stage") or "") == "clean-runtime-start"
+        ):
             result = "BẮT ĐẦU"
         elif event in {"worker_finished", "probe_ok"}:
             result = "HOÀN THÀNH"
