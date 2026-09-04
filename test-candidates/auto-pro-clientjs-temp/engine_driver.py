@@ -235,7 +235,8 @@ class EngineDriver(PCDriver):
             kernel32.CloseHandle(handle)
 
     def _close_exact_process(self) -> None:
-        old_pid = self.pid
+        """Close the old client completely without modifying its saved profile."""
+        old_pid = int(self.pid)
         hwnd = find_window(old_pid)
         if hwnd:
             rect = wintypes.RECT()
@@ -243,19 +244,44 @@ class EngineDriver(PCDriver):
                 self._restart_window_rect = (
                     rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
                 )
-            self._trace("pc_restart_close", old_pid=old_pid)
+            self._trace("pc_restart_close_requested", old_pid=old_pid)
             ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
-        for _ in range(60):
+
+        # Give ClientJS/ZingPC up to eight seconds to persist and exit naturally.
+        natural_deadline = time.monotonic() + 8.0
+        while time.monotonic() < natural_deadline:
             if not self._is_process_alive(old_pid):
+                self._trace("pc_restart_old_pid_exited", old_pid=old_pid, forced=False)
                 return
             time.sleep(0.10)
-        handle = kernel32.OpenProcess(0x0001 | 0x00100000, False, old_pid)
-        if handle:
-            try:
-                kernel32.TerminateProcess(handle, 0)
-                kernel32.WaitForSingleObject(handle, 3000)
-            finally:
-                kernel32.CloseHandle(handle)
+
+        # Kill only the verified old PID and its descendants. Profiles/settings
+        # remain read-only; no account file is rewritten during restart.
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        result = subprocess.run(
+            ["taskkill.exe", "/PID", str(old_pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=flags,
+            timeout=10,
+        )
+        self._trace(
+            "pc_restart_process_tree_terminated",
+            old_pid=old_pid,
+            exit_code=int(result.returncode),
+        )
+
+        forced_deadline = time.monotonic() + 5.0
+        while time.monotonic() < forced_deadline:
+            if not self._is_process_alive(old_pid):
+                self._trace("pc_restart_old_pid_exited", old_pid=old_pid, forced=True)
+                return
+            time.sleep(0.10)
+        raise RuntimeError(
+            f"Không thể xác nhận PID ClientJS cũ {old_pid} đã dừng; không mở trùng client"
+        )
 
     def _resize_restarted_client(self, hwnd: int) -> None:
         ref_w, ref_h = self.reference_size
@@ -551,7 +577,8 @@ class EngineDriver(PCDriver):
         self._process = process
         self._restart_pending = False
         hwnd = None
-        for _ in range(150):
+        hwnd_deadline = time.monotonic() + 60.0
+        while time.monotonic() < hwnd_deadline:
             hwnd = find_window(self.pid)
             if hwnd:
                 break
@@ -559,7 +586,7 @@ class EngineDriver(PCDriver):
                 raise RuntimeError(f"Client restart đã thoát với code {process.returncode}")
             time.sleep(0.10)
         if not hwnd:
-            raise RuntimeError("Client restart không tạo cửa sổ sau 15 giây")
+            raise RuntimeError("Client restart không tạo HWND sau 60 giây")
         self._resize_restarted_client(hwnd)
         if self._restart_window_rect:
             old_x, old_y, _old_w, _old_h = self._restart_window_rect
@@ -572,7 +599,12 @@ class EngineDriver(PCDriver):
             )
         self._ensure_bridge()
         self._trace(
-            "pc_restart_complete", old_pid=old_pid, new_pid=self.pid,
+            "pc_restart_runtime_ready",
+            old_pid=old_pid,
+            new_pid=self.pid,
+            hwnd=int(hwnd),
+            bridge_ready=True,
             profile_name=profile.get("name", ""),
+            profile_storage="READ_ONLY",
         )
         return self.pid
