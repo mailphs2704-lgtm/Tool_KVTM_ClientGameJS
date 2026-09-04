@@ -15,6 +15,8 @@ PROBE = ROOT / "components/clientjs-auto/worker/clear_stall_probe_runtime.py"
 BUYING = ROOT / "components/clientjs-auto/kvtm_automation/actions/buying.py"
 SELLING = ROOT / "components/clientjs-auto/kvtm_automation/actions/selling.py"
 STALL = ROOT / "components/clientjs-auto/kvtm_automation/actions/stall.py"
+INVENTORY = ROOT / "components/clientjs-auto/kvtm_automation/actions/inventory.py"
+DESIGNER_POLICY = ROOT / "components/clientjs-auto/kvtm_automation/workflows/clear_stall/designer_policy.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 MULTI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 BUILDER = ROOT / "packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1"
@@ -37,7 +39,7 @@ def forbid(source: str, needle: str, message: str) -> None:
 
 def main() -> int:
     sources = {}
-    for path in (WORKFLOW, CONFIG, WORKER, AUTO_WORKER, PROBE, BUYING, SELLING, STALL, DEV_ENTRY, MULTI):
+    for path in (WORKFLOW, CONFIG, WORKER, AUTO_WORKER, PROBE, BUYING, SELLING, STALL, INVENTORY, DESIGNER_POLICY, DEV_ENTRY, MULTI):
         text = path.read_text(encoding="utf-8")
         ast.parse(text, filename=str(path))
         sources[path] = text
@@ -50,6 +52,8 @@ def main() -> int:
     buying = sources[BUYING]
     selling = sources[SELLING]
     stall = sources[STALL]
+    inventory = sources[INVENTORY]
+    designer_policy = sources[DESIGNER_POLICY]
     dev_entry = sources[DEV_ENTRY]
     multi = sources[MULTI]
     builder = BUILDER.read_text(encoding="utf-8")
@@ -234,8 +238,8 @@ def main() -> int:
     )
     require(
         probe,
-        "collect_own_stall_gold(maximum=8)",
-        "Gold collection must be bounded to the eight visible slots",
+        "collect_own_stall_gold(maximum=designer_policy.collect_gold_maximum)",
+        "Gold collection must use the validated designer policy",
     )
     forbid(
         probe,
@@ -364,10 +368,24 @@ def main() -> int:
     require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
 
     require(multi, '("clear_stall_designer", "Thiết kế")', "Designer tab missing")
-    require(designer, "DEFAULT_STEPS", "Designer default workflow missing")
+    require(designer, "default_document", "Designer default workflow missing")
     require(designer, "self.tree.bind(\"<ButtonRelease-1>\"", "Designer drag reorder missing")
     require(designer, "self.canvas.bind(\"<Button-1>\"", "Designer coordinate drag missing")
     require(designer, "clear-stall-workflow-designer.json", "Designer persistence missing")
+    require(designer, "Mở bảng tạo / chỉnh sửa chức năng", "Detailed designer launcher missing")
+    require(designer, "tk.Toplevel", "Detailed designer window missing")
+    require(designer, '".designer.bak"', "Python source backup missing")
+    require(designer, "ast.parse", "Python source validation missing")
+    require(designer_policy, "class ClearStallRuntimePolicy", "Runtime designer policy missing")
+    require(designer_policy, "REQUIRED_ORDER", "Protected transaction order missing")
+    require(designer_policy, "swipe_pulses != 2", "Two-swipe safety validation missing")
+    require(designer_policy, "def validate_document", "Designer document validation missing")
+    require(designer_policy, "def save_document", "Designer persistence API missing")
+    require(probe, "load_runtime_policy", "Resident runtime must load designer policy")
+    require(probe, '"clear-stall-designer-policy-applied"', "Runtime policy trace missing")
+    require(stall, "def apply_runtime_policy", "Stall action policy hook missing")
+    require(inventory, "self.storage_open_wait", "Storage wait policy hook missing")
+    require(builder, "designer_policy.py", "Builder must package runtime designer policy")
 
     print("CLEAR STALL STATIC CONTRACT VERIFIED")
     print("gate=READ_ONLY_SCAN")
