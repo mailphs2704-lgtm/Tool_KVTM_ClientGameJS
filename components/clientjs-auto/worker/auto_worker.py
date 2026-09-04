@@ -150,7 +150,7 @@ def install_clientjs_runtime(auto_root: Path, profile_id: str):
 
     # This must happen before local_launcher/automation/ADBController imports.
     # Some recovered modules bind "connect" with a from-import; patching only
-    # uiautomator2.connect afterwards lets account 2 fall back to 127.0.0.1:5555.
+    # uiautomator2.connect afterwards lets account 2 fall back to the legacy ADB endpoint.
     u2.connect = pc_connect
     importlib.import_module("local_launcher")
     u2.connect = pc_connect
