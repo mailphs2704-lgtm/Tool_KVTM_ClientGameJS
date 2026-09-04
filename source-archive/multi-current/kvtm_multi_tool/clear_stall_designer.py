@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import sys
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
@@ -33,6 +34,7 @@ class ClearStallDesigner:
         spec = importlib.util.spec_from_file_location("kvtm_clear_stall_designer_policy", self.policy_file)
         module = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
+        sys.modules[spec.name] = module
         spec.loader.exec_module(module)
         return module
 
