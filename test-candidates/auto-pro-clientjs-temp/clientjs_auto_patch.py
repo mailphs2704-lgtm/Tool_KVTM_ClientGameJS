@@ -221,7 +221,7 @@ def _pc_open_game(self, stop_event=None):
         elif (
             time.monotonic() - started >= 2.0
             and time.monotonic() - last_reopen_click >= 2.5
-            and reopen_clicks < 6
+            and reopen_clicks < 2
         ):
             # AUTO PRO always taps this account/reopen position while waiting,
             # even when the tai_khoan asset is not recognised. ClientJS shows
@@ -231,7 +231,8 @@ def _pc_open_game(self, stop_event=None):
             reopen_clicks += 1
             last_reopen_click = time.monotonic()
             clicked_intermediate = True
-            rendered_streak = 0
+            # Do not reset rendered_streak here. Resetting it on every popup
+            # tap prevented the three-frame readiness condition forever.
             try:
                 self.driver._trace(
                     "clientjs_reopen_popup_probe",
@@ -279,12 +280,30 @@ def _pc_open_game(self, stop_event=None):
         self.update_progress(f"Chờ : {remaining}s")
         time.sleep(1.0)
 
+    post_popup_frame_streak = 0
     for cleanup_attempt in range(12):
         if _stopped(stop_event):
             return
         if _game_anchor(self):
             self.update_progress("Bắt Đầu Cào")
             return
+        if ready_by_capture and _rendered_client_frame(self) is not None:
+            post_popup_frame_streak += 1
+            if post_popup_frame_streak >= 3:
+                self.update_progress("Bắt Đầu AUTO trên PID ClientJS mới")
+                try:
+                    self.driver._trace(
+                        "clientjs_post_reset_ready",
+                        pid=int(getattr(self.driver, "pid", 0)),
+                        consecutive_frames=post_popup_frame_streak,
+                        reopen_clicks=reopen_clicks,
+                    )
+                except Exception:
+                    pass
+                return
+            time.sleep(0.5)
+            continue
+        post_popup_frame_streak = 0
         closed_popup = (
             _find(self, "close_game", 0.80, click=True)
             or _find(self, "x_popup_event", 0.76, click=True)
@@ -314,9 +333,8 @@ def _pc_open_game(self, stop_event=None):
         except Exception:
             pass
 
-    # A valid bridge frame may still be the reopen popup. Never resume AUTO
-    # from capture alone: continuing would leave the visible status waiting
-    # and send farm actions into the popup.
+    # No anchor and no stable post-popup frame: stop explicitly instead of
+    # leaving the account indefinitely in a misleading waiting state.
     raise RuntimeError(
         "ClientJS đã nhận PID mới nhưng chưa đóng được popup mở lại để vào màn hình chính"
     )
