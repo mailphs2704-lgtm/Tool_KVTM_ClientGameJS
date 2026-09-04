@@ -191,30 +191,28 @@ class StallActions:
         return collected
 
     def next_view(self) -> None:
-        """Move four slots using AUTO PRO's proven stall-drag timing."""
-        for step in range(1, 3):
-            self.context.ensure_running()
-            self.vision.driver.swipe(
-                633, 546, 540, 540, duration=STALL_SWIPE_DURATION
-            )
-            self.context.log(
-                f"Kéo quầy tới view kế • nhịp {step}/2 • "
-                f"duration={STALL_SWIPE_DURATION:.2f}s"
-            )
-            self.waiter.sleep(STALL_RENDER_SETTLE)
+        """Move exactly one stall step, then return immediately for a new scan."""
+        self.context.ensure_running()
+        self.vision.driver.swipe(
+            633, 546, 540, 540, duration=STALL_SWIPE_DURATION
+        )
+        self.context.log(
+            "Kéo quầy tới view kế • 1 nhịp rồi scan ngay • "
+            f"duration={STALL_SWIPE_DURATION:.2f}s"
+        )
+        self.waiter.sleep(STALL_RENDER_SETTLE)
 
     def previous_view(self) -> None:
-        """Return four slots with the same stable timing as forward scan."""
-        for step in range(1, 3):
-            self.context.ensure_running()
-            self.vision.driver.swipe(
-                540, 540, 633, 546, duration=STALL_SWIPE_DURATION
-            )
-            self.context.log(
-                f"Kéo quầy về view trước • nhịp {step}/2 • "
-                f"duration={STALL_SWIPE_DURATION:.2f}s"
-            )
-            self.waiter.sleep(STALL_RENDER_SETTLE)
+        """Return exactly one stall step with the same stable timing."""
+        self.context.ensure_running()
+        self.vision.driver.swipe(
+            540, 540, 633, 546, duration=STALL_SWIPE_DURATION
+        )
+        self.context.log(
+            "Kéo quầy về view trước • 1 nhịp • "
+            f"duration={STALL_SWIPE_DURATION:.2f}s"
+        )
+        self.waiter.sleep(STALL_RENDER_SETTLE)
 
     def rewind_to_first(self, current_view: int) -> None:
         for _ in range(max(0, int(current_view) - 1)):
