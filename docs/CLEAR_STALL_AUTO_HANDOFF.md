@@ -215,3 +215,20 @@ DO_NOT_TOUCH: components/workspace/**, KVTM_WORKSPACE_CONTROL.bat
 - Khi kho clone đầy giữa lúc mua, Gate 5 chỉ treo các fingerprint VP đã xác minh mua trong chính lượt hiện tại.
 - Sau khi giải phóng kho, clone quay lại đúng nhà đang dọn, mở lại quầy và tiếp tục cho đến đủ target.
 - Không cộng số lượng cho click thất bại và không bán vật phẩm ngoài manifest đã mua.
+
+
+## 11. Bảng xây dựng chức năng Dọn quầy
+
+- Mở Multi, chọn tab **Thiết kế**, rồi bấm **Mở bảng tạo / chỉnh sửa chức năng**.
+- Tài liệu runtime nằm tại `data-dev/clear-stall-workflow-designer.json`; source chính sách nằm trong
+  `components/clientjs-auto/kvtm_automation/workflows/clear_stall/designer_policy.py`.
+- Bảng cho phép sắp xếp, bật/tắt, thêm/nhân bản/xóa bước; xem template, vùng nhận diện,
+  điểm click, đường swipe và vị trí hàm Python; đồng thời chỉnh policy, JSON và source Python.
+- **Áp dụng runtime** chỉ thành công sau khi kiểm tra kiểu dữ liệu, giới hạn tọa độ và thứ tự
+  giao dịch bắt buộc `scan → buy → swipe_1 → swipe_2 → scan_next`.
+- Một nhịp quầy luôn gồm đúng hai swipe. Trình kiểm tra không cho lưu cấu hình phá vỡ quy tắc này.
+- Runtime hiện đọc trực tiếp các giá trị nhận diện, retry, thời gian/điểm swipe, giới hạn thu vàng
+  và thời gian chờ mở kho. Thay đổi có hiệu lực ở lượt Dọn quầy kế tiếp.
+- Khi lưu source Python trong bảng, tool chạy `ast.parse` trước và tạo bản `.designer.bak`.
+  Sửa source là chế độ chuyên sâu; sau khi cập nhật source từ Git, thay đổi cục bộ có thể bị ghi đè,
+  vì vậy cần tạo backup trước khi pull/build.
