@@ -623,6 +623,18 @@ class MultiDevApp(production.MultiApp):
             name=f"kvtm-dev-clear-stall-probe-{profile_id[:8]}",
             daemon=True,
         )
+        watchdogs = getattr(self, "_clear_stall_probe_watchdogs", None)
+        if watchdogs is None:
+            watchdogs = {}
+            self._clear_stall_probe_watchdogs = watchdogs
+        watchdogs[profile_id] = {
+            "last_action_at": time.monotonic(),
+            "purchased_quantity": 0,
+            "sold_quantity": 0,
+            "collected_gold_slots": 0,
+            "requested_quantity": quantity,
+            "timed_out": False,
+        }
         self._dev_probe_threads[profile_id] = thread
         self._append_probe_log(
             profile_id,
@@ -633,6 +645,10 @@ class MultiDevApp(production.MultiApp):
             f"{len(allowed_item_ids)} loại được chọn"
         )
         thread.start()
+        self.after(
+            5000,
+            lambda pid=profile_id: self._watch_clear_stall_probe(pid),
+        )
         self._refresh_clear_stall_panel()
 
     def _run_probe_thread(
@@ -676,6 +692,7 @@ class MultiDevApp(production.MultiApp):
             def sink(payload: dict) -> None:
                 data = dict(payload)
                 data["profile_id"] = profile_id
+                self._touch_clear_stall_watchdog(profile_id, data)
                 self._append_probe_event(profile_id, data)
                 self.after(
                     0,
@@ -732,9 +749,14 @@ class MultiDevApp(production.MultiApp):
             self.after(0, lambda data=exit_payload: self._finish_inprocess_probe(data))
 
     def _handle_clear_stall_probe_event(self, payload: dict) -> None:
-        self._record_clear_stall_activity(payload)
         profile_id = str(payload.get("profile_id") or "")
         event = str(payload.get("event") or "")
+        if (
+            self._clear_stall_probe_terminal.get(profile_id) == "TEMP_PASS"
+            and event in {"probe_error", "probe_stopped", "probe_exit"}
+        ):
+            return
+        self._record_clear_stall_activity(payload)
         message = str(payload.get("message") or "")
         stage = str(payload.get("stage") or "")
         transaction_gate = str(payload.get("transaction_gate") or "")
@@ -904,9 +926,119 @@ class MultiDevApp(production.MultiApp):
                     "PASS" if code == 0 else "FAIL"
                 )
 
+    def _touch_clear_stall_watchdog(
+        self, profile_id: str, payload: dict
+    ) -> None:
+        state = getattr(self, "_clear_stall_probe_watchdogs", {}).get(profile_id)
+        if not state or state.get("timed_out"):
+            return
+        for key in (
+            "requested_quantity", "purchased_quantity", "sold_quantity",
+            "collected_gold_slots",
+        ):
+            value = int(payload.get(key) or 0)
+            if value:
+                state[key] = max(int(state.get(key) or 0), value)
+
+        event = str(payload.get("event") or "")
+        message = str(payload.get("message") or "")
+        stage = str(payload.get("stage") or "")
+        capture_only = (
+            "CAPTURE metadata" in message
+            or message.startswith("Capture:")
+            or message.startswith("Đã chụp ")
+            or "capture" in stage.lower()
+        )
+        if event in {
+            "probe_purchase_ok", "probe_resale_ok", "probe_ok",
+            "probe_error", "probe_stopped",
+        } or (event in {"probe_boot", "probe_progress"} and not capture_only):
+            state["last_action_at"] = time.monotonic()
+
+    def _watch_clear_stall_probe(self, profile_id: str) -> None:
+        state = getattr(self, "_clear_stall_probe_watchdogs", {}).get(profile_id)
+        if not state or state.get("timed_out"):
+            return
+        if not self._probe_thread_alive(profile_id):
+            self._clear_stall_probe_watchdogs.pop(profile_id, None)
+            return
+
+        # Temporary overnight safety: capture frames do not count as workflow
+        # progress. Five minutes without navigation/purchase/resale progress
+        # closes only this clone and releases the serialized queue safely.
+        stalled_for = time.monotonic() - float(
+            state.get("last_action_at") or time.monotonic()
+        )
+        if stalled_for < 300.0:
+            self.after(
+                5000,
+                lambda pid=profile_id: self._watch_clear_stall_probe(pid),
+            )
+            return
+
+        state["timed_out"] = True
+        stop_event = self._dev_probe_stop_events.get(profile_id)
+        if stop_event is not None:
+            stop_event.set()
+        requested = int(state.get("requested_quantity") or 0)
+        purchased = int(state.get("purchased_quantity") or 0)
+        sold = int(state.get("sold_quantity") or 0)
+        gold = int(state.get("collected_gold_slots") or 0)
+        message = (
+            "TẠM PASS watchdog • không có tiến độ thao tác 5 phút • "
+            f"mua {purchased}/{requested} VP • treo {sold} VP • "
+            f"thu {gold} ô vàng • đã đóng ClientJS và trả về hàng chờ"
+        )
+        payload = {
+            "event": "probe_temp_pass",
+            "profile_id": profile_id,
+            "message": message,
+            "requested_quantity": requested,
+            "purchased_quantity": purchased,
+            "sold_quantity": sold,
+            "collected_gold_slots": gold,
+        }
+        self._append_probe_event(profile_id, payload)
+        self._record_clear_stall_activity(payload)
+        self._clear_stall_probe_terminal[profile_id] = "TEMP_PASS"
+
+        job = self._clear_stall_job(profile_id)
+        interval = max(5, int(job.get("interval_minutes", 65) or 65))
+        finished_at = time.time()
+        job["last_checkpoint"] = message
+        job["last_result"] = {
+            "ok": True,
+            "temporary_pass": True,
+            "reason": "watchdog_no_action_300s",
+            "finished_at": finished_at,
+            "requested_quantity": requested,
+            "purchased_quantity": purchased,
+            "sold_quantity": sold,
+            "collected_gold_slots": gold,
+        }
+        job["next_run_at"] = (
+            finished_at + interval * 60 if job.get("enabled", False) else 0
+        )
+        self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+        core.save_settings(self.settings)
+        if profile_id == self._active_profile_id:
+            self.auto_clear_stall_status.set(message)
+        self._append_probe_log(profile_id, message)
+
+        proc = self.processes.get(profile_id)
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError as exc:
+                self._append_probe_log(
+                    profile_id, f"WATCHDOG close ClientJS failed: {exc}"
+                )
+        self.after(1500, self._refresh_clear_stall_panel)
+
     def _finish_inprocess_probe(self, payload: dict) -> None:
         profile_id = str(payload.get("profile_id") or "")
         self._dev_probe_threads.pop(profile_id, None)
+        getattr(self, "_clear_stall_probe_watchdogs", {}).pop(profile_id, None)
         self._dev_probe_stop_events.pop(profile_id, None)
         self._handle_clear_stall_probe_event(payload)
         self._mark_probe_console_done(profile_id, "In-process resident probe finished")
