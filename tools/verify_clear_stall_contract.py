@@ -186,18 +186,38 @@ def main() -> int:
     )
     require(
         probe,
-        "swipe_pulses=2",
-        "Own-stall transition must document the proven two-pulse drag",
+        "swipe_pulses=1",
+        "Each own-stall transition must use exactly one swipe",
     )
     require(
         probe,
-        '"SCAN_COLLECT_RESELL_THEN_SWIPE"',
-        "Own-stall per-view transaction order missing",
+        '"SWIPE_ONCE_SCAN_COLLECT_RESELL"',
+        "One-swipe then scan/collect/resell order missing",
     )
     require(
         probe,
-        "collected_gold_slots += scan_and_collect_own_view(",
-        "Each newly revealed view must collect gold before resale",
+        "except InventoryFull:",
+        "Full clone inventory recovery missing",
+    )
+    require(
+        probe,
+        "flush_pending_inventory(",
+        "Verified-purchase inventory flush missing",
+    )
+    require(
+        probe,
+        "RestartFriendScanAfterInventoryFlush",
+        "Purchase scan must restart after inventory flush",
+    )
+    require(
+        stall,
+        "1 nhịp rồi scan ngay",
+        "Stall must return to scan after one swipe",
+    )
+    forbid(
+        stall,
+        "for step in range(1, 3):",
+        "Two consecutive stall swipes would skip middle listings",
     )
     forbid(
         probe,
@@ -335,8 +355,8 @@ def main() -> int:
     print("gate5_limit=all_verified_purchases_up_to_20_batches")
     print("gate5_accounting=one_token_per_x10_sale")
     print("gate5_wrong_item=provenance_only_threshold_0.60")
-    print("gate5_own_stall_views=scan_collect_resell_then_swipe_1..4")
-    print("gate5_own_stall_drag=two_pulses_per_view")
+    print("gate5_own_stall_views=scan_collect_resell_one_swipe_repeat")
+    print("gate5_own_stall_drag=one_pulse_then_immediate_scan")
     print("gui=single_full_clear_stall_action")
     print("cycle=pass_close_reset_countdown_release_queue")
     print("backup=one_click_local_only")
