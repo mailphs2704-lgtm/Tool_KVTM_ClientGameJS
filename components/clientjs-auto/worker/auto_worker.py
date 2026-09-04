@@ -132,34 +132,49 @@ class GuiProxy:
 
 
 def install_clientjs_runtime(auto_root: Path, profile_id: str):
+    """Install the PC transport before any recovered module can bind ADB."""
     sys.path.insert(0, str(auto_root))
-    importlib.import_module("local_launcher")
 
     import uiautomator2 as u2
     from engine_driver import EngineDriver
-    from adaptive_cv import install_adaptive_matching
-    from clientjs_auto_patch import _install_controller_patch
-    import adb_controller
-
-    install_adaptive_matching()
-    _install_controller_patch(adb_controller)
 
     original_connect = u2.connect
 
     def pc_connect(device_id=None, *args, **kwargs):
         value = str(device_id or "")
         if value.startswith("PC:"):
-            # Bind the driver to the immutable DEV profile, not only the
-            # current process ID. ClientJS restart creates a new PID; using
-            # the profile lets EngineDriver relaunch and rebind safely to the
-            # exact same account instead of waiting on the dead PID.
+            # Use the immutable profile ID so every account gets its own
+            # EngineDriver and can safely adopt a replacement ClientJS PID.
             return EngineDriver(str(profile_id), reference_size=(1000, 1000))
         return original_connect(device_id, *args, **kwargs)
 
+    # This must happen before local_launcher/automation/ADBController imports.
+    # Some recovered modules bind "connect" with a from-import; patching only
+    # uiautomator2.connect afterwards lets account 2 fall back to 127.0.0.1:5555.
+    u2.connect = pc_connect
+    importlib.import_module("local_launcher")
     u2.connect = pc_connect
     importlib.import_module("pc_auto_launcher")
     u2.connect = pc_connect
-    return importlib.import_module("automation")
+
+    from adaptive_cv import install_adaptive_matching
+    from clientjs_auto_patch import _install_controller_patch
+    import adb_controller
+
+    # Cover both module-style and from-import aliases captured by recovered pyc.
+    for alias in ("connect", "u2_connect", "uiautomator_connect"):
+        if hasattr(adb_controller, alias):
+            setattr(adb_controller, alias, pc_connect)
+    bound_u2 = getattr(adb_controller, "u2", None)
+    if bound_u2 is not None and hasattr(bound_u2, "connect"):
+        bound_u2.connect = pc_connect
+
+    install_adaptive_matching()
+    _install_controller_patch(adb_controller)
+    u2.connect = pc_connect
+    module = importlib.import_module("automation")
+    u2.connect = pc_connect
+    return module
 
 
 
