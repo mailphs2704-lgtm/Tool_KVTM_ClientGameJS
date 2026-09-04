@@ -618,6 +618,7 @@ class MultiDevApp(production.MultiApp):
                     if profile_id in self._clear_stall_gate3_profiles
                     else (1 if profile_id in self._clear_stall_gate2_profiles else 0)
                 ),
+                allowed_item_ids,
             ),
             name=f"kvtm-dev-clear-stall-probe-{profile_id[:8]}",
             daemon=True,
@@ -646,6 +647,7 @@ class MultiDevApp(production.MultiApp):
         work_dir: Path,
         stop_event: threading.Event,
         purchase_limit: int,
+        allowed_item_ids: tuple[str, ...],
     ) -> None:
         returncode = 1
         try:
