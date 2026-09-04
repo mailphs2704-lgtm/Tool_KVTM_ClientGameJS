@@ -132,8 +132,12 @@ class GuiProxy:
 
 
 def install_clientjs_runtime(auto_root: Path, profile_id: str):
-    """Install the PC transport before any recovered module can bind ADB."""
+    """Bootstrap bundled dependencies, then lock every PC transport alias."""
     sys.path.insert(0, str(auto_root))
+
+    # local_launcher exposes AUTO_PRO/_internal where uiautomator2 is bundled.
+    # It must run before importing uiautomator2 in the system Python worker.
+    importlib.import_module("local_launcher")
 
     import uiautomator2 as u2
     from engine_driver import EngineDriver
@@ -143,16 +147,10 @@ def install_clientjs_runtime(auto_root: Path, profile_id: str):
     def pc_connect(device_id=None, *args, **kwargs):
         value = str(device_id or "")
         if value.startswith("PC:"):
-            # Use the immutable profile ID so every account gets its own
-            # EngineDriver and can safely adopt a replacement ClientJS PID.
+            # Read the immutable profile only; never rewrite profile storage.
             return EngineDriver(str(profile_id), reference_size=(1000, 1000))
         return original_connect(device_id, *args, **kwargs)
 
-    # This must happen before local_launcher/automation/ADBController imports.
-    # Some recovered modules bind "connect" with a from-import; patching only
-    # uiautomator2.connect afterwards lets account 2 fall back to the legacy ADB endpoint.
-    u2.connect = pc_connect
-    importlib.import_module("local_launcher")
     u2.connect = pc_connect
     importlib.import_module("pc_auto_launcher")
     u2.connect = pc_connect
@@ -161,7 +159,7 @@ def install_clientjs_runtime(auto_root: Path, profile_id: str):
     from clientjs_auto_patch import _install_controller_patch
     import adb_controller
 
-    # Cover both module-style and from-import aliases captured by recovered pyc.
+    # Recovered bytecode may retain a from-import alias during bootstrap.
     for alias in ("connect", "u2_connect", "uiautomator_connect"):
         if hasattr(adb_controller, alias):
             setattr(adb_controller, alias, pc_connect)
@@ -173,6 +171,14 @@ def install_clientjs_runtime(auto_root: Path, profile_id: str):
     _install_controller_patch(adb_controller)
     u2.connect = pc_connect
     module = importlib.import_module("automation")
+
+    # automation.pyc can retain a second module-local alias.
+    for alias in ("connect", "u2_connect", "uiautomator_connect"):
+        if hasattr(module, alias):
+            setattr(module, alias, pc_connect)
+    module_u2 = getattr(module, "u2", None)
+    if module_u2 is not None and hasattr(module_u2, "connect"):
+        module_u2.connect = pc_connect
     u2.connect = pc_connect
     return module
 
