@@ -588,7 +588,8 @@ def run_probe(
                     ]
                     if not unmatched:
                         break
-                    automation.waiter.sleep(0.35)
+                    context.ensure_running()
+                    time.sleep(0.35)
                     retry_frame = automation.vision.frame()
                     newly_matched = 0
                     for observation in unmatched:
