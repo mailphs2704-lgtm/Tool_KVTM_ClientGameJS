@@ -251,6 +251,16 @@ def main() -> int:
     )
     require(
         probe,
+        '"stall-intermediate-swipe-scan"',
+        "Friend-stall purchase must scan between both swipe pulses",
+    )
+    require(
+        probe,
+        '"SWIPE_SCAN_BUY_THEN_SWIPE"',
+        "Intermediate listing purchase order must be swipe-scan-buy-swipe",
+    )
+    require(
+        probe,
         '"stall-view-recognition-retry"',
         "Post-swipe animated item recognition retries missing",
     )
