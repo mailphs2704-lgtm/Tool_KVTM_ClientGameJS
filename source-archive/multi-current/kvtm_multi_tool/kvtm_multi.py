@@ -1125,7 +1125,8 @@ class MultiApp(tk.Tk):
         action_row.grid(row=3, column=0, columnspan=7, sticky="w")
         self.auto_clear_stall_full_resale_probe_button = ttk.Button(
             action_row,
-            text="▶ Dọn quầy: Mua đủ + thu vàng + treo lại toàn bộ",
+            text="▶ Bắt đầu Dọn quầy",
+            width=25,
             style="Start.TButton",
             command=self._start_clear_stall_full_resale_probe,
         )
@@ -1138,10 +1139,15 @@ class MultiApp(tk.Tk):
             self.auto_clear_stall_full_resale_probe_button
         )
         self.auto_clear_stall_stop_button = ttk.Button(
-            action_row, text="■ Dừng",
+            action_row, text="■ Dừng Dọn quầy", width=25,
             style="Stop.TButton", command=self._stop_clear_stall,
         )
-        self.auto_clear_stall_stop_button.pack(side="left")
+        self.auto_clear_stall_stop_button.pack(side="left", padx=(0, 8))
+        self.auto_clear_stall_queue_button = ttk.Button(
+            action_row, text="☷ Danh sách hàng chờ", width=25,
+            style="Action.TButton", command=self._show_clear_stall_queue,
+        )
+        self.auto_clear_stall_queue_button.pack(side="left")
         for widget in (
             self.auto_clear_stall_friend_spin,
             self.auto_clear_stall_stall_spin,
@@ -1998,6 +2004,132 @@ class MultiApp(tk.Tk):
         jobs = self.settings.setdefault("clear_stall_jobs", {})
         job = jobs.get(profile_id, {})
         return job if isinstance(job, dict) else {}
+
+    @staticmethod
+    def _format_clear_stall_countdown(seconds: float) -> str:
+        total = max(0, int(round(seconds)))
+        days, total = divmod(total, 86400)
+        hours, total = divmod(total, 3600)
+        minutes, secs = divmod(total, 60)
+        prefix = f"{days} ngày " if days else ""
+        return f"{prefix}{hours:02d}:{minutes:02d}:{secs:02d}"
+
+    def _show_clear_stall_queue(self) -> None:
+        current = getattr(self, "_clear_stall_queue_window", None)
+        if current is not None and current.winfo_exists():
+            current.deiconify()
+            current.lift()
+            current.focus_force()
+            return
+
+        window = tk.Toplevel(self)
+        self._clear_stall_queue_window = window
+        window.title("Danh sách hàng chờ Dọn quầy")
+        window.geometry("620x360")
+        window.minsize(560, 300)
+        window.transient(self)
+
+        header = ttk.Frame(window, padding=(12, 10, 12, 6))
+        header.pack(fill="x")
+        ttk.Label(
+            header, text="HÀNG CHỜ DỌN QUẦY", style="Section.TLabel"
+        ).pack(side="left")
+        self._clear_stall_queue_summary = tk.StringVar(value="Đang tải...")
+        ttk.Label(
+            header, textvariable=self._clear_stall_queue_summary,
+            style="AutoValue.TLabel",
+        ).pack(side="right")
+
+        body = ttk.Frame(window, padding=(12, 4, 12, 8))
+        body.pack(fill="both", expand=True)
+        tree = ttk.Treeview(
+            body,
+            columns=("account", "state", "countdown"),
+            show="headings",
+            selectmode="browse",
+        )
+        tree.heading("account", text="TÊN TÀI KHOẢN")
+        tree.heading("state", text="TRẠNG THÁI")
+        tree.heading("countdown", text="THỜI GIAN CÒN LẠI")
+        tree.column("account", width=190, anchor="w")
+        tree.column("state", width=230, anchor="w")
+        tree.column("countdown", width=150, anchor="center")
+        scrollbar = ttk.Scrollbar(body, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        self._clear_stall_queue_tree = tree
+
+        ttk.Label(
+            window,
+            text="Danh sách tự cập nhật mỗi giây và xếp từ thời gian ít nhất đến nhiều nhất.",
+            style="AutoValue.TLabel",
+            anchor="w",
+        ).pack(fill="x", padx=12, pady=(0, 10))
+
+        def close_queue() -> None:
+            self._clear_stall_queue_window = None
+            self._clear_stall_queue_tree = None
+            window.destroy()
+
+        window.protocol("WM_DELETE_WINDOW", close_queue)
+        self._refresh_clear_stall_queue()
+
+    def _refresh_clear_stall_queue(self) -> None:
+        window = getattr(self, "_clear_stall_queue_window", None)
+        tree = getattr(self, "_clear_stall_queue_tree", None)
+        if window is None or tree is None or not window.winfo_exists():
+            return
+
+        now = time.time()
+        names = {
+            str(profile.get("id") or ""): str(
+                profile.get("name") or profile.get("id") or "Không tên"
+            )
+            for profile in self.profiles
+        }
+        jobs = self.settings.get("clear_stall_jobs", {})
+        rows = []
+        if isinstance(jobs, dict):
+            for profile_id, job in jobs.items():
+                if not isinstance(job, dict) or not bool(job.get("enabled", False)):
+                    continue
+                profile_key = str(profile_id)
+                worker = self._clear_stall_workers.get(profile_key)
+                running = worker is not None and worker.poll() is None
+                starting = profile_key in self._clear_stall_starting
+                try:
+                    due = float(job.get("next_run_at", 0) or 0)
+                except (TypeError, ValueError):
+                    due = 0.0
+                remaining = max(0.0, due - now) if due > 0 else 0.0
+                checkpoint = str(job.get("last_checkpoint") or "").strip()
+                if running:
+                    state = checkpoint or "Đang chạy"
+                    countdown = "ĐANG CHẠY"
+                elif starting:
+                    state = checkpoint or "Đang khởi động"
+                    countdown = "ĐANG CHẠY"
+                elif due <= 0 or due <= now:
+                    state = checkpoint if "xếp hàng" in checkpoint.lower() else "Đang xếp hàng"
+                    countdown = "00:00:00"
+                else:
+                    state = "Chờ đến lượt"
+                    countdown = self._format_clear_stall_countdown(remaining)
+                rows.append((
+                    remaining,
+                    names.get(profile_key, profile_key),
+                    state,
+                    countdown,
+                ))
+
+        rows.sort(key=lambda row: (row[0], row[1].casefold()))
+        for item in tree.get_children():
+            tree.delete(item)
+        for _remaining, account_name, state, countdown in rows:
+            tree.insert("", "end", values=(account_name, state, countdown))
+        self._clear_stall_queue_summary.set(f"{len(rows)} tài khoản")
+        window.after(1000, self._refresh_clear_stall_queue)
 
     def _set_clear_stall_checkpoint(
         self, profile_id: str, checkpoint: str, result=None
