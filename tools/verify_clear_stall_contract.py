@@ -208,6 +208,21 @@ def main() -> int:
     )
     require(
         probe,
+        "OWN_STALL_RESALE_SCAN_LIMIT = STALL_VIEW_COUNT + 1",
+        "Own-stall terminal alignment scan allowance missing",
+    )
+    require(
+        probe,
+        '"gate5-own-stall-post-swipe-scan-required"',
+        "Final two-swipe movement must force another own-stall scan",
+    )
+    require(
+        probe,
+        "terminal_alignment=(next_sale_view > STALL_VIEW_COUNT)",
+        "Terminal own-stall alignment evidence missing",
+    )
+    require(
+        probe,
         "except InventoryFull:",
         "Full clone inventory recovery missing",
     )
