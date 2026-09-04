@@ -183,8 +183,35 @@ def _rendered_client_frame(controller):
 
 
 def _pc_open_game(self, stop_event=None):
-    """Restart ClientJS directly; never require the Android launcher icon."""
-    self.update_progress("Khởi động lại ClientJS")
+    """Reuse a live game first; restart only when no usable frame is available."""
+    self.update_progress("Kiểm tra giao diện ClientJS đang chạy")
+    attached_frame_streak = 0
+    for _attempt in range(12):
+        if _stopped(stop_event):
+            return
+        if _game_anchor(self):
+            self.update_progress("Bắt Đầu AUTO • đã nhận giao diện hiện tại")
+            return
+        attached_frame_streak = (
+            attached_frame_streak + 1
+            if _rendered_client_frame(self) is not None
+            else 0
+        )
+        if attached_frame_streak >= 3:
+            self.update_progress("Bắt Đầu AUTO • bridge có 3 frame ổn định")
+            try:
+                self.driver._trace(
+                    "clientjs_attached_game_ready",
+                    pid=int(getattr(self.driver, "pid", 0)),
+                    consecutive_frames=attached_frame_streak,
+                    restart_skipped=True,
+                )
+            except Exception:
+                pass
+            return
+        time.sleep(0.5)
+
+    self.update_progress("Không có frame ổn định • khởi động lại ClientJS")
     self.driver.app_stop("vn.kvtm.js")
     if _stopped(stop_event):
         return
@@ -281,14 +308,39 @@ def _pc_open_game(self, stop_event=None):
         time.sleep(1.0)
 
     post_popup_frame_streak = 0
+    cleanup_actions = 0
     for cleanup_attempt in range(12):
         if _stopped(stop_event):
             return
         if _game_anchor(self):
-            self.update_progress("Bắt Đầu Cào")
+            self.update_progress("Bắt Đầu AUTO trên PID ClientJS mới")
             return
-        if ready_by_capture and _rendered_client_frame(self) is not None:
-            post_popup_frame_streak += 1
+
+        closed_popup = (
+            _find(self, "close_game", 0.80, click=True)
+            or _find(self, "x_popup_event", 0.76, click=True)
+            or _find(self, "dong_y", 0.76, click=True)
+        )
+        if closed_popup:
+            cleanup_actions += 1
+            post_popup_frame_streak = 0
+            time.sleep(0.7)
+            continue
+
+        if cleanup_attempt < 2:
+            # A restarted ClientJS commonly needs the untemplated reopen tap.
+            self.driver.click(981, 338)
+            cleanup_actions += 1
+            post_popup_frame_streak = 0
+            action = "reopen_click"
+            time.sleep(1.0)
+        elif ready_by_capture and cleanup_actions > 0:
+            post_popup_frame_streak = (
+                post_popup_frame_streak + 1
+                if _rendered_client_frame(self) is not None
+                else 0
+            )
+            action = "verify_post_cleanup_frame"
             if post_popup_frame_streak >= 3:
                 self.update_progress("Bắt Đầu AUTO trên PID ClientJS mới")
                 try:
@@ -296,30 +348,16 @@ def _pc_open_game(self, stop_event=None):
                         "clientjs_post_reset_ready",
                         pid=int(getattr(self.driver, "pid", 0)),
                         consecutive_frames=post_popup_frame_streak,
-                        reopen_clicks=reopen_clicks,
+                        cleanup_actions=cleanup_actions,
                     )
                 except Exception:
                     pass
                 return
             time.sleep(0.5)
-            continue
-        post_popup_frame_streak = 0
-        closed_popup = (
-            _find(self, "close_game", 0.80, click=True)
-            or _find(self, "x_popup_event", 0.76, click=True)
-            or _find(self, "dong_y", 0.76, click=True)
-        )
-        if closed_popup:
-            time.sleep(0.5)
-            continue
-        if cleanup_attempt < 4:
-            # Repeat AUTO PRO's unconditional reopen/account tap. This is what
-            # moves ClientJS from its post-reset popup into the real game.
-            self.driver.click(981, 338)
-            action = "reopen_click"
-            time.sleep(1.0)
         else:
             self.press_back(stop_event)
+            cleanup_actions += 1
+            post_popup_frame_streak = 0
             action = "back"
             time.sleep(0.5)
         try:
