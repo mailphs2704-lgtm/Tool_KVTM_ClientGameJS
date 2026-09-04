@@ -351,6 +351,17 @@ def main() -> int:
         "Gate 5 worker thread must receive selected items explicitly",
     )
     require(auto_worker, '"client_pid_changed"', "Worker PID replacement event missing")
+    require(auto_worker, "Install the PC transport before any recovered module can bind ADB", "Early PC transport install missing")
+    require(auto_worker, 'for alias in ("connect", "u2_connect", "uiautomator_connect")', "Recovered ADB connect-alias patch missing")
+    require(auto_worker, "EngineDriver(str(profile_id)", "AUTO worker must bind EngineDriver by immutable profile")
+    client_runtime = auto_worker.split(
+        "def install_clientjs_runtime", 1
+    )[1].split("def install_headless_clientjs_runtime", 1)[0]
+    if client_runtime.index("u2.connect = pc_connect") > client_runtime.index(
+        'importlib.import_module("local_launcher")'
+    ):
+        raise AssertionError("PC transport must be installed before local_launcher import")
+    forbid(client_runtime, "127.0.0.1:5555", "ClientJS runtime must not contain an ADB fallback target")
     require(multi, 'event == "client_pid_changed"', "Multi PID replacement handler missing")
     require(multi, "RunningProcessRef(new_pid)", "Multi must adopt exact worker PID")
     require(
