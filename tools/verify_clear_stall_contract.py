@@ -150,13 +150,18 @@ def main() -> int:
     )
     require(
         probe,
-        "for batch_index in range(1, resale_batch_limit + 1)",
-        "Gate 5 bounded per-x10 resale loop missing",
+        "while pending_resale_fingerprints:",
+        "Gate 5 pending verified-purchase resale loop missing",
     )
     require(
         probe,
-        "remaining_fingerprints.pop(index)",
+        "pending_resale_fingerprints.pop(index)",
         "Gate 5 must consume each verified purchase token once",
+    )
+    require(
+        probe,
+        "if pending_resale_fingerprints:",
+        "Gate 5 final pending inventory flush missing",
     )
     require(
         probe,
