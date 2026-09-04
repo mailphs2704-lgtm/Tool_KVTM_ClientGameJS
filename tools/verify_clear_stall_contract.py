@@ -24,6 +24,7 @@ CONTROL = ROOT / "KVTM_DEV_CONTROL.bat"
 BACKUP = ROOT / "tools/KVTM_CREATE_LOCAL_BACKUP.ps1"
 HANDOFF = ROOT / "docs/CLEAR_STALL_AUTO_HANDOFF.md"
 CLIENT_PATCH = ROOT / "test-candidates/auto-pro-clientjs-temp/clientjs_auto_patch.py"
+ENGINE_DRIVER = ROOT / "test-candidates/auto-pro-clientjs-temp/engine_driver.py"
 DESIGNER = ROOT / "source-archive/multi-current/kvtm_multi_tool/clear_stall_designer.py"
 
 
@@ -62,6 +63,8 @@ def main() -> int:
     handoff = HANDOFF.read_text(encoding="utf-8")
     client_patch = CLIENT_PATCH.read_text(encoding="utf-8")
     ast.parse(client_patch, filename=str(CLIENT_PATCH))
+    engine_driver = ENGINE_DRIVER.read_text(encoding="utf-8")
+    ast.parse(engine_driver, filename=str(ENGINE_DRIVER))
     designer = DESIGNER.read_text(encoding="utf-8")
     ast.parse(designer, filename=str(DESIGNER))
 
@@ -381,6 +384,13 @@ def main() -> int:
     require(client_patch, "stable_frames >= 3", "Chest adaptive render wait missing")
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
     require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
+    require(engine_driver, "natural_deadline = time.monotonic() + 8.0", "Graceful old-PID timeout missing")
+    require(engine_driver, '["taskkill.exe", "/PID", str(old_pid), "/T", "/F"]', "Scoped process-tree termination missing")
+    require(engine_driver, "forced_deadline = time.monotonic() + 5.0", "Forced-exit confirmation timeout missing")
+    require(engine_driver, "hwnd_deadline = time.monotonic() + 60.0", "New ClientJS HWND timeout missing")
+    require(engine_driver, '"pc_restart_runtime_ready"', "Restart READY publication missing")
+    require(engine_driver, 'profile_storage="READ_ONLY"', "Profile read-only restart marker missing")
+    forbid(engine_driver, "PROFILE_FILE.write_", "Restart driver must never rewrite profiles")
 
     require(multi, '("clear_stall_designer", "Thiết kế")', "Designer tab missing")
     require(designer, "default_document", "Designer default workflow missing")
