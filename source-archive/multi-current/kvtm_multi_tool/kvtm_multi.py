@@ -2092,12 +2092,14 @@ class MultiApp(tk.Tk):
         rows = []
         if isinstance(jobs, dict):
             for profile_id, job in jobs.items():
-                if not isinstance(job, dict) or not bool(job.get("enabled", False)):
+                if not isinstance(job, dict):
                     continue
                 profile_key = str(profile_id)
                 worker = self._clear_stall_workers.get(profile_key)
                 running = worker is not None and worker.poll() is None
                 starting = profile_key in self._clear_stall_starting
+                if not bool(job.get("enabled", False)) and not running and not starting:
+                    continue
                 try:
                     due = float(job.get("next_run_at", 0) or 0)
                 except (TypeError, ValueError):
