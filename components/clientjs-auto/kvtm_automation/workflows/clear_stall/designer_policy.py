@@ -88,9 +88,11 @@ def validate_document(document: dict[str, Any]) -> ClearStallRuntimePolicy:
     return policy
 
 
-def config_path() -> Path:
-    root = Path(os.environ.get("KVTM_MULTI_APP_DIR") or Path.cwd() / "data-dev")
-    return root / CONFIG_FILENAME
+def config_path(root: Path | None = None) -> Path:
+    data_root = Path(root) if root is not None else Path(
+        os.environ.get("KVTM_MULTI_APP_DIR") or Path.cwd() / "data-dev"
+    )
+    return data_root / CONFIG_FILENAME
 
 
 def load_runtime_policy(path: Path | None = None) -> ClearStallRuntimePolicy:
