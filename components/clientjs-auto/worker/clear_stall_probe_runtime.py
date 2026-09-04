@@ -478,7 +478,7 @@ def run_probe(
                     automation.stall.next_view()
                     sale_view += 1
                     current_view = sale_view
-                    collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=20)
+                    collected_gold_slots += automation.stall.collect_own_stall_gold(maximum=8)
                     continue
                 index = next((
                     i for i, item in enumerate(pending_resale_fingerprints)
