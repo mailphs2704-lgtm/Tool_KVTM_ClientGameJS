@@ -269,6 +269,24 @@ def main() -> int:
         require(multi, f'"{item_id}"', f"Missing selected-item GUI option: {item_id}")
     require(probe, "eligible_observations", "Purchase whitelist filter missing")
     require(dev_entry, "allowed_item_ids=allowed_item_ids", "Selected items not passed to resident runtime")
+    require(
+        dev_entry,
+        "allowed_item_ids: tuple[str, ...]",
+        "Gate 5 worker thread must receive selected items explicitly",
+    )
+    require(auto_worker, '"client_pid_changed"', "Worker PID replacement event missing")
+    require(multi, 'event == "client_pid_changed"', "Multi PID replacement handler missing")
+    require(multi, "RunningProcessRef(new_pid)", "Multi must adopt exact worker PID")
+    require(
+        client_patch,
+        'if name == "mo_ruong" and find_kwargs.get("click")',
+        "Chest probe-only template lookup missing",
+    )
+    forbid(
+        client_patch,
+        "score >= 8.0 or not prompt_visible",
+        "Chest must not report success from an absent LD template",
+    )
     require(client_patch, "clientjs_game_ready_by_live_capture", "PID reset live-frame readiness missing")
     require(client_patch, "stable_frames >= 3", "Chest adaptive render wait missing")
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
