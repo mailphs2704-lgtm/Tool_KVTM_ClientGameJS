@@ -191,13 +191,13 @@ def main() -> int:
     )
     require(
         probe,
-        "swipe_pulses=1",
-        "Each own-stall transition must use exactly one swipe",
+        "swipe_pulses=2",
+        "Each logical stall step must contain exactly two swipes",
     )
     require(
         probe,
-        '"SWIPE_ONCE_SCAN_COLLECT_RESELL"',
-        "One-swipe then scan/collect/resell order missing",
+        '"TWO_SWIPES_THEN_SCAN_COLLECT_RESELL"',
+        "Two-swipes then scan/collect/resell order missing",
     )
     require(
         probe,
@@ -216,13 +216,13 @@ def main() -> int:
     )
     require(
         stall,
-        "1 nhịp rồi scan ngay",
-        "Stall must return to scan after one swipe",
+        "swipe {swipe_index}/2 trong một nhịp",
+        "Stall logical step must execute both swipes",
     )
-    forbid(
-        stall,
-        "for step in range(1, 3):",
-        "Two consecutive stall swipes would skip middle listings",
+    require(
+        probe,
+        '"stall-step-finished-scan-required"',
+        "Every completed stall step must force the next view scan",
     )
     forbid(
         probe,
@@ -361,7 +361,7 @@ def main() -> int:
     print("gate5_accounting=one_token_per_x10_sale")
     print("gate5_wrong_item=provenance_only_threshold_0.60")
     print("gate5_own_stall_views=scan_collect_resell_one_swipe_repeat")
-    print("gate5_own_stall_drag=one_pulse_then_immediate_scan")
+    print("gate5_own_stall_drag=two_swipes_one_step_then_scan")
     print("gui=single_full_clear_stall_action")
     print("cycle=pass_close_reset_countdown_release_queue")
     print("backup=one_click_local_only")
