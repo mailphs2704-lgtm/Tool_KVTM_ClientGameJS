@@ -196,6 +196,8 @@ def _pc_open_game(self, stop_event=None):
     clicked_intermediate = False
     rendered_streak = 0
     ready_by_capture = False
+    reopen_clicks = 0
+    last_reopen_click = 0.0
     while time.monotonic() < deadline:
         if _stopped(stop_event):
             return
@@ -216,7 +218,29 @@ def _pc_open_game(self, stop_event=None):
         elif _find(self, "icon_game", 0.80, click=True):
             clicked_intermediate = True
             rendered_streak = 0
-        elif time.monotonic() - started >= 8.0:
+        elif (
+            time.monotonic() - started >= 2.0
+            and time.monotonic() - last_reopen_click >= 2.5
+            and reopen_clicks < 6
+        ):
+            # AUTO PRO always taps this account/reopen position while waiting,
+            # even when the tai_khoan asset is not recognised. ClientJS shows
+            # an untemplated "mở lại" popup after a process replacement; merely
+            # receiving bridge frames does not mean that popup was dismissed.
+            self.driver.click(981, 338)
+            reopen_clicks += 1
+            last_reopen_click = time.monotonic()
+            clicked_intermediate = True
+            rendered_streak = 0
+            try:
+                self.driver._trace(
+                    "clientjs_reopen_popup_probe",
+                    attempt=reopen_clicks,
+                    logical=[981, 338],
+                )
+            except Exception:
+                pass
+        elif time.monotonic() - started >= 10.0 and reopen_clicks >= 2:
             # Templates can change independently of the game. A replacement
             # PID with three consecutive nonblank bridge frames is sufficient
             # to hand control to the popup cleanup below.
@@ -255,24 +279,47 @@ def _pc_open_game(self, stop_event=None):
         self.update_progress(f"Chờ : {remaining}s")
         time.sleep(1.0)
 
-    for _ in range(10):
+    for cleanup_attempt in range(12):
         if _stopped(stop_event):
             return
-        if _find(self, "close_game", 0.80, click=True) or _find(
-            self, "x_popup_event", 0.76, click=True
-        ):
-            time.sleep(0.3)
-            continue
         if _game_anchor(self):
             self.update_progress("Bắt Đầu Cào")
             return
-        if ready_by_capture and _rendered_client_frame(self) is not None:
-            # A changed home template must not cause ten BACK presses that
-            # close an otherwise healthy freshly rebound ClientJS.
-            self.update_progress("Bắt Đầu AUTO trên PID ClientJS mới")
-            return
-        self.press_back(stop_event)
-        time.sleep(0.5)
+        closed_popup = (
+            _find(self, "close_game", 0.80, click=True)
+            or _find(self, "x_popup_event", 0.76, click=True)
+            or _find(self, "dong_y", 0.76, click=True)
+        )
+        if closed_popup:
+            time.sleep(0.5)
+            continue
+        if cleanup_attempt < 4:
+            # Repeat AUTO PRO's unconditional reopen/account tap. This is what
+            # moves ClientJS from its post-reset popup into the real game.
+            self.driver.click(981, 338)
+            action = "reopen_click"
+            time.sleep(1.0)
+        else:
+            self.press_back(stop_event)
+            action = "back"
+            time.sleep(0.5)
+        try:
+            self.driver._trace(
+                "clientjs_post_reset_cleanup",
+                attempt=cleanup_attempt + 1,
+                action=action,
+                live_frame=bool(_rendered_client_frame(self) is not None),
+                home_ready=bool(_game_anchor(self)),
+            )
+        except Exception:
+            pass
+
+    # A valid bridge frame may still be the reopen popup. Never resume AUTO
+    # from capture alone: continuing would leave the visible status waiting
+    # and send farm actions into the popup.
+    raise RuntimeError(
+        "ClientJS đã nhận PID mới nhưng chưa đóng được popup mở lại để vào màn hình chính"
+    )
 
 
 def _install_controller_patch(adb_controller_module) -> None:
