@@ -223,7 +223,7 @@ def main() -> int:
     )
     require(
         stall,
-        "swipe {swipe_index}/2 trong một nhịp",
+        "range(1, self.swipe_pulses + 1)",
         "Stall logical step must execute both swipes",
     )
     require(
@@ -382,6 +382,7 @@ def main() -> int:
     require(designer_policy, "def validate_document", "Designer document validation missing")
     require(designer_policy, "def save_document", "Designer persistence API missing")
     require(probe, "load_runtime_policy", "Resident runtime must load designer policy")
+    require(probe, "designer_config_path(config.work_dir.parents[2])", "Runtime must load policy from active data-dev")
     require(probe, '"clear-stall-designer-policy-applied"', "Runtime policy trace missing")
     require(stall, "def apply_runtime_policy", "Stall action policy hook missing")
     require(inventory, "self.storage_open_wait", "Storage wait policy hook missing")
