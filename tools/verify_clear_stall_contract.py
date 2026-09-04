@@ -234,6 +234,15 @@ def main() -> int:
     )
     forbid(workflow, "CarryoverStore", "Dọn quầy must not carry inventory across cycles")
     require(builder, "carryover purged", "builder must purge stale carryover state")
+    require(builder, "$BridgeInUse", "Builder bridge lock target missing")
+    require(builder, "running_clients.json", "Builder DEV PID map cleanup missing")
+    require(builder, "$OwnsBridge", "Builder exact loaded bridge detection missing")
+    require(builder, "[System.IO.FileShare]::None", "Builder bridge release verification missing")
+    require(
+        builder,
+        '$Candidate.ProcessName -eq "GameClientJS"',
+        "Builder must restrict PID cleanup to GameClientJS",
+    )
     forbid(builder, "4 views / 20 physical slots", "builder must not claim fixed stall capacity")
 
     require(
