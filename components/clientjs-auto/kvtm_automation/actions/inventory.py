@@ -31,6 +31,7 @@ class InventoryActions:
         self.context = context
         self.vision = vision
         self.waiter = waiter
+        self.storage_open_wait = 0.40
 
     def select_storage(self, storage_id: int) -> None:
         """Select one verified storage tab; detection alone is never success."""
@@ -47,7 +48,7 @@ class InventoryActions:
         if match is None:
             # AUTO_PRO_REFERENCE: exact fallback points from sellItems.
             self.vision.driver.click(*fallback)
-        self.waiter.sleep(0.40)
+        self.waiter.sleep(self.storage_open_wait)
         self.context.log(f"Đã chọn kho bán {storage} ({template})")
 
     def best_fingerprint_match(
