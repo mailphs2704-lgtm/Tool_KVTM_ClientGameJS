@@ -22,6 +22,7 @@ CONTROL = ROOT / "KVTM_DEV_CONTROL.bat"
 BACKUP = ROOT / "tools/KVTM_CREATE_LOCAL_BACKUP.ps1"
 HANDOFF = ROOT / "docs/CLEAR_STALL_AUTO_HANDOFF.md"
 CLIENT_PATCH = ROOT / "test-candidates/auto-pro-clientjs-temp/clientjs_auto_patch.py"
+DESIGNER = ROOT / "source-archive/multi-current/kvtm_multi_tool/clear_stall_designer.py"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -57,6 +58,8 @@ def main() -> int:
     handoff = HANDOFF.read_text(encoding="utf-8")
     client_patch = CLIENT_PATCH.read_text(encoding="utf-8")
     ast.parse(client_patch, filename=str(CLIENT_PATCH))
+    designer = DESIGNER.read_text(encoding="utf-8")
+    ast.parse(designer, filename=str(DESIGNER))
 
     require(worker, 'EXECUTION_GATE = "READ_ONLY_SCAN"', "transaction gate must stay read-only")
     require(worker, "probe_only=True", "worker must not enable purchase/resale")
@@ -335,6 +338,12 @@ def main() -> int:
     require(client_patch, "stable_frames >= 3", "Chest adaptive render wait missing")
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
     require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
+
+    require(multi, '("clear_stall_designer", "Thiết kế")', "Designer tab missing")
+    require(designer, "DEFAULT_STEPS", "Designer default workflow missing")
+    require(designer, "self.tree.bind(\"<ButtonRelease-1>\"", "Designer drag reorder missing")
+    require(designer, "self.canvas.bind(\"<Button-1>\"", "Designer coordinate drag missing")
+    require(designer, "clear-stall-workflow-designer.json", "Designer persistence missing")
 
     print("CLEAR STALL STATIC CONTRACT VERIFIED")
     print("gate=READ_ONLY_SCAN")
