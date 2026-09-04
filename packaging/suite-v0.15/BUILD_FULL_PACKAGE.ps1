@@ -430,6 +430,16 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot "README.txt") -Destination $Outp
 foreach ($name in @("01_BUILD_BRIDGE.bat", "02_START_MULTI.bat", "02_START_MULTI_DEV.bat", "START_MULTI_DEV_SILENT.ps1", "03_START_AUTO.bat", "04_BUILD_MULTI_EXE.bat", "05_IMPORT_PROFILES_TO_DEV.ps1")) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $OutputRoot
 }
+$RecorderBat = Join-Path $RepoRoot "KVTM_QUAY_VIDEO_60FPS.bat"
+$RecorderScript = Join-Path $RepoRoot "tools\KVTM_SCREEN_RECORDER.ps1"
+if (-not (Test-Path -LiteralPath $RecorderBat -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $RecorderScript -PathType Leaf)) {
+    throw "Missing standalone MP4 recorder files"
+}
+$RecorderToolsOut = Join-Path $OutputRoot "tools"
+New-Item -ItemType Directory -Path $RecorderToolsOut -Force | Out-Null
+Copy-Item -LiteralPath $RecorderBat -Destination $OutputRoot -Force
+Copy-Item -LiteralPath $RecorderScript -Destination $RecorderToolsOut -Force
 
 $PackagedClean = Join-Path $ClientJsAutoOut "kvtm_automation"
 $checks = @(
