@@ -388,6 +388,17 @@ def main() -> int:
         "Chest must not report success from an absent LD template",
     )
     require(client_patch, "clientjs_game_ready_by_live_capture", "PID reset live-frame readiness missing")
+    require(client_patch, '"clientjs_attached_game_ready"', "Already-running ClientJS readiness trace missing")
+    require(client_patch, "restart_skipped=True", "Stable live client must skip unnecessary restart")
+    require(client_patch, "for _attempt in range(12):", "Bounded initial live-frame probe missing")
+    require(client_patch, "cleanup_actions > 0", "Post-reset frames must follow a popup cleanup action")
+    open_game = client_patch.split("def _pc_open_game", 1)[1].split(
+        "def _install_controller_patch", 1
+    )[0]
+    if open_game.index("attached_frame_streak") > open_game.index(
+        'self.driver.app_stop("vn.kvtm.js")'
+    ):
+        raise AssertionError("Live ClientJS readiness must be tested before restart")
     require(client_patch, '"clientjs_reopen_popup_probe"', "ClientJS reopen popup probe missing")
     require(client_patch, '"clientjs_post_reset_cleanup"', "Post-reset popup cleanup missing")
     require(
