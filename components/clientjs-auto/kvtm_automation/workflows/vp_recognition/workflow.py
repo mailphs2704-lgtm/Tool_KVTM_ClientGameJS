@@ -58,7 +58,7 @@ class VpRecognitionProbeWorkflow:
                     f"Quầy clone view {view}/4 • thu vàng rồi kiểm tra VP"
                 )
                 collected_gold += self.auto.stall.collect_own_stall_gold(
-                    maximum=20
+                    maximum=8
                 )
 
                 inventory_open = False
