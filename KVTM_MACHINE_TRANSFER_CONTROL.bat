@@ -10,7 +10,7 @@ echo ===========================================================================
 echo  KVTM - MACHINE TRANSFER CONTROL
 echo ===============================================================================
 echo  [1] Xuat profile DEV de chuyen may   ^(ma hoa, mac dinh ra Desktop^)
-echo  [2] Nhap profile .kvtm vao may nay   ^(backup + DPAPI re-bind^)
+echo  [2] Nhap profile .kvtm vao may nay   ^(merge ID + backup + DPAPI^)
 echo  [3] Chan doan moi truong may          ^(READ-ONLY^)
 echo  [4] Cai PM may phu con thieu          ^(gom C++ Build Tools^)
 echo  [5] Mo trang Sky Garden/ZingPlay chinh thuc
@@ -52,7 +52,7 @@ goto menu
 
 :import_profile
 cls
-echo [IMPORT] Nhap duong dan day du file .kvtm da copy tu may chinh.
+echo [IMPORT] Nhap file .kvtm moi; profile trung ID duoc cap nhat, profile khac duoc giu.
 echo          Vi du: D:\KVTM-PROFILES-TRANSFER-20260901-203000.kvtm
 echo.
 set "TRANSFER="
