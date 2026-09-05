@@ -89,6 +89,18 @@ Khi bấm:
 
 Không hot-swap Python/DLL đang được process hiện tại nạp.
 
+Máy phụ không bắt buộc cài toàn bộ Visual Studio Build Tools chỉ để nhận một cập nhật
+không thay đổi source bridge. Nếu compiler C++ vắng mặt (builder exit 20), builder chỉ
+được tái sử dụng bốn binary bridge/loader từ runtime DEV hiện tại khi đồng thời:
+
+- `.source-head.txt` trỏ tới một commit Git hợp lệ;
+- sáu input source/build của capture bridge và Bridge V3 không đổi từ commit runtime đó
+  tới HEAD mới;
+- từng DLL/EXE hiện tại có chữ ký PE hợp lệ và machine `0x014c` (x86).
+
+Nếu source bridge đã đổi, thiếu runtime cũ hoặc binary không đạt kiểm tra, build phải dừng
+và yêu cầu Visual Studio C++ Build Tools; không được âm thầm đóng gói DLL cũ.
+
 ### Các lỗi đã sửa
 
 - Windows PowerShell 5.1 làm `$LASTEXITCODE` stale sau pipeline `Select-Object`, gây false-negative branch/HEAD. Đã sửa bằng cách capture native output và exit code trước khi pipe.
