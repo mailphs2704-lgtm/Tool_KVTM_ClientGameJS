@@ -459,12 +459,17 @@ def main() -> int:
     require(multi, "RunningProcessRef(new_pid)", "Multi must adopt exact worker PID")
     require(
         client_patch,
-        'silver_visible = _find(self, "ruong_bac", 1.0)',
+        "result = original_open_chests(self, stop_event)",
+        "AUTO PRO must retain ownership of chest-screen navigation",
+    )
+    require(
+        client_patch,
+        'return bool(original_find("ruong_bac", threshold=1.0, click=False))',
         "Chest state 1 must detect the silver chest at exact threshold 1.0",
     )
     require(
         client_patch,
-        'if not _find(self, "ruong_bac", 1.0):',
+        "if not silver_visible_exact():",
         "Chest chooser transition must wait for the silver chest to disappear",
     )
     require(
@@ -479,7 +484,7 @@ def main() -> int:
     )
     require(
         client_patch,
-        "self.driver.click(500, 470)",
+        "original_click(500, 470)",
         "Live-verified ClientJS chest open point missing",
     )
     require(
