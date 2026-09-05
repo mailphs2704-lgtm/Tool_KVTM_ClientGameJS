@@ -470,6 +470,23 @@ def main() -> int:
     )
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
     require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
+    require(
+        client_patch,
+        "def dismiss_clientjs_level_up",
+        "ClientJS level-up popup handler missing",
+    )
+    level_up = client_patch.split("def dismiss_clientjs_level_up", 1)[1].split(
+        "def _blocking_game_overlay", 1
+    )[0]
+    require(level_up, '("len_cap", "lencap", "level_up")', "Level-up marker templates missing")
+    require(level_up, '("nhan", "nhan_thuong")', "Level-up claim templates missing")
+    require(level_up, 'coordinate_source="TEMPLATE_CENTER_1000X1000"', "Level-up must click a detected template center")
+    forbid(level_up, "driver.click(", "Level-up handler must never use a blind coordinate")
+    require(
+        auto_worker,
+        "dismiss_clientjs_level_up(controller)",
+        "AUTO worker level-up monitor hook missing",
+    )
     require(engine_driver, "natural_deadline = time.monotonic() + 8.0", "Graceful old-PID timeout missing")
     require(engine_driver, '["taskkill.exe", "/PID", str(old_pid), "/T", "/F"]', "Scoped process-tree termination missing")
     require(engine_driver, "forced_deadline = time.monotonic() + 5.0", "Forced-exit confirmation timeout missing")
@@ -531,6 +548,7 @@ def main() -> int:
     print("selected_items=rose_water,rose_oil,yellow_fabric,dried_apple,iced_tea")
     print("clientjs_reset=live_capture_ready")
     print("chest=auto_pro_original")
+    print("level_up=template_only_no_blind_coordinate")
     print("wheel=verified_exit_cleanup")
     return 0
 
