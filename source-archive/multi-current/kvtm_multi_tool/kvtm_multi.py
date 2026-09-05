@@ -2904,7 +2904,16 @@ class MultiApp(tk.Tk):
             messagebox.showinfo(APP_NAME, "Hãy tích chọn ít nhất một tài khoản đang chạy.")
             return
         launched = 0
-        blocked = []
+        busy = []
+        launch_failed = []
+
+        # Refresh ownership immediately instead of waiting for the 2-second
+        # bridge monitor. This also rebinds a replacement PID after a restart.
+        try:
+            self._adopt_running_clients(running_clients())
+        except Exception as exc:
+            self.note.set(f"AUTO sạch: chưa thể quét ClientJS đang chạy: {exc}")
+
         package_root = TOOL_DIR.parent
         auto_root = package_root / "AUTO_PRO"
         worker_file = (
@@ -2924,14 +2933,32 @@ class MultiApp(tk.Tk):
             legacy = self._auto_workers.get(profile_id)
             stall = self._clear_stall_workers.get(profile_id)
             current = self._clean_auto_workers.get(profile_id)
+            profile_name = str((profile or {}).get("name") or profile_id)
+            if profile is None:
+                launch_failed.append(f"{profile_name} (không còn profile)")
+                continue
             if (
-                profile is None or process is None or process.poll() is not None
-                or (legacy and legacy.poll() is None)
+                (legacy and legacy.poll() is None)
                 or (stall and stall.poll() is None)
                 or (current and current.poll() is None)
             ):
-                blocked.append(str((profile or {}).get("name") or profile_id))
+                busy.append(profile_name)
                 continue
+
+            # "Vào game" owns the complete first layer: open the selected
+            # ClientJS when offline, then let the worker wait for its exact PID,
+            # Bridge V3 and the game UI. Profiles/secrets are left untouched.
+            if process is None or process.poll() is not None:
+                try:
+                    self._launch(profile)
+                    process = self.processes.get(profile_id)
+                except Exception as exc:
+                    launch_failed.append(f"{profile_name} ({exc})")
+                    continue
+            if process is None or process.poll() is not None:
+                launch_failed.append(f"{profile_name} (ClientJS không khởi động)")
+                continue
+
             work_dir = APP_DIR / "auto-multi-dev" / str(profile_id)
             work_dir.mkdir(parents=True, exist_ok=True)
             worker = subprocess.Popen(
@@ -2959,8 +2986,12 @@ class MultiApp(tk.Tk):
             self.auto_multi_dev_status.set(
                 f"Đang vào game và đóng popup • {launched} tài khoản"
             )
-        if blocked:
-            self.note.set("AUTO sạch bỏ qua tài khoản bận/offline: " + ", ".join(blocked))
+        if busy:
+            self.note.set("AUTO sạch bỏ qua tài khoản đang có worker: " + ", ".join(busy))
+        if launch_failed:
+            detail = "; ".join(launch_failed)
+            self.note.set("AUTO sạch không mở được ClientJS: " + detail)
+            messagebox.showerror(APP_NAME, "Không mở được ClientJS cho AUTO sạch:\n" + detail)
 
     def _read_clean_auto_worker(self, profile_id: str, worker) -> None:
         if worker.stdout:
