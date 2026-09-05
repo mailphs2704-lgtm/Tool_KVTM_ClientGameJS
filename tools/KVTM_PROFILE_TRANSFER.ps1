@@ -434,6 +434,16 @@ New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
 $incomingCount = $outProfiles.Count
 $existingCount = 0
 $preservedLocalCount = 0
+$incomingKeys = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase
+)
+foreach ($incomingProfile in $outProfiles) {
+    $incomingId = ([string]$incomingProfile.id).Trim()
+    if ([string]::IsNullOrWhiteSpace($incomingId) -or
+        -not $incomingKeys.Add($incomingId)) {
+        throw "File transfer co profile thieu/trung id '$incomingId'; khong import."
+    }
+}
 if (-not $ReplaceProfiles -and (Test-Path -LiteralPath $destination -PathType Leaf)) {
     Write-Stage "MERGE_EXISTING_PROFILES"
     [object[]]$existingProfiles = (
@@ -454,12 +464,8 @@ if (-not $ReplaceProfiles -and (Test-Path -LiteralPath $destination -PathType Le
         $mergedById.Add($key, $existingProfile)
     }
 
-    $incomingKeys = New-Object "System.Collections.Generic.HashSet[string]" ([StringComparer]::OrdinalIgnoreCase)
     foreach ($incomingProfile in $outProfiles) {
         $incomingId = ([string]$incomingProfile.id).Trim()
-        if (-not $incomingKeys.Add($incomingId)) {
-            throw "File transfer co profile trung id '$incomingId'; khong merge."
-        }
         $key = $incomingId.ToLowerInvariant()
         if (-not $mergedById.Contains($key)) {
             $mergedById.Add($key, $incomingProfile)
