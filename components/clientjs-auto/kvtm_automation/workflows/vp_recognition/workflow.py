@@ -5,12 +5,13 @@ import time
 
 from ...automation import KVAutomation
 from ...actions.item_recognition import VpRecognition
+from ...errors import NoEmptyStallSlot
 
 
 __all__ = ["VpRecognitionProbeResult", "VpRecognitionProbeWorkflow"]
 FILE_FUNCTIONS = (
     "Đưa clone về màn hình chính",
-    "Mở quầy và thu vàng trước khi mở kho",
+    "Thu vàng đủ bốn view trước khi mở kho",
     "Quét ba VP mẫu bằng module nhận diện dùng chung",
     "Tổng hợp kết quả để hiển thị và kiểm thử",
 )
@@ -45,11 +46,29 @@ class VpRecognitionProbeWorkflow:
         self.auto.ensure_main_screen(timeout=timeout)
         self.auto.stall.open_own_stall()
         self.context.stage("vp-recognition-collect-own-stall-gold")
-        collected_gold = self.auto.stall.collect_own_stall_gold(maximum=20)
+        collected_gold = 0
+        for view in range(1, 5):
+            collected_gold += self.auto.stall.collect_own_stall_gold(maximum=20)
+            if view < 4:
+                self.auto.stall.next_view()
+        self.auto.stall.rewind_to_first(4)
         self.context.log(
-            f"READ-ONLY VP probe • đã thu vàng {collected_gold} ô trước khi mở kho"
+            f"READ-ONLY VP probe • đã thu vàng {collected_gold} ô trên 4 view"
         )
-        self.auto.selling.open_inventory_read_only(storage_id=2)
+
+        inventory_open = False
+        for view in range(1, 5):
+            try:
+                self.auto.selling.open_inventory_read_only(storage_id=2)
+                inventory_open = True
+                break
+            except NoEmptyStallSlot:
+                if view < 4:
+                    self.auto.stall.next_view()
+        if not inventory_open:
+            raise NoEmptyStallSlot(
+                "Đã thu vàng và quét đủ 4 view nhưng quầy vẫn không còn ô trống"
+            )
         try:
             recognized = self.auto.auto_vp.scan_samples()
         finally:
