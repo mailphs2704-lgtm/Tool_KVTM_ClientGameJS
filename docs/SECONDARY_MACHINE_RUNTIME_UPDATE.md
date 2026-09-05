@@ -27,6 +27,7 @@ Luồng này giải quyết 3 việc:
 - `[7]` Xác minh profile/DPAPI READ-ONLY.
 - `[8]` Gửi report máy phụ lên GitHub, chỉ SAFE diagnostic text.
 - `[9]` Nhận cập nhật DEV từ GitHub, pull/deps/LFS/build runtime.
+- Trong Control Center chính, `[M]` mở công cụ chuyển máy; tại đó `[4]` tự cài phần mềm còn thiếu, gồm Visual Studio C++ Build Tools x86/x64 khi source bridge mới cần biên dịch.
 
 `[8]` ghi report vào:
 
