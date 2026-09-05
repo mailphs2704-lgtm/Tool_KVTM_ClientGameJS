@@ -66,6 +66,52 @@ function Resolve-Python311 {
     return $null
 }
 
+function Test-VCBuildTools {
+    $vswhereCandidates = @()
+    if (${env:ProgramFiles(x86)}) {
+        $vswhereCandidates += Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    }
+    if ($env:ProgramFiles) {
+        $vswhereCandidates += Join-Path $env:ProgramFiles "Microsoft Visual Studio\Installer\vswhere.exe"
+    }
+    foreach ($vswhere in $vswhereCandidates) {
+        if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) { continue }
+        try {
+            [object[]]$installations = @(
+                & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+            )
+            $probeExit = $LASTEXITCODE
+            if ($probeExit -eq 0 -and @($installations | Where-Object {
+                -not [string]::IsNullOrWhiteSpace([string]$_)
+            }).Count -gt 0) {
+                return $true
+            }
+        }
+        catch { }
+    }
+    return $false
+}
+
+function Install-VCBuildTools {
+    param([string]$Winget)
+
+    if (-not $Winget) { return $false }
+    Write-Host "[INSTALL] Visual Studio C++ Build Tools x86/x64..." -ForegroundColor Cyan
+    $override = "--wait --passive --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+    & $Winget install --id Microsoft.VisualStudio.2022.BuildTools --exact --source winget --accept-package-agreements --accept-source-agreements --override $override
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[FAIL] Winget khong cai duoc Visual Studio C++ Build Tools." -ForegroundColor Yellow
+        return $false
+    }
+    Refresh-ProcessPath
+    if (-not (Test-VCBuildTools)) {
+        Write-Host "[FAIL] Cai xong nhung chua tim thay workload VC.Tools.x86.x64." -ForegroundColor Yellow
+        return $false
+    }
+    Write-Host "[OK] Visual Studio C++ Build Tools x86/x64 READY." -ForegroundColor Green
+    return $true
+}
+
 function Test-VCRuntime {
     param([ValidateSet("x86", "x64")][string]$Arch)
 
@@ -183,6 +229,7 @@ function Get-State {
         winget = $winget; git = $git; git_version = $gitVersion
         lfs_ok = $lfsOk; lfs_version = $lfsVersion; python311 = $python
         vc_x64 = Test-VCRuntime x64; vc_x86 = Test-VCRuntime x86
+        vc_build_tools = Test-VCBuildTools
         game_client = $client
         game_dir = if (Test-Path -LiteralPath $gameDir -PathType Container) { $gameDir } else { $null }
         branch = $branch; head = $head; dirty = $dirty; runtime_missing = $runtimeMissing
@@ -211,6 +258,7 @@ if ($InstallMissing) {
         if (-not (Resolve-Python311)) { Install-WingetPackage $before.winget "Python.Python.3.11" "CPython 3.11 x64" "x64" | Out-Null }
         if (-not (Test-VCRuntime x64)) { Install-WingetPackage $before.winget "Microsoft.VCRedist.2015+.x64" "Visual C++ 2015-2022 x64" "x64" | Out-Null }
         if (-not (Test-VCRuntime x86)) { Install-WingetPackage $before.winget "Microsoft.VCRedist.2015+.x86" "Visual C++ 2015-2022 x86" "x86" | Out-Null }
+        if (-not (Test-VCBuildTools)) { Install-VCBuildTools $before.winget | Out-Null }
         Refresh-ProcessPath
         $gitAfterInstall = Resolve-Git
         if ($gitAfterInstall) { try { & $gitAfterInstall lfs install | Out-Null } catch { } }
@@ -233,6 +281,7 @@ $lines.Add("git_lfs=" + $(if ($state.lfs_ok) { "FOUND $($state.lfs_version)" } e
 $lines.Add("python311_x64=" + $(if ($state.python311) { "FOUND $($state.python311)" } else { "MISSING" }))
 $lines.Add("vc_redist_x64=" + $(if ($state.vc_x64) { "FOUND" } else { "MISSING" }))
 $lines.Add("vc_redist_x86=" + $(if ($state.vc_x86) { "FOUND" } else { "MISSING" }))
+$lines.Add("vc_build_tools_x86_x64=" + $(if ($state.vc_build_tools) { "FOUND" } else { "MISSING" }))
 $lines.Add("")
 $lines.Add("=== ZINGPLAY / KVTM ===")
 $lines.Add("game_client=" + $(if ($state.game_client) { "FOUND $($state.game_client)" } else { "MISSING - official: https://zingplay.com/games/sky-garden.html" }))
@@ -262,6 +311,7 @@ if (-not $state.lfs_ok) { $blocking.Add("Git LFS") }
 if (-not $state.python311) { $blocking.Add("CPython 3.11 x64") }
 if (-not $state.vc_x64) { $blocking.Add("VC++ x64") }
 if (-not $state.vc_x86) { $blocking.Add("VC++ x86") }
+if (-not $state.vc_build_tools) { $blocking.Add("Visual Studio C++ Build Tools x86/x64") }
 if (-not $state.game_client) { $blocking.Add("ZingPlay/GameClientJS") }
 if (-not $state.game_dir) { $blocking.Add("KVTM game data") }
 if ($state.branch -ne $ExpectedBranch) { $blocking.Add("Correct Git branch") }
