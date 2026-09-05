@@ -54,10 +54,35 @@ class SellingActions:
         self.inventory.select_storage(storage_id)
         self.context.log("Đã mở kho bán ở chế độ READ-ONLY")
 
-    def close_inventory_read_only(self) -> None:
-        """Close the probe inventory without confirming a sale."""
-        self._cancel_dialog()
-        self.context.log("Đã đóng kho kiểm tra READ-ONLY")
+    def close_inventory_read_only(self, timeout: float = 6.0) -> None:
+        """Close the item-picker X and verify the READ-ONLY inventory vanished."""
+        deadline = time.monotonic() + float(timeout)
+        attempts = 0
+        while time.monotonic() < deadline:
+            self.context.ensure_running()
+            if self.vision.find(
+                "kho_thanh_pham",
+                threshold=0.72,
+                zone=self.inventory.STORAGE_ZONE,
+            ) is None:
+                self.context.log("Đã đóng kho kiểm tra READ-ONLY")
+                return
+
+            attempts += 1
+            close_match = self.vision.find_any(
+                ("close_game", "close", "x_popup_event"),
+                threshold=0.72,
+                zone=(930, 0, 70, 70),
+                click=True,
+            )
+            if close_match is None:
+                # Fixed 1000x1000 ClientJS item-picker X shown at the top-right.
+                self.vision.driver.click(968, 28)
+            self.waiter.sleep(0.35)
+
+        raise ScreenTimeout(
+            f"Không đóng được kho READ-ONLY bằng nút X sau {attempts} lần"
+        )
 
     def _find_empty_slot(self) -> bool:
         for name in ("quaytrong", "quay_trong"):
