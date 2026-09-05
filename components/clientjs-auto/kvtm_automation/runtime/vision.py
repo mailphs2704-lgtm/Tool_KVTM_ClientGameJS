@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
+
+__all__ = ["Match", "VisionEngine"]
+FILE_FUNCTIONS = (
+    "Chụp frame ClientJS qua driver",
+    "Nạp và cache template",
+    "So khớp một template với score/threshold",
+    "So khớp nhóm template trên cùng một frame",
+    "Ghi trace nhận diện PASS hoặc FAIL",
+)
 
 from .assets import AssetLibrary
 
@@ -20,10 +29,24 @@ class Match:
 class VisionEngine:
     """Small deterministic template matcher shared by every clean workflow."""
 
-    def __init__(self, driver: Any, assets: AssetLibrary) -> None:
+    def __init__(
+        self,
+        driver: Any,
+        assets: AssetLibrary,
+        *,
+        detail_logger: Callable[[str], None] | None = None,
+    ) -> None:
         self.driver = driver
         self.assets = assets
+        self.detail_logger = detail_logger
         self._cache: dict[Path, Any] = {}
+
+    def _detail(self, message: str) -> None:
+        if self.detail_logger is not None:
+            try:
+                self.detail_logger(str(message))
+            except Exception:
+                pass
 
     def frame(self):
         return self.driver.screenshot(format="opencv")
@@ -97,7 +120,15 @@ class VisionEngine:
                 )
                 if best is None or match.score > best.score:
                     best = match
-        if best is None or best.score < float(threshold):
+        passed = best is not None and best.score >= float(threshold)
+        score = float(best.score) if best is not None else -1.0
+        scale = float(best.scale) if best is not None else 0.0
+        self._detail(
+            f"Match [{name}] | Context: clean-main | Score: {score:.4f} | "
+            f"Threshold: {float(threshold):.4f} | Zone: {zone or 'FULL'} | "
+            f"Scale: {scale:.2f} | {'PASS' if passed else 'FAIL'}"
+        )
+        if not passed:
             return None
         if click:
             self.driver.click(*best.center)
