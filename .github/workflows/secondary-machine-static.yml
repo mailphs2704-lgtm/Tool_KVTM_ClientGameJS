@@ -71,6 +71,21 @@ jobs:
           }
           Write-Host 'VC_BUILD_TOOLS_SETUP_CONTRACT_OK' -ForegroundColor Green
 
+          $profileTransfer = Get-Content '.\tools\KVTM_PROFILE_TRANSFER.ps1' -Raw
+          foreach ($token in @(
+            'MERGE_EXISTING_PROFILES',
+            'MERGE_BY_ID',
+            'profiles-before-machine-import',
+            'Preserved local-only profiles:',
+            'HashSet[string]',
+            'OrdinalIgnoreCase'
+          )) {
+            if (-not $profileTransfer.Contains($token)) {
+              throw "Profile merge transfer contract missing: $token"
+            }
+          }
+          Write-Host 'PROFILE_TRANSFER_MERGE_CONTRACT_OK' -ForegroundColor Green
+
       - name: Parse runtime updater Python
         shell: powershell
         run: |
