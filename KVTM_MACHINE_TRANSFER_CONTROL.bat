@@ -12,7 +12,7 @@ echo ===========================================================================
 echo  [1] Xuat profile DEV de chuyen may   ^(ma hoa, mac dinh ra Desktop^)
 echo  [2] Nhap profile .kvtm vao may nay   ^(backup + DPAPI re-bind^)
 echo  [3] Chan doan moi truong may          ^(READ-ONLY^)
-echo  [4] Chan doan + cai PM con thieu      ^(WinGet^)
+echo  [4] Cai PM may phu con thieu          ^(gom C++ Build Tools^)
 echo  [5] Mo trang Sky Garden/ZingPlay chinh thuc
 echo  [6] Bootstrap may phu + build runtime ^(dung tren may phu^)
 echo  [7] Xac minh profile/DPAPI READ-ONLY
@@ -97,7 +97,7 @@ goto menu
 cls
 echo ===============================================================================
 echo  CAI PM THIEU QUA WINGET
-echo  Co the cai: Git, Git LFS, Python 3.11 x64, VC++ x86/x64.
+echo  Co the cai: Git, Git LFS, Python 3.11 x64, VC++ Runtime va C++ Build Tools.
 echo  ZingPlay/Sky Garden chi mo nguon chinh thuc neu thieu.
 echo ===============================================================================
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_MACHINE_SETUP.ps1" -InstallMissing -OpenZingPlayPage
