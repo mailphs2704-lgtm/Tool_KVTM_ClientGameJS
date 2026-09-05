@@ -328,7 +328,7 @@ class MultiDevApp(production.MultiApp):
             )
             cumulative = int(payload.get("sold_quantity") or sold)
             summary = (
-                f"PASS   {gate} treo lô {sold} VP • tổng={cumulative} • "
+                f"PASS   {gate} treo {sold} VP • tổng={cumulative} • "
                 f"fingerprint={fingerprint[:12]}"
             )
         elif event == "probe_ok":
@@ -484,7 +484,7 @@ class MultiDevApp(production.MultiApp):
         if not core.messagebox.askyesno(
             core.APP_NAME,
             f"GATE 5 sẽ mua đủ {quantity} VP rồi treo lại toàn bộ "
-            f"{batch_count} lô x10.\n"
+            f"{batch_count} nhóm VP đã mua.\n"
             f"Chỉ dùng fingerprint đã mua trong lượt này tại kho {storage}.\n"
             "Thu vàng trước, không đổi giá; sai/thiếu VP hoặc hết ô trống sẽ "
             "dừng ngay. Tiếp tục?",
@@ -722,7 +722,7 @@ class MultiDevApp(production.MultiApp):
             elif profile_id in self._clear_stall_gate4_profiles:
                 resident_mode = (
                     f"GATE 4 mua {purchase_limit * 10} VP + thu vàng + "
-                    "treo đúng x10"
+                    "treo VP đã mua"
                 )
             elif purchase_limit > 1:
                 resident_mode = f"GATE 3B mua target {purchase_limit * 10} VP"
