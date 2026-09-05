@@ -360,8 +360,8 @@ def main() -> int:
     require(handoff, "requested_quantity == purchased_quantity == sold_quantity", "AI handoff lifecycle contract missing")
     require(
         probe,
-        'policy="UNTIL_TARGET_OR_STOP"',
-        "Dọn quầy stock polling policy missing",
+        'policy="ONE_SCAN_PER_HOUSE_THEN_NEXT_ROUND"',
+        "Dọn quầy one-scan-per-house stock polling policy missing",
     )
     forbid(
         probe,
