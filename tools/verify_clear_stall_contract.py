@@ -490,6 +490,26 @@ def main() -> int:
     require(multi, '"clean_auto_worker.py"', "Clean AUTO worker launch missing")
     require(multi, '"--profile-file", str(PROFILE_FILE)', "Clean AUTO profile identity handoff missing")
     require(multi, "def _stop_clean_auto_session", "Clean AUTO stop action missing")
+    require(
+        dev_entry,
+        "KVAutomation(context, image_runtime_ready=True)",
+        "AUTO MULTI DEV must reuse the resident image runtime",
+    )
+    require(
+        dev_entry,
+        "Clean Runtime dùng chung READY • không import lại cv2/numpy/PIL",
+        "Resident Main runtime status contract missing",
+    )
+    require(
+        dev_entry,
+        "self._clean_main_stop_events",
+        "Resident AUTO task stop registry missing",
+    )
+    require(
+        dev_entry,
+        "self._probe_thread_alive(profile_id)",
+        "AUTO MULTI DEV and Dọn quầy must be exclusive per profile",
+    )
     require(clean_auto_worker, "legacy_pyc=False", "Clean AUTO must declare no legacy pyc")
     require(clean_auto_worker, "GameSessionWorkflow(automation).run", "Clean game session entry missing")
     require(game_session, "self.auto.ensure_main_screen", "Clean game entry/main-screen verification missing")
