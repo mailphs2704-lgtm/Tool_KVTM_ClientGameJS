@@ -147,6 +147,44 @@ def _find(controller, name, threshold=0.85, click=False):
         return False
 
 
+def dismiss_clientjs_level_up(controller) -> bool:
+    """Dismiss only a positively identified level-up reward; never blind-click."""
+    if not str(getattr(controller, "device_id", "")).startswith(("PC:", "PCID:")):
+        return False
+    marker_name = next(
+        (
+            name
+            for name in ("len_cap", "lencap", "level_up")
+            if _find(controller, name, 0.78)
+        ),
+        None,
+    )
+    if marker_name is None:
+        return False
+    for button_name in ("nhan", "nhan_thuong"):
+        if _find(controller, button_name, 0.72, click=True):
+            try:
+                controller.driver._trace(
+                    "clientjs_level_up_reward_claimed",
+                    marker=marker_name,
+                    button=button_name,
+                    coordinate_source="TEMPLATE_CENTER_1000X1000",
+                )
+            except Exception:
+                pass
+            return True
+    try:
+        controller.driver._trace(
+            "clientjs_level_up_reward_blocked",
+            marker=marker_name,
+            button="NOT_FOUND",
+            blind_click=False,
+        )
+    except Exception:
+        pass
+    return False
+
+
 def _blocking_game_overlay(controller) -> bool:
     """Reject chest screens that leave farm anchors visible behind a dark modal."""
     return any(
