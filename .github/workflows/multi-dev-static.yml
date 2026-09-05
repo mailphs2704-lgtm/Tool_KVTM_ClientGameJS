@@ -253,9 +253,10 @@ jobs:
               'Build-KvtmBridgeV3', 'kvtm_bridge_v3.dll', 'kvtm_loader_v3.exe',
               'Restore-CurrentRuntimeBridge', 'Test-X86PortableExecutable',
               'source bridge khong doi', 'diff", "--name-only',
-              '$buildExit -eq 20',
+              '$buildExit -eq 20', '${Label}: dung binary x86',
           ):
               assert token in builder, token
+          assert '$Label: dung binary x86' not in builder
           for token in (
               'setattr(automation, key, value)', 'setattr(controller, key, value)',
               'synchronized_targets', 'gesture_timing',
