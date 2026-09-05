@@ -540,6 +540,25 @@ def main() -> int:
     require(stall, "def apply_runtime_policy", "Stall action policy hook missing")
     require(inventory, "self.storage_open_wait", "Storage wait policy hook missing")
     require(builder, "designer_policy.py", "Builder must package runtime designer policy")
+    require(
+        builder,
+        "function Copy-PreservedDirectory",
+        "Bounded diagnostic preservation helper missing",
+    )
+    require(builder, '"/MT:8"', "Diagnostic preservation must use bounded multithreaded robocopy")
+    require(builder, "[int]$TimeoutSeconds = 600", "Diagnostic preservation timeout missing")
+    require(builder, "$copyProcess.Kill()", "Timed-out diagnostic copy must be stopped")
+    require(builder, "Dang bao toan $Label", "Diagnostic preservation heartbeat missing")
+    require(
+        builder,
+        'Copy-PreservedDirectory -Source $CurrentClearStallProbe',
+        "clear-stall-probe must use bounded visible preservation",
+    )
+    forbid(
+        builder,
+        "Copy-Item -LiteralPath $CurrentClearStallProbe",
+        "Silent recursive clear-stall-probe copy can look permanently hung",
+    )
 
     print("CLEAR STALL STATIC CONTRACT VERIFIED")
     print("gate=READ_ONLY_SCAN")
@@ -570,6 +589,7 @@ def main() -> int:
     print("gui=single_full_clear_stall_action")
     print("cycle=pass_close_reset_countdown_release_queue")
     print("backup=one_click_local_only")
+    print("diagnostic_preservation=robocopy_mt8_heartbeat_timeout600")
     print("selected_items=rose_water,rose_oil,yellow_fabric,dried_apple,iced_tea")
     print("clientjs_reset=live_capture_ready")
     print("chest=supplied_auto_pro_bytecode_exact")
