@@ -12,6 +12,15 @@ from .errors import AutomationStopped
 LogFn = Callable[[str], None]
 StageFn = Callable[[str], None]
 
+__all__ = ["AutomationContext", "LogFn", "StageFn"]
+FILE_FUNCTIONS = (
+    "Giữ identity và đường dẫn của một tác vụ AUTO",
+    "Ghi log hành động",
+    "Ghi log kỹ thuật chi tiết",
+    "Báo stage nghiệp vụ",
+    "Dừng tác vụ theo stop-event",
+)
+
 
 @dataclass
 class AutomationContext:
@@ -29,6 +38,7 @@ class AutomationContext:
     stop_event: threading.Event
     logger: LogFn
     stage_reporter: StageFn | None = None
+    detail_logger: LogFn | None = None
     profile_file: Path | None = None
     started_at: float = field(default_factory=time.time)
 
@@ -44,6 +54,10 @@ class AutomationContext:
 
     def log(self, message: str) -> None:
         self.logger(str(message))
+
+    def detail(self, message: str) -> None:
+        if self.detail_logger is not None:
+            self.detail_logger(str(message))
 
     def stage(self, name: str) -> None:
         if self.stage_reporter is not None:
