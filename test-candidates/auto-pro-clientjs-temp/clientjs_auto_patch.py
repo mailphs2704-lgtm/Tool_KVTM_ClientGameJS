@@ -627,8 +627,9 @@ def _install_controller_patch(adb_controller_module) -> None:
             pass
         return result
 
-    cls.openGame = open_game
-    cls.openChests = open_chests
+    # Keep AUTO PRO's original openGame/openChests bytecode untouched.
+    # EngineDriver still owns profile-bound PID re-adoption after AUTO PRO
+    # restarts ClientJS.
     cls.VongQuay = vong_quay
     cls._clientjs_shop_patch_installed = True
 
