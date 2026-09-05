@@ -154,6 +154,14 @@ def install_binary_dependencies(
             if directory.exists():
                 sys.path.insert(0, str(directory))
 
+        # AUTO PRO does not import cv2 against raw sys.path alone.
+        # local_launcher first registers the bundled _internal runtime and its
+        # native DLL search paths. Reuse only that dependency bootstrap; the
+        # business modules remain forbidden and are checked below.
+        log("Thư viện ảnh: khởi tạo local_launcher dependency runtime...")
+        importlib.import_module("local_launcher")
+        log("Thư viện ảnh: local_launcher READY")
+
         # IMPORTANT: OpenCV first.  The working AUTO path reaches cv2 before it
         # ever performs a standalone ``import numpy``.  cv2 itself resolves the
         # bundled NumPy runtime.  Do not reverse this order without a live test.
