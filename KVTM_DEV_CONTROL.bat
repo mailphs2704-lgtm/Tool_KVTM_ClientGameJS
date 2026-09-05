@@ -52,6 +52,7 @@ echo  [7] Bridge V3 - gesture production 0.50s ^(can go SWIPE-V3^)
 echo  [8] Audit mapping toc do AUTO PRO READ-ONLY
 echo  [9] Full rebuild package        ^(CHI dung khi ChatGPT yeu cau^)
 echo  [B] Backup cuc bo ban hien tai  ^(source + runtime + profile/settings^)
+echo  [M] Chuyen may                  ^(xuat/nhap profile + kiem tra may^)
 echo  [0] Thoat
 echo -------------------------------------------------------------------------------
 set "CHOICE="
@@ -66,6 +67,7 @@ if "%CHOICE%"=="7" goto v3_gesture
 if "%CHOICE%"=="8" goto speed_probe
 if "%CHOICE%"=="9" goto fullbuild
 if /I "%CHOICE%"=="B" goto local_backup
+if /I "%CHOICE%"=="M" goto machine_transfer
 if "%CHOICE%"=="0" goto end
 goto menu
 
@@ -398,6 +400,16 @@ if errorlevel 1 (
   echo [PASS] SPEED BINDING PROBE
 )
 pause
+goto menu
+
+:machine_transfer
+cls
+if not exist "KVTM_MACHINE_TRANSFER_CONTROL.bat" (
+  echo [FAIL] Thieu KVTM_MACHINE_TRANSFER_CONTROL.bat
+  pause
+  goto menu
+)
+call "KVTM_MACHINE_TRANSFER_CONTROL.bat"
 goto menu
 
 :local_backup
