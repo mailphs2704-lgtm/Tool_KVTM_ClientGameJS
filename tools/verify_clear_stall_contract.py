@@ -513,6 +513,21 @@ def main() -> int:
         require(vp_recognition, f'"{item_id}"', f"VP sample missing: {item_id}")
     require(vp_recognition, "click=False", "VP recognition probe must not click an item")
     require(vp_workflow, "read_only: bool = True", "VP workflow must declare READ-ONLY")
+    require(
+        vp_workflow,
+        "for view in range(1, 5):",
+        "VP probe must collect/seek across all four own-stall views",
+    )
+    require(
+        vp_workflow,
+        "collect_own_stall_gold(maximum=20)",
+        "VP probe must collect own-stall gold before opening inventory",
+    )
+    require(
+        vp_workflow,
+        "self.auto.stall.rewind_to_first(4)",
+        "VP probe must rewind after four-view gold collection",
+    )
     require(dev_entry, "VpRecognitionProbeWorkflow(automation).run", "Resident VP probe wiring missing")
     require(dev_entry, "detail_logger=log_writer.detail", "Detail logger not connected to Main context")
     require(clean_automation, "detail_logger=context.detail", "Vision detail logger not connected")
