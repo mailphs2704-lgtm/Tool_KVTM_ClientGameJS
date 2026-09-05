@@ -103,6 +103,7 @@ class MultiDevApp(production.MultiApp):
         self._dev_probe_stop_events: dict[str, threading.Event] = {}
         self._clean_main_threads: dict[str, threading.Thread] = {}
         self._clean_main_stop_events: dict[str, threading.Event] = {}
+        self._clean_main_log_paths: dict[str, tuple[Path, Path]] = {}
         self._clear_stall_probe_starting: set[str] = set()
         self._clear_stall_probe_terminal: dict[str, str] = {}
         self._clear_stall_gate2_profiles: set[str] = set()
@@ -175,12 +176,25 @@ class MultiDevApp(production.MultiApp):
                 continue
 
             stop_event = threading.Event()
-            work_dir = core.APP_DIR / "auto-multi-dev" / profile_id
-            work_dir.mkdir(parents=True, exist_ok=True)
+            run_id = time.strftime("%Y%m%d-%H%M%S")
+            work_dir = core.APP_DIR / "auto-multi-dev" / profile_id / run_id
+            _component_root, _worker_root, _auto_root = _install_runtime_paths()
+            from kvtm_automation.runtime.main_log import MainLogWriter
+            log_writer = MainLogWriter(work_dir)
+            self._clean_main_log_paths[profile_id] = (
+                log_writer.action_path, log_writer.detail_path,
+            )
+            log_writer.action(
+                f"AUTO MULTI DEV start | profile={name} | pid={int(process.pid)}"
+            )
+            log_writer.detail(
+                f"Runtime=resident | profile_id={profile_id} | pid={int(process.pid)}"
+            )
             thread = threading.Thread(
                 target=self._run_clean_main_thread,
                 args=(
                     profile_id, profile, int(process.pid), work_dir, stop_event,
+                    log_writer,
                 ),
                 name=f"kvtm-dev-clean-main-{profile_id[:8]}",
                 daemon=True,
@@ -210,6 +224,7 @@ class MultiDevApp(production.MultiApp):
         pid: int,
         work_dir: Path,
         stop_event: threading.Event,
+        log_writer,
     ) -> None:
         try:
             _component_root, _worker_root, auto_root = _install_runtime_paths()
@@ -217,6 +232,7 @@ class MultiDevApp(production.MultiApp):
             from kvtm_automation.workflows.game_session import GameSessionWorkflow
 
             def log(message: str) -> None:
+                log_writer.action(str(message))
                 self.after(
                     0,
                     lambda text=str(message): (
@@ -234,12 +250,14 @@ class MultiDevApp(production.MultiApp):
                 stop_event=stop_event,
                 logger=log,
                 stage_reporter=log,
+                detail_logger=log_writer.detail,
                 profile_file=core.PROFILE_FILE,
             )
             log("Clean Runtime dùng chung READY • không import lại cv2/numpy/PIL")
             automation = KVAutomation(context, image_runtime_ready=True)
             result = GameSessionWorkflow(automation).run(timeout=180.0)
             payload = result.to_dict()
+            log_writer.action("PASS | vào game, đóng popup, xác nhận màn hình chính")
             self.after(
                 0,
                 lambda data=payload: self._finish_clean_main(
@@ -248,6 +266,8 @@ class MultiDevApp(production.MultiApp):
             )
         except Exception as exc:
             payload = {"error": repr(exc), "traceback": traceback.format_exc()}
+            log_writer.action(f"ERROR | {repr(exc)}")
+            log_writer.detail(payload["traceback"])
             self.after(
                 0,
                 lambda data=payload: self._finish_clean_main(
