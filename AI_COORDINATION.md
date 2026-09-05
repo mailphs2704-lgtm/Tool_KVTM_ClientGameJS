@@ -304,3 +304,12 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Chỉ khi đã thu/quét đủ bốn view mà vẫn không có ô trống mới báo NoEmptyStallSlot rõ ràng.
 - `collected_gold_slots` được trả trong result và ghi action log. Nhận diện item vẫn click=False/không đặt bán.
 - AST syntax PASS cho workflow và verifier; live Windows pending.
+
+
+## 2026-09-05 — Own-stall order corrected to one per-view loop
+
+- Authoritative order: open own stall; on the current view collect gold; sell VP into the freed slot; perform exactly two swipe pulses; scan the next view; then repeat collect/sell through the final view.
+- The rejected two-pass design (collect all views, rewind, then seek empty slots) is forbidden by the static contract.
+- The current VP probe follows the same per-view transaction skeleton but remains READ_ONLY: inventory recognition replaces the real sell click until live recognition is confirmed PASS.
+- The probe always closes an opened inventory and the clone's own stall; profile storage remains READ_ONLY.
+- Static syntax verification: PASS. Live ClientJS verification: PENDING.
