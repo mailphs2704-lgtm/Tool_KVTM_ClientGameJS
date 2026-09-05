@@ -76,19 +76,27 @@ def main() -> int:
     require(workflow, "range(1, self.request.max_stall_passes + 1)", "stall refresh loop missing")
     require(workflow, "self.automation.stall.close_friend_stall()", "refresh must close the current stall")
     require(config, "max_stall_passes: int = 10", "bounded refresh setting missing")
-    require(multi, "busy_profiles", "machine-wide account serialization missing")
     require(multi, "Đang xếp hàng", "queued-account status missing")
     require(probe, "if purchase_limit > 0:", "transaction probes must require a positive hard limit")
     require(probe, "maximum=1", "each purchase call must buy at most one listing")
     require(probe, '"PURCHASE_TARGET_MULTI_HOUSE"', "Gate 3B target mode missing")
     require(probe, "range(1, int(config.friend_ordinal) + 1)", "Gate 3B must visit friends 1..N")
     require(probe, "while purchased_quantity < expected_quantity:", "Gate 3B must repeat until target or Stop")
-    require(probe, "for local_pass in range(1, int(config.max_stall_passes) + 1)", "Gate 3B per-visit reload loop missing")
+    require(
+        probe,
+        'policy="ONE_SCAN_PER_HOUSE_THEN_NEXT_ROUND"',
+        "Gate 3B one-scan-per-house round policy missing",
+    )
+    forbid(
+        probe,
+        "for local_pass in range(1, int(config.max_stall_passes) + 1)",
+        "Gate 3B must not reload the same house inside one round",
+    )
     require(probe, "remaining_quantity", "Gate 3B remaining x10 counter missing")
     require(probe, "automation.stall.close_friend_stall()", "Gate 3B must close before reload/house change")
     require(probe, "purchase_evidence", "Gate 3 must save per-listing evidence")
     require(probe, '"SCAN_BUY_THEN_SWIPE"', "Gate 3B must buy each view before swiping")
-    require(probe, '"REOPEN_CURRENT_STALL"', "same-friend stall reload must stay in place")
+    require(probe, '"ONE_SCAN_PER_HOUSE"', "one-scan navigation marker missing")
     require(
         stall,
         "return tuple(range(1, 9))",
@@ -151,6 +159,16 @@ def main() -> int:
         "Obsolete threshold rejects live-verified exact purchases",
     )
     forbid(selling, "price_changed = True", "Gate 4 must never alter price")
+    require(
+        selling,
+        '"not-required"',
+        "Resale must not require the sl10 marker",
+    )
+    forbid(
+        selling,
+        'raise InsufficientBatch("Loại VP hiện không đủ 10 để treo bán")',
+        "Resale must not block when the sl10 marker is absent",
+    )
     require(dev_entry, "_start_clear_stall_resale_probe", "Gate 4 DEV action missing")
     require(dev_entry, "_clear_stall_gate4_profiles", "Gate 4 state tracking missing")
     require(
@@ -361,6 +379,31 @@ def main() -> int:
         "Gate 5 worker thread must receive selected items explicitly",
     )
     require(auto_worker, '"client_pid_changed"', "Worker PID replacement event missing")
+    require(
+        auto_worker,
+        "friend_home_failures += 1",
+        "AUTO main three friend/home failure counter missing",
+    )
+    require(
+        auto_worker,
+        "current_driver.app_stop",
+        "AUTO main ClientJS reset after friend/home failures missing",
+    )
+    require(
+        auto_worker,
+        "current_controller.openGame(stop_event)",
+        "AUTO main must re-identify the restarted ClientJS before continuing",
+    )
+    require(
+        dev_entry,
+        "_CLEAR_STALL_MAX_CONCURRENCY = 2",
+        "Dọn quầy two-client concurrency limit missing",
+    )
+    require(
+        dev_entry,
+        "len(active_profiles) >= _CLEAR_STALL_MAX_CONCURRENCY",
+        "Dọn quầy active-profile concurrency gate missing",
+    )
     require(auto_worker, "Bootstrap bundled dependencies, then lock every PC transport alias", "Bundled PC bootstrap missing")
     require(auto_worker, 'for alias in ("connect", "u2_connect", "uiautomator_connect")', "Recovered ADB connect-alias patch missing")
     require(auto_worker, "EngineDriver(str(profile_id)", "AUTO worker must bind EngineDriver by immutable profile")
@@ -490,16 +533,16 @@ def main() -> int:
     print("quantity_unit=10")
     print("stall_capacity=dynamic")
     print("friend_order=1..N")
-    print("account_concurrency=1")
+    print("account_concurrency=2")
     print("carryover=disabled")
     print("gate2_limit=one_x10_listing")
     print("purchase_verification=listing_disappearance")
     print("sold_listing_filter=coin_price_marker")
     print("gate3_limit=configured_x10_target")
-    print("gate3_reload=per_visit_bound_repeat_until_target_or_stop")
+    print("gate3_reload=one_scan_per_house_then_next_round")
     print("gate3_friend_order=1..N")
     print("gate3_view_order=scan_buy_then_swipe_both_rows")
-    print("gate3_same_friend_reload=in_place")
+    print("gate3_same_friend_reload=disabled")
     print("gate3_unbuyable=skip_without_accounting")
     print("gate3_resale=disabled")
     print("gate4_limit=one_exact_purchased_x10_batch")
@@ -507,7 +550,7 @@ def main() -> int:
     print("gate4_inventory_scan=after_empty_slot_open")
     print("gate4_price=unchanged")
     print("gate5_limit=all_verified_purchases_up_to_20_batches")
-    print("gate5_accounting=one_token_per_x10_sale")
+    print("gate5_accounting=verified_purchase_token;sl10_marker_not_required")
     print("gate5_wrong_item=provenance_only_threshold_0.60")
     print("gate5_own_stall_views=scan_collect_resell_one_swipe_repeat")
     print("gate5_own_stall_drag=two_swipes_one_step_then_scan")
