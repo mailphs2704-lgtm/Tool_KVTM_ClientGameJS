@@ -399,7 +399,7 @@ class EngineDriver(PCDriver):
     def capture_mapping_name(self) -> str:
         return rf"Local\KVTM-CaptureV3-{self.pid}"
 
-    def _capture_shared_bgra(self) -> tuple[bytes, int, int]:
+    def _capture_shared_bgra_once(self) -> tuple[bytes, int, int]:
         response = self._pipe("CAPTURE\n", 3000)
         parts = response.split()
         if len(parts) != 6 or parts[:2] != ["OK", "FRAME"]:
@@ -431,11 +431,42 @@ class EngineDriver(PCDriver):
             if pixel_format != 2 or stride != width * 4 or buffer_size != stride * height:
                 raise RuntimeError("Định dạng shared capture không được hỗ trợ")
             raw = ctypes.string_at(int(view) + mapped_header_size, buffer_size)
+            # The renderer can publish its next frame while Python copies the
+            # pixels. Accept the image only when the header is unchanged after
+            # the copy, otherwise retry CAPTURE against the newest frame.
+            verified = struct.unpack(header_format, ctypes.string_at(view, header_size))
+            if verified[8] != frame_id or verified[9] != 2:
+                raise RuntimeError("Shared capture frame thay đổi trong lúc sao chép")
             return raw, width, height
         finally:
             if view:
                 kernel32.UnmapViewOfFile(view)
             kernel32.CloseHandle(handle)
+
+    def _capture_shared_bgra(self) -> tuple[bytes, int, int]:
+        last_error = None
+        for attempt in range(12):
+            try:
+                return self._capture_shared_bgra_once()
+            except Exception as exc:
+                last_error = exc
+                message = str(exc)
+                transient = (
+                    "frame chưa hoàn tất hoặc đã thay đổi" in message
+                    or "frame thay đổi trong lúc sao chép" in message
+                )
+                if not transient:
+                    raise
+                self._trace(
+                    "v3_capture_frame_retry",
+                    attempt=attempt + 1,
+                    max_attempts=12,
+                    error=message,
+                )
+                time.sleep(0.01)
+        raise RuntimeError(
+            f"Shared capture không ổn định sau 12 lần thử: {last_error}"
+        )
 
     def screenshot(self, format: str | None = None):
         self._refresh_profile_pid()
