@@ -232,3 +232,12 @@ DO_NOT_TOUCH: components/workspace/**, KVTM_WORKSPACE_CONTROL.bat
 - Khi lưu source Python trong bảng, tool chạy `ast.parse` trước và tạo bản `.designer.bak`.
   Sửa source là chế độ chuyên sâu; sau khi cập nhật source từ Git, thay đổi cục bộ có thể bị ghi đè,
   vì vậy cần tạo backup trước khi pull/build.
+
+
+## 12. Điều chỉnh source 2026-09-05 — chờ live verify
+
+- AUTO chính: một lỗi có nội dung qua/thoát nhà bạn được thử lại; đủ 3 lỗi liên tiếp thì reset đúng ClientJS của profile. EngineDriver giữ immutable `profile_id`, nhận PID thay thế và `openGame` chỉ giao lại cho AUTO sau template game hoặc ba frame ClientJS 1000x1000 hợp lệ. Chỉ cho phép một lần reset trong chu kỳ lỗi; nếu vẫn lỗi thì worker FAIL rõ ràng.
+- Dọn quầy: mỗi nhà chỉ mở và quét đúng một lần trong một vòng. Duyệt hết nhà `1..N` mà còn thiếu target thì chờ ngắn và bắt đầu vòng mới từ nhà 1.
+- Treo bán: không còn chặn giao dịch chỉ vì template `sl10` không xuất hiện. VP vẫn phải khớp fingerprint của giao dịch mua đã xác minh, không đổi giá và phải có thay đổi màn hình sau click đặt bán.
+- Scheduler: tối đa hai profile Dọn quầy độc lập cùng lúc. Cùng một profile vẫn độc quyền với AUTO chính/Dọn quầy; tài khoản thứ ba tiếp tục giữ hạn và chờ slot.
+- Trạng thái: năm file Python liên quan đã `py_compile` PASS. Chưa gọi LIVE PASS cho bốn hành vi trên; cần build Windows và chạy thực tế.
