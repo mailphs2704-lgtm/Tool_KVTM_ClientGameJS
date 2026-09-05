@@ -458,15 +458,40 @@ def main() -> int:
         "cls.openGame = open_game",
         "ClientJS patch must not replace AUTO PRO openGame/reset policy",
     )
-    forbid(
-        client_patch,
-        "cls.openChests = open_chests",
-        "ClientJS patch must not replace AUTO PRO openChests workflow",
-    )
     require(
         client_patch,
-        "Keep AUTO PRO's original openGame/openChests bytecode untouched",
-        "AUTO PRO openGame/openChests restoration marker missing",
+        "cls.openChests = _open_chests_auto_pro_reference",
+        "ClientJS must install the supplied AUTO PRO openChests reconstruction",
+    )
+    reference_chest = client_patch.split(
+        "def _open_chests_auto_pro_reference", 1
+    )[1].split("def _install_controller_patch", 1)[0]
+    for needle in (
+        'tree_type="chest"',
+        "search_zone=(320, 508, 128, 79)",
+        "self.driver.click(371, 647)",
+        'tree_type="ruong_go"',
+        "search_zone=(163, 520, 190, 196)",
+        "threshold=0.95",
+        "timeout=1.0",
+        'tree_type="check_mo_ruong"',
+        "search_zone=(392, 649, 253, 103)",
+        "self.driver.click(497, 575)",
+        'tree_type="check_open_chest"',
+        "search_zone=(69, 345, 164, 204)",
+        "self.driver.click(143, 404)",
+        'tree_type="mo_ruong"',
+        "search_zone=(393, 505, 212, 96)",
+        "self.driver.click(433, 557)",
+        "self.press_back(stop_event)",
+        "self.fixerr(stop_event)",
+        "e0299c6df0f2da99abd82e740a7038f2026de314329085ac14cb7b1b64744f2e",
+    ):
+        require(reference_chest, needle, f"AUTO PRO chest reference missing: {needle}")
+    forbid(
+        reference_chest,
+        "ruong_bac",
+        "Supplied AUTO PRO bytecode does not use a ruong_bac template",
     )
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
     require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
@@ -547,7 +572,7 @@ def main() -> int:
     print("backup=one_click_local_only")
     print("selected_items=rose_water,rose_oil,yellow_fabric,dried_apple,iced_tea")
     print("clientjs_reset=live_capture_ready")
-    print("chest=auto_pro_original")
+    print("chest=supplied_auto_pro_bytecode_exact")
     print("level_up=template_only_no_blind_coordinate")
     print("wheel=verified_exit_cleanup")
     return 0
