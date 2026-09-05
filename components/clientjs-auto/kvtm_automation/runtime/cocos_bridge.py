@@ -12,6 +12,7 @@ import time
 from typing import Callable
 
 from . import window_capture
+from .profile_process import ProfileProcessResolver
 
 
 _GESTURE_LOCK = threading.RLock()
@@ -73,6 +74,8 @@ class CocosBridgeDriver:
         *,
         reference_size: tuple[int, int] = (1000, 1000),
         logger: Callable[[str], None] | None = None,
+        profile_id: str | None = None,
+        profile_file: Path | None = None,
     ) -> None:
         if os.name != "nt":
             raise RuntimeError("Cocos DLL bridge chỉ hỗ trợ Windows")
@@ -80,6 +83,12 @@ class CocosBridgeDriver:
         self.auto_root = Path(auto_root).resolve()
         self.reference_size = tuple(map(int, reference_size))
         self.logger = logger
+        self.profile_id = str(profile_id or "")
+        self.profile_resolver = (
+            ProfileProcessResolver(self.profile_id, profile_file, logger=logger)
+            if self.profile_id and profile_file is not None else None
+        )
+        self._rebinding = False
         self.bin_root = self.auto_root / "bin"
         self.loader_path = self.bin_root / "kvtm_loader.exe"
         self.bridge_path = self.bin_root / "kvtm_bridge.dll"
@@ -135,7 +144,35 @@ class CocosBridgeDriver:
         kernel32.CloseHandle.restype = wintypes.BOOL
         self.kernel32 = kernel32
 
+    def _refresh_profile_pid(self) -> bool:
+        """Rebind Bridge transport to the replacement PID of this exact profile."""
+        if self._rebinding or self.profile_resolver is None:
+            return False
+        if self.profile_resolver.is_alive(self.pid):
+            return False
+        replacement = self.profile_resolver.current_pid()
+        if not replacement:
+            raise RuntimeError(
+                f"Profile {self.profile_id} chưa có ClientJS thay thế sau restart"
+            )
+        old_pid = self.pid
+        self.pid = int(replacement)
+        self.ping_response = ""
+        self.shared_capture_supported = False
+        self._capture_mode_logged = False
+        self._rebinding = True
+        try:
+            self.ensure_bridge()
+        finally:
+            self._rebinding = False
+        self._log(
+            f"ClientJS profile rebind READY: old_pid={old_pid} new_pid={self.pid}"
+        )
+        return True
+
     def _pipe(self, command: str, timeout_ms: int = 3000) -> str:
+        if not self._rebinding:
+            self._refresh_profile_pid()
         payload = command.encode("ascii")
         deadline = time.monotonic() + max(0.15, timeout_ms / 1000.0)
         last_error = 2
