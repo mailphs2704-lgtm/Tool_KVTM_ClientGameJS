@@ -525,23 +525,23 @@ def main() -> int:
     require(popup_actions, '"quay_hang_on"', "Clean stall-popup guard missing")
     require(
         popup_actions,
-        "def _dismiss_event_news_board",
-        "No-X event-news popup dismissal missing",
+        "def _dismiss_unknown_center_modal",
+        "Generic no-X popup dismissal missing",
     )
     require(
         popup_actions,
-        "if self._event_news_geometry(frame)[0]:",
-        "Main-screen PASS must be blocked while event-news modal remains",
+        "if self._blocking_modal_geometry(frame)[0]:",
+        "Main-screen PASS must be blocked while an unknown modal remains",
     )
     require(
         popup_actions,
         "self.vision.driver.click(500, 185)",
-        "Event-news backdrop close point missing",
+        "Generic modal backdrop close point missing",
     )
     require(
         popup_actions,
         "if still_open:",
-        "Event-news close must be visually verified",
+        "Generic modal close must be visually verified",
     )
     require(multi, 'style="Queue.Treeview"', "Queue table theme missing")
     require(multi, "def _refresh_clear_stall_queue", "Live clear-stall queue refresh missing")
