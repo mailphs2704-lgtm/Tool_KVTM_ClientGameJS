@@ -35,6 +35,8 @@ CLEAN_AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.p
 CLEAN_DRIVER = ROOT / "components/clientjs-auto/kvtm_automation/runtime/cocos_bridge.py"
 PROFILE_PROCESS = ROOT / "components/clientjs-auto/kvtm_automation/runtime/profile_process.py"
 POPUP_ACTIONS = ROOT / "components/clientjs-auto/kvtm_automation/actions/popup.py"
+MAIN_LOG = ROOT / "components/clientjs-auto/kvtm_automation/runtime/main_log.py"
+MAIN_LOG_VIEWER = ROOT / "source-archive/multi-current/kvtm_multi_tool/main_log_viewer.py"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -81,6 +83,8 @@ def main() -> int:
     clean_driver = CLEAN_DRIVER.read_text(encoding="utf-8")
     profile_process = PROFILE_PROCESS.read_text(encoding="utf-8")
     popup_actions = POPUP_ACTIONS.read_text(encoding="utf-8")
+    main_log = MAIN_LOG.read_text(encoding="utf-8")
+    main_log_viewer = MAIN_LOG_VIEWER.read_text(encoding="utf-8")
     for path, source in (
         (CLEAN_AUTO_WORKER, clean_auto_worker),
         (GAME_SESSION, game_session),
@@ -89,6 +93,8 @@ def main() -> int:
         (CLEAN_DRIVER, clean_driver),
         (PROFILE_PROCESS, profile_process),
         (POPUP_ACTIONS, popup_actions),
+        (MAIN_LOG, main_log),
+        (MAIN_LOG_VIEWER, main_log_viewer),
     ):
         ast.parse(source, filename=str(path))
     ast.parse(engine_driver, filename=str(ENGINE_DRIVER))
@@ -486,6 +492,16 @@ def main() -> int:
     require(multi, "def _refresh_auto_tab_scroll", "AUTO tab arrow-state synchronization missing")
     require(multi, 'self.auto_tabs_canvas.xview_scroll', "AUTO center strip horizontal scroll missing")
     require(multi, 'text="AUTO MULTI DEV SẠCH"', "Clean AUTO scaffold header missing")
+    require(multi, 'text="≡ Log hành động"', "Clean action-log button missing")
+    require(multi, 'text="⌕ Log chi tiết"', "Clean detail-log button missing")
+    require(multi, "def _open_clean_main_log", "Clean live-log viewer action missing")
+    require(main_log, 'self.action_path = self.run_dir / "action.log"', "Action log file missing")
+    require(main_log, 'self.detail_path = self.run_dir / "detail.log"', "Detail log file missing")
+    require(main_log, "FILE_FUNCTIONS = (", "Log module function manifest missing")
+    require(main_log_viewer, "FILE_FUNCTIONS = (", "Log viewer function manifest missing")
+    require(main_log_viewer, 'bg="#202020"', "Console-style log viewer missing")
+    require(dev_entry, "detail_logger=log_writer.detail", "Detail logger not connected to Main context")
+    require(clean_automation, "detail_logger=context.detail", "Vision detail logger not connected")
     require(multi, "def _start_clean_auto_session", "Clean AUTO start action missing")
     require(multi, '"clean_auto_worker.py"', "Clean AUTO worker launch missing")
     require(multi, '"--profile-file", str(PROFILE_FILE)', "Clean AUTO profile identity handoff missing")
