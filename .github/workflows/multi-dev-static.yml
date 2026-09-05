@@ -249,7 +249,12 @@ jobs:
               'dispatch_gesture', 'segment_steps', 'step_ticks',
           ):
               assert token in native_v3, token
-          for token in ('Build-KvtmBridgeV3', 'kvtm_bridge_v3.dll', 'kvtm_loader_v3.exe'):
+          for token in (
+              'Build-KvtmBridgeV3', 'kvtm_bridge_v3.dll', 'kvtm_loader_v3.exe',
+              'Restore-CurrentRuntimeBridge', 'Test-X86PortableExecutable',
+              'source bridge khong doi', 'diff", "--name-only',
+              '$buildExit -eq 20',
+          ):
               assert token in builder, token
           for token in (
               'setattr(automation, key, value)', 'setattr(controller, key, value)',
