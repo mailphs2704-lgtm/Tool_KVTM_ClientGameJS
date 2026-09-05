@@ -437,6 +437,126 @@ def _pc_open_game(self, stop_event=None):
     )
 
 
+def _open_chests_auto_pro_reference(self, stop_event=None):
+    """Exact openChests flow recovered from the user-supplied AUTO PRO build.
+
+    Evidence: adb_controller.pyc, Python 3.11, method lines 1163..1243,
+    SHA256 e0299c6df0f2da99abd82e740a7038f2026de314329085ac14cb7b1b64744f2e.
+    """
+    if not self.open_chests_enabled:
+        self.gui.log(
+            "🚫 Chức năng mở rương đã bị tắt", device_id=self.device_id
+        )
+        return
+    self.update_progress("🗝️ Mở Rương")
+    if stop_event and stop_event.is_set():
+        return
+
+    ruong_go_found = False
+    if self.image_processor.find_image(
+        tree_type="chest",
+        search_zone=(320, 508, 128, 79),
+        threshold=0.8,
+    ):
+        self.driver.click(371, 647)
+        if self.image_processor.find_image(
+            tree_type="ruong_go",
+            search_zone=(163, 520, 190, 196),
+            threshold=0.95,
+            timeout=1.0,
+        ):
+            ruong_go_found = True
+        else:
+            for _ in range(5):
+                if stop_event and stop_event.is_set():
+                    return
+                if self.image_processor.find_image(
+                    tree_type="chest",
+                    search_zone=(320, 508, 128, 79),
+                    threshold=0.8,
+                ):
+                    self.driver.click(371, 647)
+                    time.sleep(1)
+                elif self.image_processor.find_image(
+                    tree_type="check_mo_ruong",
+                    search_zone=(392, 649, 253, 103),
+                    threshold=0.95,
+                ):
+                    self.driver.click(497, 575)
+                    time.sleep(1)
+                    self.driver.click(497, 575)
+                    time.sleep(2)
+                    if self.image_processor.find_image(
+                        tree_type="x",
+                        search_zone=(646, 324, 177, 157),
+                        threshold=0.9,
+                    ):
+                        self.driver.click(502, 499)
+                        self.open_chests_enabled = False
+                        self.gui.log(
+                            "🚫 Tắt Chức Năng Mở Rương Do Full Kho Hoặc Lỗi",
+                            device_id=self.device_id,
+                        )
+                        break
+                elif not self.image_processor.find_image(
+                    tree_type="check_open_chest",
+                    search_zone=(69, 345, 164, 204),
+                    threshold=0.9,
+                ):
+                    self.driver.click(143, 404)
+                    time.sleep(1)
+                elif self.image_processor.find_image(
+                    tree_type="ruong_go",
+                    search_zone=(163, 520, 190, 196),
+                    threshold=0.95,
+                ):
+                    ruong_go_found = True
+                    break
+                else:
+                    self.driver.click(260, 636)
+                    time.sleep(1)
+
+        if ruong_go_found:
+            if self.image_processor.find_image(
+                tree_type="mo_ruong",
+                search_zone=(393, 505, 212, 96),
+                threshold=0.9,
+                click=True,
+            ):
+                for _i in range(5):
+                    if stop_event and stop_event.is_set():
+                        return
+                    self.driver.click(433, 557)
+                    time.sleep(1)
+                    if self.image_processor.find_image(
+                        tree_type="ruong_go",
+                        search_zone=(163, 520, 190, 196),
+                        threshold=0.95,
+                    ):
+                        self.gui.log(
+                            "✅ Đã mở rương thành công",
+                            device_id=self.device_id,
+                        )
+                        break
+                    if self.image_processor.find_image(
+                        tree_type="x",
+                        search_zone=(646, 324, 177, 157),
+                        threshold=0.9,
+                    ):
+                        self.driver.click(502, 499)
+                        self.open_chests_enabled = False
+                        self.gui.log(
+                            "🚫 Tắt Chức Năng Mở Rương Do Full Kho Hoặc Lỗi",
+                            device_id=self.device_id,
+                        )
+                        break
+            elif self.open_chests_enabled:
+                self.gui.log("⚠️ Chưa mở được rương.", device_id=self.device_id)
+
+        self.press_back(stop_event)
+        self.fixerr(stop_event)
+
+
 def _install_controller_patch(adb_controller_module) -> None:
     cls = adb_controller_module.ADBController
     if getattr(cls, "_clientjs_shop_patch_installed", False):
@@ -665,9 +785,10 @@ def _install_controller_patch(adb_controller_module) -> None:
             pass
         return result
 
-    # Keep AUTO PRO's original openGame/openChests bytecode untouched.
-    # EngineDriver still owns profile-bound PID re-adoption after AUTO PRO
-    # restarts ClientJS.
+    # openGame/reset stays owned by AUTO PRO. openChests is a faithful
+    # source reconstruction of the supplied AUTO PRO Python 3.11 bytecode so
+    # ClientJS uses the exact reference states, templates, zones and clicks.
+    cls.openChests = _open_chests_auto_pro_reference
     cls.VongQuay = vong_quay
     cls._clientjs_shop_patch_installed = True
 
