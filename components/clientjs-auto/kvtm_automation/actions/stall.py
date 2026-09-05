@@ -196,26 +196,24 @@ class StallActions:
         raise ScreenTimeout("Không đóng được quầy bán của clone")
 
     def collect_own_stall_gold(self, *, maximum: int = 8) -> int:
-        """Collect visible gold once and count only verified disappearance."""
+        """Scan each visible slot once; gold is optional and must disappear."""
         visible_limit = min(len(VISIBLE_SLOT_CENTERS), max(0, int(maximum)))
         collected = 0
-        stable_misses = 0
-        while collected < visible_limit and stable_misses < 3:
+        for local_slot in range(1, visible_limit + 1):
             self.context.ensure_running()
+            cx, _cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
+            top = 480 if local_slot <= 4 else 670
+            slot_zone = (cx - 52, top, 104, 55)
             match = self.vision.find(
                 "vang",
-                threshold=0.74,
-                zone=self.OWN_STALL_CONTENT_ZONE,
+                threshold=0.82,
+                zone=slot_zone,
                 click=False,
             )
             if match is None:
-                stable_misses += 1
-                self.waiter.sleep(0.25)
                 continue
 
-            stable_misses = 0
-            original_center = match.center
-            self.vision.driver.click(*original_center)
+            self.vision.driver.click(*match.center)
             verify_deadline = time.monotonic() + 2.0
             disappeared = False
             while time.monotonic() < verify_deadline:
@@ -223,31 +221,25 @@ class StallActions:
                 self.waiter.sleep(0.20)
                 remaining = self.vision.find(
                     "vang",
-                    threshold=0.74,
-                    zone=self.OWN_STALL_CONTENT_ZONE,
+                    threshold=0.82,
+                    zone=slot_zone,
                     click=False,
                 )
                 if remaining is None:
                     disappeared = True
                     break
-                dx = remaining.center[0] - original_center[0]
-                dy = remaining.center[1] - original_center[1]
-                if dx * dx + dy * dy > 32 * 32:
-                    disappeared = True
-                    break
 
-            if not disappeared:
+            if disappeared:
+                collected += 1
                 self.context.log(
-                    "Bỏ qua điểm vàng chưa xác minh biến mất • "
-                    f"center={original_center}"
+                    "Thu vàng quầy clone • "
+                    f"ô hiển thị {local_slot} đã xác minh"
                 )
-                break
-
-            collected += 1
-            self.context.log(
-                f"Thu vàng quầy clone • đã xác minh {collected}/{visible_limit} ô"
-            )
-            self.waiter.sleep(0.20)
+            else:
+                self.context.log(
+                    "Bỏ qua mẫu vàng không biến mất • "
+                    f"ô hiển thị {local_slot} score={match.score:.3f}"
+                )
 
         self.context.log(
             f"Thu vàng quầy clone hoàn tất • {collected} ô đã xác minh"
