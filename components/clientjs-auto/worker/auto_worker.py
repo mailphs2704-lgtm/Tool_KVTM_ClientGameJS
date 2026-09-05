@@ -121,6 +121,10 @@ class GuiProxy:
             current_date=str(current_date or ""),
         )
 
+    def get_wait_time(self, _default=0):
+        """AUTO PRO Function 0 optional post-event wait; Multi defaults to zero."""
+        return 0
+
     def __getattr__(self, name):
         def no_op(*_args, **_kwargs):
             emit("gui_callback", name=name)
@@ -507,7 +511,7 @@ def main() -> int:
         emit("worker_error", error=f"Thông số tốc độ không hợp lệ: {exc}")
         return 2
 
-    allowed_function_ids = {98, 136, 170, 318}
+    allowed_function_ids = {0, 98, 136, 170, 318}
     if args.function_id not in allowed_function_ids:
         emit(
             "worker_error",
