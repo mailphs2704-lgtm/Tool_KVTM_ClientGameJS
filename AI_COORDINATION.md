@@ -295,3 +295,12 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Thêm `workflows/vp_recognition`: vào home, mở own stall, mở kho thành phẩm, scan ba mẫu không click item/không đặt bán, luôn đóng dialog trong finally.
 - Nút `Kiểm tra nhận diện VP (READ-ONLY)` chạy trên resident runtime; action/detail logs ghi kết quả và từng score/threshold//zone PASS/FAIL.
 - Static contract khóa ba item, `click=False`, read_only=True và resident wiring. AST syntax PASS cho chín file liên quan; Windows live pending.
+
+
+## 2026-09-05 — VP READ-ONLY thu vàng trước khi mở kho
+
+- Live FAIL: NoEmptyStallSlot vì probe tìm ô trống trước khi thu vàng các ô đã bán.
+- Workflow mới mở own stall, duyệt đủ bốn view và thu vàng, rewind về view đầu, rồi tìm ô trống qua tối đa bốn view để mở kho.
+- Chỉ khi đã thu/quét đủ bốn view mà vẫn không có ô trống mới báo NoEmptyStallSlot rõ ràng.
+- `collected_gold_slots` được trả trong result và ghi action log. Nhận diện item vẫn click=False/không đặt bán.
+- AST syntax PASS cho workflow và verifier; live Windows pending.
