@@ -485,13 +485,16 @@ foreach ($required in @(
     (Join-Path $CleanAutoSource "actions\stall.py"),
     (Join-Path $CleanAutoSource "actions\buying.py"),
     (Join-Path $CleanAutoSource "actions\inventory.py"),
+    (Join-Path $CleanAutoSource "actions\item_recognition.py"),
     (Join-Path $CleanAutoSource "actions\selling.py"),
     (Join-Path $CleanWorkflow "config.py"),
     (Join-Path $CleanWorkflow "designer_policy.py"),
     (Join-Path $CleanWorkflow "manifest.py"),
     (Join-Path $CleanWorkflow "state.py"),
     (Join-Path $CleanWorkflow "result.py"),
-    (Join-Path $CleanWorkflow "workflow.py")
+    (Join-Path $CleanWorkflow "workflow.py"),
+    (Join-Path $CleanAutoSource "workflows\vp_recognition\__init__.py"),
+    (Join-Path $CleanAutoSource "workflows\vp_recognition\workflow.py")
 )) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Missing required repository file: $required"
@@ -676,9 +679,11 @@ $checks = @(
     (Join-Path $PackagedClean "runtime\main_log.py"),
     (Join-Path $PackagedClean "actions\navigation.py"),
     (Join-Path $PackagedClean "actions\stall.py"),
+    (Join-Path $PackagedClean "actions\item_recognition.py"),
     (Join-Path $PackagedClean "workflows\clear_stall\manifest.py"),
     (Join-Path $PackagedClean "workflows\clear_stall\state.py"),
-    (Join-Path $PackagedClean "workflows\clear_stall\workflow.py")
+    (Join-Path $PackagedClean "workflows\clear_stall\workflow.py"),
+    (Join-Path $PackagedClean "workflows\vp_recognition\workflow.py")
 )
 foreach ($file in $checks) {
     if (-not (Test-Path -LiteralPath $file)) {
