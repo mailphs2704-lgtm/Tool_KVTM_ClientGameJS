@@ -6,7 +6,8 @@ param(
     [string]$ProfileFile = "",
     [string]$TransferFile = "",
     [switch]$IncludeSettings,
-    [switch]$ImportSettings
+    [switch]$ImportSettings,
+    [switch]$ReplaceProfiles
 )
 
 $ErrorActionPreference = "Stop"
@@ -423,12 +424,64 @@ foreach ($profile in $incoming) {
 }
 
 if ($outProfiles.Count -ne $incoming.Count) {
-    throw "Import profile count mismatch before write."
+    throw "Import profile count mismatch before merge."
 }
 
 $destination = $ProfileFile
 $dataRoot = Split-Path -Parent $destination
 New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
+
+$incomingCount = $outProfiles.Count
+$existingCount = 0
+$preservedLocalCount = 0
+if (-not $ReplaceProfiles -and (Test-Path -LiteralPath $destination -PathType Leaf)) {
+    Write-Stage "MERGE_EXISTING_PROFILES"
+    [object[]]$existingProfiles = (
+        Get-Content -LiteralPath $destination -Raw -Encoding UTF8 | ConvertFrom-Json
+    )
+    $existingCount = $existingProfiles.Count
+    $mergedById = [ordered]@{}
+    foreach ($existingProfile in $existingProfiles) {
+        $existingId = ([string]$existingProfile.id).Trim()
+        if ([string]::IsNullOrWhiteSpace($existingId) -or
+            [string]::IsNullOrWhiteSpace([string]$existingProfile.secret)) {
+            throw "Profile hien co thieu id/secret; khong merge de tranh mat login."
+        }
+        $key = $existingId.ToLowerInvariant()
+        if ($mergedById.Contains($key)) {
+            throw "Profile hien co trung id '$existingId'; khong merge."
+        }
+        $mergedById.Add($key, $existingProfile)
+    }
+
+    $incomingKeys = New-Object "System.Collections.Generic.HashSet[string]" ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($incomingProfile in $outProfiles) {
+        $incomingId = ([string]$incomingProfile.id).Trim()
+        if (-not $incomingKeys.Add($incomingId)) {
+            throw "File transfer co profile trung id '$incomingId'; khong merge."
+        }
+        $key = $incomingId.ToLowerInvariant()
+        if (-not $mergedById.Contains($key)) {
+            $mergedById.Add($key, $incomingProfile)
+        }
+        else {
+            $mergedById[$key] = $incomingProfile
+        }
+    }
+    $preservedLocalCount = @(
+        $existingProfiles | Where-Object {
+            -not $incomingKeys.Contains(([string]$_.id).Trim())
+        }
+    ).Count
+    [object[]]$outProfiles = @($mergedById.Values)
+}
+elseif ($ReplaceProfiles) {
+    Write-Stage "REPLACE_PROFILES_REQUESTED"
+}
+
+if ($outProfiles.Count -lt $incomingCount) {
+    throw "Profile count sau merge nho hon file transfer; khong ghi de profile active."
+}
 Backup-FileSafe $destination (Join-Path $dataRoot "profile-backups") "profiles-before-machine-import"
 
 Write-Stage "WRITE_PROFILE_TEMP"
@@ -458,7 +511,11 @@ if ($ImportSettings -and -not [string]::IsNullOrWhiteSpace([string]$payload.sett
 }
 
 Write-Host "PROFILE TRANSFER IMPORT OK" -ForegroundColor Green
-Write-Host "Profiles: $($outProfiles.Count)"
+Write-Host "Incoming profiles: $incomingCount"
+Write-Host "Existing profiles: $existingCount"
+Write-Host "Preserved local-only profiles: $preservedLocalCount"
+Write-Host "Profiles after merge: $($outProfiles.Count)"
+Write-Host "Import mode: $(if ($ReplaceProfiles) { 'REPLACE' } else { 'MERGE_BY_ID' })"
 Write-Host "Destination: $destination"
 Write-Host "Client paths rewritten: $rewrittenClient"
 Write-Host "Game paths rewritten: $rewrittenGame"
