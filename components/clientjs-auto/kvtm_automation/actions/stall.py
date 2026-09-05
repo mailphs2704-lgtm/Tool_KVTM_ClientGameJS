@@ -195,27 +195,63 @@ class StallActions:
             self.waiter.sleep(0.50)
         raise ScreenTimeout("Không đóng được quầy bán của clone")
 
-    def collect_own_stall_gold(self, *, maximum: int = 20) -> int:
-        """Collect completed own-stall gold before placing resale batches."""
+    def collect_own_stall_gold(self, *, maximum: int = 8) -> int:
+        """Collect visible gold once and count only verified disappearance."""
+        visible_limit = min(len(VISIBLE_SLOT_CENTERS), max(0, int(maximum)))
         collected = 0
         stable_misses = 0
-        while collected < max(0, int(maximum)) and stable_misses < 3:
+        while collected < visible_limit and stable_misses < 3:
             self.context.ensure_running()
             match = self.vision.find(
                 "vang",
                 threshold=0.74,
                 zone=self.OWN_STALL_CONTENT_ZONE,
-                click=True,
+                click=False,
             )
             if match is None:
                 stable_misses += 1
                 self.waiter.sleep(0.25)
                 continue
+
             stable_misses = 0
+            original_center = match.center
+            self.vision.driver.click(*original_center)
+            verify_deadline = time.monotonic() + 2.0
+            disappeared = False
+            while time.monotonic() < verify_deadline:
+                self.context.ensure_running()
+                self.waiter.sleep(0.20)
+                remaining = self.vision.find(
+                    "vang",
+                    threshold=0.74,
+                    zone=self.OWN_STALL_CONTENT_ZONE,
+                    click=False,
+                )
+                if remaining is None:
+                    disappeared = True
+                    break
+                dx = remaining.center[0] - original_center[0]
+                dy = remaining.center[1] - original_center[1]
+                if dx * dx + dy * dy > 32 * 32:
+                    disappeared = True
+                    break
+
+            if not disappeared:
+                self.context.log(
+                    "Bỏ qua điểm vàng chưa xác minh biến mất • "
+                    f"center={original_center}"
+                )
+                break
+
             collected += 1
-            self.context.log(f"Thu vàng quầy clone • ô {collected}")
-            self.waiter.sleep(0.40)
-        self.context.log(f"Thu vàng quầy clone hoàn tất • {collected} ô")
+            self.context.log(
+                f"Thu vàng quầy clone • đã xác minh {collected}/{visible_limit} ô"
+            )
+            self.waiter.sleep(0.20)
+
+        self.context.log(
+            f"Thu vàng quầy clone hoàn tất • {collected} ô đã xác minh"
+        )
         return collected
 
     def next_view(self) -> None:
