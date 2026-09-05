@@ -235,3 +235,12 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - A 90-second startup watchdog terminates a stuck image-runtime worker with an explicit error instead of leaving the GUI indefinitely busy.
 - Python syntax: PASS for `runtime/bootstrap.py` and `worker/clean_auto_worker.py`.
 - Windows PS5.1 build and live ClientJS navigation remain required before declaring end-to-end PASS.
+
+
+## 2026-09-05 — AUTO sạch mở/nhận lại ClientJS từ chính nút Vào game
+
+- `_start_clean_auto_session` quét lại các `GameClientJS.exe` và nhận đúng profile/PID ngay khi bấm, không chờ bridge monitor định kỳ.
+- Nếu profile đã chọn thật sự offline, nút `Vào game + đóng popup` tự mở đúng ClientJS/profile trước khi tạo worker.
+- Tách báo lỗi: tài khoản đang có worker và ClientJS mở thất bại; không còn gộp sai thành `bận/offline`.
+- Giữ nguyên profile/secret; worker vẫn xác nhận lại đúng PID/profile và Bridge sau khi ClientJS restart.
+- Python syntax: PASS. Windows live verification: pending operator test after `[1]`.
