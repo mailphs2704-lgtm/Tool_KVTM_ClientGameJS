@@ -2,6 +2,31 @@
   "schema_version": 1,
   "functions": [
     {
+      "key": "harvest_event_star_tree",
+      "label": "Cào Cây Event - Cây Sao",
+      "auto_pro_function_id": 0,
+      "entrypoint": "FarmAutomation.produceItems_0",
+      "enabled_for_test": true,
+      "required_auto_modules": [
+        "automation",
+        "adb_controller",
+        "image_processor",
+        "engine_driver",
+        "pc_driver",
+        "adaptive_cv",
+        "clientjs_auto_patch"
+      ],
+      "required_methods": [
+        "plantTrees",
+        "harvestTrees",
+        "openGame",
+        "goUp",
+        "goDownLast",
+        "Tuychon"
+      ],
+      "delete_items": []
+    },
+    {
       "key": "produce_6_tinh_dau_hh_6_vai_vang_8_tao_say",
       "label": "6 Tinh Dầu Hoa Hồng + 6 Vải Vàng + 8 Táo Sấy",
       "auto_pro_function_id": 98,
