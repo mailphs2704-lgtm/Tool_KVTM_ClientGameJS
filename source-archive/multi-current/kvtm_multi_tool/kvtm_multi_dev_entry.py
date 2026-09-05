@@ -15,6 +15,7 @@ import kvtm_multi_entry as production
 
 
 _RESIDENT_RUNTIME_TIMEOUT = 15.0
+_CLEAR_STALL_MAX_CONCURRENCY = 2
 
 
 def _runtime_roots() -> tuple[Path, Path, Path]:
@@ -118,7 +119,7 @@ class MultiDevApp(production.MultiApp):
         self._refresh_clear_stall_panel()
 
     def _poll_clear_stall_schedule(self) -> None:
-        """Start at most one due full Dọn quầy cycle across the whole machine."""
+        """Start due Dọn quầy cycles up to the two-client machine limit."""
         if self._bridge_stop.is_set():
             return
         now = time.time()
@@ -142,7 +143,6 @@ class MultiDevApp(production.MultiApp):
                         self._set_clear_stall_checkpoint(profile_id, waiting)
                     continue
                 self._start_scheduled_full_clear_stall(profile_id)
-                break
         self.after(1000, self._poll_clear_stall_schedule)
 
     def _clear_stall_profile(self) -> tuple[str | None, dict | None]:
@@ -178,26 +178,44 @@ class MultiDevApp(production.MultiApp):
         return bool(thread and thread.is_alive())
 
     def _dev_probe_blocked(self, profile_id: str | None) -> bool:
+        """Allow two independent profiles while keeping each profile exclusive."""
         if not profile_id:
             return True
+        profile_id = str(profile_id)
         if self._probe_thread_alive(profile_id):
-            return True
-        if any(
-            thread.is_alive()
-            for other_id, thread in self._dev_probe_threads.items()
-            if str(other_id) != str(profile_id)
-        ):
             return True
         auto_worker = self._auto_workers.get(profile_id)
         if self._worker_alive(auto_worker):
             return True
-        if tuple(self._clear_stall_starting):
+        if profile_id in self._clear_stall_starting:
             return True
-        if tuple(getattr(self, "_clear_stall_probe_starting", ())):
+        if profile_id in getattr(self, "_clear_stall_probe_starting", ()):
             return True
-        if any(self._worker_alive(w) for w in self._clear_stall_workers.values()):
+        worker = self._clear_stall_workers.get(profile_id)
+        if self._worker_alive(worker):
             return True
-        return False
+
+        active_profiles = {
+            str(other_id)
+            for other_id, thread in self._dev_probe_threads.items()
+            if thread.is_alive() and str(other_id) != profile_id
+        }
+        active_profiles.update(
+            str(other_id)
+            for other_id in self._clear_stall_starting
+            if str(other_id) != profile_id
+        )
+        active_profiles.update(
+            str(other_id)
+            for other_id in getattr(self, "_clear_stall_probe_starting", ())
+            if str(other_id) != profile_id
+        )
+        active_profiles.update(
+            str(other_id)
+            for other_id, other_worker in self._clear_stall_workers.items()
+            if str(other_id) != profile_id and self._worker_alive(other_worker)
+        )
+        return len(active_profiles) >= _CLEAR_STALL_MAX_CONCURRENCY
 
     def _start_scheduled_full_clear_stall(self, profile_id: str) -> None:
         """Open one due clone and run the same live-verified full transaction."""
@@ -586,9 +604,7 @@ class MultiDevApp(production.MultiApp):
         storage = max(1, min(5, int(job.get("target_stall_id", 2) or 2)))
         quantity = max(10, min(1000, int(job.get("buy_quantity", 10) or 10)))
         quantity = max(10, (quantity // 10) * 10)
-        max_stall_passes = max(
-            1, min(10, int(job.get("max_scan_pages", 10) or 10))
-        )
+        max_stall_passes = 1
         default_items = [item_id for item_id, _label in core.CLEAR_STALL_ITEM_OPTIONS]
         raw_items = job.get("allowed_item_ids", default_items)
         allowed_item_ids = tuple(
