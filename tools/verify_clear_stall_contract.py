@@ -28,6 +28,13 @@ CLIENT_PATCH = ROOT / "test-candidates/auto-pro-clientjs-temp/clientjs_auto_patc
 ENGINE_DRIVER = ROOT / "test-candidates/auto-pro-clientjs-temp/engine_driver.py"
 DESIGNER = ROOT / "source-archive/multi-current/kvtm_multi_tool/clear_stall_designer.py"
 AUTO_CATALOG = ROOT / "components/clientjs-auto/catalog/functions.json"
+CLEAN_AUTO_WORKER = ROOT / "components/clientjs-auto/worker/clean_auto_worker.py"
+GAME_SESSION = ROOT / "components/clientjs-auto/kvtm_automation/workflows/game_session/workflow.py"
+CLEAN_CONTEXT = ROOT / "components/clientjs-auto/kvtm_automation/context.py"
+CLEAN_AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
+CLEAN_DRIVER = ROOT / "components/clientjs-auto/kvtm_automation/runtime/cocos_bridge.py"
+PROFILE_PROCESS = ROOT / "components/clientjs-auto/kvtm_automation/runtime/profile_process.py"
+POPUP_ACTIONS = ROOT / "components/clientjs-auto/kvtm_automation/actions/popup.py"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -67,6 +74,23 @@ def main() -> int:
     ast.parse(client_patch, filename=str(CLIENT_PATCH))
     engine_driver = ENGINE_DRIVER.read_text(encoding="utf-8")
     auto_catalog = json.loads(AUTO_CATALOG.read_text(encoding="utf-8"))
+    clean_auto_worker = CLEAN_AUTO_WORKER.read_text(encoding="utf-8")
+    game_session = GAME_SESSION.read_text(encoding="utf-8")
+    clean_context = CLEAN_CONTEXT.read_text(encoding="utf-8")
+    clean_automation = CLEAN_AUTOMATION.read_text(encoding="utf-8")
+    clean_driver = CLEAN_DRIVER.read_text(encoding="utf-8")
+    profile_process = PROFILE_PROCESS.read_text(encoding="utf-8")
+    popup_actions = POPUP_ACTIONS.read_text(encoding="utf-8")
+    for path, source in (
+        (CLEAN_AUTO_WORKER, clean_auto_worker),
+        (GAME_SESSION, game_session),
+        (CLEAN_CONTEXT, clean_context),
+        (CLEAN_AUTOMATION, clean_automation),
+        (CLEAN_DRIVER, clean_driver),
+        (PROFILE_PROCESS, profile_process),
+        (POPUP_ACTIONS, popup_actions),
+    ):
+        ast.parse(source, filename=str(path))
     ast.parse(engine_driver, filename=str(ENGINE_DRIVER))
     designer = DESIGNER.read_text(encoding="utf-8")
     ast.parse(designer, filename=str(DESIGNER))
@@ -462,6 +486,23 @@ def main() -> int:
     require(multi, "def _refresh_auto_tab_scroll", "AUTO tab arrow-state synchronization missing")
     require(multi, 'self.auto_tabs_canvas.xview_scroll', "AUTO center strip horizontal scroll missing")
     require(multi, 'text="AUTO MULTI DEV SẠCH"', "Clean AUTO scaffold header missing")
+    require(multi, "def _start_clean_auto_session", "Clean AUTO start action missing")
+    require(multi, '"clean_auto_worker.py"', "Clean AUTO worker launch missing")
+    require(multi, '"--profile-file", str(PROFILE_FILE)', "Clean AUTO profile identity handoff missing")
+    require(multi, "def _stop_clean_auto_session", "Clean AUTO stop action missing")
+    require(clean_auto_worker, "legacy_pyc=False", "Clean AUTO must declare no legacy pyc")
+    require(clean_auto_worker, "GameSessionWorkflow(automation).run", "Clean game session entry missing")
+    require(game_session, "self.auto.ensure_main_screen", "Clean game entry/main-screen verification missing")
+    require(clean_context, "profile_file: Path | None", "Clean context profile file missing")
+    require(clean_automation, "profile_id=context.profile_id", "Clean driver immutable profile binding missing")
+    require(clean_driver, "def _refresh_profile_pid", "Clean ClientJS PID rebind missing")
+    require(clean_driver, "deadline = time.monotonic() + 120.0", "Clean restart wait bound missing")
+    require(clean_driver, "self.ensure_bridge()", "Clean bridge reinjection after PID change missing")
+    require(profile_process, "class ProfileProcessResolver", "Immutable profile resolver missing")
+    require(profile_process, "args[2:] == secret_args", "Exact ClientJS secret-argument match missing")
+    forbid(profile_process, "print(", "Profile resolver must never print decrypted secret")
+    require(popup_actions, '"lv_up"', "Clean level-up popup guard missing")
+    require(popup_actions, '"quay_hang_on"', "Clean stall-popup guard missing")
     require(multi, 'style="Queue.Treeview"', "Queue table theme missing")
     require(multi, "def _refresh_clear_stall_queue", "Live clear-stall queue refresh missing")
     require(multi, "rows.sort(key=lambda row: (row[0]", "Queue must sort by least remaining time")
