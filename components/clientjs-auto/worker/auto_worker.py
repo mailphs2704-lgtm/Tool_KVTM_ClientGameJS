@@ -626,7 +626,59 @@ def main() -> int:
                 options={**auto_options, "skip_items": skip_items},
                 tuning=auto_tuning,
             )
-            automation.start()
+            friend_home_failures = 0
+            client_reset_used = False
+            while True:
+                try:
+                    automation.start()
+                    break
+                except Exception as exc:
+                    error_text = str(exc).casefold()
+                    friend_home_failure = any(
+                        marker in error_text
+                        for marker in (
+                            "nhà bạn", "nha ban", "friend",
+                            "màn hình chính", "man hinh chinh", "main screen",
+                        )
+                    )
+                    if not friend_home_failure or stop_event.is_set():
+                        raise
+                    friend_home_failures += 1
+                    emit(
+                        "log",
+                        message=(
+                            "AUTO chính: lỗi qua/thoát nhà bạn "
+                            f"{friend_home_failures}/3 • {exc}"
+                        ),
+                    )
+                    if friend_home_failures < 3:
+                        continue
+                    if client_reset_used:
+                        raise RuntimeError(
+                            "AUTO chính vẫn lỗi qua/thoát nhà bạn sau một lần reset ClientJS"
+                        ) from exc
+
+                    current_controller = getattr(automation, "adb", None)
+                    current_driver = getattr(current_controller, "driver", None)
+                    if current_controller is None or current_driver is None:
+                        raise RuntimeError(
+                            "Không có driver ClientJS để reset sau 3 lỗi nhà bạn"
+                        ) from exc
+                    emit(
+                        "log",
+                        message=(
+                            "AUTO chính: đủ 3 lỗi nhà bạn • reset đúng ClientJS "
+                            "và nhận lại bằng profile_id + PID + 3 frame hợp lệ"
+                        ),
+                    )
+                    current_driver.app_stop("vn.kvtm.js")
+                    if stop_event.is_set():
+                        break
+                    time.sleep(1.0)
+                    current_driver.app_start("vn.kvtm.js")
+                    current_controller.openGame(stop_event)
+                    client_reset_used = True
+                    friend_home_failures = 0
         except Exception as exc:
             outcome["error"] = repr(exc)
             emit(
