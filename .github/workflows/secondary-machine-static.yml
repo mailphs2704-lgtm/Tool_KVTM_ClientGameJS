@@ -56,6 +56,21 @@ jobs:
           }
           if ($failed) { throw 'PowerShell parse check failed' }
 
+          $machineSetup = Get-Content '.\tools\KVTM_MACHINE_SETUP.ps1' -Raw
+          foreach ($token in @(
+            'Test-VCBuildTools',
+            'Install-VCBuildTools',
+            'Microsoft.VisualStudio.2022.BuildTools',
+            'Microsoft.VisualStudio.Workload.VCTools',
+            'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+            'vc_build_tools_x86_x64='
+          )) {
+            if (-not $machineSetup.Contains($token)) {
+              throw "C++ Build Tools machine setup contract missing: $token"
+            }
+          }
+          Write-Host 'VC_BUILD_TOOLS_SETUP_CONTRACT_OK' -ForegroundColor Green
+
       - name: Parse runtime updater Python
         shell: powershell
         run: |
