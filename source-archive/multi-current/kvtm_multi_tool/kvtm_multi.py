@@ -1131,6 +1131,17 @@ class MultiApp(tk.Tk):
         )
         self.auto_multi_dev_detail_log_button.pack(side="left")
 
+        clean_probe_actions = ttk.Frame(multi_dev_tab, style="Detail.TFrame")
+        clean_probe_actions.pack(fill="x", padx=8, pady=(8, 0))
+        self.auto_multi_dev_vp_probe_button = ttk.Button(
+            clean_probe_actions,
+            text="⌕ Kiểm tra nhận diện VP (READ-ONLY)",
+            width=36,
+            style="Action.TButton",
+            command=self._start_clean_vp_recognition_probe,
+        )
+        self.auto_multi_dev_vp_probe_button.pack(side="left")
+
         main_tab = self.auto_feature_tabs["main"]
         # These switches map one-to-one to AUTO PRO's legacy option keys.
         # Every launch starts disabled deliberately; selecting a feature is an
@@ -2940,6 +2951,12 @@ class MultiApp(tk.Tk):
         )
         open_log_window(
             self, path, f"{label} • {profile.get('name') or profile_id}"
+        )
+
+    def _start_clean_vp_recognition_probe(self) -> None:
+        messagebox.showinfo(
+            APP_NAME,
+            "Kiểm tra nhận diện VP READ-ONLY chỉ chạy trong Multi DEV.",
         )
 
     def _start_clean_auto_session(self) -> None:
