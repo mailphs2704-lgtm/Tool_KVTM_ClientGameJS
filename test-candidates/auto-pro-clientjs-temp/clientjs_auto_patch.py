@@ -523,7 +523,16 @@ def _install_controller_patch(adb_controller_module) -> None:
             # Repeat a point like
             # AUTO PRO (up to five taps), and stop immediately after a real
             # modal change so no tap can leak into the game behind it.
-            for x, y in ((433, 557), (497, 575), (500, 590), (500, 520)):
+            # LIVE_VERIFIED ClientJS center must remain first. A later
+            # refactor accidentally removed (500, 470), causing every retry to
+            # land below the rendered chest while the modal stayed unchanged.
+            for x, y in (
+                (500, 470),
+                (433, 557),
+                (497, 575),
+                (500, 590),
+                (500, 520),
+            ):
                 for attempt in range(5):
                     if _stopped(stop_event):
                         return False
