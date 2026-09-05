@@ -276,3 +276,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - `is_own_main_screen` không thể PASS khi generic blocker còn tồn tại. Áp dụng chung AUTO MULTI DEV và Dọn quầy.
 - Frame live Bảng tin sự kiện đạt generic guard: bright_ratio=0.3642, outer_mean=39.54, center_mean=123.47.
 - AST syntax PASS cho popup.py và verifier; live Windows pending.
+
+
+## 2026-09-05 — Hai log riêng cho AUTO MULTI DEV
+
+- Tab AUTO MULTI DEV có `Log hành động` và `Log chi tiết`, mở thành hai cửa sổ nền tối/font Consolas, live-tail 500ms như hai console AUTO PRO tham chiếu.
+- Mỗi profile/mỗi run lưu riêng tại `data-dev/auto-multi-dev/<profile>/<run>/action.log` và `detail.log`.
+- Action log chỉ nhận stage/nghiệp vụ/retry/kết quả. Detail log nhận Bridge/PID/capture và mọi template match gồm context, score, threshold, zone, scale, PASS/FAIL.
+- Writer che các trường password/token/cookie/authorization/secret/launch_args trước khi ghi.
+- Hai module mới có `FILE_FUNCTIONS` và `__all__`, dưới giới hạn 10 chức năng/file. Builder và static verifier bắt buộc đóng gói/kiểm tra cả hai.
+- AST syntax PASS cho 8 file Python liên quan. Windows GUI/live log pending sau `[1]`.
