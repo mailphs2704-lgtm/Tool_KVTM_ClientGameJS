@@ -381,18 +381,14 @@ def main() -> int:
     require(auto_worker, '"client_pid_changed"', "Worker PID replacement event missing")
     require(
         auto_worker,
+        "AUTO PRO owns its original retry/reset policy",
+        "AUTO worker must preserve AUTO PRO reset ownership",
+    )
+    require(auto_worker, "automation.start()", "AUTO PRO entry call missing")
+    forbid(
+        auto_worker,
         "friend_home_failures += 1",
-        "AUTO main three friend/home failure counter missing",
-    )
-    require(
-        auto_worker,
-        "current_driver.app_stop",
-        "AUTO main ClientJS reset after friend/home failures missing",
-    )
-    require(
-        auto_worker,
-        "current_controller.openGame(stop_event)",
-        "AUTO main must re-identify the restarted ClientJS before continuing",
+        "Worker must not replace AUTO PRO's retry/reset policy",
     )
     require(
         dev_entry,
@@ -457,84 +453,20 @@ def main() -> int:
     forbid(client_runtime, "127.0.0.1:5555", "ClientJS runtime must not contain an ADB fallback target")
     require(multi, 'event == "client_pid_changed"', "Multi PID replacement handler missing")
     require(multi, "RunningProcessRef(new_pid)", "Multi must adopt exact worker PID")
-    require(
+    forbid(
         client_patch,
-        "result = original_open_chests(self, stop_event)",
-        "AUTO PRO must retain ownership of chest-screen navigation",
-    )
-    require(
-        client_patch,
-        'return bool(original_find("ruong_bac", threshold=1.0, click=False))',
-        "Chest state 1 must detect the silver chest at exact threshold 1.0",
-    )
-    require(
-        client_patch,
-        "if not silver_visible_exact():",
-        "Chest chooser transition must wait for the silver chest to disappear",
-    )
-    require(
-        client_patch,
-        'entry_state="MODAL_ALREADY_OPEN"',
-        "Chest state 2 must identify an already-open modal",
-    )
-    require(
-        client_patch,
-        "selection_skipped=True",
-        "Already-open chest modal must skip the wooden-chest selection",
-    )
-    require(
-        client_patch,
-        "original_click(500, 470)",
-        "Live-verified ClientJS chest open point missing",
-    )
-    require(
-        client_patch,
-        '"clientjs_chest_open_probe"',
-        "Chest open screen-change verification trace missing",
-    )
-    require(
-        client_patch,
-        '"clientjs_chest_exit_probe"',
-        "Chest exit-to-main-screen verification trace missing",
-    )
-    require(
-        client_patch,
-        "if _blocking_game_overlay(controller):",
-        "Farm anchors must be rejected while the chest modal is visible",
-    )
-    require(
-        client_patch,
-        "not blocking_overlay and _rendered_client_frame(self) is not None",
-        "Initial live frames must not bypass a blocking chest modal",
-    )
-    require(client_patch, "clientjs_game_ready_by_live_capture", "PID reset live-frame readiness missing")
-    require(client_patch, '"clientjs_attached_game_ready"', "Already-running ClientJS readiness trace missing")
-    require(client_patch, "restart_skipped=True", "Stable live client must skip unnecessary restart")
-    require(client_patch, "for _attempt in range(12):", "Bounded initial live-frame probe missing")
-    require(client_patch, "cleanup_actions > 0", "Post-reset frames must follow a popup cleanup action")
-    open_game = client_patch.split("def _pc_open_game", 1)[1].split(
-        "def _install_controller_patch", 1
-    )[0]
-    if open_game.index("attached_frame_streak") > open_game.index(
-        'self.driver.app_stop("vn.kvtm.js")'
-    ):
-        raise AssertionError("Live ClientJS readiness must be tested before restart")
-    require(client_patch, '"clientjs_reopen_popup_probe"', "ClientJS reopen popup probe missing")
-    require(client_patch, '"clientjs_post_reset_cleanup"', "Post-reset popup cleanup missing")
-    require(
-        client_patch,
-        "post_popup_frame_streak >= 3",
-        "AUTO must resume after stable post-popup game frames",
-    )
-    require(
-        client_patch,
-        '"clientjs_post_reset_ready"',
-        "Post-reset AUTO resume trace missing",
+        "cls.openGame = open_game",
+        "ClientJS patch must not replace AUTO PRO openGame/reset policy",
     )
     forbid(
         client_patch,
-        "clicked_intermediate = True\n            rendered_streak = 0\n            try:",
-        "Popup click must not reset the readiness streak forever",
+        "cls.openChests = open_chests",
+        "ClientJS patch must not replace AUTO PRO openChests workflow",
+    )
+    require(
+        client_patch,
+        "Keep AUTO PRO's original openGame/openChests bytecode untouched",
+        "AUTO PRO openGame/openChests restoration marker missing",
     )
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
     require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
@@ -598,7 +530,7 @@ def main() -> int:
     print("backup=one_click_local_only")
     print("selected_items=rose_water,rose_oil,yellow_fabric,dried_apple,iced_tea")
     print("clientjs_reset=live_capture_ready")
-    print("chest=two_state_silver_exact_modal_skip_verified_exit")
+    print("chest=auto_pro_original")
     print("wheel=verified_exit_cleanup")
     return 0
 
