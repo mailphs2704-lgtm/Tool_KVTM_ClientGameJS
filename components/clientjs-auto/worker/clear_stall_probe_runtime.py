@@ -817,6 +817,11 @@ def run_probe(
             )
 
         if purchase_limit > 1:
+            # The common preflight opened friend 1 for read-only/Gate 2. Close
+            # it before the round engine so round 1 also gets exactly one clean
+            # open-and-scan visit.
+            automation.stall.close_friend_stall()
+            current_view = 1
             # One house is scanned exactly once per round. If the verified
             # target is still short after houses 1..N, start a new round at
             # house 1. There is no same-house reload inside a round.
