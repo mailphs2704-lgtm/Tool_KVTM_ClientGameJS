@@ -101,6 +101,8 @@ class MultiDevApp(production.MultiApp):
         self._clear_stall_probe_log_paths: dict[str, tuple[Path, Path]] = {}
         self._dev_probe_threads: dict[str, threading.Thread] = {}
         self._dev_probe_stop_events: dict[str, threading.Event] = {}
+        self._clean_main_threads: dict[str, threading.Thread] = {}
+        self._clean_main_stop_events: dict[str, threading.Event] = {}
         self._clear_stall_probe_starting: set[str] = set()
         self._clear_stall_probe_terminal: dict[str, str] = {}
         self._clear_stall_gate2_profiles: set[str] = set()
@@ -117,6 +119,169 @@ class MultiDevApp(production.MultiApp):
         self.auto_clear_stall_probe_button = full_action
         self.auto_clear_stall_start_button = full_action
         self._refresh_clear_stall_panel()
+
+    def _clean_main_alive(self, profile_id: str | None) -> bool:
+        if not profile_id:
+            return False
+        thread = self._clean_main_threads.get(str(profile_id))
+        return bool(thread and thread.is_alive())
+
+    def _start_clean_auto_session(self) -> None:
+        """Run clean Main on the resident image runtime already owned by DEV."""
+        selected = self.selected_ids()
+        if not selected:
+            core.messagebox.showinfo(
+                core.APP_NAME, "Hãy tích chọn ít nhất một tài khoản."
+            )
+            return
+
+        try:
+            self._adopt_running_clients(core.running_clients())
+        except Exception as exc:
+            self.note.set(f"AUTO MULTI DEV: chưa thể quét ClientJS: {exc}")
+
+        launched = 0
+        busy: list[str] = []
+        failed: list[str] = []
+        for profile_id in selected:
+            profile_id = str(profile_id)
+            profile = next(
+                (item for item in self.profiles if str(item.get("id") or "") == profile_id),
+                None,
+            )
+            name = str((profile or {}).get("name") or profile_id)
+            if profile is None:
+                failed.append(f"{name} (không còn profile)")
+                continue
+            if (
+                self._clean_main_alive(profile_id)
+                or self._probe_thread_alive(profile_id)
+                or self._worker_alive(self._auto_workers.get(profile_id))
+                or self._worker_alive(self._clear_stall_workers.get(profile_id))
+            ):
+                busy.append(name)
+                continue
+
+            process = self.processes.get(profile_id)
+            if process is None or process.poll() is not None:
+                try:
+                    self._launch(profile)
+                    process = self.processes.get(profile_id)
+                except Exception as exc:
+                    failed.append(f"{name} ({exc})")
+                    continue
+            if process is None or process.poll() is not None:
+                failed.append(f"{name} (ClientJS không khởi động)")
+                continue
+
+            stop_event = threading.Event()
+            work_dir = core.APP_DIR / "auto-multi-dev" / profile_id
+            work_dir.mkdir(parents=True, exist_ok=True)
+            thread = threading.Thread(
+                target=self._run_clean_main_thread,
+                args=(
+                    profile_id, profile, int(process.pid), work_dir, stop_event,
+                ),
+                name=f"kvtm-dev-clean-main-{profile_id[:8]}",
+                daemon=True,
+            )
+            self._clean_main_stop_events[profile_id] = stop_event
+            self._clean_main_threads[profile_id] = thread
+            thread.start()
+            launched += 1
+
+        if launched:
+            self.auto_multi_dev_status.set(
+                f"Resident runtime • đang vào game và đóng popup • {launched} tài khoản"
+            )
+        if busy:
+            self.note.set("AUTO MULTI DEV bỏ qua tài khoản đang bận: " + ", ".join(busy))
+        if failed:
+            detail = "; ".join(failed)
+            self.note.set("AUTO MULTI DEV không mở được ClientJS: " + detail)
+            core.messagebox.showerror(
+                core.APP_NAME, "Không mở được ClientJS cho AUTO MULTI DEV:\n" + detail
+            )
+
+    def _run_clean_main_thread(
+        self,
+        profile_id: str,
+        profile: dict,
+        pid: int,
+        work_dir: Path,
+        stop_event: threading.Event,
+    ) -> None:
+        try:
+            _component_root, _worker_root, auto_root = _install_runtime_paths()
+            from kvtm_automation import AutomationContext, KVAutomation
+            from kvtm_automation.workflows.game_session import GameSessionWorkflow
+
+            def log(message: str) -> None:
+                self.after(
+                    0,
+                    lambda text=str(message): (
+                        self.auto_multi_dev_status.set(text),
+                        self.note.set(text),
+                    ),
+                )
+
+            context = AutomationContext(
+                pid=int(pid),
+                profile_id=profile_id,
+                profile_name=str(profile.get("name") or profile_id),
+                auto_root=auto_root,
+                work_dir=work_dir,
+                stop_event=stop_event,
+                logger=log,
+                stage_reporter=log,
+                profile_file=core.PROFILE_FILE,
+            )
+            log("Clean Runtime dùng chung READY • không import lại cv2/numpy/PIL")
+            automation = KVAutomation(context, image_runtime_ready=True)
+            result = GameSessionWorkflow(automation).run(timeout=180.0)
+            payload = result.to_dict()
+            self.after(
+                0,
+                lambda data=payload: self._finish_clean_main(
+                    profile_id, "finished", data
+                ),
+            )
+        except Exception as exc:
+            payload = {"error": repr(exc), "traceback": traceback.format_exc()}
+            self.after(
+                0,
+                lambda data=payload: self._finish_clean_main(
+                    profile_id, "error", data
+                ),
+            )
+
+    def _finish_clean_main(
+        self, profile_id: str, outcome: str, payload: dict
+    ) -> None:
+        self._clean_main_threads.pop(profile_id, None)
+        self._clean_main_stop_events.pop(profile_id, None)
+        if outcome == "finished":
+            self.auto_multi_dev_status.set(
+                "PASS • Đã vào game, đóng popup và xác nhận màn hình chính"
+            )
+            return
+        error = str(payload.get("error") or "Lỗi AUTO MULTI DEV")
+        self.auto_multi_dev_status.set(f"LỖI • {error}")
+        core.messagebox.showerror(core.APP_NAME, f"AUTO MULTI DEV lỗi:\n{error}")
+
+    def _stop_clean_auto_session(self) -> None:
+        selected = set(map(str, self.selected_ids()))
+        targets = [
+            (profile_id, event)
+            for profile_id, event in self._clean_main_stop_events.items()
+            if not selected or profile_id in selected
+        ]
+        for _profile_id, event in targets:
+            event.set()
+        self.auto_multi_dev_status.set(
+            f"Đã gửi dừng an toàn • {len(targets)} tác vụ resident"
+            if targets else "AUTO MULTI DEV hiện không chạy"
+        )
 
     def _poll_clear_stall_schedule(self) -> None:
         """Start due Dọn quầy cycles up to the two-client machine limit."""
@@ -183,6 +348,8 @@ class MultiDevApp(production.MultiApp):
             return True
         profile_id = str(profile_id)
         if self._probe_thread_alive(profile_id):
+            return True
+        if self._clean_main_alive(profile_id):
             return True
         auto_worker = self._auto_workers.get(profile_id)
         if self._worker_alive(auto_worker):
@@ -1072,6 +1239,8 @@ class MultiDevApp(production.MultiApp):
         super()._stop_clear_stall()
 
     def _on_close(self) -> None:
+        for event in tuple(getattr(self, "_clean_main_stop_events", {}).values()):
+            event.set()
         for event in tuple(getattr(self, "_dev_probe_stop_events", {}).values()):
             event.set()
         for profile_id, paths in tuple(
