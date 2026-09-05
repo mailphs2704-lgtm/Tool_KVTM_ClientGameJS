@@ -74,7 +74,7 @@ class KVAutomation:
             context.stage("clientjs-dll-bridge-connecting")
             bundle = self.driver_factory.engine(
                 context.pid,
-                logger=context.log,
+                logger=context.detail,
                 profile_id=context.profile_id,
                 profile_file=context.profile_file,
             )
@@ -91,7 +91,9 @@ class KVAutomation:
             self.component_root,
             context.auto_root,
         )
-        self.vision = VisionEngine(self.driver, self.assets)
+        self.vision = VisionEngine(
+            self.driver, self.assets, detail_logger=context.detail
+        )
         self.wait = Waiter(context)
 
         self.popup = PopupActions(context, self.vision, self.wait)
