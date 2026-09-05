@@ -645,10 +645,30 @@ def main() -> int:
     task = threading.Thread(target=run_auto, daemon=True)
     task.start()
 
+    from clientjs_auto_patch import dismiss_clientjs_level_up
+
     reported_client_pid = int(
         getattr(getattr(controller, "driver", None), "pid", args.pid)
     )
+    next_level_up_check = 0.0
     while not finished.wait(0.20):
+        now = time.monotonic()
+        if controller is not None and now >= next_level_up_check:
+            next_level_up_check = now + 0.75
+            try:
+                if dismiss_clientjs_level_up(controller):
+                    emit(
+                        "log",
+                        message=(
+                            "ClientJS: đã nhận thưởng Lên cấp bằng tâm template"
+                        ),
+                    )
+                    time.sleep(0.45)
+            except Exception as exc:
+                emit(
+                    "log",
+                    message=f"ClientJS: kiểm tra popup Lên cấp lỗi: {exc}",
+                )
         current_driver = getattr(controller, "driver", None)
         current_client_pid = int(getattr(current_driver, "pid", reported_client_pid))
         if current_client_pid != reported_client_pid:
