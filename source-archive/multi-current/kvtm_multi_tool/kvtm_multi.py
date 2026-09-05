@@ -1117,7 +1117,19 @@ class MultiApp(tk.Tk):
             clean_actions, text="■ Dừng AUTO sạch", width=22,
             style="AutoStop.TButton", command=self._stop_clean_auto_session,
         )
-        self.auto_multi_dev_stop_button.pack(side="left")
+        self.auto_multi_dev_stop_button.pack(side="left", padx=(0, 8))
+        self.auto_multi_dev_action_log_button = ttk.Button(
+            clean_actions, text="≡ Log hành động", width=18,
+            style="Action.TButton",
+            command=lambda: self._open_clean_main_log("action"),
+        )
+        self.auto_multi_dev_action_log_button.pack(side="left", padx=(0, 8))
+        self.auto_multi_dev_detail_log_button = ttk.Button(
+            clean_actions, text="⌕ Log chi tiết", width=18,
+            style="Action.TButton",
+            command=lambda: self._open_clean_main_log("detail"),
+        )
+        self.auto_multi_dev_detail_log_button.pack(side="left")
 
         main_tab = self.auto_feature_tabs["main"]
         # These switches map one-to-one to AUTO PRO's legacy option keys.
@@ -2896,6 +2908,39 @@ class MultiApp(tk.Tk):
                 if due > 0 and due <= now:
                     self._start_clear_stall(str(profile_id), scheduled=True)
         self.after(1000, self._poll_clear_stall_schedule)
+
+    def _open_clean_main_log(self, kind: str) -> None:
+        selected = self.selected_ids()
+        if len(selected) != 1:
+            messagebox.showinfo(
+                APP_NAME, "Hãy chọn đúng một tài khoản để xem log."
+            )
+            return
+        profile_id = str(selected[0])
+        paths = getattr(self, "_clean_main_log_paths", {}).get(profile_id)
+        index = 0 if str(kind) == "action" else 1
+        path = Path(paths[index]) if paths else None
+        if path is None or not path.is_file():
+            profile_root = APP_DIR / "auto-multi-dev" / profile_id
+            name = "action.log" if index == 0 else "detail.log"
+            candidates = sorted(
+                profile_root.glob(f"*/{name}"),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            ) if profile_root.is_dir() else []
+            path = candidates[0] if candidates else None
+        if path is None or not path.is_file():
+            messagebox.showinfo(APP_NAME, "Tài khoản này chưa có log AUTO MULTI DEV.")
+            return
+        from main_log_viewer import open_log_window
+        label = "LOG HÀNH ĐỘNG" if index == 0 else "LOG CHI TIẾT NHẬN DIỆN"
+        profile = next(
+            (item for item in self.profiles if str(item.get("id") or "") == profile_id),
+            {},
+        )
+        open_log_window(
+            self, path, f"{label} • {profile.get('name') or profile_id}"
+        )
 
     def _start_clean_auto_session(self) -> None:
         """Launch the Python-only game-entry layer for every checked client."""
