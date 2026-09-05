@@ -549,6 +549,10 @@ def main() -> int:
         "VP probe must never use the rejected two-pass rewind flow",
     )
     require(stall, "def close_own_stall", "Verified own-stall close action missing")
+    require(stall, "visible_limit = min(len(VISIBLE_SLOT_CENTERS)", "Gold collection must be bounded to visible slots")
+    require(stall, "verify_deadline = time.monotonic() + 2.0", "Gold collection acknowledgement timeout missing")
+    require(stall, "if not disappeared:", "Unverified gold clicks must never be counted")
+    require(vp_workflow, "maximum=8", "VP probe gold collection must use visible-slot bound")
     require(dev_entry, "VpRecognitionProbeWorkflow(automation).run", "Resident VP probe wiring missing")
     require(dev_entry, "detail_logger=log_writer.detail", "Detail logger not connected to Main context")
     require(clean_automation, "detail_logger=context.detail", "Vision detail logger not connected")
