@@ -628,7 +628,38 @@ def main() -> int:
             )
             # AUTO PRO owns its original retry/reset policy. EngineDriver
             # remains profile-bound and will re-adopt the replacement PID.
-            automation.start()
+            #
+            # FarmAutomation.start() is normally continuous until stop_event is
+            # set. Some recovered error paths can return after openGame() has
+            # replaced ClientJS, however. Resume only for that proven PID
+            # transition; a normal return is still allowed to finish.
+            supervised_pid = int(
+                getattr(getattr(controller, "driver", None), "pid", args.pid)
+            )
+            while True:
+                automation.start()
+                if automation.stop_event.is_set():
+                    break
+                current_pid = int(
+                    getattr(getattr(controller, "driver", None), "pid", supervised_pid)
+                )
+                if current_pid == supervised_pid:
+                    break
+                emit(
+                    "worker_resumed_after_client_restart",
+                    profile_id=args.profile_id,
+                    function_id=args.function_id,
+                    old_pid=supervised_pid,
+                    new_pid=current_pid,
+                )
+                emit(
+                    "log",
+                    message=(
+                        "ClientJS đã restart và kết nối lại; "
+                        "tiếp tục vòng AUTO trên client mới"
+                    ),
+                )
+                supervised_pid = current_pid
         except Exception as exc:
             outcome["error"] = repr(exc)
             emit(
