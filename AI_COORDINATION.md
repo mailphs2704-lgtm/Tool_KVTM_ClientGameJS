@@ -214,3 +214,5 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Ưu tiên command copy/paste chính xác.
 - Không đưa 5-10 bước cùng lúc nếu chỉ cần một bước để lấy evidence tiếp theo.
 - PASS/PARTIAL/FAIL chỉ theo log/CI/live evidence thật; không tự điền số liệu chưa thấy.
+
+- 2026-09-05: Fixed silent AUTO stop after a successful ClientJS restart. Recovered FarmAutomation.start is continuous, but some recovered recovery paths may return after EngineDriver has rebound to a replacement PID while stop_event remains clear. The worker now resumes start only when that exact PID transition is proven; normal completion and user stop remain terminal. Event: worker_resumed_after_client_restart. Static contract and py_compile pass.
