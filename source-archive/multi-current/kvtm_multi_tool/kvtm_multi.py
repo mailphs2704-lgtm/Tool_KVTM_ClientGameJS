@@ -573,6 +573,8 @@ class MultiApp(tk.Tk):
         self._auto_profile_states: dict[str, dict] = {}
         self._auto_workers: dict[str, subprocess.Popen] = {}
         self._auto_worker_queue: queue.Queue = queue.Queue(maxsize=512)
+        self._clean_auto_workers: dict[str, subprocess.Popen] = {}
+        self._clean_auto_worker_queue: queue.Queue = queue.Queue(maxsize=256)
         self._clear_stall_workers: dict[str, subprocess.Popen] = {}
         self._clear_stall_worker_queue: queue.Queue = queue.Queue(maxsize=256)
         self._clear_stall_starting: set[str] = set()
@@ -592,6 +594,7 @@ class MultiApp(tk.Tk):
         threading.Thread(target=self._bridge_monitor, daemon=True).start()
         self.after(100, self._update_live_dwm)
         self.after(100, self._poll_auto_workers)
+        self.after(120, self._poll_clean_auto_workers)
         self.after(150, self._poll_clear_stall_workers)
         self.after(1000, self._poll_clear_stall_schedule)
         self.after(1500, self._poll)
@@ -1103,6 +1106,18 @@ class MultiApp(tk.Tk):
         ).grid(row=1, column=2, sticky="w", pady=(5, 0))
         for column in range(3):
             clean_body.columnconfigure(column, weight=1)
+        clean_actions = ttk.Frame(multi_dev_tab, style="Detail.TFrame")
+        clean_actions.pack(fill="x", padx=8, pady=(16, 0))
+        self.auto_multi_dev_start_button = ttk.Button(
+            clean_actions, text="▶ Vào game + đóng popup", width=28,
+            style="AutoStart.TButton", command=self._start_clean_auto_session,
+        )
+        self.auto_multi_dev_start_button.pack(side="left", padx=(0, 8))
+        self.auto_multi_dev_stop_button = ttk.Button(
+            clean_actions, text="■ Dừng AUTO sạch", width=22,
+            style="AutoStop.TButton", command=self._stop_clean_auto_session,
+        )
+        self.auto_multi_dev_stop_button.pack(side="left")
 
         main_tab = self.auto_feature_tabs["main"]
         # These switches map one-to-one to AUTO PRO's legacy option keys.
@@ -2882,6 +2897,145 @@ class MultiApp(tk.Tk):
                     self._start_clear_stall(str(profile_id), scheduled=True)
         self.after(1000, self._poll_clear_stall_schedule)
 
+    def _start_clean_auto_session(self) -> None:
+        """Launch the Python-only game-entry layer for every checked client."""
+        selected = self.selected_ids()
+        if not selected:
+            messagebox.showinfo(APP_NAME, "Hãy tích chọn ít nhất một tài khoản đang chạy.")
+            return
+        launched = 0
+        blocked = []
+        package_root = TOOL_DIR.parent
+        auto_root = package_root / "AUTO_PRO"
+        worker_file = (
+            package_root / "components" / "clientjs-auto" /
+            "worker" / "clean_auto_worker.py"
+        )
+        if not worker_file.is_file():
+            messagebox.showerror(APP_NAME, f"Thiếu worker AUTO sạch:\n{worker_file}")
+            return
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        for profile_id in selected:
+            profile = next(
+                (item for item in self.profiles if item.get("id") == profile_id),
+                None,
+            )
+            process = self.processes.get(profile_id)
+            legacy = self._auto_workers.get(profile_id)
+            stall = self._clear_stall_workers.get(profile_id)
+            current = self._clean_auto_workers.get(profile_id)
+            if (
+                profile is None or process is None or process.poll() is not None
+                or (legacy and legacy.poll() is None)
+                or (stall and stall.poll() is None)
+                or (current and current.poll() is None)
+            ):
+                blocked.append(str((profile or {}).get("name") or profile_id))
+                continue
+            work_dir = APP_DIR / "auto-multi-dev" / str(profile_id)
+            work_dir.mkdir(parents=True, exist_ok=True)
+            worker = subprocess.Popen(
+                [
+                    sys.executable, str(worker_file),
+                    "--auto-root", str(auto_root),
+                    "--pid", str(process.pid),
+                    "--profile-id", str(profile_id),
+                    "--profile-name", str(profile.get("name") or profile_id),
+                    "--profile-file", str(PROFILE_FILE),
+                    "--work-dir", str(work_dir),
+                ],
+                cwd=str(auto_root), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                errors="replace", bufsize=1, creationflags=flags,
+            )
+            self._clean_auto_workers[profile_id] = worker
+            threading.Thread(
+                target=self._read_clean_auto_worker,
+                args=(profile_id, worker),
+                daemon=True,
+            ).start()
+            launched += 1
+        if launched:
+            self.auto_multi_dev_status.set(
+                f"Đang vào game và đóng popup • {launched} tài khoản"
+            )
+        if blocked:
+            self.note.set("AUTO sạch bỏ qua tài khoản bận/offline: " + ", ".join(blocked))
+
+    def _read_clean_auto_worker(self, profile_id: str, worker) -> None:
+        if worker.stdout:
+            for line in worker.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    payload = {"event": "log", "message": line}
+                payload["profile_id"] = profile_id
+                try:
+                    self._clean_auto_worker_queue.put(payload, timeout=1.0)
+                except queue.Full:
+                    pass
+        try:
+            self._clean_auto_worker_queue.put_nowait({
+                "event": "worker_exit", "profile_id": profile_id,
+                "returncode": worker.wait(timeout=1.0),
+            })
+        except Exception:
+            pass
+
+    def _poll_clean_auto_workers(self) -> None:
+        if self._bridge_stop.is_set():
+            return
+        try:
+            while True:
+                payload = self._clean_auto_worker_queue.get_nowait()
+                profile_id = str(payload.get("profile_id") or "")
+                event = str(payload.get("event") or "")
+                message = str(payload.get("message") or "")
+                if event in {"progress", "log"} and message:
+                    self.auto_multi_dev_status.set(message)
+                    self.note.set(message)
+                elif event == "worker_finished":
+                    self.auto_multi_dev_status.set(
+                        "PASS • Đã vào game, đóng popup và xác nhận màn hình chính"
+                    )
+                elif event == "worker_error":
+                    error = str(payload.get("error") or "Lỗi AUTO sạch")
+                    self.auto_multi_dev_status.set(f"LỖI • {error}")
+                    messagebox.showerror(APP_NAME, f"AUTO MULTI DEV lỗi:\n{error}")
+                elif event == "worker_stopped":
+                    self.auto_multi_dev_status.set("Đã dừng AUTO sạch")
+                elif event == "worker_exit":
+                    worker = self._clean_auto_workers.get(profile_id)
+                    if worker and worker.poll() is not None:
+                        self._clean_auto_workers.pop(profile_id, None)
+        except queue.Empty:
+            pass
+        self.after(120, self._poll_clean_auto_workers)
+
+    def _stop_clean_auto_session(self) -> None:
+        selected = set(self.selected_ids())
+        targets = [
+            (profile_id, worker)
+            for profile_id, worker in self._clean_auto_workers.items()
+            if not selected or profile_id in selected
+        ]
+        stopped = 0
+        for _profile_id, worker in targets:
+            try:
+                if worker.poll() is None and worker.stdin:
+                    worker.stdin.write(json.dumps({"command": "stop"}) + "\n")
+                    worker.stdin.flush()
+                    stopped += 1
+            except (OSError, ValueError):
+                pass
+        self.auto_multi_dev_status.set(
+            f"Đã gửi dừng an toàn • {stopped} worker"
+            if stopped else "AUTO sạch hiện không chạy"
+        )
+
     def _auto_ui_start(self) -> None:
         ids = self.selected_ids()
         if not ids:
@@ -3303,7 +3457,10 @@ class MultiApp(tk.Tk):
                 {"command": "update_tuning", "tuning": validated},
                 ensure_ascii=True, separators=(",", ":"),
             ) + "\n"
-            for worker in list(self._auto_workers.values()):
+            for worker in [
+            *list(self._auto_workers.values()),
+            *list(self._clean_auto_workers.values()),
+        ]:
                 try:
                     if worker.poll() is None and worker.stdin:
                         worker.stdin.write(payload)
