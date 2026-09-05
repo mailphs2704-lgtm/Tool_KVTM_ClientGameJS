@@ -244,3 +244,15 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Tách báo lỗi: tài khoản đang có worker và ClientJS mở thất bại; không còn gộp sai thành `bận/offline`.
 - Giữ nguyên profile/secret; worker vẫn xác nhận lại đúng PID/profile và Bridge sau khi ClientJS restart.
 - Python syntax: PASS. Windows live verification: pending operator test after `[1]`.
+
+
+## 2026-09-05 — Chuẩn hóa Clean Main dùng runtime resident chung
+
+- Người dùng xác nhận AUTO MULTI DEV và Dọn quầy là hai Main chính của dự án từ thời điểm này.
+- Chọn kiến trúc ít thay đổi/rủi ro nhất: tiếp tục một image runtime resident đã có và đã được Dọn quầy dùng trong tiến trình Multi DEV; không tạo thêm runtime service/process trùng lặp.
+- AUTO MULTI DEV trong `MultiDevApp` nay chạy `GameSessionWorkflow` bằng context/thread riêng với `KVAutomation(..., image_runtime_ready=True)`; không spawn `clean_auto_worker.py`, không cold-load lại cv2/numpy/PIL khi bấm.
+- Runtime vẫn nạp một lần trước GUI. Mỗi profile độc quyền giữa AUTO MULTI DEV/Dọn quầy/AUTO cũ; Dọn quầy vẫn tối đa hai profile độc lập.
+- Stop-event, work-dir, PID/profile identity và Bridge rebind riêng cho từng tác vụ. Đóng Multi phát stop cho cả hai nhóm resident task.
+- `clean_auto_worker.py` chỉ còn CLI/fallback diagnostic, không phải đường Main DEV.
+- Tài liệu chuẩn: `docs/CLEAN_MAIN_ARCHITECTURE.md`. Verifier đã khóa resident reuse/per-profile exclusivity/stop registry.
+- AST syntax PASS cho DEV entry và verifier. Windows build/live chưa xác nhận; không gọi runtime PASS.
