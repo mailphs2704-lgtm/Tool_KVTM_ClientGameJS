@@ -122,6 +122,103 @@ function Assert-CleanClearStallWorker {
     }
 }
 
+function Test-X86PortableExecutable {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    try {
+        [byte[]]$bytes = [System.IO.File]::ReadAllBytes($Path)
+        if ($bytes.Length -lt 4096 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+            return $false
+        }
+        $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+        if ($peOffset -lt 0 -or ($peOffset + 6) -gt $bytes.Length) { return $false }
+        if (
+            $bytes[$peOffset] -ne 0x50 -or
+            $bytes[$peOffset + 1] -ne 0x45 -or
+            $bytes[$peOffset + 2] -ne 0x00 -or
+            $bytes[$peOffset + 3] -ne 0x00
+        ) {
+            return $false
+        }
+        return ([BitConverter]::ToUInt16($bytes, $peOffset + 4) -eq 0x014C)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Restore-CurrentRuntimeBridge {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Names,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    $runtimeHeadFile = Join-Path $OutputRoot ".source-head.txt"
+    $runtimeBin = Join-Path $OutputRoot "AUTO_PRO\bin"
+    if (-not (Test-Path -LiteralPath $runtimeHeadFile -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $runtimeHead = (Get-Content -LiteralPath $runtimeHeadFile -Raw -Encoding ASCII).Trim()
+    }
+    catch {
+        return $false
+    }
+    if ($runtimeHead -notmatch "^[0-9a-fA-F]{40}$") { return $false }
+
+    $gitCommand = if ($env:KVTM_PS51_GIT_EXE) {
+        $env:KVTM_PS51_GIT_EXE
+    }
+    else {
+        $resolved = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue
+        if ($resolved) { [string]$resolved.Source } else { $null }
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$gitCommand)) { return $false }
+
+    $bridgeInputs = @(
+        "test-candidates/auto-pro-clientjs-temp/native/kvtm_bridge.cpp",
+        "test-candidates/auto-pro-clientjs-temp/native/kvtm_loader.cpp",
+        "test-candidates/auto-pro-clientjs-temp/BUILD_X86.bat",
+        "bridge-v3/native/kvtm_bridge_v3.cpp",
+        "bridge-v3/native/kvtm_loader_v3.cpp",
+        "bridge-v3/KVTM_BRIDGE_V3_CONTROL.bat"
+    )
+    [object[]]$commitProbe = @(& $gitCommand -C $RepoRoot cat-file -e ($runtimeHead + "^{commit}") 2>$null)
+    $commitProbeExit = $LASTEXITCODE
+    if ($commitProbeExit -ne 0) { return $false }
+
+    $diffArgs = @("-C", $RepoRoot, "diff", "--name-only", $runtimeHead, "HEAD", "--") + $bridgeInputs
+    [object[]]$changedOutput = @(& $gitCommand @diffArgs 2>$null)
+    $changedExit = $LASTEXITCODE
+    $changedInputs = @($changedOutput | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    if ($changedExit -ne 0 -or $changedInputs.Count -gt 0) {
+        Write-Host (
+            "[BLOCK] Source bridge da doi tu runtime $runtimeHead; khong dung binary cu."
+        ) -ForegroundColor Red
+        return $false
+    }
+
+    foreach ($name in $Names) {
+        $sourceFile = Join-Path $runtimeBin $name
+        if (-not (Test-X86PortableExecutable -Path $sourceFile)) {
+            Write-Host "[BLOCK] Binary runtime cu khong hop le/x86: $sourceFile" -ForegroundColor Red
+            return $false
+        }
+    }
+
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    foreach ($name in $Names) {
+        Copy-Item -LiteralPath (Join-Path $runtimeBin $name) -Destination (Join-Path $Destination $name) -Force
+    }
+    Write-Host (
+        "[DEV] $Label: dung binary x86 tu runtime $runtimeHead; source bridge khong doi."
+    ) -ForegroundColor Yellow
+    return $true
+}
+
 function Build-ClientJsCaptureBridge {
     $buildScript = Join-Path $PatchSource "BUILD_X86.bat"
     $source = Join-Path $PatchSource "native\kvtm_bridge.cpp"
@@ -138,8 +235,17 @@ function Build-ClientJsCaptureBridge {
     }
     Write-Host "Building ClientJS OpenGL capture bridge (x86)..." -ForegroundColor Cyan
     & cmd.exe /d /c ('"' + $buildScript + '"')
-    if ($LASTEXITCODE -ne 0) {
-        throw "ClientJS capture bridge build failed; exit=$LASTEXITCODE. Install Visual Studio C++ x86/x64 Build Tools."
+    $buildExit = $LASTEXITCODE
+    if ($buildExit -ne 0) {
+        $restored = $false
+        if ($buildExit -eq 20) {
+            $restored = Restore-CurrentRuntimeBridge -Names @(
+                "kvtm_loader.exe", "kvtm_bridge.dll"
+            ) -Destination (Join-Path $PatchSource "bin") -Label "Capture bridge"
+        }
+        if (-not $restored) {
+            throw "ClientJS capture bridge build failed; exit=$buildExit. Install Visual Studio C++ x86/x64 Build Tools."
+        }
     }
     foreach ($file in @($loader, $bridge)) {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
@@ -170,8 +276,17 @@ function Build-KvtmBridgeV3 {
     }
     Write-Host "Building isolated Bridge V3 capture/input binary (x86)..." -ForegroundColor Cyan
     & cmd.exe /d /c ('"' + $control + '" build')
-    if ($LASTEXITCODE -ne 0) {
-        throw "Bridge V3 build failed; exit=$LASTEXITCODE."
+    $buildExit = $LASTEXITCODE
+    if ($buildExit -ne 0) {
+        $restored = $false
+        if ($buildExit -eq 20) {
+            $restored = Restore-CurrentRuntimeBridge -Names @(
+                "kvtm_loader_v3.exe", "kvtm_bridge_v3.dll"
+            ) -Destination (Join-Path $BridgeV3Source "bin") -Label "Bridge V3"
+        }
+        if (-not $restored) {
+            throw "Bridge V3 build failed; exit=$buildExit."
+        }
     }
     foreach ($file in @($loader, $bridge)) {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or
