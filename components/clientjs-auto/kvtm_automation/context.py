@@ -52,4 +52,4 @@ class AutomationContext:
 
     def ensure_running(self) -> None:
         if self.stop_event.is_set():
-            raise AutomationStopped("Dọn quầy đã được yêu cầu dừng")
+            raise AutomationStopped("AUTO ClientJS đã được yêu cầu dừng")
