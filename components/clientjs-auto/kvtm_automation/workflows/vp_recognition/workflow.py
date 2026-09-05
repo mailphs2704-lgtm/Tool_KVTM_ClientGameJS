@@ -10,7 +10,7 @@ from ...actions.item_recognition import VpRecognition
 __all__ = ["VpRecognitionProbeResult", "VpRecognitionProbeWorkflow"]
 FILE_FUNCTIONS = (
     "Đưa clone về màn hình chính",
-    "Mở quầy và kho bán ở chế độ READ-ONLY",
+    "Mở quầy và thu vàng trước khi mở kho",
     "Quét ba VP mẫu bằng module nhận diện dùng chung",
     "Tổng hợp kết quả để hiển thị và kiểm thử",
 )
@@ -21,6 +21,7 @@ class VpRecognitionProbeResult:
     profile_id: str
     recognized: tuple[VpRecognition, ...]
     elapsed_seconds: float
+    collected_gold_slots: int
     read_only: bool = True
 
     def to_dict(self) -> dict:
@@ -43,6 +44,11 @@ class VpRecognitionProbeWorkflow:
         self.context.stage("vp-recognition-read-only")
         self.auto.ensure_main_screen(timeout=timeout)
         self.auto.stall.open_own_stall()
+        self.context.stage("vp-recognition-collect-own-stall-gold")
+        collected_gold = self.auto.stall.collect_own_stall_gold(maximum=20)
+        self.context.log(
+            f"READ-ONLY VP probe • đã thu vàng {collected_gold} ô trước khi mở kho"
+        )
         self.auto.selling.open_inventory_read_only(storage_id=2)
         try:
             recognized = self.auto.auto_vp.scan_samples()
@@ -54,4 +60,5 @@ class VpRecognitionProbeWorkflow:
             profile_id=self.context.profile_id,
             recognized=recognized,
             elapsed_seconds=round(time.monotonic() - started, 3),
+            collected_gold_slots=int(collected_gold),
         )
