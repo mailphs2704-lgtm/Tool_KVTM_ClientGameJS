@@ -86,11 +86,10 @@ def install_binary_dependencies(
     by the package build. No files are copied and no AUTO PRO business module
     is imported when the worker starts.
 
-    One subtle but important compatibility detail is the import order.  The
-    working AUTO path reaches OpenCV first (through its image stack), and OpenCV
-    then resolves NumPy.  Earlier clean builds imported NumPy directly first;
-    that path hung on the user's Windows runtime even though CI passed.  Clean
-    Dọn quầy therefore follows the proven OpenCV-first order.
+    One subtle but important compatibility detail is the native import order. The
+    original local launcher explicitly loads Pillow's `_imaging` extension
+    before the AUTO image stack reaches OpenCV. Clean automation follows that
+    proven Pillow-native, OpenCV, NumPy order.
     """
 
     def log(message: str) -> None:
@@ -160,10 +159,19 @@ def install_binary_dependencies(
         # the legacy AUTO PRO GUI/business modules.
         log("Thư viện ảnh: runtime đóng gói sẵn READY; không copy lại")
 
-        # IMPORTANT: OpenCV first.  The working AUTO path reaches cv2 before it
-        # ever performs a standalone ``import numpy``.  cv2 itself resolves the
-        # bundled NumPy runtime.  Do not reverse this order without a live test.
-        log("Thư viện ảnh: import cv2 theo đúng AUTO chính...")
+        # Match local_launcher.py's proven native bootstrap: Pillow's
+        # _imaging extension is the first binary loaded. Loading cv2 first can
+        # deadlock inside Windows DLL initialization on the secondary machine.
+        log("Thư viện ảnh: preload PIL._imaging theo AUTO PRO gốc...")
+        PIL = importlib.import_module("PIL")
+        Image = importlib.import_module("PIL.Image")
+        importlib.import_module("PIL._imaging")
+        log(
+            "Thư viện ảnh: PIL native READY "
+            f"source={_module_file(PIL)} image={_module_file(Image)}"
+        )
+
+        log("Thư viện ảnh: import cv2 sau PIL native...")
         cv2 = importlib.import_module("cv2")
         log(
             "Thư viện ảnh: cv2 READY "
@@ -175,14 +183,6 @@ def install_binary_dependencies(
         log(
             "Thư viện ảnh: numpy READY "
             f"{getattr(numpy, '__version__', '?')} source={_module_file(numpy)}"
-        )
-
-        log("Thư viện ảnh: import PIL từ layout AUTO chính...")
-        PIL = importlib.import_module("PIL")
-        Image = importlib.import_module("PIL.Image")
-        log(
-            "Thư viện ảnh: PIL READY "
-            f"source={_module_file(PIL)} image={_module_file(Image)}"
         )
 
         for name, module in (("numpy", numpy), ("cv2", cv2), ("PIL", PIL)):
