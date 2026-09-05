@@ -29,9 +29,66 @@ class PopupActions:
         self.vision = vision
         self.waiter = waiter
 
+    @staticmethod
+    def _event_news_geometry(frame) -> tuple[bool, float, float]:
+        """Detect the no-X event board from stable geometry, not Vietnamese text."""
+        try:
+            height, width = frame.shape[:2]
+            if width < 900 or height < 900:
+                return False, 0.0, 255.0
+            header = frame[
+                int(height * 0.30):int(height * 0.37),
+                int(width * 0.17):int(width * 0.83),
+            ]
+            background = frame[
+                int(height * 0.10):int(height * 0.25),
+                int(width * 0.30):int(width * 0.70),
+            ]
+            header_luma = header.astype("float32").mean(axis=2)
+            bright_ratio = float((header_luma >= 165.0).mean())
+            background_mean = float(
+                background.astype("float32").mean()
+            )
+            return (
+                bright_ratio >= 0.38 and background_mean <= 105.0,
+                bright_ratio,
+                background_mean,
+            )
+        except Exception:
+            return False, 0.0, 255.0
+
+    def _dismiss_event_news_board(self) -> bool:
+        """Close the central event-news board and verify it actually disappeared."""
+        before = self.vision.frame()
+        detected, bright_ratio, background_mean = self._event_news_geometry(before)
+        if not detected:
+            return False
+
+        # The board has no X. AUTO PRO/game behavior closes it by touching the
+        # dimmed backdrop. This point is above the board in 1000x1000 space.
+        self.vision.driver.click(500, 185)
+        self.waiter.sleep(0.65)
+        after = self.vision.frame()
+        still_open, _bright_after, _background_after = self._event_news_geometry(after)
+        if still_open:
+            self.context.log(
+                "Bảng tin sự kiện còn mở sau click nền; tiếp tục phục hồi"
+            )
+            return False
+        self.context.log(
+            "Đã đóng Bảng tin sự kiện bằng vùng nền "
+            f"(bright={bright_ratio:.2f}, bg={background_mean:.1f})"
+        )
+        return True
+
     def is_own_main_screen(self) -> bool:
         """Confirm the clone's own farm, not a friend's visited home."""
-        if self.vision.find("icon_home", threshold=0.80, zone=self.HOME_ZONE) is not None:
+        frame = self.vision.frame()
+        if self._event_news_geometry(frame)[0]:
+            return False
+        if self.vision.find(
+            "icon_home", threshold=0.80, zone=self.HOME_ZONE, frame=frame
+        ) is not None:
             return False
         return bool(
             self.vision.find("friend_off", threshold=0.76, zone=self.FRIEND_ZONE)
@@ -43,7 +100,10 @@ class PopupActions:
         return self.is_own_main_screen()
 
     def dismiss_one(self) -> bool:
-        """Close one known modal using only AUTO PRO-derived template guards."""
+        """Close one known modal using AUTO PRO guards plus verified geometry."""
+        if self._dismiss_event_news_board():
+            return True
+
         level_up = self.vision.find("lv_up", threshold=0.69, click=True)
         if level_up is not None:
             self.context.log(
