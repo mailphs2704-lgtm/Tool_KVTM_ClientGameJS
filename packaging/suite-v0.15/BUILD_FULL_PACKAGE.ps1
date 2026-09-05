@@ -214,7 +214,7 @@ function Restore-CurrentRuntimeBridge {
         Copy-Item -LiteralPath (Join-Path $runtimeBin $name) -Destination (Join-Path $Destination $name) -Force
     }
     Write-Host (
-        "[DEV] $Label: dung binary x86 tu runtime $runtimeHead; source bridge khong doi."
+        "[DEV] ${Label}: dung binary x86 tu runtime $runtimeHead; source bridge khong doi."
     ) -ForegroundColor Yellow
     return $true
 }
