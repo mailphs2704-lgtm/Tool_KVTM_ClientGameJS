@@ -43,7 +43,40 @@ class PopupActions:
         return self.is_own_main_screen()
 
     def dismiss_one(self) -> bool:
-        """Close one modal with the reference x_popup_event at verified scales."""
+        """Close one known modal using only AUTO PRO-derived template guards."""
+        level_up = self.vision.find("lv_up", threshold=0.69, click=True)
+        if level_up is not None:
+            self.context.log(
+                f"Đóng popup Lên cấp (score={level_up.score:.3f})"
+            )
+            self.waiter.sleep(0.55)
+            return True
+
+        generic_x = self.vision.find(
+            "x",
+            threshold=0.80,
+            zone=(471, 3, 525, 429),
+            click=True,
+        )
+        if generic_x is not None:
+            self.context.log(
+                f"Đóng popup ClientJS bằng x (score={generic_x.score:.3f})"
+            )
+            self.waiter.sleep(0.45)
+            return True
+
+        shop_modal = self.vision.find(
+            "quay_hang_on",
+            threshold=0.90,
+            zone=(319, 249, 386, 120),
+        )
+        if shop_modal is not None:
+            # AUTO PRO fixerr exact guarded exit coordinate.
+            self.vision.driver.click(965, 198)
+            self.context.log("Thoát popup/quầy hàng đang chắn giao diện")
+            self.waiter.sleep(0.50)
+            return True
+
         match = self.vision.find(
             "x_popup_event",
             threshold=0.80,
