@@ -45,6 +45,15 @@ class SellingActions:
         self.inventory = inventory
         self.minimum_screen_change = float(minimum_screen_change)
 
+    def open_inventory_read_only(self, *, storage_id: int = 2) -> None:
+        """Open the sale inventory without selecting or listing any VP."""
+        self.context.ensure_running()
+        if not self._find_empty_slot():
+            raise NoEmptyStallSlot("Quầy clone không còn ô trống để mở kho")
+        self.waiter.sleep(0.25)
+        self.inventory.select_storage(storage_id)
+        self.context.log("Đã mở kho bán ở chế độ READ-ONLY")
+
     def _find_empty_slot(self) -> bool:
         for name in ("quaytrong", "quay_trong"):
             if self.vision.find(
