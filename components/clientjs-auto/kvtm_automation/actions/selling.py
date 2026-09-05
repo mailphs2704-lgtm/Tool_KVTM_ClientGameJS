@@ -54,6 +54,11 @@ class SellingActions:
         self.inventory.select_storage(storage_id)
         self.context.log("Đã mở kho bán ở chế độ READ-ONLY")
 
+    def close_inventory_read_only(self) -> None:
+        """Close the probe inventory without confirming a sale."""
+        self._cancel_dialog()
+        self.context.log("Đã đóng kho kiểm tra READ-ONLY")
+
     def _find_empty_slot(self) -> bool:
         for name in ("quaytrong", "quay_trong"):
             if self.vision.find(
