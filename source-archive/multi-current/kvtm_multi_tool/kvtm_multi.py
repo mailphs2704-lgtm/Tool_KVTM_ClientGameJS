@@ -897,6 +897,30 @@ class MultiApp(tk.Tk):
         self.note = tk.StringVar(value="Sẵn sàng")
         ttk.Label(self, textvariable=self.note, style="Status.TLabel").pack(fill="x")
 
+    def _scroll_auto_tabs(self, direction: int) -> None:
+        """Move only the center tab strip; navigation arrows stay fixed."""
+        self.auto_tabs_canvas.xview_scroll(int(direction) * 4, "units")
+        self.after_idle(self._refresh_auto_tab_scroll)
+
+    def _refresh_auto_tab_scroll(self, _event=None) -> None:
+        """Keep the scroll bounds and arrow states synchronized with tab width."""
+        canvas = getattr(self, "auto_tabs_canvas", None)
+        tab_bar = getattr(self, "auto_tabs_window", None)
+        if canvas is None or tab_bar is None:
+            return
+        bbox = canvas.bbox(tab_bar)
+        if bbox:
+            canvas.configure(scrollregion=bbox)
+        first, last = canvas.xview()
+        self.auto_tabs_left_button.configure(
+            state=("disabled" if first <= 0.001 else "normal"),
+            cursor=("arrow" if first <= 0.001 else "hand2"),
+        )
+        self.auto_tabs_right_button.configure(
+            state=("disabled" if last >= 0.999 else "normal"),
+            cursor=("arrow" if last >= 0.999 else "hand2"),
+        )
+
     def _make_toggle_button(
         self, parent, label: str, variable: tk.BooleanVar, command=None
     ) -> tk.Button:
@@ -942,14 +966,61 @@ class MultiApp(tk.Tk):
         )
         panel.pack(fill="x", padx=12, pady=(5, 7))
 
-        tab_bar = tk.Frame(panel, background="#ffffff", height=36)
-        tab_bar.pack(fill="x", pady=(0, 8))
+        tab_navigation = tk.Frame(panel, background="#ffffff", height=36)
+        tab_navigation.pack(fill="x", pady=(0, 8))
+        tab_navigation.pack_propagate(False)
+
+        arrow_style = {
+            "relief": "flat",
+            "borderwidth": 0,
+            "highlightthickness": 0,
+            "background": "#e8eef7",
+            "foreground": "#263653",
+            "activebackground": "#dce8f8",
+            "activeforeground": "#1768c4",
+            "disabledforeground": "#9aa6b8",
+            "font": ("Segoe UI Semibold", 12),
+            "cursor": "hand2",
+            "width": 3,
+        }
+        self.auto_tabs_left_button = tk.Button(
+            tab_navigation, text="‹", command=lambda: self._scroll_auto_tabs(-1),
+            **arrow_style,
+        )
+        self.auto_tabs_left_button.pack(side="left", fill="y")
+
+        self.auto_tabs_canvas = tk.Canvas(
+            tab_navigation, background="#ffffff", height=36,
+            borderwidth=0, highlightthickness=0,
+        )
+        self.auto_tabs_canvas.pack(side="left", fill="both", expand=True, padx=3)
+        tab_bar = tk.Frame(self.auto_tabs_canvas, background="#ffffff", height=36)
+        self.auto_tabs_window = self.auto_tabs_canvas.create_window(
+            (0, 0), window=tab_bar, anchor="nw"
+        )
+
+        self.auto_tabs_right_button = tk.Button(
+            tab_navigation, text="›", command=lambda: self._scroll_auto_tabs(1),
+            **arrow_style,
+        )
+        self.auto_tabs_right_button.pack(side="right", fill="y")
+        tab_bar.bind("<Configure>", self._refresh_auto_tab_scroll, add="+")
+        self.auto_tabs_canvas.bind(
+            "<Configure>", self._refresh_auto_tab_scroll, add="+"
+        )
+        self.auto_tabs_canvas.bind(
+            "<MouseWheel>",
+            lambda event: self._scroll_auto_tabs(-1 if event.delta > 0 else 1),
+            add="+",
+        )
+
         tab_host = ttk.Frame(panel, style="Detail.TFrame", height=220)
         tab_host.pack(fill="x")
         tab_host.pack_propagate(False)
 
         feature_tabs = (
             ("main", "Chức năng chính"),
+            ("multi_dev", "AUTO MULTI DEV"),
             ("delete_items", "Xóa VP bằng KC"),
             ("summer_spin", "Quay Hề"),
             ("upgrade_storage", "Nâng kho"),
@@ -962,7 +1033,6 @@ class MultiApp(tk.Tk):
         self.auto_feature_tabs = {}
         self.auto_tab_buttons = {}
         for column, (key, label) in enumerate(feature_tabs):
-            tab_bar.grid_columnconfigure(column, weight=1, uniform="auto_tab")
             button = tk.Button(
                 tab_bar, text=label, relief="flat", borderwidth=0,
                 highlightthickness=0, background="#e8eef7",
@@ -971,8 +1041,8 @@ class MultiApp(tk.Tk):
                 cursor="hand2", padx=6, pady=7,
                 command=lambda selected=key: self._show_auto_tab(selected),
             )
-            button.grid(
-                row=0, column=column, sticky="ew",
+            button.pack(
+                side="left", fill="y",
                 padx=(0 if column == 0 else 3, 0),
             )
             self.auto_tab_buttons[key] = button
@@ -981,6 +1051,58 @@ class MultiApp(tk.Tk):
             frame.place(relx=0, rely=0, relwidth=1, relheight=1)
             frame.place_forget()
             self.auto_feature_tabs[key] = frame
+
+        multi_dev_tab = self.auto_feature_tabs["multi_dev"]
+        multi_dev_header = ttk.Frame(multi_dev_tab, style="Detail.TFrame")
+        multi_dev_header.pack(fill="x", padx=8, pady=(4, 0))
+        ttk.Label(
+            multi_dev_header, text="AUTO MULTI DEV SẠCH",
+            style="AutoKey.TLabel",
+        ).pack(side="left")
+        self.auto_multi_dev_status = tk.StringVar(
+            value="Khung AUTO sạch đã sẵn sàng • chuyển từng chức năng có kiểm chứng"
+        )
+        ttk.Label(
+            multi_dev_header, textvariable=self.auto_multi_dev_status,
+            style="AutoValue.TLabel", anchor="e",
+        ).pack(side="right", fill="x", expand=True, padx=(18, 0))
+        ttk.Separator(multi_dev_tab, orient="horizontal").pack(
+            fill="x", padx=8, pady=(7, 9)
+        )
+        clean_body = ttk.Frame(multi_dev_tab, style="Detail.TFrame")
+        clean_body.pack(fill="x", padx=8)
+        ttk.Label(
+            clean_body,
+            text="Nền chạy sạch",
+            style="AutoKey.TLabel",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 26))
+        ttk.Label(
+            clean_body,
+            text="Bridge V3 • EngineDriver • profile cố định",
+            style="AutoValue.TLabel",
+        ).grid(row=1, column=0, sticky="w", padx=(0, 26), pady=(5, 0))
+        ttk.Label(
+            clean_body,
+            text="Nguồn đối chiếu",
+            style="AutoKey.TLabel",
+        ).grid(row=0, column=1, sticky="w", padx=(0, 26))
+        ttk.Label(
+            clean_body,
+            text="AUTO PRO gốc • chuyển theo từng chức năng",
+            style="AutoValue.TLabel",
+        ).grid(row=1, column=1, sticky="w", padx=(0, 26), pady=(5, 0))
+        ttk.Label(
+            clean_body,
+            text="Trạng thái",
+            style="AutoKey.TLabel",
+        ).grid(row=0, column=2, sticky="w")
+        ttk.Label(
+            clean_body,
+            text="Không sửa profile • chưa thay runtime đang chạy",
+            style="AutoValue.TLabel",
+        ).grid(row=1, column=2, sticky="w", pady=(5, 0))
+        for column in range(3):
+            clean_body.columnconfigure(column, weight=1)
 
         main_tab = self.auto_feature_tabs["main"]
         # These switches map one-to-one to AUTO PRO's legacy option keys.
