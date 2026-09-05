@@ -147,7 +147,17 @@ def _find(controller, name, threshold=0.85, click=False):
         return False
 
 
+def _blocking_game_overlay(controller) -> bool:
+    """Reject chest screens that leave farm anchors visible behind a dark modal."""
+    return any(
+        _find(controller, name, 0.74)
+        for name in ("mo_ruong", "ruong_go")
+    )
+
+
 def _game_anchor(controller) -> bool:
+    if _blocking_game_overlay(controller):
+        return False
     return any(
         _find(controller, name, 0.78)
         for name in (
@@ -192,11 +202,16 @@ def _pc_open_game(self, stop_event=None):
         if _game_anchor(self):
             self.update_progress("Bắt Đầu AUTO • đã nhận giao diện hiện tại")
             return
+        blocking_overlay = _blocking_game_overlay(self)
         attached_frame_streak = (
             attached_frame_streak + 1
-            if _rendered_client_frame(self) is not None
+            if not blocking_overlay and _rendered_client_frame(self) is not None
             else 0
         )
+        if blocking_overlay:
+            self.update_progress(
+                "ClientJS còn kẹt màn hình rương • chuẩn bị reset"
+            )
         if attached_frame_streak >= 3:
             self.update_progress("Bắt Đầu AUTO • bridge có 3 frame ổn định")
             try:
@@ -274,7 +289,10 @@ def _pc_open_game(self, stop_event=None):
             # to hand control to the popup cleanup below.
             rendered_streak = (
                 rendered_streak + 1
-                if _rendered_client_frame(self) is not None
+                if (
+                    not _blocking_game_overlay(self)
+                    and _rendered_client_frame(self) is not None
+                )
                 else 0
             )
             if rendered_streak >= 3:
@@ -337,7 +355,10 @@ def _pc_open_game(self, stop_event=None):
         elif ready_by_capture and cleanup_actions > 0:
             post_popup_frame_streak = (
                 post_popup_frame_streak + 1
-                if _rendered_client_frame(self) is not None
+                if (
+                    not _blocking_game_overlay(self)
+                    and _rendered_client_frame(self) is not None
+                )
                 else 0
             )
             action = "verify_post_cleanup_frame"
