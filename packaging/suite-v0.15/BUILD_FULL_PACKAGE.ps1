@@ -149,6 +149,41 @@ function Resolve-AutoProLfsRuntime {
     Write-Host "Git LFS runtime VERIFIED: all tracked files are real objects" -ForegroundColor Green
 }
 
+function Sync-PackagedPythonRuntime {
+    param(
+        [Parameter(Mandatory = $true)][string]$AutoRoot
+    )
+
+    $pyc = Join-Path $AutoRoot "runtime\pyc"
+    $internal = Join-Path $AutoRoot "_internal"
+    if (-not (Test-Path -LiteralPath $pyc -PathType Container) -or
+        -not (Test-Path -LiteralPath $internal -PathType Container)) {
+        throw "Missing packaged Python runtime: $pyc / $internal"
+    }
+
+    $copied = 0
+    foreach ($source in @(Get-ChildItem -LiteralPath $internal -Recurse -File -ErrorAction Stop)) {
+        $relative = $source.FullName.Substring($internal.Length).TrimStart("\")
+        $parts = $relative.Split("\")
+        if ($parts.Count -lt 2) { continue }
+        $packageRoot = Join-Path $pyc $parts[0]
+        if (-not (Test-Path -LiteralPath $packageRoot)) { continue }
+
+        $destination = Join-Path $pyc $relative
+        $copy = -not (Test-Path -LiteralPath $destination -PathType Leaf)
+        if (-not $copy) {
+            $copy = ((Get-Item -LiteralPath $destination).Length -ne $source.Length)
+        }
+        if ($copy) {
+            $parent = Split-Path -Parent $destination
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+            Copy-Item -LiteralPath $source.FullName -Destination $destination -Force
+            $copied++
+        }
+    }
+    Write-Host ("Python image runtime PRE-SYNC VERIFIED; files copied during build: {0}" -f $copied) -ForegroundColor Green
+}
+
 function Assert-CleanClearStallWorker {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -540,6 +575,7 @@ $MultiOut = Join-Path $OutputRoot "Multi"
 New-Item -ItemType Directory -Path $AutoOut, $MultiOut -Force | Out-Null
 Copy-Item -Path (Join-Path $AutoSource "*") -Destination $AutoOut -Recurse -Force
 Copy-Item -Path (Join-Path $MultiSource "*") -Destination $MultiOut -Recurse -Force
+Sync-PackagedPythonRuntime -AutoRoot $AutoOut
 
 # AUTO reference contains the legacy frame-lock bridge. Always overlay the
 # freshly built CAPTURE1/KCAP bridge so Workspace and AUTO share frames by PID.
