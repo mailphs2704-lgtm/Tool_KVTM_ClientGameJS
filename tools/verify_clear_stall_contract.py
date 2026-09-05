@@ -459,13 +459,48 @@ def main() -> int:
     require(multi, "RunningProcessRef(new_pid)", "Multi must adopt exact worker PID")
     require(
         client_patch,
-        'if name == "mo_ruong" and find_kwargs.get("click")',
-        "Chest probe-only template lookup missing",
+        'silver_visible = _find(self, "ruong_bac", 1.0)',
+        "Chest state 1 must detect the silver chest at exact threshold 1.0",
     )
-    forbid(
+    require(
         client_patch,
-        "score >= 8.0 or not prompt_visible",
-        "Chest must not report success from an absent LD template",
+        'if not _find(self, "ruong_bac", 1.0):',
+        "Chest chooser transition must wait for the silver chest to disappear",
+    )
+    require(
+        client_patch,
+        'entry_state="MODAL_ALREADY_OPEN"',
+        "Chest state 2 must identify an already-open modal",
+    )
+    require(
+        client_patch,
+        "selection_skipped=True",
+        "Already-open chest modal must skip the wooden-chest selection",
+    )
+    require(
+        client_patch,
+        "self.driver.click(500, 470)",
+        "Live-verified ClientJS chest open point missing",
+    )
+    require(
+        client_patch,
+        '"clientjs_chest_open_probe"',
+        "Chest open screen-change verification trace missing",
+    )
+    require(
+        client_patch,
+        '"clientjs_chest_exit_probe"',
+        "Chest exit-to-main-screen verification trace missing",
+    )
+    require(
+        client_patch,
+        "if _blocking_game_overlay(controller):",
+        "Farm anchors must be rejected while the chest modal is visible",
+    )
+    require(
+        client_patch,
+        "not blocking_overlay and _rendered_client_frame(self) is not None",
+        "Initial live frames must not bypass a blocking chest modal",
     )
     require(client_patch, "clientjs_game_ready_by_live_capture", "PID reset live-frame readiness missing")
     require(client_patch, '"clientjs_attached_game_ready"', "Already-running ClientJS readiness trace missing")
@@ -495,27 +530,6 @@ def main() -> int:
         client_patch,
         "clicked_intermediate = True\n            rendered_streak = 0\n            try:",
         "Popup click must not reset the readiness streak forever",
-    )
-    require(client_patch, "stable_frames >= 3", "Chest adaptive render wait missing")
-    require(
-        client_patch,
-        'for name in ("mo_ruong", "ruong_go")',
-        "Chest blocking-overlay detector missing",
-    )
-    require(
-        client_patch,
-        "if _blocking_game_overlay(controller):",
-        "Farm anchors must be rejected while the chest modal is visible",
-    )
-    require(
-        client_patch,
-        "not blocking_overlay and _rendered_client_frame(self) is not None",
-        "Initial live frames must not bypass a blocking chest modal",
-    )
-    require(
-        client_patch,
-        "(500, 470),",
-        "Live-verified ClientJS chest center missing",
     )
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
     require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
