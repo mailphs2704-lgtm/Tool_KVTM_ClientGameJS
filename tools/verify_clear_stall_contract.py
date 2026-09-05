@@ -385,6 +385,21 @@ def main() -> int:
         "AUTO worker must preserve AUTO PRO reset ownership",
     )
     require(auto_worker, "automation.start()", "AUTO PRO entry call missing")
+    require(
+        auto_worker,
+        '"worker_resumed_after_client_restart"',
+        "AUTO worker verified-restart resume event missing",
+    )
+    require(
+        auto_worker,
+        "if current_pid == supervised_pid:",
+        "AUTO worker must resume only after a proven ClientJS PID change",
+    )
+    require(
+        auto_worker,
+        "if automation.stop_event.is_set():",
+        "AUTO worker restart supervisor must honor user stop",
+    )
     forbid(
         auto_worker,
         "friend_home_failures += 1",
