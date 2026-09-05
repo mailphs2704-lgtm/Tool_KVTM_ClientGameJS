@@ -266,3 +266,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - `is_own_main_screen` trả False khi modal còn tồn tại, nên không thể phát PASS giả.
 - Heuristic chạy trên frame live người dùng gửi: bright_ratio=0.8377, background_mean=49.69, đạt guard.
 - AST syntax PASS cho popup.py và verifier. Windows click/close live vẫn cần test sau `[1]`.
+
+
+## 2026-09-05 — Popup policy tổng quát cho hai Clean Main
+
+- Không duy trì allow-list theo tên cho popup sự kiện thay đổi. Template biết trước chỉ là đường ưu tiên.
+- Guard tổng quát nhận diện blocker từ vùng trung tâm nổi bật trên backdrop tối; popup không có X được thử đóng ở backdrop an toàn và bắt buộc capture lại để xác nhận.
+- Popup lạ không đóng được giữ trạng thái blocked/timeout; không PASS giả và không click mù vào nút nghiệp vụ/phần thưởng.
+- `is_own_main_screen` không thể PASS khi generic blocker còn tồn tại. Áp dụng chung AUTO MULTI DEV và Dọn quầy.
+- Frame live Bảng tin sự kiện đạt generic guard: bright_ratio=0.3642, outer_mean=39.54, center_mean=123.47.
+- AST syntax PASS cho popup.py và verifier; live Windows pending.
