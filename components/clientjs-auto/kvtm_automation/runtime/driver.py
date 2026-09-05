@@ -65,6 +65,8 @@ class ClientJSDriverFactory:
         pid: int,
         *,
         logger: Callable[[str], None] | None = None,
+        profile_id: str | None = None,
+        profile_file: Path | None = None,
     ) -> DriverBundle:
         """Connect Cocos touch transport and negotiate capture capability."""
 
@@ -75,6 +77,8 @@ class ClientJSDriverFactory:
             self.auto_root,
             reference_size=(1000, 1000),
             logger=logger,
+            profile_id=profile_id,
+            profile_file=profile_file,
         )
         mode = (
             "cocos-dll-shared-capture"
