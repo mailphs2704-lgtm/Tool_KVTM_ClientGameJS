@@ -82,8 +82,9 @@ def install_binary_dependencies(
 
     This deliberately mirrors the environment setup used by the working
     ``install_headless_clientjs_runtime`` path.  It reuses only third-party
-    NumPy/OpenCV/Pillow files and native DLL directories.  No AUTO PRO business
-    module is imported here.
+    NumPy/OpenCV/Pillow files and native DLL directories already synchronized
+    by the package build. No files are copied and no AUTO PRO business module
+    is imported when the worker starts.
 
     One subtle but important compatibility detail is the import order.  The
     working AUTO path reaches OpenCV first (through its image stack), and OpenCV
@@ -154,13 +155,10 @@ def install_binary_dependencies(
             if directory.exists():
                 sys.path.insert(0, str(directory))
 
-        # AUTO PRO does not import cv2 against raw sys.path alone.
-        # local_launcher first registers the bundled _internal runtime and its
-        # native DLL search paths. Reuse only that dependency bootstrap; the
-        # business modules remain forbidden and are checked below.
-        log("Thư viện ảnh: khởi tạo local_launcher dependency runtime...")
-        importlib.import_module("local_launcher")
-        log("Thư viện ảnh: local_launcher READY")
+        # Package data/native extensions are synchronized once by [1] build.
+        # Never import local_launcher here: it performs file copies and loads
+        # the legacy AUTO PRO GUI/business modules.
+        log("Thư viện ảnh: runtime đóng gói sẵn READY; không copy lại")
 
         # IMPORTANT: OpenCV first.  The working AUTO path reaches cv2 before it
         # ever performs a standalone ``import numpy``.  cv2 itself resolves the
