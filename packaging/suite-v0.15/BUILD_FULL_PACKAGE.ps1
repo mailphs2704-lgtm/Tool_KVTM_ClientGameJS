@@ -55,6 +55,53 @@ function Test-GitLfsPointer {
     }
 }
 
+function Copy-PreservedDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [int]$TimeoutSeconds = 600
+    )
+    Write-Host "[DATA] Bat dau bao toan $Label..." -ForegroundColor Cyan
+    $arguments = @(
+        ('"' + $Source + '"'),
+        ('"' + $Destination + '"'),
+        "/E", "/COPY:DAT", "/DCOPY:DAT",
+        "/R:1", "/W:1", "/MT:8",
+        "/NFL", "/NDL", "/NJH", "/NJS", "/NP"
+    )
+    $copyProcess = Start-Process -FilePath "robocopy.exe" -ArgumentList $arguments -PassThru -NoNewWindow
+    $startedAt = [DateTime]::UtcNow
+    $nextHeartbeat = $startedAt.AddSeconds(15)
+    while (-not $copyProcess.HasExited) {
+        Start-Sleep -Milliseconds 500
+        $now = [DateTime]::UtcNow
+        if (($now - $startedAt).TotalSeconds -ge $TimeoutSeconds) {
+            try { $copyProcess.Kill() } catch {}
+            throw (
+                "Bao toan $Label vuot timeout ${TimeoutSeconds}s. " +
+                "Du lieu goc van duoc giu nguyen tai: $Source"
+            )
+        }
+        if ($now -ge $nextHeartbeat) {
+            $elapsed = [int](($now - $startedAt).TotalSeconds)
+            Write-Host "[DATA] Dang bao toan $Label... ${elapsed}s" -ForegroundColor DarkCyan
+            $nextHeartbeat = $now.AddSeconds(15)
+        }
+    }
+    $copyProcess.WaitForExit()
+    $exitCode = [int]$copyProcess.ExitCode
+    if ($exitCode -ge 8) {
+        throw (
+            "Robocopy bao toan $Label that bai; exit=$exitCode. " +
+            "Du lieu goc van duoc giu nguyen tai: $Source"
+        )
+    }
+    $elapsed = [int](([DateTime]::UtcNow - $startedAt).TotalSeconds)
+    Write-Host "[DATA] Bao toan $Label xong sau ${elapsed}s." -ForegroundColor Green
+}
+
+
 function Get-GitLfsPointers {
     param([Parameter(Mandatory = $true)][string]$Root)
 
@@ -341,7 +388,7 @@ foreach ($name in @("profiles.json", "settings.json")) {
 $CurrentClearStall = Join-Path $CurrentData "clear-stall"
 if (Test-Path -LiteralPath $CurrentClearStall -PathType Container) {
     $PreservedClearStallPath = Join-Path $PreserveRoot "clear-stall"
-    Copy-Item -LiteralPath $CurrentClearStall -Destination $PreservedClearStallPath -Recurse -Force
+    Copy-PreservedDirectory -Source $CurrentClearStall -Destination $PreservedClearStallPath -Label "clear-stall"
     # Keep diagnostic runs only. Dọn quầy deliberately has no cross-cycle
     # carryover, so stale state/carryover files must not survive a rebuild.
     Get-ChildItem -LiteralPath $PreservedClearStallPath -Directory -Recurse -ErrorAction SilentlyContinue |
@@ -355,7 +402,7 @@ if (Test-Path -LiteralPath $CurrentClearStall -PathType Container) {
 $CurrentClearStallProbe = Join-Path $CurrentData "clear-stall-probe"
 if (Test-Path -LiteralPath $CurrentClearStallProbe -PathType Container) {
     $PreservedClearStallProbePath = Join-Path $PreserveRoot "clear-stall-probe"
-    Copy-Item -LiteralPath $CurrentClearStallProbe -Destination $PreservedClearStallProbePath -Recurse -Force
+    Copy-PreservedDirectory -Source $CurrentClearStallProbe -Destination $PreservedClearStallProbePath -Label "clear-stall-probe"
     $PreservedClearStallProbe = $true
 }
 
