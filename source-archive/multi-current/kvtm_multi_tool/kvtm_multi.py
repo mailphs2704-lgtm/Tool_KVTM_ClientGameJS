@@ -4194,7 +4194,10 @@ class MultiApp(tk.Tk):
 
     def _on_close(self) -> None:
         self._bridge_stop.set()
-        for worker in list(self._auto_workers.values()):
+        for worker in [
+            *list(self._auto_workers.values()),
+            *list(self._clean_auto_workers.values()),
+        ]:
             try:
                 if worker.poll() is None and worker.stdin:
                     worker.stdin.write('{"command":"stop"}\n')
