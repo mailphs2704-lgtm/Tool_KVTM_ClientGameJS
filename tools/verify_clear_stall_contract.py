@@ -3,6 +3,7 @@ from __future__ import annotations
 """Static safety contract for the clean ClientJS clear-stall workflow."""
 
 import ast
+import json
 from pathlib import Path
 
 
@@ -26,6 +27,7 @@ HANDOFF = ROOT / "docs/CLEAR_STALL_AUTO_HANDOFF.md"
 CLIENT_PATCH = ROOT / "test-candidates/auto-pro-clientjs-temp/clientjs_auto_patch.py"
 ENGINE_DRIVER = ROOT / "test-candidates/auto-pro-clientjs-temp/engine_driver.py"
 DESIGNER = ROOT / "source-archive/multi-current/kvtm_multi_tool/clear_stall_designer.py"
+AUTO_CATALOG = ROOT / "components/clientjs-auto/catalog/functions.json"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -64,6 +66,7 @@ def main() -> int:
     client_patch = CLIENT_PATCH.read_text(encoding="utf-8")
     ast.parse(client_patch, filename=str(CLIENT_PATCH))
     engine_driver = ENGINE_DRIVER.read_text(encoding="utf-8")
+    auto_catalog = json.loads(AUTO_CATALOG.read_text(encoding="utf-8"))
     ast.parse(engine_driver, filename=str(ENGINE_DRIVER))
     designer = DESIGNER.read_text(encoding="utf-8")
     ast.parse(designer, filename=str(DESIGNER))
@@ -385,6 +388,18 @@ def main() -> int:
         "AUTO worker must preserve AUTO PRO reset ownership",
     )
     require(auto_worker, "automation.start()", "AUTO PRO entry call missing")
+    require(auto_worker, "allowed_function_ids = {0, 98, 136, 170, 318}", "Star event Function 0 allow-list missing")
+    require(auto_worker, "def get_wait_time(self, _default=0):", "Function 0 numeric wait adapter missing")
+    event_functions = [
+        item for item in auto_catalog.get("functions", [])
+        if item.get("auto_pro_function_id") == 0
+    ]
+    if len(event_functions) != 1:
+        raise AssertionError("Star event Function 0 catalog entry must be unique")
+    if event_functions[0].get("entrypoint") != "FarmAutomation.produceItems_0":
+        raise AssertionError("Star event catalog entrypoint mismatch")
+    if event_functions[0].get("label") != "Cào Cây Event - Cây Sao":
+        raise AssertionError("Star event Multi label mismatch")
     require(
         auto_worker,
         '"worker_resumed_after_client_restart"',
