@@ -593,7 +593,7 @@ def main() -> int:
     print("backup=one_click_local_only")
     print("selected_items=rose_water,rose_oil,yellow_fabric,dried_apple,iced_tea")
     print("clientjs_reset=live_capture_ready")
-    print("chest=adaptive_render_wait")
+    print("chest=two_state_silver_exact_modal_skip_verified_exit")
     print("wheel=verified_exit_cleanup")
     return 0
 
