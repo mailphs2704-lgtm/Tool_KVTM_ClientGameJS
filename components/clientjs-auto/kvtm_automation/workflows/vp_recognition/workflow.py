@@ -44,7 +44,10 @@ class VpRecognitionProbeWorkflow:
         self.auto.ensure_main_screen(timeout=timeout)
         self.auto.stall.open_own_stall()
         self.auto.selling.open_inventory_read_only(storage_id=2)
-        recognized = self.auto.auto_vp.scan_samples()
+        try:
+            recognized = self.auto.auto_vp.scan_samples()
+        finally:
+            self.auto.selling.close_inventory_read_only()
         self.context.ensure_running()
         self.context.stage("vp-recognition-read-only-finished")
         return VpRecognitionProbeResult(
