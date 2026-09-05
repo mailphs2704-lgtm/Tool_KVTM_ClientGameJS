@@ -216,6 +216,7 @@ class MultiDevApp(production.MultiApp):
             self._clean_vp_probe_requested.discard(profile_id)
             launched += 1
 
+        self._clean_vp_probe_requested.difference_update(selected)
         if launched:
             self.auto_multi_dev_status.set(
                 f"Resident runtime • đang vào game và đóng popup • {launched} tài khoản"
