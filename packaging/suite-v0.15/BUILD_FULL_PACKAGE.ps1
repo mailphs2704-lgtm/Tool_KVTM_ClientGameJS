@@ -163,8 +163,9 @@ function Sync-PackagedPythonRuntime {
 
     $copied = 0
     foreach ($source in @(Get-ChildItem -LiteralPath $internal -Recurse -File -ErrorAction Stop)) {
-        $relative = $source.FullName.Substring($internal.Length).TrimStart("\")
-        $parts = $relative.Split("\")
+        $separator = [System.IO.Path]::DirectorySeparatorChar
+        $relative = $source.FullName.Substring($internal.Length).TrimStart($separator)
+        $parts = $relative.Split($separator)
         if ($parts.Count -lt 2) { continue }
         $packageRoot = Join-Path $pyc $parts[0]
         if (-not (Test-Path -LiteralPath $packageRoot)) { continue }
