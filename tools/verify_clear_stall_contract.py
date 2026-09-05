@@ -37,6 +37,8 @@ PROFILE_PROCESS = ROOT / "components/clientjs-auto/kvtm_automation/runtime/profi
 POPUP_ACTIONS = ROOT / "components/clientjs-auto/kvtm_automation/actions/popup.py"
 MAIN_LOG = ROOT / "components/clientjs-auto/kvtm_automation/runtime/main_log.py"
 MAIN_LOG_VIEWER = ROOT / "source-archive/multi-current/kvtm_multi_tool/main_log_viewer.py"
+VP_RECOGNITION = ROOT / "components/clientjs-auto/kvtm_automation/actions/item_recognition.py"
+VP_WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/vp_recognition/workflow.py"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -85,6 +87,8 @@ def main() -> int:
     popup_actions = POPUP_ACTIONS.read_text(encoding="utf-8")
     main_log = MAIN_LOG.read_text(encoding="utf-8")
     main_log_viewer = MAIN_LOG_VIEWER.read_text(encoding="utf-8")
+    vp_recognition = VP_RECOGNITION.read_text(encoding="utf-8")
+    vp_workflow = VP_WORKFLOW.read_text(encoding="utf-8")
     for path, source in (
         (CLEAN_AUTO_WORKER, clean_auto_worker),
         (GAME_SESSION, game_session),
@@ -95,6 +99,8 @@ def main() -> int:
         (POPUP_ACTIONS, popup_actions),
         (MAIN_LOG, main_log),
         (MAIN_LOG_VIEWER, main_log_viewer),
+        (VP_RECOGNITION, vp_recognition),
+        (VP_WORKFLOW, vp_workflow),
     ):
         ast.parse(source, filename=str(path))
     ast.parse(engine_driver, filename=str(ENGINE_DRIVER))
@@ -500,6 +506,14 @@ def main() -> int:
     require(main_log, "FILE_FUNCTIONS = (", "Log module function manifest missing")
     require(main_log_viewer, "FILE_FUNCTIONS = (", "Log viewer function manifest missing")
     require(main_log_viewer, 'bg="#202020"', "Console-style log viewer missing")
+    require(multi, 'text="⌕ Kiểm tra nhận diện VP (READ-ONLY)"', "VP probe button missing")
+    require(vp_recognition, "FILE_FUNCTIONS = (", "VP recognizer function manifest missing")
+    require(vp_workflow, "FILE_FUNCTIONS = (", "VP workflow function manifest missing")
+    for item_id in ("tao_say", "vai_vang", "tinh_dau_hh"):
+        require(vp_recognition, f'"{item_id}"', f"VP sample missing: {item_id}")
+    require(vp_recognition, "click=False", "VP recognition probe must not click an item")
+    require(vp_workflow, "read_only: bool = True", "VP workflow must declare READ-ONLY")
+    require(dev_entry, "VpRecognitionProbeWorkflow(automation).run", "Resident VP probe wiring missing")
     require(dev_entry, "detail_logger=log_writer.detail", "Detail logger not connected to Main context")
     require(clean_automation, "detail_logger=context.detail", "Vision detail logger not connected")
     require(multi, "def _start_clean_auto_session", "Clean AUTO start action missing")
