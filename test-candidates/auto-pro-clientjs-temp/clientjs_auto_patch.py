@@ -417,9 +417,15 @@ def _install_controller_patch(adb_controller_module) -> None:
         return original_open_game(self, stop_event)
 
     def open_chests(self, stop_event=None):
-        """Run the two-state ClientJS chest flow without replaying LD clicks."""
+        """Keep AUTO PRO navigation; patch only the two ClientJS modal states."""
         if not str(getattr(self, "device_id", "")).startswith(("PC:", "PCID:")):
             return original_open_chests(self, stop_event)
+
+        processor = self.image_processor
+        original_find = processor.find_image
+        original_click = self.driver.click
+        modal_ready = False
+        chest_opened = False
 
         def chest_region():
             frame = self.driver.screenshot(format="opencv")
@@ -432,90 +438,138 @@ def _install_controller_patch(adb_controller_module) -> None:
             except Exception:
                 return 0.0
 
-        # State 1: the chest chooser is visible. The silver chest is the exact
-        # transition witness used by AUTO PRO. Select the wooden chest once,
-        # then wait until the silver chest disappears at threshold 1.0.
-        silver_visible = _find(self, "ruong_bac", 1.0)
-        if silver_visible:
-            self.update_progress("Mở rương • chọn Rương gỗ")
-            self.driver.click(371, 647)
-            modal_deadline = time.monotonic() + 8.0
-            silver_absent_streak = 0
-            while time.monotonic() < modal_deadline:
+        def silver_visible_exact() -> bool:
+            try:
+                return bool(original_find("ruong_bac", threshold=1.0, click=False))
+            except Exception:
+                return False
+
+        def wait_silver_disappeared() -> bool:
+            absent_streak = 0
+            deadline = time.monotonic() + 8.0
+            while time.monotonic() < deadline:
                 if _stopped(stop_event):
-                    return None
-                if not _find(self, "ruong_bac", 1.0):
-                    silver_absent_streak += 1
-                    if silver_absent_streak >= 2:
-                        break
+                    return False
+                if not silver_visible_exact():
+                    absent_streak += 1
+                    if absent_streak >= 2:
+                        return True
                 else:
-                    silver_absent_streak = 0
+                    absent_streak = 0
                 time.sleep(0.20)
-            else:
-                raise RuntimeError(
-                    "Đã chọn Rương gỗ nhưng Rương bạc chưa biến mất ở ngưỡng 1.0"
-                )
-            try:
-                self.driver._trace(
-                    "clientjs_chest_modal_ready",
-                    entry_state="CHOOSER",
-                    silver_threshold=1.0,
-                    silver_absent_streak=silver_absent_streak,
-                )
-            except Exception:
-                pass
-        else:
-            # State 2: AUTO enters while the selected-chest modal is already
-            # open. Never replay the wooden-chest selection click.
-            self.update_progress("Mở rương • modal đã mở, bỏ qua chọn Rương gỗ")
-            try:
-                self.driver._trace(
-                    "clientjs_chest_modal_ready",
-                    entry_state="MODAL_ALREADY_OPEN",
-                    silver_threshold=1.0,
-                    selection_skipped=True,
-                )
-            except Exception:
-                pass
+            return False
 
-        # Open only after one of the two states above has resolved to the modal.
-        before = chest_region()
-        opened = False
-        for attempt in range(1, 6):
-            if _stopped(stop_event):
+        def click_with_chest_state(x, y, *args, **kwargs):
+            nonlocal modal_ready
+            # This is AUTO PRO's wooden-chest selection click. Let AUTO PRO
+            # navigate into the chest interface first; patch only this click.
+            if abs(float(x) - 371.0) < 1.0 and abs(float(y) - 647.0) < 1.0:
+                if not silver_visible_exact():
+                    modal_ready = True
+                    try:
+                        self.driver._trace(
+                            "clientjs_chest_modal_ready",
+                            entry_state="MODAL_ALREADY_OPEN",
+                            silver_threshold=1.0,
+                            selection_skipped=True,
+                        )
+                    except Exception:
+                        pass
+                    return None
+                result = original_click(x, y, *args, **kwargs)
+                if not wait_silver_disappeared():
+                    raise RuntimeError(
+                        "Đã chọn Rương gỗ nhưng Rương bạc chưa biến mất ở ngưỡng 1.0"
+                    )
+                modal_ready = True
+                try:
+                    self.driver._trace(
+                        "clientjs_chest_modal_ready",
+                        entry_state="CHOOSER",
+                        silver_threshold=1.0,
+                    )
+                except Exception:
+                    pass
+                return result
+            if (
+                chest_opened
+                and abs(float(x) - 433.0) < 1.0
+                and abs(float(y) - 557.0) < 1.0
+            ):
                 return None
-            self.driver.click(500, 470)
-            time.sleep(1.0)
-            after = chest_region()
-            score = difference(before, after)
-            try:
-                self.driver._trace(
-                    "clientjs_chest_open_probe",
-                    logical=[500, 470],
-                    attempt=attempt,
-                    screen_change=round(score, 3),
-                    completion_threshold=8.0,
-                )
-            except Exception:
-                pass
-            if score >= 8.0:
-                opened = True
-                break
-            before = after
-        if not opened:
-            raise RuntimeError(
-                "Modal rương đã sẵn sàng nhưng click mở không làm màn hình thay đổi"
-            )
+            return original_click(x, y, *args, **kwargs)
 
-        # The chest is open. Close reward/modal layers and require a real farm
-        # anchor with no chest overlay before returning control to AUTO.
+        def find_with_chest_state(*args, **kwargs):
+            nonlocal modal_ready, chest_opened
+            name = str(args[0]) if args else str(kwargs.get("tree_type", ""))
+            if name == "ruong_go" and chest_opened:
+                return True
+            if name != "mo_ruong" or not kwargs.get("click"):
+                return original_find(*args, **kwargs)
+
+            # Never let AUTO PRO click the LD coordinate. Probe its template,
+            # then execute the ClientJS modal action at the verified center.
+            probe_kwargs = dict(kwargs)
+            probe_kwargs["click"] = False
+            legacy_result = original_find(*args, **probe_kwargs)
+            if not modal_ready:
+                if silver_visible_exact():
+                    return legacy_result
+                modal_ready = True
+                try:
+                    self.driver._trace(
+                        "clientjs_chest_modal_ready",
+                        entry_state="MODAL_ALREADY_OPEN",
+                        silver_threshold=1.0,
+                        selection_skipped=True,
+                    )
+                except Exception:
+                    pass
+
+            before = chest_region()
+            for attempt in range(1, 6):
+                if _stopped(stop_event):
+                    return False
+                original_click(500, 470)
+                time.sleep(1.0)
+                after = chest_region()
+                score = difference(before, after)
+                try:
+                    self.driver._trace(
+                        "clientjs_chest_open_probe",
+                        logical=[500, 470],
+                        attempt=attempt,
+                        screen_change=round(score, 3),
+                        completion_threshold=8.0,
+                    )
+                except Exception:
+                    pass
+                if score >= 8.0:
+                    chest_opened = True
+                    return True
+                before = after
+            return False
+
+        processor.find_image = find_with_chest_state
+        self.driver.click = click_with_chest_state
+        try:
+            # AUTO PRO remains responsible for entering the chest UI and for
+            # its normal workflow ordering. Only selection/open are patched.
+            result = original_open_chests(self, stop_event)
+        finally:
+            self.driver.click = original_click
+            processor.find_image = original_find
+
+        if not chest_opened or _stopped(stop_event):
+            return result
+
         self.update_progress("Rương đã mở • đang thoát về màn hình chính")
         for attempt in range(1, 13):
             if _stopped(stop_event):
-                return None
+                return result
             if _game_anchor(self):
                 self.update_progress("Mở rương hoàn tất • đã về màn hình chính")
-                return True
+                return result
             action = "back"
             for name in ("close_game", "x_popup_event", "dong_y"):
                 if _find(self, name, 0.72, click=True):
@@ -534,9 +588,7 @@ def _install_controller_patch(adb_controller_module) -> None:
                 )
             except Exception:
                 pass
-        raise RuntimeError(
-            "Rương đã mở nhưng chưa xác nhận thoát về màn hình chính"
-        )
+        raise RuntimeError("Rương đã mở nhưng chưa xác nhận thoát về màn hình chính")
 
     def vong_quay(self, luotquay, stop_event=None):
         """Run AUTO PRO spins, then always return ClientJS to the farm screen."""
