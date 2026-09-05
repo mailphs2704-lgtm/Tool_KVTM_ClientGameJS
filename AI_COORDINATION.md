@@ -216,3 +216,5 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - PASS/PARTIAL/FAIL chỉ theo log/CI/live evidence thật; không tự điền số liệu chưa thấy.
 
 - 2026-09-05: Fixed silent AUTO stop after a successful ClientJS restart. Recovered FarmAutomation.start is continuous, but some recovered recovery paths may return after EngineDriver has rebound to a replacement PID while stop_event remains clear. The worker now resumes start only when that exact PID transition is proven; normal completion and user stop remain terminal. Event: worker_resumed_after_client_restart. Static contract and py_compile pass.
+
+- 2026-09-05: Bridge V3 shared capture now treats an in-progress/changed frame as a transient renderer race. EngineDriver validates frame_id/status again after copying pixels and retries CAPTURE up to 12 times with 10 ms backoff. HWND fallback remains disabled; immutable profile/PID binding is unchanged. py_compile and full static contract pass.
