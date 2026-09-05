@@ -286,3 +286,12 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Writer che các trường password/token/cookie/authorization/secret/launch_args trước khi ghi.
 - Hai module mới có `FILE_FUNCTIONS` và `__all__`, dưới giới hạn 10 chức năng/file. Builder và static verifier bắt buộc đóng gói/kiểm tra cả hai.
 - AST syntax PASS cho 8 file Python liên quan. Windows GUI/live log pending sau `[1]`.
+
+
+## 2026-09-05 — Module nhận diện VP AUTO Main READ-ONLY
+
+- Ba mẫu đầu tiên theo user: Táo sấy (`tao_say`/`kho_tao_say`), Vải vàng (`vai_vang`/`kho_vai_vang`), Tinh dầu hoa hồng (`tinh_dau_hh`/`kho_tinh_dau_hh`). Không thêm vật phẩm vàng riêng.
+- Thêm `actions/item_recognition.py` dùng lâu dài, không phải module tạm; có `FILE_FUNCTIONS`, `__all__`, năm trách nhiệm.
+- Thêm `workflows/vp_recognition`: vào home, mở own stall, mở kho thành phẩm, scan ba mẫu không click item/không đặt bán, luôn đóng dialog trong finally.
+- Nút `Kiểm tra nhận diện VP (READ-ONLY)` chạy trên resident runtime; action/detail logs ghi kết quả và từng score/threshold//zone PASS/FAIL.
+- Static contract khóa ba item, `click=False`, read_only=True và resident wiring. AST syntax PASS cho chín file liên quan; Windows live pending.
