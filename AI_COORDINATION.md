@@ -256,3 +256,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - `clean_auto_worker.py` chỉ còn CLI/fallback diagnostic, không phải đường Main DEV.
 - Tài liệu chuẩn: `docs/CLEAN_MAIN_ARCHITECTURE.md`. Verifier đã khóa resident reuse/per-profile exclusivity/stop registry.
 - AST syntax PASS cho DEV entry và verifier. Windows build/live chưa xác nhận; không gọi runtime PASS.
+
+
+## 2026-09-05 — Chặn false PASS khi Bảng tin sự kiện còn mở
+
+- Live evidence: AUTO MULTI DEV báo PASS trong khi modal `BẢNG TIN SỰ KIỆN` không có nút X vẫn phủ màn hình; HUD phía sau làm main-screen templates match sai.
+- Popup clean thêm guard hình học: khung sáng trung tâm + backdrop tối, không lệ thuộc OCR/chữ hoặc ảnh cắt.
+- Khi nhận diện, runtime click điểm backdrop an toàn `(500,185)`, chụp lại và chỉ coi đã đóng khi modal geometry biến mất.
+- `is_own_main_screen` trả False khi modal còn tồn tại, nên không thể phát PASS giả.
+- Heuristic chạy trên frame live người dùng gửi: bright_ratio=0.8377, background_mean=49.69, đạt guard.
+- AST syntax PASS cho popup.py và verifier. Windows click/close live vẫn cần test sau `[1]`.
