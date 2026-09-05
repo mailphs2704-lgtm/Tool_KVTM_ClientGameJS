@@ -29,6 +29,7 @@ class AutomationContext:
     stop_event: threading.Event
     logger: LogFn
     stage_reporter: StageFn | None = None
+    profile_file: Path | None = None
     started_at: float = field(default_factory=time.time)
 
     def __post_init__(self) -> None:
@@ -37,6 +38,8 @@ class AutomationContext:
         self.profile_name = str(self.profile_name)
         self.auto_root = Path(self.auto_root).resolve()
         self.work_dir = Path(self.work_dir).resolve()
+        if self.profile_file is not None:
+            self.profile_file = Path(self.profile_file).resolve()
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
     def log(self, message: str) -> None:
