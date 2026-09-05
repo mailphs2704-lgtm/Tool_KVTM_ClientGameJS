@@ -497,6 +497,26 @@ def main() -> int:
         "Popup click must not reset the readiness streak forever",
     )
     require(client_patch, "stable_frames >= 3", "Chest adaptive render wait missing")
+    require(
+        client_patch,
+        'for name in ("mo_ruong", "ruong_go")',
+        "Chest blocking-overlay detector missing",
+    )
+    require(
+        client_patch,
+        "if _blocking_game_overlay(controller):",
+        "Farm anchors must be rejected while the chest modal is visible",
+    )
+    require(
+        client_patch,
+        "not blocking_overlay and _rendered_client_frame(self) is not None",
+        "Initial live frames must not bypass a blocking chest modal",
+    )
+    require(
+        client_patch,
+        "(500, 470),",
+        "Live-verified ClientJS chest center missing",
+    )
     require(client_patch, "cls.VongQuay = vong_quay", "ClientJS wheel exit wrapper missing")
     require(client_patch, "clientjs_wheel_exit_probe", "Wheel exit verification trace missing")
     require(engine_driver, "natural_deadline = time.monotonic() + 8.0", "Graceful old-PID timeout missing")
