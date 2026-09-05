@@ -523,6 +523,26 @@ def main() -> int:
     forbid(profile_process, "print(", "Profile resolver must never print decrypted secret")
     require(popup_actions, '"lv_up"', "Clean level-up popup guard missing")
     require(popup_actions, '"quay_hang_on"', "Clean stall-popup guard missing")
+    require(
+        popup_actions,
+        "def _dismiss_event_news_board",
+        "No-X event-news popup dismissal missing",
+    )
+    require(
+        popup_actions,
+        "if self._event_news_geometry(frame)[0]:",
+        "Main-screen PASS must be blocked while event-news modal remains",
+    )
+    require(
+        popup_actions,
+        "self.vision.driver.click(500, 185)",
+        "Event-news backdrop close point missing",
+    )
+    require(
+        popup_actions,
+        "if still_open:",
+        "Event-news close must be visually verified",
+    )
     require(multi, 'style="Queue.Treeview"', "Queue table theme missing")
     require(multi, "def _refresh_clear_stall_queue", "Live clear-stall queue refresh missing")
     require(multi, "rows.sort(key=lambda row: (row[0]", "Queue must sort by least remaining time")
