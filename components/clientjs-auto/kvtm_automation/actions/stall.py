@@ -179,6 +179,22 @@ class StallActions:
             self.waiter.sleep(0.55)
         raise ScreenTimeout("Không vào được quầy bán của clone")
 
+    def close_own_stall(self, timeout: float = 12.0) -> None:
+        """Close the clone stall and verify the panel is no longer active."""
+        deadline = time.monotonic() + float(timeout)
+        while time.monotonic() < deadline:
+            self.context.ensure_running()
+            if self.vision.find(
+                "quay_hang_on",
+                threshold=0.80,
+                zone=self.OWN_STALL_ACTIVE_ZONE,
+            ) is None:
+                self.context.log("Đã đóng quầy bán của clone")
+                return
+            self.vision.driver.click(965, 198)
+            self.waiter.sleep(0.50)
+        raise ScreenTimeout("Không đóng được quầy bán của clone")
+
     def collect_own_stall_gold(self, *, maximum: int = 20) -> int:
         """Collect completed own-stall gold before placing resale batches."""
         collected = 0
