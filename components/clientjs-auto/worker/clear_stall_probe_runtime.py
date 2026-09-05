@@ -9,7 +9,7 @@ import traceback
 from typing import Callable
 
 
-PROBE_VERSION = 15
+PROBE_VERSION = 16
 STALL_VIEW_COUNT = 4
 # The last two own-stall cells can remain just outside the fourth nominal view.
 # Permit one terminal two-swipe alignment and force a final scan before failing.
@@ -816,31 +816,10 @@ def run_probe(
                 order="SCAN_BUY_THEN_SWIPE",
             )
 
-        while True:
-            try:
-                scan_buy_stall(initial_friend, 1, primary_report=True)
-                break
-            except RestartFriendScanAfterInventoryFlush:
-                automation.stall.open_friend_stall()
-                checkpoint(
-                    "gate5-resume-purchase-after-inventory-flush",
-                    friend_ordinal=initial_friend,
-                    remaining_quantity=expected_quantity - purchased_quantity,
-                )
-
-        expected_slots = list(range(1, TOTAL_STALL_SLOTS + 1))
-        if purchase_limit == 0 and covered != expected_slots:
-            raise RuntimeError(
-                f"Mapping mẫu quầy không phủ đủ 4 view: {covered}"
-            )
-
-        if purchase_limit > 1 and purchased_quantity < expected_quantity:
-            # Keep cycling the configured houses until the verified x10 target
-            # is reached or the user presses Stop. max_stall_passes limits one
-            # visit, not the total lifetime of the job.
-            automation.stall.close_friend_stall()
-            current_view = 1
-            current_friend = 1
+        if purchase_limit > 1:
+            # One house is scanned exactly once per round. If the verified
+            # target is still short after houses 1..N, start a new round at
+            # house 1. There is no same-house reload inside a round.
             reload_round = 0
             while purchased_quantity < expected_quantity:
                 context.ensure_running()
@@ -851,7 +830,7 @@ def run_probe(
                     reload_round=reload_round,
                     purchased_quantity=purchased_quantity,
                     remaining_quantity=expected_quantity - purchased_quantity,
-                    policy="UNTIL_TARGET_OR_STOP",
+                    policy="ONE_SCAN_PER_HOUSE_THEN_NEXT_ROUND",
                 )
                 for friend_index in range(1, int(config.friend_ordinal) + 1):
                     context.ensure_running()
@@ -859,50 +838,46 @@ def run_probe(
                         automation.navigation.return_home(timeout=30.0)
                         automation.navigation.go_to_friend(friend_index)
                         current_friend = friend_index
-                    for local_pass in range(1, int(config.max_stall_passes) + 1):
-                        context.ensure_running()
-                        visit_pass = (
-                            reload_round * int(config.max_stall_passes)
-                            + local_pass
-                        )
-                        checkpoint(
-                            "gate3b-stall-pass-start",
-                            reload_round=reload_round,
-                            friend_ordinal=friend_index,
-                            stall_pass=visit_pass,
-                            purchased_quantity=purchased_quantity,
-                            remaining_quantity=expected_quantity - purchased_quantity,
-                            navigation="REOPEN_CURRENT_STALL",
-                        )
-                        automation.stall.open_friend_stall()
-                        while True:
-                            try:
-                                bought_this_pass = scan_buy_stall(
-                                    friend_index, visit_pass, primary_report=False,
-                                )
-                                break
-                            except RestartFriendScanAfterInventoryFlush:
-                                automation.stall.open_friend_stall()
-                                checkpoint(
-                                    "gate5-resume-purchase-after-inventory-flush",
-                                    friend_ordinal=friend_index,
-                                    remaining_quantity=expected_quantity - purchased_quantity,
-                                )
-                        automation.stall.close_friend_stall()
-                        current_view = 1
-                        checkpoint(
-                            "gate3b-stall-pass-finish",
-                            reload_round=reload_round,
-                            friend_ordinal=friend_index,
-                            stall_pass=visit_pass,
-                            bought_quantity=bought_this_pass,
-                            purchased_quantity=purchased_quantity,
-                            remaining_quantity=max(
-                                0, expected_quantity - purchased_quantity
-                            ),
-                        )
-                        if purchased_quantity >= expected_quantity:
+                    elif reload_round > 1:
+                        automation.navigation.return_home(timeout=30.0)
+                        automation.navigation.go_to_friend(friend_index)
+                    visit_pass = reload_round
+                    checkpoint(
+                        "gate3b-stall-pass-start",
+                        reload_round=reload_round,
+                        friend_ordinal=friend_index,
+                        stall_pass=visit_pass,
+                        purchased_quantity=purchased_quantity,
+                        remaining_quantity=expected_quantity - purchased_quantity,
+                        navigation="ONE_SCAN_PER_HOUSE",
+                    )
+                    automation.stall.open_friend_stall()
+                    while True:
+                        try:
+                            bought_this_pass = scan_buy_stall(
+                                friend_index, visit_pass, primary_report=False,
+                            )
                             break
+                        except RestartFriendScanAfterInventoryFlush:
+                            automation.stall.open_friend_stall()
+                            checkpoint(
+                                "gate5-resume-purchase-after-inventory-flush",
+                                friend_ordinal=friend_index,
+                                remaining_quantity=expected_quantity - purchased_quantity,
+                            )
+                    automation.stall.close_friend_stall()
+                    current_view = 1
+                    checkpoint(
+                        "gate3b-stall-pass-finish",
+                        reload_round=reload_round,
+                        friend_ordinal=friend_index,
+                        stall_pass=visit_pass,
+                        bought_quantity=bought_this_pass,
+                        purchased_quantity=purchased_quantity,
+                        remaining_quantity=max(
+                            0, expected_quantity - purchased_quantity
+                        ),
+                    )
                     if purchased_quantity >= expected_quantity:
                         break
                 if purchased_quantity == round_before:
@@ -916,6 +891,24 @@ def run_probe(
                     for _ in range(50):
                         context.ensure_running()
                         time.sleep(0.10)
+        else:
+            while True:
+                try:
+                    scan_buy_stall(initial_friend, 1, primary_report=True)
+                    break
+                except RestartFriendScanAfterInventoryFlush:
+                    automation.stall.open_friend_stall()
+                    checkpoint(
+                        "gate5-resume-purchase-after-inventory-flush",
+                        friend_ordinal=initial_friend,
+                        remaining_quantity=expected_quantity - purchased_quantity,
+                    )
+
+        expected_slots = list(range(1, TOTAL_STALL_SLOTS + 1))
+        if purchase_limit == 0 and covered != expected_slots:
+            raise RuntimeError(
+                f"Mapping mẫu quầy không phủ đủ 4 view: {covered}"
+            )
 
         if purchase_limit > 0:
             with report_lock:
