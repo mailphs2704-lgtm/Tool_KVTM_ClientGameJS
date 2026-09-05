@@ -516,18 +516,39 @@ def main() -> int:
     require(
         vp_workflow,
         "for view in range(1, 5):",
-        "VP probe must collect/seek across all four own-stall views",
+        "VP probe must process all four own-stall views",
     )
     require(
         vp_workflow,
-        "collect_own_stall_gold(maximum=20)",
-        "VP probe must collect own-stall gold before opening inventory",
+        "collect_own_stall_gold(",
+        "Each VP probe view must collect own-stall gold first",
     )
     require(
         vp_workflow,
-        "self.auto.stall.rewind_to_first(4)",
-        "VP probe must rewind after four-view gold collection",
+        "open_inventory_read_only(storage_id=2)",
+        "Each VP probe view must inspect inventory after collecting gold",
     )
+    require(
+        vp_workflow,
+        "if view < 4:",
+        "VP probe must stop swiping after the final view",
+    )
+    require(
+        vp_workflow,
+        "self.auto.stall.next_view()",
+        "VP probe must advance by the protected two-swipe stall step",
+    )
+    require(
+        vp_workflow,
+        "self.auto.stall.close_own_stall()",
+        "VP probe must close its own stall after the per-view loop",
+    )
+    forbid(
+        vp_workflow,
+        "rewind_to_first",
+        "VP probe must never use the rejected two-pass rewind flow",
+    )
+    require(stall, "def close_own_stall", "Verified own-stall close action missing")
     require(dev_entry, "VpRecognitionProbeWorkflow(automation).run", "Resident VP probe wiring missing")
     require(dev_entry, "detail_logger=log_writer.detail", "Detail logger not connected to Main context")
     require(clean_automation, "detail_logger=context.detail", "Vision detail logger not connected")
