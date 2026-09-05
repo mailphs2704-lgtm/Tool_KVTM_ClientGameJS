@@ -417,189 +417,126 @@ def _install_controller_patch(adb_controller_module) -> None:
         return original_open_game(self, stop_event)
 
     def open_chests(self, stop_event=None):
-        """Keep the legacy chest flow but handle ClientJS's text-only open prompt."""
+        """Run the two-state ClientJS chest flow without replaying LD clicks."""
         if not str(getattr(self, "device_id", "")).startswith(("PC:", "PCID:")):
             return original_open_chests(self, stop_event)
 
-        processor = self.image_processor
-        original_find = processor.find_image
-        original_click = self.driver.click
-        fallback_used = False
-        chest_screen_changed = False
-        selection_wait_done = False
-
-        def click_without_post_open_replay(x, y, *args, **kwargs):
-            nonlocal selection_wait_done
-            # AUTO PRO replays its LD confirmation point after mo_ruong
-            # succeeds. Once ClientJS has visibly opened the chest, suppress
-            # that one legacy replay so it cannot leak into the home screen.
-            if (
-                chest_screen_changed
-                and abs(float(x) - 433.0) < 1.0
-                and abs(float(y) - 557.0) < 1.0
-            ):
-                try:
-                    self.driver._trace(
-                        "clientjs_chest_post_open_click_suppressed",
-                        logical=[float(x), float(y)],
-                    )
-                except Exception:
-                    pass
-                return None
-            result = original_click(x, y, *args, **kwargs)
-            if (
-                not selection_wait_done
-                and abs(float(x) - 371.0) < 1.0
-                and abs(float(y) - 647.0) < 1.0
-            ):
-                # ClientJS needs time to render the selected chest artwork and
-                # its touch target. AUTO PRO/LD can continue immediately, but
-                # doing so on ClientJS sends the open tap into a loading modal.
-                selection_wait_done = True
-                wait_started = time.monotonic()
-                previous = None
-                stable_frames = 0
-                # Real clients need roughly 3–5s, but animation/load varies.
-                # Wait at least 3s, then continue when the modal has rendered
-                # stably; cap at 8s so this cannot hang forever.
-                while time.monotonic() - wait_started < 8.0:
-                    if _stopped(stop_event):
-                        return result
-                    time.sleep(0.20)
-                    try:
-                        current = _chest_region()
-                        if previous is not None and _difference(previous, current) <= 2.2:
-                            stable_frames += 1
-                        else:
-                            stable_frames = 0
-                        previous = current
-                    except Exception:
-                        stable_frames = 0
-                    if (
-                        time.monotonic() - wait_started >= 3.0
-                        and stable_frames >= 3
-                    ):
-                        break
-                try:
-                    self.driver._trace(
-                        "clientjs_chest_selection_ready_wait",
-                        logical=[float(x), float(y)],
-                        waited_seconds=round(time.monotonic() - wait_started, 3),
-                        stable_frames=stable_frames,
-                    )
-                except Exception:
-                    pass
-            return result
-
-        def _chest_region():
+        def chest_region():
             frame = self.driver.screenshot(format="opencv")
-            return frame[430:760, 270:730].copy()
+            return frame[350:760, 180:820].copy()
 
-        def _difference(before, after):
+        def difference(before, after):
             try:
                 import cv2
                 return float(cv2.absdiff(before, after).mean())
             except Exception:
                 return 0.0
 
-        def find_with_clientjs_prompt(*args, **kwargs):
-            nonlocal fallback_used, chest_screen_changed
-            name = str(args[0]) if args else str(kwargs.get("tree_type", ""))
-            # AUTO PRO's find_image(click=True) clicks the LD template centre
-            # before ClientJS-specific confirmation runs. Probe only here so
-            # there is exactly one controlled click path.
-            find_kwargs = dict(kwargs)
-            if name == "mo_ruong" and find_kwargs.get("click"):
-                find_kwargs["click"] = False
-            result = original_find(*args, **find_kwargs)
-
-            # ruong_go is visible both before and after opening. It is not a
-            # valid success signal by itself on ClientJS.
-            if name == "ruong_go" and fallback_used:
-                # Feed the legacy loop a deterministic completion signal.
-                # Its ruong_go template is not a valid post-open signal on
-                # ClientJS, while the captured modal change is.
-                return bool(chest_screen_changed)
-            if name != "mo_ruong" or fallback_used:
-                return result
-            # Even when the LD template matches, its built-in click/legacy
-            # coordinate is not a reliable ClientJS confirmation. Continue
-            # with the ClientJS selected-chest center below.
-            if not kwargs.get("click"):
-                return result
-
-            fallback_used = True
+        # State 1: the chest chooser is visible. The silver chest is the exact
+        # transition witness used by AUTO PRO. Select the wooden chest once,
+        # then wait until the silver chest disappears at threshold 1.0.
+        silver_visible = _find(self, "ruong_bac", 1.0)
+        if silver_visible:
+            self.update_progress("Mở rương • chọn Rương gỗ")
+            self.driver.click(371, 647)
+            modal_deadline = time.monotonic() + 8.0
+            silver_absent_streak = 0
+            while time.monotonic() < modal_deadline:
+                if _stopped(stop_event):
+                    return None
+                if not _find(self, "ruong_bac", 1.0):
+                    silver_absent_streak += 1
+                    if silver_absent_streak >= 2:
+                        break
+                else:
+                    silver_absent_streak = 0
+                time.sleep(0.20)
+            else:
+                raise RuntimeError(
+                    "Đã chọn Rương gỗ nhưng Rương bạc chưa biến mất ở ngưỡng 1.0"
+                )
             try:
-                self.gui.log(
-                    "ClientJS: template mo_ruong đã đổi; xác nhận bằng thay đổi màn hình",
-                    device_id=self.device_id,
+                self.driver._trace(
+                    "clientjs_chest_modal_ready",
+                    entry_state="CHOOSER",
+                    silver_threshold=1.0,
+                    silver_absent_streak=silver_absent_streak,
+                )
+            except Exception:
+                pass
+        else:
+            # State 2: AUTO enters while the selected-chest modal is already
+            # open. Never replay the wooden-chest selection click.
+            self.update_progress("Mở rương • modal đã mở, bỏ qua chọn Rương gỗ")
+            try:
+                self.driver._trace(
+                    "clientjs_chest_modal_ready",
+                    entry_state="MODAL_ALREADY_OPEN",
+                    silver_threshold=1.0,
+                    selection_skipped=True,
                 )
             except Exception:
                 pass
 
-            before = _chest_region()
-            # AUTO PRO/LD clicks (433, 557), but the live ClientJS
-            # capture places the selected chest center around (500, 470).
-            # Tap the chest itself first, then retain the LD point as fallback.
-            # Repeat a point like
-            # AUTO PRO (up to five taps), and stop immediately after a real
-            # modal change so no tap can leak into the game behind it.
-            # LIVE_VERIFIED ClientJS center must remain first. A later
-            # refactor accidentally removed (500, 470), causing every retry to
-            # land below the rendered chest while the modal stayed unchanged.
-            for x, y in (
-                (500, 470),
-                (433, 557),
-                (497, 575),
-                (500, 590),
-                (500, 520),
-            ):
-                for attempt in range(5):
-                    if _stopped(stop_event):
-                        return False
-                    self.driver.click(x, y)
-                    time.sleep(1.0)
-                    after = _chest_region()
-                    score = _difference(before, after)
-                    try:
-                        self.driver._trace(
-                            "clientjs_chest_probe",
-                            logical=[x, y],
-                            attempt=attempt + 1,
-                            screen_change=round(score, 3),
-                            completion_threshold=8.0,
-                        )
-                    except Exception:
-                        pass
-                    # The selected chest has a continuous idle animation.
-                    # After the 4-second render wait that animation alone can
-                    # move the mean difference above 2.0. A real open replaces
-                    # most of the modal region, producing a much larger change.
-                    # mo_ruong is an LD asset and can be absent on ClientJS
-                    # even while the touch prompt is still present. Therefore
-                    # disappearance of that template is never success; only a
-                    # real modal-frame transition may complete the operation.
-                    if score >= 8.0:
-                        chest_screen_changed = True
-                        return True
-                    before = after
-
+        # Open only after one of the two states above has resolved to the modal.
+        before = chest_region()
+        opened = False
+        for attempt in range(1, 6):
+            if _stopped(stop_event):
+                return None
+            self.driver.click(500, 470)
+            time.sleep(1.0)
+            after = chest_region()
+            score = difference(before, after)
             try:
-                self.gui.log(
-                    "ClientJS: đã nhấn vùng rương nhưng màn hình không thay đổi",
-                    device_id=self.device_id,
+                self.driver._trace(
+                    "clientjs_chest_open_probe",
+                    logical=[500, 470],
+                    attempt=attempt,
+                    screen_change=round(score, 3),
+                    completion_threshold=8.0,
                 )
             except Exception:
                 pass
-            return False
+            if score >= 8.0:
+                opened = True
+                break
+            before = after
+        if not opened:
+            raise RuntimeError(
+                "Modal rương đã sẵn sàng nhưng click mở không làm màn hình thay đổi"
+            )
 
-        processor.find_image = find_with_clientjs_prompt
-        self.driver.click = click_without_post_open_replay
-        try:
-            return original_open_chests(self, stop_event)
-        finally:
-            self.driver.click = original_click
-            processor.find_image = original_find
+        # The chest is open. Close reward/modal layers and require a real farm
+        # anchor with no chest overlay before returning control to AUTO.
+        self.update_progress("Rương đã mở • đang thoát về màn hình chính")
+        for attempt in range(1, 13):
+            if _stopped(stop_event):
+                return None
+            if _game_anchor(self):
+                self.update_progress("Mở rương hoàn tất • đã về màn hình chính")
+                return True
+            action = "back"
+            for name in ("close_game", "x_popup_event", "dong_y"):
+                if _find(self, name, 0.72, click=True):
+                    action = name
+                    break
+            else:
+                self.press_back(stop_event)
+            time.sleep(0.45)
+            try:
+                self.driver._trace(
+                    "clientjs_chest_exit_probe",
+                    attempt=attempt,
+                    action=action,
+                    home_ready=_game_anchor(self),
+                    blocking_overlay=_blocking_game_overlay(self),
+                )
+            except Exception:
+                pass
+        raise RuntimeError(
+            "Rương đã mở nhưng chưa xác nhận thoát về màn hình chính"
+        )
 
     def vong_quay(self, luotquay, stop_event=None):
         """Run AUTO PRO spins, then always return ClientJS to the farm screen."""
