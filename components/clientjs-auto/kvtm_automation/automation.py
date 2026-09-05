@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from .actions import (
+    AutoVpRecognitionActions,
     BuyingActions,
     InventoryActions,
     NavigationActions,
@@ -112,6 +113,12 @@ class KVAutomation:
             self.stall,
         )
         self.selling = SellingActions(
+            context,
+            self.vision,
+            self.wait,
+            self.inventory,
+        )
+        self.auto_vp = AutoVpRecognitionActions(
             context,
             self.vision,
             self.wait,
