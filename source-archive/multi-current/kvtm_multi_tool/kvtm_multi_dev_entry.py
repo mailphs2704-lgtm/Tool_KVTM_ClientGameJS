@@ -104,6 +104,7 @@ class MultiDevApp(production.MultiApp):
         self._clean_main_threads: dict[str, threading.Thread] = {}
         self._clean_main_stop_events: dict[str, threading.Event] = {}
         self._clean_main_log_paths: dict[str, tuple[Path, Path]] = {}
+        self._clean_vp_probe_requested: set[str] = set()
         self._clear_stall_probe_starting: set[str] = set()
         self._clear_stall_probe_terminal: dict[str, str] = {}
         self._clear_stall_gate2_profiles: set[str] = set()
@@ -126,6 +127,16 @@ class MultiDevApp(production.MultiApp):
             return False
         thread = self._clean_main_threads.get(str(profile_id))
         return bool(thread and thread.is_alive())
+
+    def _start_clean_vp_recognition_probe(self) -> None:
+        selected = list(map(str, self.selected_ids()))
+        if not selected:
+            core.messagebox.showinfo(
+                core.APP_NAME, "Hãy chọn ít nhất một tài khoản để kiểm tra VP."
+            )
+            return
+        self._clean_vp_probe_requested.update(selected)
+        self._start_clean_auto_session()
 
     def _start_clean_auto_session(self) -> None:
         """Run clean Main on the resident image runtime already owned by DEV."""
@@ -194,7 +205,7 @@ class MultiDevApp(production.MultiApp):
                 target=self._run_clean_main_thread,
                 args=(
                     profile_id, profile, int(process.pid), work_dir, stop_event,
-                    log_writer,
+                    log_writer, profile_id in self._clean_vp_probe_requested,
                 ),
                 name=f"kvtm-dev-clean-main-{profile_id[:8]}",
                 daemon=True,
@@ -202,6 +213,7 @@ class MultiDevApp(production.MultiApp):
             self._clean_main_stop_events[profile_id] = stop_event
             self._clean_main_threads[profile_id] = thread
             thread.start()
+            self._clean_vp_probe_requested.discard(profile_id)
             launched += 1
 
         if launched:
@@ -225,6 +237,7 @@ class MultiDevApp(production.MultiApp):
         work_dir: Path,
         stop_event: threading.Event,
         log_writer,
+        run_vp_probe: bool,
     ) -> None:
         try:
             _component_root, _worker_root, auto_root = _install_runtime_paths()
@@ -258,10 +271,22 @@ class MultiDevApp(production.MultiApp):
             result = GameSessionWorkflow(automation).run(timeout=180.0)
             payload = result.to_dict()
             log_writer.action("PASS | vào game, đóng popup, xác nhận màn hình chính")
+            outcome = "finished"
+            if run_vp_probe:
+                from kvtm_automation.workflows.vp_recognition import (
+                    VpRecognitionProbeWorkflow,
+                )
+                vp_result = VpRecognitionProbeWorkflow(automation).run(timeout=90.0)
+                payload = vp_result.to_dict()
+                outcome = "vp_finished"
+                log_writer.action(
+                    "READ-ONLY VP hoàn tất | "
+                    f"recognized={payload.get('recognized_count', 0)}/3"
+                )
             self.after(
                 0,
-                lambda data=payload: self._finish_clean_main(
-                    profile_id, "finished", data
+                lambda data=payload, result_kind=outcome: self._finish_clean_main(
+                    profile_id, result_kind, data
                 ),
             )
         except Exception as exc:
@@ -283,6 +308,12 @@ class MultiDevApp(production.MultiApp):
         if outcome == "finished":
             self.auto_multi_dev_status.set(
                 "PASS • Đã vào game, đóng popup và xác nhận màn hình chính"
+            )
+            return
+        if outcome == "vp_finished":
+            count = int(payload.get("recognized_count", 0) or 0)
+            self.auto_multi_dev_status.set(
+                f"READ-ONLY PASS • Nhận diện {count}/3 VP mẫu"
             )
             return
         error = str(payload.get("error") or "Lỗi AUTO MULTI DEV")
