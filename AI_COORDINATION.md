@@ -224,3 +224,14 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - 2026-09-05: Began the clean AUTO PRO reconstruction surface inside Multi DEV. The AUTO CLIENTJS feature row is now a horizontally scrollable center strip with fixed themed left/right arrow buttons. “AUTO MULTI DEV” is immediately after “Chức năng chính” and opens an isolated clean-runtime scaffold; existing AUTO PRO execution remains unchanged as the migration reference. No profile, login, Workspace, or recovered runtime was removed. py_compile and full static contract pass; live Windows GUI verification remains required after [1].
 
 - 2026-09-05: First executable clean AUTO layers added beside the clean Dọn quầy Python package. Multi AUTO MULTI DEV now launches/stops clean_auto_worker.py for checked, running, non-busy profiles. GameSessionWorkflow connects the clean KVAutomation stack, enters the ClientJS portal/game, dismisses AUTO PRO-derived template-guarded x/lv_up/quay_hang popups, and requires the clone main screen before PASS. Clean driver identity is profile_id + active profiles.json; ProfileProcessResolver matches game_dir and in-memory DPAPI-decrypted launch args, never logs secrets. On ClientJS restart CocosBridgeDriver waits up to 120s for that exact replacement PID, resets capture capability, reinjects/reconnects Bridge, then continues. Legacy automation.pyc remains reference only and is not imported by clean_auto_worker. Syntax parse PASS for 10 clean/source verifier files. GitHub Actions currently reports infrastructure/config startup failure with zero executed steps, so CI is NOT PASS; Windows [1] build and live session verification required.
+
+
+## 2026-09-05 — AUTO MULTI DEV clean image-runtime startup fix
+
+- User live symptom: clicking “Vào game + đóng popup” stopped at the OpenCV import status, so no game input or popup action was reached.
+- The AUTO PRO third-party image runtime is now synchronized into the packaged AUTO_PRO tree once during `[1]` build.
+- Clean workers no longer import `local_launcher`; that launcher performs runtime file copies and loads legacy GUI/business modules.
+- At button runtime, the clean worker only registers packaged DLL/search paths and imports the already-present cv2/numpy/PIL files.
+- A 90-second startup watchdog terminates a stuck image-runtime worker with an explicit error instead of leaving the GUI indefinitely busy.
+- Python syntax: PASS for `runtime/bootstrap.py` and `worker/clean_auto_worker.py`.
+- Windows PS5.1 build and live ClientJS navigation remain required before declaring end-to-end PASS.
