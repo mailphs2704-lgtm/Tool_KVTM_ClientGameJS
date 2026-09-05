@@ -75,6 +75,8 @@ class KVAutomation:
             bundle = self.driver_factory.engine(
                 context.pid,
                 logger=context.log,
+                profile_id=context.profile_id,
+                profile_file=context.profile_file,
             )
             self.driver = bundle.driver
             self.bridge_root = bundle.bridge_root
