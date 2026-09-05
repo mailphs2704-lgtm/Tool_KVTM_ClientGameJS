@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import traceback
+import os
+import threading
 
 from clean_worker_support import (
     StopChannel,
@@ -64,12 +66,34 @@ def main() -> int:
         profile_file=Path(args.profile_file),
     )
     try:
+        runtime_ready = threading.Event()
+
+        def runtime_watchdog() -> None:
+            if runtime_ready.wait(90.0):
+                return
+            emit(
+                "worker_error", workflow=WORKFLOW_NAME,
+                profile_id=args.profile_id,
+                error=(
+                    "Runtime ảnh AUTO sạch bị treo quá 90 giây; "
+                    "đã dừng worker, không thao tác mù lên ClientJS"
+                ),
+                stage="clean-image-runtime-loading",
+            )
+            os._exit(86)
+
+        threading.Thread(
+            target=runtime_watchdog,
+            name="kvtm-clean-auto-runtime-watchdog",
+            daemon=True,
+        ).start()
         emit(
             "worker_started", workflow=WORKFLOW_NAME, pid=args.pid,
             profile_id=args.profile_id, profile_name=args.profile_name,
             runtime="clean-python-only", legacy_pyc=False,
         )
         automation = KVAutomation(context)
+        runtime_ready.set()
         result = GameSessionWorkflow(automation).run(timeout=args.timeout)
         emit("worker_finished", workflow=WORKFLOW_NAME, **result.to_dict())
         return 0
