@@ -11,7 +11,7 @@ from .inventory import InventoryActions
 __all__ = ["AutoVpSpec", "VpRecognition", "AutoVpRecognitionActions"]
 FILE_FUNCTIONS = (
     "Khai báo ba VP mẫu của AUTO Main",
-    "Chọn đúng kho thành phẩm để quét",
+    "Quét vùng kho thành phẩm đã mở",
     "Nhận diện VP theo template AUTO PRO",
     "Trả kết quả READ-ONLY có score/vị trí",
     "Ghi kết quả vào log hành động và chi tiết",
@@ -68,7 +68,6 @@ class AutoVpRecognitionActions:
     def scan_samples(self) -> tuple[VpRecognition, ...]:
         """Scan configured samples without clicking an inventory item."""
         self.context.ensure_running()
-        self.inventory.select_storage(2)
         results: list[VpRecognition] = []
         for spec in self.SAMPLE_ITEMS:
             best = None
