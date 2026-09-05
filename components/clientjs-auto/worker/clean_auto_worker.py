@@ -22,6 +22,7 @@ def main() -> int:
     parser.add_argument("--pid", type=int, required=True)
     parser.add_argument("--profile-id", required=True)
     parser.add_argument("--profile-name", required=True)
+    parser.add_argument("--profile-file", required=True)
     parser.add_argument("--work-dir", required=True)
     parser.add_argument("--timeout", type=float, default=180.0)
     args = parser.parse_args()
@@ -60,6 +61,7 @@ def main() -> int:
         stop_event=channel.event,
         logger=log,
         stage_reporter=stage,
+        profile_file=Path(args.profile_file),
     )
     try:
         emit(
