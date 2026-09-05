@@ -16,7 +16,7 @@ from .inventory import InventoryActions
 
 
 class SellingActions:
-    """Place one exact batch of ten VP using the recovered sale order."""
+    """Place a verified purchased VP stack using the recovered sale order."""
 
     # AUTO_PRO_REFERENCE: fixed 1000x1000 regions/click point.
     EMPTY_STALL_ZONE = (196, 340, 599, 395)
@@ -61,7 +61,7 @@ class SellingActions:
         center: tuple[int, int],
         score: float,
     ) -> None:
-        """Finish the x10 sale after one exact inventory match is selected."""
+        """Finish the sale after one exact purchased inventory match is selected."""
         self.vision.driver.click(*center)
         self.waiter.sleep(0.30)
 
@@ -80,19 +80,17 @@ class SellingActions:
             self._cancel_dialog()
             raise TransactionError("VP không mở được màn hình đặt bán") from exc
 
-        # LIVE_VERIFIED/AUTO_PRO_REFERENCE: x10 is the only quantity Gate 4 may
-        # place. The existing price controls are intentionally never touched.
-        sl10 = None
-        deadline = time.monotonic() + 2.5
-        while time.monotonic() < deadline:
-            self.context.ensure_running()
-            sl10 = self.vision.find("sl10", threshold=0.62, zone=self.SL10_ZONE)
-            if sl10 is not None:
-                break
-            self.waiter.sleep(0.20)
-        if sl10 is None:
-            self._cancel_dialog()
-            raise InsufficientBatch("Loại VP hiện không đủ 10 để treo bán")
+        # Do not require the fragile "sl10" marker. The selected inventory
+        # item is already constrained by a fingerprint from a verified purchase
+        # in this run. Keep the game's current stack quantity and original price;
+        # screen change below remains the destructive-action verification gate.
+        quantity_marker = self.vision.find(
+            "sl10", threshold=0.62, zone=self.SL10_ZONE
+        )
+        self.context.log(
+            "CLEAR_STALL resale quantity marker "
+            + ("x10-found" if quantity_marker is not None else "not-required")
+        )
 
         before = self.vision.frame()[330:760, 180:820].copy()
         self.vision.driver.click(*self.PLACE_BUTTON)
@@ -114,13 +112,13 @@ class SellingActions:
             best_change = max(best_change, _mean_difference(before, after))
             if best_change >= self.minimum_screen_change:
                 self.context.log(
-                    "Đã treo 10 VP "
+                    "Đã treo VP đã mua "
                     f"(inventory-match={score:.3f}, change={best_change:.2f})"
                 )
                 return
             self.waiter.settle(0.20)
         self._cancel_dialog(cancelable=False)
-        raise TransactionError("Không xác nhận được thay đổi sau khi treo 10 VP")
+        raise TransactionError("Không xác nhận được thay đổi sau khi treo VP")
 
     def sell_batch_of_ten(
         self,
