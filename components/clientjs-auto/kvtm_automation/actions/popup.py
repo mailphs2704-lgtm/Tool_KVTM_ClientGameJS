@@ -30,37 +30,41 @@ class PopupActions:
         self.waiter = waiter
 
     @staticmethod
-    def _event_news_geometry(frame) -> tuple[bool, float, float]:
-        """Detect the no-X event board from stable geometry, not Vietnamese text."""
+    def _blocking_modal_geometry(frame) -> tuple[bool, float, float]:
+        """Detect a blocking center modal without depending on popup names/text."""
         try:
             height, width = frame.shape[:2]
             if width < 900 or height < 900:
                 return False, 0.0, 255.0
-            header = frame[
-                int(height * 0.30):int(height * 0.37),
-                int(width * 0.17):int(width * 0.83),
+            center = frame[
+                int(height * 0.28):int(height * 0.72),
+                int(width * 0.15):int(width * 0.85),
             ]
-            background = frame[
-                int(height * 0.10):int(height * 0.25),
-                int(width * 0.30):int(width * 0.70),
-            ]
-            header_luma = header.astype("float32").mean(axis=2)
-            bright_ratio = float((header_luma >= 165.0).mean())
-            background_mean = float(
-                background.astype("float32").mean()
+            outer_samples = (
+                frame[int(height * 0.08):int(height * 0.24), int(width * 0.28):int(width * 0.72)],
+                frame[int(height * 0.76):int(height * 0.92), int(width * 0.28):int(width * 0.72)],
+                frame[int(height * 0.25):int(height * 0.75), int(width * 0.02):int(width * 0.14)],
+                frame[int(height * 0.25):int(height * 0.75), int(width * 0.86):int(width * 0.98)],
             )
-            return (
-                bright_ratio >= 0.38 and background_mean <= 105.0,
-                bright_ratio,
-                background_mean,
+            center_luma = center.astype("float32").mean(axis=2)
+            bright_ratio = float((center_luma >= 165.0).mean())
+            outer_mean = float(sum(
+                sample.astype("float32").mean() for sample in outer_samples
+            ) / len(outer_samples))
+            center_mean = float(center_luma.mean())
+            blocked = (
+                outer_mean <= 105.0
+                and center_mean >= outer_mean + 22.0
+                and bright_ratio >= 0.10
             )
+            return blocked, bright_ratio, outer_mean
         except Exception:
             return False, 0.0, 255.0
 
-    def _dismiss_event_news_board(self) -> bool:
-        """Close the central event-news board and verify it actually disappeared."""
+    def _dismiss_unknown_center_modal(self) -> bool:
+        """Close a no-X center modal by backdrop and verify the blocker is gone."""
         before = self.vision.frame()
-        detected, bright_ratio, background_mean = self._event_news_geometry(before)
+        detected, bright_ratio, background_mean = self._blocking_modal_geometry(before)
         if not detected:
             return False
 
@@ -69,14 +73,14 @@ class PopupActions:
         self.vision.driver.click(500, 185)
         self.waiter.sleep(0.65)
         after = self.vision.frame()
-        still_open, _bright_after, _background_after = self._event_news_geometry(after)
+        still_open, _bright_after, _background_after = self._blocking_modal_geometry(after)
         if still_open:
             self.context.log(
-                "Bảng tin sự kiện còn mở sau click nền; tiếp tục phục hồi"
+                "Modal trung tâm còn mở sau click nền; không xác nhận PASS"
             )
             return False
         self.context.log(
-            "Đã đóng Bảng tin sự kiện bằng vùng nền "
+            "Đã đóng modal không tên bằng vùng nền "
             f"(bright={bright_ratio:.2f}, bg={background_mean:.1f})"
         )
         return True
@@ -84,7 +88,7 @@ class PopupActions:
     def is_own_main_screen(self) -> bool:
         """Confirm the clone's own farm, not a friend's visited home."""
         frame = self.vision.frame()
-        if self._event_news_geometry(frame)[0]:
+        if self._blocking_modal_geometry(frame)[0]:
             return False
         if self.vision.find(
             "icon_home", threshold=0.80, zone=self.HOME_ZONE, frame=frame
@@ -101,7 +105,7 @@ class PopupActions:
 
     def dismiss_one(self) -> bool:
         """Close one known modal using AUTO PRO guards plus verified geometry."""
-        if self._dismiss_event_news_board():
+        if self._dismiss_unknown_center_modal():
             return True
 
         level_up = self.vision.find("lv_up", threshold=0.69, click=True)
