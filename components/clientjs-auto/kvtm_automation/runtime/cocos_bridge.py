@@ -150,10 +150,23 @@ class CocosBridgeDriver:
             return False
         if self.profile_resolver.is_alive(self.pid):
             return False
-        replacement = self.profile_resolver.current_pid()
+        replacement = None
+        deadline = time.monotonic() + 120.0
+        next_log = 0.0
+        while time.monotonic() < deadline:
+            replacement = self.profile_resolver.current_pid()
+            if replacement:
+                break
+            now = time.monotonic()
+            if now >= next_log:
+                self._log(
+                    f"Đang chờ đúng ClientJS của profile {self.profile_id} restart"
+                )
+                next_log = now + 5.0
+            time.sleep(0.50)
         if not replacement:
             raise RuntimeError(
-                f"Profile {self.profile_id} chưa có ClientJS thay thế sau restart"
+                f"Profile {self.profile_id} chưa có ClientJS thay thế sau 120 giây"
             )
         old_pid = self.pid
         self.pid = int(replacement)
