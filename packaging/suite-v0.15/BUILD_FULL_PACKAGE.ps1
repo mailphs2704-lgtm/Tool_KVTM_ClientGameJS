@@ -423,6 +423,25 @@ function Build-KvtmBridgeV3 {
     Write-Host "BRIDGE V3 BUILD VERIFIED" -ForegroundColor Green
 }
 
+# Reclaim partial preservation copies before compilation. This deletion is
+# allowed only while the fixed DEV folder still owns both authoritative files.
+$PreflightCurrentData = Join-Path $OutputRoot "data-dev"
+$preflightProfiles = Join-Path $PreflightCurrentData "profiles.json"
+$preflightSettings = Join-Path $PreflightCurrentData "settings.json"
+if (
+    (Test-Path -LiteralPath $preflightProfiles -PathType Leaf) -and
+    (Test-Path -LiteralPath $preflightSettings -PathType Leaf)
+) {
+    $stalePreserveRoots = @(
+        Get-ChildItem -LiteralPath $DistRoot -Directory -Filter ".kvtm-dev-data-*" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -ne $PreserveRoot }
+    )
+    foreach ($staleRoot in $stalePreserveRoots) {
+        Write-Host "[DATA] Xoa ban sao tam cua build loi: $($staleRoot.Name)" -ForegroundColor Yellow
+        Remove-Item -LiteralPath $staleRoot.FullName -Recurse -Force -ErrorAction Stop
+    }
+}
+
 Resolve-AutoProLfsRuntime
 Build-ClientJsCaptureBridge
 Build-KvtmBridgeV3
@@ -447,25 +466,6 @@ if (Test-Path -LiteralPath $DistRoot -PathType Container) {
 $MainProfileDir = Join-Path $env:APPDATA "KVTM Multi"
 if (Test-Path -LiteralPath $MainProfileDir -PathType Container) {
     $DataCandidates += $MainProfileDir
-}
-
-# A failed previous build can leave a partial temporary copy that consumes
-# the disk. Delete it only when the fixed DEV folder still contains both
-# authoritative profile/settings files.
-$currentProfiles = Join-Path $CurrentData "profiles.json"
-$currentSettings = Join-Path $CurrentData "settings.json"
-if (
-    (Test-Path -LiteralPath $currentProfiles -PathType Leaf) -and
-    (Test-Path -LiteralPath $currentSettings -PathType Leaf)
-) {
-    $stalePreserveRoots = @(
-        Get-ChildItem -LiteralPath $DistRoot -Directory -Filter ".kvtm-dev-data-*" -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -ne $PreserveRoot }
-    )
-    foreach ($staleRoot in $stalePreserveRoots) {
-        Write-Host "[DATA] Xoa ban sao tam cua build loi: $($staleRoot.Name)" -ForegroundColor Yellow
-        Remove-Item -LiteralPath $staleRoot.FullName -Recurse -Force -ErrorAction Stop
-    }
 }
 
 New-Item -ItemType Directory -Path $PreserveRoot -Force | Out-Null
