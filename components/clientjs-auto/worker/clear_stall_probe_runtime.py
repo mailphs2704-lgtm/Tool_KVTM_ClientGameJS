@@ -461,10 +461,13 @@ def run_probe(
                 automation.stall.close_friend_stall()
             except Exception:
                 pass
+            pending_before_flush = len(pending_resale_fingerprints)
+            sold_before_flush = sold_quantity
             checkpoint(
                 "gate5-inventory-flush-start", reason=reason,
                 friend_ordinal=friend_index,
-                pending_batches=len(pending_resale_fingerprints),
+                pending_batches=pending_before_flush,
+                required_resale_quantity=pending_before_flush * 10,
             )
             automation.navigation.return_home(timeout=30.0)
             automation.stall.open_own_stall()
@@ -538,9 +541,19 @@ def run_probe(
                     report["resale_evidence"] = list(resale_evidence)
                     report["sold_quantity"] = sold_quantity
                     persist()
+            flushed_quantity = sold_quantity - sold_before_flush
+            required_flush_quantity = pending_before_flush * 10
+            if flushed_quantity != required_flush_quantity:
+                raise RuntimeError(
+                    "Kho đầy: chưa treo đủ VP đã mua trước khi quay lại nhà bạn • "
+                    f"required={required_flush_quantity} sold={flushed_quantity}"
+                )
             checkpoint(
                 "gate5-inventory-flush-finish", reason=reason,
                 purchased_quantity=purchased_quantity, sold_quantity=sold_quantity,
+                flushed_quantity=flushed_quantity,
+                required_flush_quantity=required_flush_quantity,
+                pending_batches=0,
                 remaining_quantity=max(0, expected_quantity - purchased_quantity),
             )
             if return_to_friend and purchased_quantity < expected_quantity:
