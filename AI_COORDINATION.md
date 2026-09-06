@@ -461,3 +461,14 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Wiring mới là `automation.floors` trong resident runtime. Không sửa `planting.py`, bán VP, Dọn quầy, queue, Bridge hoặc driver.
 - Builder chạy `verify_auto_floor_navigation_contract.py`; static contract cấm `goUp(4)`, khóa hình học, giới hạn năm tầng và ranh giới an toàn trước sản xuất.
 - Trạng thái: source/static ready; Windows build và LIVE chuyển tầng vẫn PENDING.
+
+
+## 2026-09-06 — Nút Bắt đầu chuyển sang workflow tổng bán → trồng
+
+- Live/GUI inspection xác nhận nút tổng trước đây vẫn chỉ gọi `GameSessionWorkflow`; ba workflow nghiệp vụ phụ thuộc cờ từ các nút thử đã bị xóa và dùng `if/elif`, nên không thể chạy tuần tự.
+- Thêm `workflows/auto_main`: một lần bấm chạy vào game/đóng popup, gọi nguyên trạng `AutoVpSaleWorkflow`, sau đó gọi nguyên trạng `RosePlantingWorkflow`.
+- Nếu bán hoặc trồng phát lỗi, exception chặn toàn chuỗi; không chuyển tầng/chọn máy tiếp. Khi cả hai hoàn tất mới phát `auto-main-production-ready`.
+- DEV entry dùng `AutoMainWorkflow(automation).run()`; GUI báo tổng số ô bán, vàng thu và cây đã trồng. Các handler thử cũ còn tồn tại để tương thích source nhưng không còn nút GUI và không tham gia nút tổng.
+- Static contract bán/trồng được chuyển từ wiring nút thử sang wiring workflow tổng. Nội bộ bán VP, trồng Hoa hồng và Dọn quầy không đổi.
+- Thêm công cụ chỉ đọc `tools/inspect_autopro_production_reference.py` để trích `makeItems/goUp/goDownLast/produceItems_293` từ marshal AUTO PRO trước khi viết click máy sản xuất; không đoán tọa độ.
+- Trạng thái: AST syntax PASS cho workflow, DEV entry và ba verifier; Windows build/LIVE pipeline PENDING. Sản xuất VP chưa được phép click cho tới khi trích xong reference.
