@@ -44,7 +44,11 @@ def main() -> int:
     require(action, "empty < self.REQUIRED_COUNT", "Nine-empty-slot precondition missing")
     require(action, "consumed < self.REQUIRED_COUNT", "Post-production accounting missing")
     require(action, "self.speed_config.vp_production_delay", "Production speed binding missing")
-    require(action, "Không xác minh được máy sấy tầng 1", "Wrong-machine fail-close missing")
+    require(action, "Không mở được panel máy sấy tầng 1", "Panel-open fail-close missing")
+    require(action, "for attempt in range(1, 4)", "Three verified panel retries missing")
+    require(action, 'threshold=0.70', "AUTO PRO initial empty-slot gate missing")
+    require(action, "Panel máy đã mở nhưng không nhận diện được Táo sấy",
+            "Wrong-item fail-close missing")
     require(automation, "self.production = ProductionActions(", "Resident production wiring missing")
     require(workflow, "plant_27_apples()", "Apple planting step missing")
     require(workflow, "produce_9_dried_apples()", "Dried apple production step missing")
