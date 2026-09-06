@@ -88,8 +88,9 @@ class SellingActions:
         for name in ("quaytrong", "quay_trong"):
             if self.vision.find(
                 name,
-                threshold=0.72,
+                threshold=0.66,
                 zone=self.EMPTY_STALL_ZONE,
+                scales=(0.85, 0.92, 1.0, 1.08, 1.15),
                 click=True,
             ) is not None:
                 return True
