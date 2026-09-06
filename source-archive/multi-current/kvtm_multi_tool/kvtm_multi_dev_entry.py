@@ -231,6 +231,7 @@ class MultiDevApp(production.MultiApp):
                     log_writer, profile_id in self._clean_vp_probe_requested,
                     profile_id in self._clean_vp_sale_requested,
                     profile_id in self._clean_rose_plant_requested,
+                    self._collect_auto_tuning(),
                 ),
                 name=f"kvtm-dev-clean-main-{profile_id[:8]}",
                 daemon=True,
@@ -270,6 +271,7 @@ class MultiDevApp(production.MultiApp):
         run_vp_probe: bool,
         run_vp_sale: bool,
         run_rose_plant: bool,
+        speed_values: dict,
     ) -> None:
         try:
             _component_root, _worker_root, auto_root = _install_runtime_paths()
@@ -299,7 +301,18 @@ class MultiDevApp(production.MultiApp):
                 profile_file=core.PROFILE_FILE,
             )
             log("Clean Runtime dùng chung READY • không import lại cv2/numpy/PIL")
-            automation = KVAutomation(context, image_runtime_ready=True)
+            automation = KVAutomation(
+                context,
+                image_runtime_ready=True,
+                speed_config=speed_values,
+            )
+            speed_config = automation.speed_config
+            log_writer.action(
+                "Tốc độ MULTI DEV | "
+                f"kéo tầng={speed_config.floor_swipe_duration:.3f}s | "
+                f"trồng/thu={speed_config.plant_harvest_duration:.3f}s | "
+                f"sản xuất VP={speed_config.vp_production_delay:.3f}s"
+            )
             result = GameSessionWorkflow(automation).run(timeout=180.0)
             payload = result.to_dict()
             log_writer.action("PASS | vào game, đóng popup, xác nhận màn hình chính")
