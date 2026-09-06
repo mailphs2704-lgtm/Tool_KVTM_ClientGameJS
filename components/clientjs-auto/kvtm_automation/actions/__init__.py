@@ -1,4 +1,5 @@
 from .buying import BuyingActions
+from .floor_navigation import FloorMoveResult, FloorNavigationActions
 from .inventory import InventoryActions
 from .item_recognition import AutoVpRecognitionActions, AutoVpSpec, VpRecognition
 from .navigation import NavigationActions
@@ -9,6 +10,8 @@ from .stall import StallActions
 
 __all__ = [
     "BuyingActions",
+    "FloorMoveResult",
+    "FloorNavigationActions",
     "InventoryActions",
     "AutoVpRecognitionActions",
     "AutoVpSpec",
