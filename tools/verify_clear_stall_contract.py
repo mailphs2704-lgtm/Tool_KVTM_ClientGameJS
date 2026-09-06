@@ -308,13 +308,38 @@ def main() -> int:
     )
     require(
         probe,
-        '"stall-intermediate-swipe-scan"',
-        "Friend-stall purchase must scan between both swipe pulses",
+        "FRIEND_STALL_SCAN_COUNT = 5",
+        "Every selected friend stall must have five scan-buy positions",
     )
     require(
         probe,
+        "for view in range(1, FRIEND_STALL_SCAN_COUNT + 1):",
+        "Friend-stall five-pass scan loop missing",
+    )
+    require(
+        probe,
+        "mapping_view = min(view, STALL_VIEW_COUNT)",
+        "Terminal friend-stall scan must preserve the physical slot mapping",
+    )
+    require(
+        probe,
+        'order="BUY_THEN_TWO_SWIPES_THEN_SCAN"',
+        "Friend-stall order must be scan-buy then two consecutive swipes",
+    )
+    require(
+        probe,
+        "automation.stall.next_view()",
+        "Friend-stall movement must use the validated two-swipe operation",
+    )
+    forbid(
+        probe,
+        '"stall-intermediate-swipe-scan"',
+        "Friend-stall must never scan between swipe pulse 1 and pulse 2",
+    )
+    forbid(
+        probe,
         '"SWIPE_SCAN_BUY_THEN_SWIPE"',
-        "Intermediate listing purchase order must be swipe-scan-buy-swipe",
+        "Friend-stall must never buy between swipe pulse 1 and pulse 2",
     )
     require(
         probe,
@@ -829,7 +854,7 @@ def main() -> int:
     print("gate3_limit=configured_x10_target")
     print("gate3_reload=one_scan_per_house_then_next_round")
     print("gate3_friend_order=1..N")
-    print("gate3_view_order=scan_buy_then_swipe_both_rows")
+    print("gate3_view_order=five_scan_buy_positions_with_two_swipes_between")
     print("gate3_same_friend_reload=disabled")
     print("gate3_unbuyable=skip_without_accounting")
     print("gate3_resale=disabled")
