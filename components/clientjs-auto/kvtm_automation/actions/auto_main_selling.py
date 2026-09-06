@@ -95,29 +95,48 @@ class AutoMainSellingActions:
         return None
 
     def _cancel_selected_item(self) -> None:
-        """Return from sale dialog to the still-open inventory and verify it."""
+        """Close the sale dialog safely and restore the inventory picker."""
         for attempt in range(1, 4):
             self.context.ensure_running()
-            self.selling.vision.driver.press("back")
-            self.selling.waiter.sleep(0.35)
+
+            # ClientJS does not consume Escape from the injected Cocos window.
+            # Use the visible top-right X instead, then recover the item picker
+            # if that X closed both the sale dialog and the inventory panel.
+            close_match = self.selling.vision.find_any(
+                ("close_game", "close", "x_popup_event"),
+                threshold=0.72,
+                zone=(930, 0, 70, 70),
+                click=True,
+            )
+            if close_match is None:
+                self.selling.vision.driver.click(968, 28)
+            self.selling.waiter.sleep(0.45)
+
             dialog_open = self.selling.vision.find(
                 "dat_ban",
                 threshold=0.78,
                 zone=self.selling.DAT_BAN_ZONE,
             )
+            if dialog_open is not None:
+                continue
+
             inventory_open = self.selling.vision.find(
                 "kho_thanh_pham",
                 threshold=0.72,
                 zone=self.selling.inventory.STORAGE_ZONE,
             )
-            if dialog_open is None and inventory_open is not None:
-                self.context.log(
-                    f"AUTO bán VP • đã hủy dialog và trở lại kho • "
-                    f"lần {attempt}/3"
-                )
-                return
+            if inventory_open is None:
+                if not self.selling._find_empty_slot():
+                    continue
+                self.selling.waiter.sleep(0.35)
+
+            self.context.log(
+                f"AUTO bán VP • đã hủy dialog và khôi phục kho • "
+                f"lần {attempt}/3"
+            )
+            return
         raise ScreenTimeout(
-            "Không hủy được dialog bán VP; dừng trước khi thao tác tiếp"
+            "Không hủy và khôi phục được kho bán VP; dừng trước khi thao tác tiếp"
         )
 
     def _place_exact_ten(self, item: VpRecognition) -> str:
