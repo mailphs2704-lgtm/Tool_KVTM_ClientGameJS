@@ -1150,7 +1150,17 @@ class MultiApp(tk.Tk):
                 style="AutoStart.TButton",
                 command=sale_command,
             )
-            self.auto_multi_dev_vp_sale_button.pack(side="left")
+            self.auto_multi_dev_vp_sale_button.pack(side="left", padx=(0, 8))
+        plant_command = getattr(self, "_start_clean_rose_plant", None)
+        if plant_command is not None:
+            self.auto_multi_dev_rose_plant_button = ttk.Button(
+                clean_probe_actions,
+                text="▶ Trồng 27 Hoa hồng",
+                width=22,
+                style="AutoStart.TButton",
+                command=plant_command,
+            )
+            self.auto_multi_dev_rose_plant_button.pack(side="left")
 
         main_tab = self.auto_feature_tabs["main"]
         # These switches map one-to-one to AUTO PRO's legacy option keys.

@@ -366,3 +366,14 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Nếu không chứng minh được đã trở lại kho sau ba lần thì dừng bằng ScreenTimeout, không thao tác mù.
 - Chỉ kết luận hết lựa chọn sau khi đã kiểm tra đủ ba loại hoặc cả ba đã bị đánh dấu thiếu/không an toàn.
 - Không sửa workflow/runtime Dọn quầy.
+
+
+## 2026-09-06 — AUTO Main: lớp trồng 27 cây Hoa hồng
+
+- Đối chiếu trực tiếp AUTO PRO trong `source-archive/auto-pro-reference/recovery_notes/raw_marshal/constants.marshal` và `automation.marshal`.
+- Khóa đúng hình học gốc 1000x1000: start `(325,799)`; tầng 1..5 có Y `940,725,505,280,40`; đường 27 cây là 4 tầng đủ 24 chậu và ba chậu tầng 5, kết thúc `(578,40)`.
+- Runtime thực tế bắt đầu swipe tại tâm template `cay_hong`, sau đó đi qua các waypoint; threshold hạt Hoa hồng 0.87 và vùng search-gieo `(179,773,230,166)`.
+- Thêm module riêng `actions/planting.py`, workflow `auto_planting`, nút thử riêng `Trồng 27 Hoa hồng` và static contract trong build.
+- Fail-closed: nếu chậu đầu có cây chín, không nhận ra hạt hoặc không mở được bảng gieo thì dừng, không kéo mù.
+- Không sửa `auto_main_selling.py`, `auto_vp_sale`, `stall.py`, Dọn quầy, queue, bridge hay driver.
+- Static contract/syntax cần build Windows xác nhận; LIVE planting PENDING.

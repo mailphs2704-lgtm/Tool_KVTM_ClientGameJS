@@ -39,6 +39,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO Main sale static contract: VERIFIED" -ForegroundColor Green
 
+$AutoMainPlantVerifier = Join-Path $RepoRoot "tools\verify_auto_main_planting_contract.py"
+if (-not (Test-Path -LiteralPath $AutoMainPlantVerifier -PathType Leaf)) {
+    throw "Missing AUTO Main planting contract verifier: $AutoMainPlantVerifier"
+}
+& py.exe -3.11 $AutoMainPlantVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw "AUTO Main planting static contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "AUTO Main planting static contract: VERIFIED" -ForegroundColor Green
+
 function Test-GitLfsPointer {
     param([Parameter(Mandatory = $true)][string]$Path)
 

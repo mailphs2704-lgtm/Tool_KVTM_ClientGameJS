@@ -10,6 +10,7 @@ from .actions import (
     InventoryActions,
     NavigationActions,
     PopupActions,
+    PlantingActions,
     SellingActions,
     StallActions,
 )
@@ -98,6 +99,7 @@ class KVAutomation:
         self.wait = Waiter(context)
 
         self.popup = PopupActions(context, self.vision, self.wait)
+        self.planting = PlantingActions(context, self.vision, self.wait)
         self.navigation = NavigationActions(
             context,
             self.vision,

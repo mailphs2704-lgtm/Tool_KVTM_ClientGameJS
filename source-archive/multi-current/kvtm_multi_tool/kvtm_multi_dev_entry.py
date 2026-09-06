@@ -106,6 +106,7 @@ class MultiDevApp(production.MultiApp):
         self._clean_main_log_paths: dict[str, tuple[Path, Path]] = {}
         self._clean_vp_probe_requested: set[str] = set()
         self._clean_vp_sale_requested: set[str] = set()
+        self._clean_rose_plant_requested: set[str] = set()
         self._clear_stall_probe_starting: set[str] = set()
         self._clear_stall_probe_terminal: dict[str, str] = {}
         self._clear_stall_gate2_profiles: set[str] = set()
@@ -148,6 +149,16 @@ class MultiDevApp(production.MultiApp):
             )
             return
         self._clean_vp_sale_requested.update(selected)
+        self._start_clean_auto_session()
+
+    def _start_clean_rose_plant(self) -> None:
+        selected = list(map(str, self.selected_ids()))
+        if not selected:
+            core.messagebox.showinfo(
+                core.APP_NAME, "Hãy chọn ít nhất một tài khoản để trồng Hoa hồng."
+            )
+            return
+        self._clean_rose_plant_requested.update(selected)
         self._start_clean_auto_session()
 
     def _start_clean_auto_session(self) -> None:
@@ -219,6 +230,7 @@ class MultiDevApp(production.MultiApp):
                     profile_id, profile, int(process.pid), work_dir, stop_event,
                     log_writer, profile_id in self._clean_vp_probe_requested,
                     profile_id in self._clean_vp_sale_requested,
+                    profile_id in self._clean_rose_plant_requested,
                 ),
                 name=f"kvtm-dev-clean-main-{profile_id[:8]}",
                 daemon=True,
@@ -228,10 +240,12 @@ class MultiDevApp(production.MultiApp):
             thread.start()
             self._clean_vp_probe_requested.discard(profile_id)
             self._clean_vp_sale_requested.discard(profile_id)
+            self._clean_rose_plant_requested.discard(profile_id)
             launched += 1
 
         self._clean_vp_probe_requested.difference_update(selected)
         self._clean_vp_sale_requested.difference_update(selected)
+        self._clean_rose_plant_requested.difference_update(selected)
         if launched:
             self.auto_multi_dev_status.set(
                 f"Resident runtime • đang vào game và đóng popup • {launched} tài khoản"
@@ -255,6 +269,7 @@ class MultiDevApp(production.MultiApp):
         log_writer,
         run_vp_probe: bool,
         run_vp_sale: bool,
+        run_rose_plant: bool,
     ) -> None:
         try:
             _component_root, _worker_root, auto_root = _install_runtime_paths()
@@ -301,6 +316,17 @@ class MultiDevApp(production.MultiApp):
                     f"listed={payload.get('sold_listings', 0)} | "
                     f"gold={payload.get('collected_gold_slots', 0)}"
                 )
+            elif run_rose_plant:
+                from kvtm_automation.workflows.auto_planting import (
+                    RosePlantingWorkflow,
+                )
+                plant_result = RosePlantingWorkflow(automation).run(timeout=90.0)
+                payload = plant_result.to_dict()
+                outcome = "rose_plant_finished"
+                log_writer.action(
+                    "AUTO trồng Hoa hồng hoàn tất | "
+                    f"planted={payload.get('planted_count', 0)}/27"
+                )
             elif run_vp_probe:
                 from kvtm_automation.workflows.vp_recognition import (
                     VpRecognitionProbeWorkflow,
@@ -344,6 +370,12 @@ class MultiDevApp(production.MultiApp):
             gold = int(payload.get("collected_gold_slots", 0) or 0)
             self.auto_multi_dev_status.set(
                 f"PASS • Đã treo {sold} ô VP • thu vàng {gold} ô"
+            )
+            return
+        if outcome == "rose_plant_finished":
+            planted = int(payload.get("planted_count", 0) or 0)
+            self.auto_multi_dev_status.set(
+                f"ĐÃ GỬI LỆNH • Trồng Hoa hồng {planted}/27 • cần kiểm tra trực tiếp"
             )
             return
         if outcome == "vp_finished":
