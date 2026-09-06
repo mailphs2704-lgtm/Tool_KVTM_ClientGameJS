@@ -437,3 +437,15 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Cổng nghiệp vụ vẫn gồm: nhận đúng `thu_hoach`, thực hiện harvest path, nhận đồng thời `next_gieo_trai+cay_hong`, rồi thực hiện đúng swipe path 27.
 - Hai lượt live 15:29 và 15:37 đã được người vận hành xác nhận thu hoạch/trồng đúng. Runtime planting transaction: PASS; heuristic waypoint: DISABLED_AS_GATE.
 - Không đổi thao tác trồng đang PASS và không sửa bán VP, Dọn quầy, GUI, queue, Bridge hoặc driver.
+
+
+## 2026-09-06 — Tách ba tốc độ độc lập cho AUTO MULTI DEV
+
+- Đối chiếu AUTO PRO: `harvest_speed` cũ bị dùng chung cho kéo tầng và trồng/thu cây; `production_wait` là độ trễ sản xuất.
+- AUTO MULTI DEV có ba khóa riêng: `floor_swipe_duration`, `plant_harvest_duration`, `vp_production_delay`.
+- Mặc định bảo toàn tốc độ đã chạy PASS: kéo tầng 0.35s, trồng/thu 0.035s; sản xuất VP dùng mốc AUTO PRO 0.40s.
+- GUI Cấu hình hiển thị ba dòng MULTI DEV riêng; khóa AUTO PRO cũ vẫn giữ để tương thích worker lịch sử.
+- Runtime resident chụp snapshot cấu hình khi bắt đầu và ghi cả ba giá trị vào action log.
+- Module trồng chỉ nhận hai tốc độ tương ứng. Tốc độ sản xuất VP được chuẩn hóa/lưu sẵn, chưa nối vào nghiệp vụ vì module sản xuất chưa xây.
+- Không sửa logic bán VP, Dọn quầy, queue, bridge hay driver.
+- Có static contract riêng và được chèn vào build trước đóng gói; Windows build/LIVE retest PENDING.
