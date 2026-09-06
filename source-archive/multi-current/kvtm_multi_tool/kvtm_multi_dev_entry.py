@@ -107,6 +107,7 @@ class MultiDevApp(production.MultiApp):
         self._clean_vp_probe_requested: set[str] = set()
         self._clean_vp_sale_requested: set[str] = set()
         self._clean_rose_plant_requested: set[str] = set()
+        self._clean_floor_demo_requested: set[str] = set()
         self._clear_stall_probe_starting: set[str] = set()
         self._clear_stall_probe_terminal: dict[str, str] = {}
         self._clear_stall_gate2_profiles: set[str] = set()
@@ -123,6 +124,17 @@ class MultiDevApp(production.MultiApp):
             legacy_probe.destroy()
         self.auto_clear_stall_probe_button = full_action
         self.auto_clear_stall_start_button = full_action
+        clean_actions = self.auto_multi_dev_stop_button.master
+        self.auto_multi_dev_floor_demo_button = core.ttk.Button(
+            clean_actions,
+            text="↟ Demo tầng 1 → 6",
+            width=21,
+            style="Action.TButton",
+            command=self._start_clean_floor_demo,
+        )
+        self.auto_multi_dev_floor_demo_button.pack(
+            side="left", padx=(0, 8), before=self.auto_multi_dev_stop_button
+        )
         self._refresh_clear_stall_panel()
 
     def _clean_main_alive(self, profile_id: str | None) -> bool:
@@ -159,6 +171,17 @@ class MultiDevApp(production.MultiApp):
             )
             return
         self._clean_rose_plant_requested.update(selected)
+        self._start_clean_auto_session()
+
+    def _start_clean_floor_demo(self) -> None:
+        """Demo only: operator places the clone at floor 1, then move up five floors."""
+        selected = list(map(str, self.selected_ids()))
+        if not selected:
+            core.messagebox.showinfo(
+                core.APP_NAME, "Hãy chọn ít nhất một tài khoản đang ở tầng 1."
+            )
+            return
+        self._clean_floor_demo_requested.update(selected)
         self._start_clean_auto_session()
 
     def _start_clean_auto_session(self) -> None:
@@ -231,6 +254,7 @@ class MultiDevApp(production.MultiApp):
                     log_writer, profile_id in self._clean_vp_probe_requested,
                     profile_id in self._clean_vp_sale_requested,
                     profile_id in self._clean_rose_plant_requested,
+                    profile_id in self._clean_floor_demo_requested,
                     self._collect_auto_tuning(),
                 ),
                 name=f"kvtm-dev-clean-main-{profile_id[:8]}",
@@ -242,11 +266,13 @@ class MultiDevApp(production.MultiApp):
             self._clean_vp_probe_requested.discard(profile_id)
             self._clean_vp_sale_requested.discard(profile_id)
             self._clean_rose_plant_requested.discard(profile_id)
+            self._clean_floor_demo_requested.discard(profile_id)
             launched += 1
 
         self._clean_vp_probe_requested.difference_update(selected)
         self._clean_vp_sale_requested.difference_update(selected)
         self._clean_rose_plant_requested.difference_update(selected)
+        self._clean_floor_demo_requested.difference_update(selected)
         if launched:
             self.auto_multi_dev_status.set(
                 f"AUTO MULTI DEV • đang chạy chuỗi bán → trồng • {launched} tài khoản"
@@ -271,6 +297,7 @@ class MultiDevApp(production.MultiApp):
         run_vp_probe: bool,
         run_vp_sale: bool,
         run_rose_plant: bool,
+        run_floor_demo: bool,
         speed_values: dict,
     ) -> None:
         try:
@@ -316,6 +343,26 @@ class MultiDevApp(production.MultiApp):
             result = GameSessionWorkflow(automation).run(timeout=180.0)
             payload = result.to_dict()
             log_writer.action("PASS | vào game, đóng popup, xác nhận màn hình chính")
+            if run_floor_demo:
+                context.stage("floor-demo-1-to-6-start")
+                log("DEMO chuyển tầng • tiền điều kiện: clone đang ở tầng 1")
+                movement = automation.floors.up(5)
+                payload = {
+                    "requested_steps": movement.requested_steps,
+                    "completed_steps": movement.completed_steps,
+                    "frame_change_scores": list(movement.frame_change_scores),
+                }
+                log(
+                    "DEMO chuyển tầng PASS • tầng 1 → tầng 6 "
+                    f"• đã xác minh phản hồi {movement.completed_steps}/5 nhịp"
+                )
+                self.after(
+                    0,
+                    lambda data=payload: self._finish_clean_main(
+                        profile_id, "floor_demo_finished", data
+                    ),
+                )
+                return
             from kvtm_automation.workflows.auto_main import AutoMainWorkflow
 
             main_result = AutoMainWorkflow(automation).run()
@@ -350,6 +397,12 @@ class MultiDevApp(production.MultiApp):
     ) -> None:
         self._clean_main_threads.pop(profile_id, None)
         self._clean_main_stop_events.pop(profile_id, None)
+        if outcome == "floor_demo_finished":
+            completed = int(payload.get("completed_steps", 0) or 0)
+            self.auto_multi_dev_status.set(
+                f"DEMO PASS • tầng 1 → tầng 6 • {completed}/5 nhịp có phản hồi"
+            )
+            return
         if outcome == "auto_main_ready":
             sold = int(payload.get("sold_listings", 0) or 0)
             gold = int(payload.get("collected_gold_slots", 0) or 0)
