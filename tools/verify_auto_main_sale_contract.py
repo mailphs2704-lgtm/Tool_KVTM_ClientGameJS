@@ -13,6 +13,7 @@ INIT = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/_
 RECOGNITION = ROOT / "components/clientjs-auto/kvtm_automation/actions/item_recognition.py"
 CORE_GUI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
+AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
 
 FILE_FUNCTIONS = (
     "Đọc và parse các file AUTO Main bắt buộc",
@@ -50,6 +51,7 @@ def main() -> int:
     recognition = read(RECOGNITION)
     gui = read(CORE_GUI)
     entry = read(DEV_ENTRY)
+    auto_main = read(AUTO_MAIN)
 
     for token in ('"tao_say"', '"vai_vang"', '"tinh_dau_hh"'):
         require(recognition, token, f"Missing allowed AUTO VP: {token}")
@@ -142,9 +144,12 @@ def main() -> int:
     require(gui, 'text="⚙ Cấu hình tốc độ"', "AUTO Multi DEV speed settings button missing")
     if "▶ Bán VP AUTO" in gui:
         raise AssertionError("Passed standalone VP sale button must stay removed")
-    require(entry, "def _start_clean_vp_sale", "AUTO sale launcher missing")
-    require(entry, "AutoVpSaleWorkflow(automation).run", "Resident sale workflow missing")
-    require(entry, 'outcome = "sale_finished"', "AUTO sale result handling missing")
+    require(auto_main, "AutoVpSaleWorkflow(self.auto).run",
+            "Consolidated start must execute the stable sale workflow")
+    require(entry, "AutoMainWorkflow(automation).run",
+            "Consolidated resident workflow wiring missing")
+    require(entry, 'outcome = "auto_main_ready"',
+            "Consolidated AUTO Main result handling missing")
 
     for text in (action, workflow):
         forbid(text, ".pyc", "AUTO Main sale must not load legacy pyc")
