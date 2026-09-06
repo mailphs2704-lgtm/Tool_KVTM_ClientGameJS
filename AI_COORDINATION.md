@@ -512,3 +512,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Sửa contract: từ màn hình chính cần sáu đơn vị tầng và phải lướt một mạch theo Auto Pro.
 - Demo mới gọi `floors.glide_up(6)`, tạo đúng một gesture `(514,214)→(514,814)` rồi hậu kiểm frame một lần.
 - Không được ghi LIVE PASS trước khi người dùng retest và xác nhận đang ở đúng tầng 6.
+
+
+## 2026-09-07 — TẠM DỪNG: glide tầng 6 lần hai NOT PASS
+
+- User retest commit `7e9f613`: một gesture `(514,214)→(514,814)` trong `0.060s` chỉ lên tầng 1, không phải tầng 6.
+- Bridge đã gửi đủ `DOWN → MOVE 364/514/664/814 → UP`; `frame_change=75.49`. Điều này chứng minh input có phản hồi nhưng detector hiện tại đã báo PASS sai ngữ nghĩa vì không nhận dạng số tầng.
+- Không sửa thêm trong phiên này. Nút demo vẫn là experimental và tuyệt đối không ghép pipeline.
+- Trạng thái chức năng 1: bán VP/trồng 27 Táo/sản xuất Táo sấy đã đạt mốc trước; Táo sấy LIVE PASS `9/9`. Nước táo và Vải vàng chưa triển khai.
+- NEXT: forensic `Auto Pro goUp(n)` chính xác; xác định cadence touch/gesture và bằng chứng tầng 6; sửa demo rồi LIVE retest.
+- Backlog giữ nguyên: `36 Táo = 30 + 6 tầng 6`, máy Nước táo tầng 2, module sửa quầy dùng chung sau sản xuất.
