@@ -43,6 +43,8 @@ def main() -> int:
     require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.35",
             "Production-icon threshold changed")
     require(action, "PRODUCT_SLOT_0 = (252, 421)", "Dried apple slot changed")
+    require(action, "DRIED_APPLE_GUARD_ZONE = (180, 360, 150, 125)", "Fixed dried-apple guard zone changed")
+    require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.28", "Live-calibrated dried-apple threshold changed")
     require(action, "QUEUE_DROP_POINT = (400, 719)", "Queue drop point changed")
     require(action, "REQUIRED_COUNT = 9", "Exactly nine dried apples required")
     require(action, "empty < self.REQUIRED_COUNT", "Nine-empty-slot precondition missing")
