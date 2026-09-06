@@ -102,19 +102,69 @@ class ProductionActions:
 
     def _open_verified_dryer(self) -> int:
         self.context.ensure_running()
-        self.vision.driver.click(*self.DRYER_POINT)
-        self.waiter.sleep(0.50)
-        product = self.vision.find(
-            self.DRIED_APPLE_TEMPLATE,
-            threshold=0.95,
-            zone=self.PRODUCT_SEARCH_ZONE,
-            scales=(0.90, 1.00, 1.10),
-            click=False,
-        )
+        panel_ready = False
+        for attempt in range(1, 4):
+            click_count = 1 if attempt == 1 else 5
+            for _pulse in range(click_count):
+                self.vision.driver.click(*self.DRYER_POINT)
+                self.waiter.sleep(0.10)
+            self.waiter.sleep(0.50)
+            frame = self.vision.frame()
+            warehouse_full = self.vision.find(
+                "fullkho",
+                threshold=0.90,
+                zone=(333, 363, 313, 115),
+                scales=(0.90, 1.00, 1.10),
+                click=False,
+                frame=frame,
+            )
+            empty_ready = self.vision.find(
+                self.EMPTY_SLOT_TEMPLATE,
+                threshold=0.70,
+                zone=self.EMPTY_SLOT_ZONE,
+                scales=(0.90, 1.00, 1.10),
+                click=False,
+                frame=frame,
+            )
+            self.context.log(
+                "AUTO sản xuất • kiểm tra mở máy sấy "
+                f"lần {attempt}/3 • fullkho={warehouse_full is not None} • "
+                f"o_trong={empty_ready is not None}"
+            )
+            if warehouse_full is not None:
+                self.vision.driver.click(*self.CLOSE_POINT)
+                raise ScreenTimeout(
+                    "Kho đang đầy khi mở máy sấy; dừng trước khi sản xuất"
+                )
+            if empty_ready is not None:
+                panel_ready = True
+                break
+        if not panel_ready:
+            self.vision.driver.click(*self.CLOSE_POINT)
+            raise ScreenTimeout(
+                "Không mở được panel máy sấy tầng 1 sau 3 lần xác minh"
+            )
+
+        product = None
+        for attempt in range(1, 4):
+            product = self.vision.find(
+                self.DRIED_APPLE_TEMPLATE,
+                threshold=0.95,
+                zone=self.PRODUCT_SEARCH_ZONE,
+                scales=(0.90, 1.00, 1.10),
+                click=False,
+            )
+            if product is not None:
+                break
+            self.context.log(
+                f"AUTO sản xuất • chờ danh sách Táo sấy render • lần {attempt}/3"
+            )
+            self.waiter.sleep(0.35)
         if product is None:
             self.vision.driver.click(*self.CLOSE_POINT)
             raise ScreenTimeout(
-                "Không xác minh được máy sấy tầng 1 có Táo sấy; không thao tác mù"
+                "Panel máy đã mở nhưng không nhận diện được Táo sấy; "
+                "không chọn vật phẩm khác"
             )
         empty = self._count_matches(
             self.EMPTY_SLOT_TEMPLATE, self.EMPTY_SLOT_ZONE, 0.90
