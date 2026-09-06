@@ -10,7 +10,7 @@ _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
 
 class AssetLibrary:
-    """Lazy index over reference templates copied from the recovered AUTO PRO assets."""
+    """Self-contained Multi Dev business-template library."""
 
     def __init__(self, roots: Iterable[Path]) -> None:
         self.roots = tuple(Path(root).resolve() for root in roots if Path(root).exists())
@@ -19,13 +19,11 @@ class AssetLibrary:
     @classmethod
     def from_package(cls, component_root: Path, auto_root: Path) -> "AssetLibrary":
         component_root = Path(component_root).resolve()
-        auto_root = Path(auto_root).resolve()
+        # auto_root remains only for launcher API compatibility; it is never indexed.
         return cls(
             (
                 component_root / "assets" / "items",
                 component_root / "assets",
-                auto_root / "assets" / "items",
-                auto_root / "assets",
             )
         )
 

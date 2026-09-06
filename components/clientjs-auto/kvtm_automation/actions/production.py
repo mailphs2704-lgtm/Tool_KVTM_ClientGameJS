@@ -105,9 +105,14 @@ class ProductionActions:
         return len(centers)
 
     def _count_empty_slots(self) -> int:
-        top = min(1, self._count_matches(
-            self.EMPTY_SLOT_TEMPLATE, self.TOP_EMPTY_SLOT_ZONE, 0.90
-        ))
+        top_match = self.vision.find(
+            self.EMPTY_SLOT_TEMPLATE,
+            threshold=0.82,
+            zone=self.TOP_EMPTY_SLOT_ZONE,
+            scales=(1.00, 1.15, 1.30, 1.45, 1.60),
+            click=False,
+        )
+        top = 1 if top_match is not None else 0
         lower = min(8, self._count_matches(
             self.EMPTY_SLOT_TEMPLATE, self.EMPTY_SLOT_ZONE, 0.90
         ))
@@ -120,7 +125,7 @@ class ProductionActions:
     def _panel_state(self) -> tuple[bool, bool]:
         frame = self.vision.frame()
         warehouse_full = self.vision.find(
-            "fullkho",
+            "full_kho",
             threshold=0.90,
             zone=(333, 363, 313, 115),
             scales=(0.90, 1.00, 1.10),

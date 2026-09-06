@@ -79,6 +79,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO MULTI DEV production static contract: VERIFIED" -ForegroundColor Green
 
+$MultiDevAssetVerifier = Join-Path $RepoRoot "tools\verify_multi_dev_asset_contract.py"
+if (-not (Test-Path -LiteralPath $MultiDevAssetVerifier -PathType Leaf)) {
+    throw "Missing AUTO MULTI DEV asset verifier: $MultiDevAssetVerifier"
+}
+& py.exe -3.11 $MultiDevAssetVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw "AUTO MULTI DEV asset contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "AUTO MULTI DEV self-contained assets: VERIFIED" -ForegroundColor Green
+
 function Test-GitLfsPointer {
     param([Parameter(Mandatory = $true)][string]$Path)
 

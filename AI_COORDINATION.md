@@ -484,3 +484,14 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Kế toán không dựa trên số lệnh đã gửi: sau 9 swipe, số ô trống phải giảm ít nhất 9 mới trả PASS.
 - Thêm `AppleDryerWorkflow` và đổi nút tổng sang: bán VP ổn định → trồng/thu 27 Táo → sản xuất 9 Táo sấy. Kết quả GUI ghi riêng `planted_apples` và `dried_apples`.
 - Builder chạy `verify_auto_main_production_contract.py`. AST PASS cho action, workflow, automation, DEV entry và toàn bộ verifier liên quan. Windows build/LIVE vẫn PENDING.
+
+
+## 2026-09-06 — AUTO MULTI DEV là sản phẩm thay thế
+
+- Tài liệu chuẩn bắt buộc: `docs/AUTO_MULTI_DEV_PRODUCT_ARCHITECTURE.md`.
+- AUTO PRO chỉ là bằng chứng tham chiếu read-only và sẽ bị xóa sau khi Multi Dev live-stable.
+- Asset nghiệp vụ thuộc `components/clientjs-auto/assets`; runtime lookup không fallback sang AUTO PRO.
+- Ảnh debug chỉ là bằng chứng, không tự động trở thành template.
+- Chuẩn hóa lỗi `fullkho` thành asset thật `full_kho`.
+- Full Build chạy `verify_multi_dev_asset_contract.py`.
+- Chức năng 1 vẫn là `9 Táo sấy → 9 Vải vàng`; hiện tiếp tục LIVE lớp sản xuất Táo sấy.

@@ -69,10 +69,13 @@ def main() -> int:
             "Collection/panel fail-close missing")
     require(action, "for attempt in range(1, 4)", "Three product-render retries missing")
     require(action, 'threshold=0.70', "AUTO PRO initial empty-slot gate missing")
+    require(action, '"full_kho"', "Canonical full warehouse template missing")
     require(action, "TOP_EMPTY_SLOT_ZONE = (335, 650, 130, 135)",
             "Upper queue slot zone missing")
-    require(action, "top = min(1, self._count_matches(",
-            "Upper queue slot must count once")
+    require(action, "top_match = self.vision.find(",
+            "Upper queue slot must use scalable library template")
+    require(action, "scales=(1.00, 1.15, 1.30, 1.45, 1.60)",
+            "Upper queue slot scales changed")
     require(action, "lower = min(8, self._count_matches(",
             "Lower queue slots must count at most eight")
     require(action, "total = top + lower",
