@@ -25,6 +25,7 @@ class AutoVpSaleResult:
     collected_gold_slots: int
     views_scanned: int
     inventory_depleted: bool
+    sold_by_item: dict[str, int]
     elapsed_seconds: float
 
     def to_dict(self) -> dict:
@@ -52,6 +53,7 @@ class AutoVpSaleWorkflow:
         self.auto.stall.open_own_stall()
 
         sold = 0
+        sold_by_item = {item_id: 0 for item_id in self.sale.ITEM_ORDER}
         collected = 0
         views_scanned = 0
         depleted = False
@@ -70,16 +72,19 @@ class AutoVpSaleWorkflow:
                     attempt = self.sale.sell_next_allowed(storage_id=2)
                     if attempt.status == "SOLD":
                         sold += 1
+                        sold_by_item[attempt.item_id] += 1
                         self.context.log(
-                            f"AUTO bán VP • đã treo {attempt.label} • "
+                            f"AUTO bán VP • đã treo {attempt.label} x10 • "
                             f"tổng {sold} ô"
                         )
                         continue
-                    if attempt.status == "NO_ALLOWED_ITEM":
+                    if attempt.status in (
+                        "NO_ALLOWED_ITEM",
+                        "NO_EXACT_TEN_ITEMS",
+                    ):
                         depleted = True
                         self.context.log(
-                            "AUTO bán VP • kho không còn VP đúng danh sách; "
-                            "dừng treo"
+                            "AUTO bán VP • cả ba VP không còn lô x10; dừng treo"
                         )
                     else:
                         self.context.log(
@@ -96,6 +101,12 @@ class AutoVpSaleWorkflow:
             self.auto.stall.close_own_stall()
 
         self.context.ensure_running()
+        self.context.log(
+            "AUTO bán VP • tổng kết x10 | "
+            f"Táo sấy={sold_by_item['tao_say']} | "
+            f"Vải vàng={sold_by_item['vai_vang']} | "
+            f"Tinh dầu hoa hồng={sold_by_item['tinh_dau_hh']}"
+        )
         self.context.stage("auto-vp-sale-finished")
         return AutoVpSaleResult(
             profile_id=self.context.profile_id,
@@ -103,5 +114,6 @@ class AutoVpSaleWorkflow:
             collected_gold_slots=collected,
             views_scanned=views_scanned,
             inventory_depleted=depleted,
+            sold_by_item=sold_by_item,
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
