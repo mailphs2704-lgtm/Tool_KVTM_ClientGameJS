@@ -325,8 +325,8 @@ class MultiDevApp(production.MultiApp):
                 "AUTO MULTI DEV hoàn tất giai đoạn hiện tại | "
                 f"listed={payload.get('sold_listings', 0)} | "
                 f"gold={payload.get('collected_gold_slots', 0)} | "
-                f"planted={payload.get('planted_count', 0)}/27 | "
-                "production=READY"
+                f"planted_apples={payload.get('planted_count', 0)}/27 | "
+                f"dried_apples={payload.get('produced_count', 0)}/9"
             )
             self.after(
                 0,
@@ -354,10 +354,11 @@ class MultiDevApp(production.MultiApp):
             sold = int(payload.get("sold_listings", 0) or 0)
             gold = int(payload.get("collected_gold_slots", 0) or 0)
             planted = int(payload.get("planted_count", 0) or 0)
+            produced = int(payload.get("produced_count", 0) or 0)
             self.auto_multi_dev_status.set(
-                "PASS GIAI ĐOẠN • "
+                "PASS CHỨC NĂNG 1 • "
                 f"bán {sold} ô • thu vàng {gold} ô • "
-                f"trồng {planted}/27 • sẵn sàng sản xuất"
+                f"trồng Táo {planted}/27 • Táo sấy {produced}/9"
             )
             return
         if outcome == "finished":
