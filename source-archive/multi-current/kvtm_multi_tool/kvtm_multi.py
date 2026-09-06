@@ -1140,7 +1140,15 @@ class MultiApp(tk.Tk):
             style="Action.TButton",
             command=self._start_clean_vp_recognition_probe,
         )
-        self.auto_multi_dev_vp_probe_button.pack(side="left")
+        self.auto_multi_dev_vp_probe_button.pack(side="left", padx=(0, 8))
+        self.auto_multi_dev_vp_sale_button = ttk.Button(
+            clean_probe_actions,
+            text="▶ Bán VP AUTO",
+            width=22,
+            style="AutoStart.TButton",
+            command=self._start_clean_vp_sale,
+        )
+        self.auto_multi_dev_vp_sale_button.pack(side="left")
 
         main_tab = self.auto_feature_tabs["main"]
         # These switches map one-to-one to AUTO PRO's legacy option keys.
