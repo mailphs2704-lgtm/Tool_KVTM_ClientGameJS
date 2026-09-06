@@ -612,7 +612,7 @@ def main() -> int:
     require(selling, "zone=(930, 0, 70, 70)", "READ-ONLY inventory close must target only the top-right X")
     require(selling, "self.vision.driver.click(968, 28)", "READ-ONLY inventory fixed close fallback missing")
     require(selling, "Không đóng được kho READ-ONLY", "READ-ONLY inventory close verification missing")
-    require(dev_entry, "VpRecognitionProbeWorkflow(automation).run", "Resident VP probe wiring missing")
+    require(dev_entry, "AutoMainWorkflow(automation).run", "Consolidated resident AUTO Main wiring missing")
     require(dev_entry, "detail_logger=log_writer.detail", "Detail logger not connected to Main context")
     require(clean_automation, "detail_logger=context.detail", "Vision detail logger not connected")
     require(multi, "def _start_clean_auto_session", "Clean AUTO start action missing")
