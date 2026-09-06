@@ -63,7 +63,10 @@ def main() -> int:
     require(workflow, "self.auto.planting.plant_27_roses()", "Workflow planting call missing")
     require(dev, "run_rose_plant: bool", "Resident planting selector missing")
     require(dev, 'outcome = "rose_plant_finished"', "Planting completion outcome missing")
-    require(gui, 'text="▶ Trồng 27 Hoa hồng"', "AUTO Multi DEV planting button missing")
+    require(gui, 'text="▶ Bắt đầu AUTO MULTI DEV"', "Consolidated AUTO Multi DEV start button missing")
+    require(gui, 'text="⚙ Cấu hình tốc độ"', "AUTO Multi DEV speed settings button missing")
+    if "▶ Trồng 27 Hoa hồng" in gui:
+        raise AssertionError("Passed standalone planting button must stay removed")
 
     forbidden = ("clear_stall_probe_runtime", "auto_main_selling", ".pyc")
     for token in forbidden:
