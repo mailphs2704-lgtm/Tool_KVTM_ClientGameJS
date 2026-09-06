@@ -542,7 +542,7 @@ def main() -> int:
     require(multi, 'text="▶ Bắt đầu AUTO MULTI DEV"', "Consolidated AUTO Multi DEV start button missing")
     require(multi, "command=self._start_clean_auto_session", "Consolidated AUTO Multi DEV start wiring missing")
     require(multi, 'text="⚙ Cấu hình tốc độ"', "AUTO Multi DEV speed settings button missing")
-    require(multi, "command=self._auto_ui_configure", "AUTO Multi DEV speed settings wiring missing")
+    require(multi, "command=self._auto_multi_dev_configure", "AUTO Multi DEV speed settings wiring missing")
     for passed_button in (
         "▶ Vào game + đóng popup",
         "⌕ Kiểm tra nhận diện VP (READ-ONLY)",
