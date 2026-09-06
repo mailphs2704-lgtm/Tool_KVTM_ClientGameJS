@@ -196,12 +196,18 @@ class StallActions:
         raise ScreenTimeout("Không đóng được quầy bán của clone")
 
     def collect_own_stall_gold(self, *, maximum: int = 8) -> int:
-        """Scan each visible slot once; gold is optional and must disappear."""
+        """Collect optional gold per slot; unresolved gold blocks view advance."""
         visible_limit = min(len(VISIBLE_SLOT_CENTERS), max(0, int(maximum)))
         collected = 0
         for local_slot in range(1, visible_limit + 1):
             self.context.ensure_running()
-            cx, _cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
+            frame = self.vision.frame()
+            # An unsold listing has the orange price coin. Its price artwork can
+            # resemble the small gold-pile template but is never collectible.
+            if self.listing_is_available(frame, local_slot):
+                continue
+
+            cx, cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
             top = 480 if local_slot <= 4 else 670
             slot_zone = (cx - 52, top, 104, 55)
             match = self.vision.find(
@@ -209,37 +215,54 @@ class StallActions:
                 threshold=0.82,
                 zone=slot_zone,
                 click=False,
+                frame=frame,
             )
             if match is None:
                 continue
 
             self.vision.driver.click(*match.center)
-            verify_deadline = time.monotonic() + 2.0
+            first_deadline = time.monotonic() + 1.2
             disappeared = False
-            while time.monotonic() < verify_deadline:
+            while time.monotonic() < first_deadline:
                 self.context.ensure_running()
                 self.waiter.sleep(0.20)
-                remaining = self.vision.find(
+                if self.vision.find(
                     "vang",
                     threshold=0.82,
                     zone=slot_zone,
                     click=False,
-                )
-                if remaining is None:
+                ) is None:
                     disappeared = True
                     break
 
-            if disappeared:
-                collected += 1
-                self.context.log(
-                    "Thu vàng quầy clone • "
-                    f"ô hiển thị {local_slot} đã xác minh"
-                )
-            else:
-                self.context.log(
-                    "Bỏ qua mẫu vàng không biến mất • "
+            if not disappeared:
+                # Some ClientJS builds accept the sold-slot body rather than
+                # the decorative gold pixels. Retry once at the slot center.
+                self.vision.driver.click(cx, cy)
+                verify_deadline = time.monotonic() + 2.0
+                while time.monotonic() < verify_deadline:
+                    self.context.ensure_running()
+                    self.waiter.sleep(0.20)
+                    if self.vision.find(
+                        "vang",
+                        threshold=0.82,
+                        zone=slot_zone,
+                        click=False,
+                    ) is None:
+                        disappeared = True
+                        break
+
+            if not disappeared:
+                raise ScreenTimeout(
+                    "Có vàng nhưng không thu được; giữ nguyên view, không swipe • "
                     f"ô hiển thị {local_slot} score={match.score:.3f}"
                 )
+
+            collected += 1
+            self.context.log(
+                "Thu vàng quầy clone • "
+                f"ô hiển thị {local_slot} đã xác minh"
+            )
 
         self.context.log(
             f"Thu vàng quầy clone hoàn tất • {collected} ô đã xác minh"
