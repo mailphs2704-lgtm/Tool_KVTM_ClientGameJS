@@ -418,3 +418,12 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Trạng thái EMPTY nay cần đồng thời thấy `next_gieo_trai` và `cay_hong` trên cùng fresh frame; không còn nhận false empty khi giỏ thu hoạch đang mở.
 - Không sửa AssetLibrary dùng chung, bán VP, Dọn quầy, GUI, Bridge hoặc driver.
 - Static syntax PASS; LIVE retest PENDING.
+
+
+## 2026-09-06 — Sửa hậu kiểm trồng false FAIL do shared capture buffer
+
+- Live 15:29 xác nhận thu hoạch và trồng đúng, nhưng hậu kiểm báo `0/27`.
+- Nguyên nhân: baseline giữ trực tiếp ndarray do shared capture trả về; frame kế tiếp có thể tái sử dụng/ghi đè cùng vùng nhớ, làm before và after trở thành cùng dữ liệu.
+- Baseline và after nay bắt buộc `.copy()` ngay khi capture để tạo hai snapshot bất biến trước khi so sánh 27 vùng chậu.
+- Không đổi thao tác goUp(1), nhận diện thu hoạch, đường kéo hay ngưỡng hình ảnh; không sửa bán VP, Dọn quầy, GUI, Bridge hoặc driver.
+- User live xác nhận nghiệp vụ thu hoạch + trồng PASS; hậu kiểm mới cần retest sau build.

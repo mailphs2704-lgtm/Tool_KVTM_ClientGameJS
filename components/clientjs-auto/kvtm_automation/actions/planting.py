@@ -134,7 +134,7 @@ class PlantingActions:
 
     def _open_seed_picker(self):
         self._go_up_one()
-        baseline = self.vision.frame()
+        baseline = self.vision.frame().copy()
         for attempt in range(1, 6):
             state, _match = self._scan_first_pot_state()
             if state == "EMPTY":
@@ -172,7 +172,7 @@ class PlantingActions:
         self.waiter.sleep(0.40)
         self.vision.driver.click(*self.CLOSE_POINT)
         self.waiter.sleep(0.55)
-        after = self.vision.frame()
+        after = self.vision.frame().copy()
         changed = self._count_changed_pots(baseline, after)
         self.context.detail(
             f"AUTO rose planting verification | changed_pots={changed}/27 | minimum=20"

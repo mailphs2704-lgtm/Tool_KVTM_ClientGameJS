@@ -46,6 +46,8 @@ def main() -> int:
     require(action, "GO_UP_ONE_START = (514, 214)", "goUp(1) start changed")
     require(action, "GO_UP_ONE_END = (514, 314)", "goUp(1) end changed")
     require(action, "def _count_changed_pots", "Post-plant image verification missing")
+    require(action, "baseline = self.vision.frame().copy()", "Baseline must detach shared capture buffer")
+    require(action, "after = self.vision.frame().copy()", "After frame must detach shared capture buffer")
     require(action, "if changed < 20:", "False PASS guard missing")
     require(action, '"thu_hoach", threshold=0.80', "Mapped ripe-tree template missing")
     require(action, '"next_gieo_trai", threshold=0.70', "Empty-pot scan missing")
