@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ..context import AutomationContext
 from ..errors import ScreenTimeout
+from ..runtime.auto_speed_config import AutoSpeedConfig
 from ..runtime.vision import VisionEngine
 from ..runtime.wait import Waiter
 
@@ -53,10 +54,12 @@ class PlantingActions:
         context: AutomationContext,
         vision: VisionEngine,
         waiter: Waiter,
+        speed_config: AutoSpeedConfig | None = None,
     ) -> None:
         self.context = context
         self.vision = vision
         self.waiter = waiter
+        self.speed_config = speed_config or AutoSpeedConfig()
 
     @classmethod
     def rose_path(cls) -> tuple[tuple[int, int], ...]:
@@ -71,11 +74,12 @@ class PlantingActions:
         self.vision.driver.swipe(
             *self.GO_UP_ONE_START,
             *self.GO_UP_ONE_END,
-            duration=self.GO_UP_ONE_DURATION,
+            duration=self.speed_config.floor_swipe_duration,
         )
         self.waiter.sleep(0.65)
         self.context.log(
-            "AUTO trồng • đã lên đúng mốc cây bằng AUTO PRO goUp(1)"
+            "AUTO trồng • đã lên đúng mốc cây bằng AUTO PRO goUp(1) • "
+            f"tốc độ kéo tầng={self.speed_config.floor_swipe_duration:.3f}s"
         )
 
     def _count_changed_pots(self, before, after) -> int:
@@ -128,7 +132,7 @@ class PlantingActions:
             "AUTO trồng • phát hiện cây chín • thu hoạch 27 chậu trước khi gieo"
         )
         self.vision.driver.swipe_points(
-            self.rose_path(), duration=self.SWIPE_DURATION
+            self.rose_path(), duration=self.speed_config.plant_harvest_duration
         )
         self.waiter.sleep(0.50)
 
@@ -168,7 +172,9 @@ class PlantingActions:
         self.context.log(
             "AUTO trồng • chọn Hoa hồng • kéo 27 chậu từ tầng 1 đến 3 chậu tầng 5"
         )
-        self.vision.driver.swipe_points(path, duration=self.SWIPE_DURATION)
+        self.vision.driver.swipe_points(
+            path, duration=self.speed_config.plant_harvest_duration
+        )
         self.waiter.sleep(0.40)
         self.vision.driver.click(*self.CLOSE_POINT)
         self.waiter.sleep(0.55)
