@@ -398,3 +398,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Bổ sung cổng hậu kiểm 27 vùng chậu: tối thiểu 20/27 vùng phải thay đổi sau swipe. Không đạt thì ScreenTimeout, tuyệt đối không ghi `planted=27/27`.
 - Chỉ sửa planting/verifier/docs; bán VP, Dọn quầy, GUI, queue, Bridge và driver không đổi.
 - Static syntax PASS; LIVE retest PENDING.
+
+
+## 2026-09-06 — Chốt định vị trồng từ Clean Main bằng goUp(1)
+
+- Live 14:59 khi bỏ toàn bộ goUp: năm lần click `(388,946)` đều không thấy `harvestBasket` hoặc `next_gieo_trai`; người vận hành xác nhận game vẫn ở màn hình chính.
+- Đối chiếu chuỗi AUTO PRO: ngay sau trạng thái `goDownLast`, lượt gieo đầu gọi `goUp(1)` rồi mới `plantTrees(... gieo_tang=1)`. `goUp(4)` chỉ xuất hiện ở đoạn sau khi camera đã bị các công đoạn khác di chuyển.
+- Clean planting nay dùng đúng goUp(1): đóng panel `(975,316)`, swipe nhỏ `(514,214)->(514,314)`, chờ ổn định, chụp baseline rồi kiểm tra chậu đầu.
+- Cổng xác minh cây chín/chậu trống và hậu kiểm tối thiểu 20/27 vùng chậu vẫn giữ nguyên.
+- Chỉ sửa planting/verifier/docs; bán VP, Dọn quầy, GUI, queue, Bridge và driver không đổi.
+- Static syntax PASS; LIVE retest PENDING.

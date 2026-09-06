@@ -8,7 +8,7 @@ from ..runtime.wait import Waiter
 
 __all__ = ["PlantingActions"]
 FILE_FUNCTIONS = (
-    "Giữ nguyên mốc tầng 1 do Clean Main vừa xác nhận",
+    "Đi từ màn hình chính lên đúng mốc cây bằng AUTO PRO goUp(1)",
     "Mở trạng thái chậu đầu tầng một",
     "Phân biệt cây chín và chậu trống bằng template AUTO PRO",
     "Thu hoạch đúng 27 chậu nếu phát hiện cây chín",
@@ -39,6 +39,10 @@ class PlantingActions:
     )
     OPEN_PLANT_POINT = (388, 946)
     CLOSE_POINT = (965, 198)
+    CLOSE_SIDE_POINT = (975, 316)
+    GO_UP_ONE_START = (514, 214)
+    GO_UP_ONE_END = (514, 314)
+    GO_UP_ONE_DURATION = 0.35
     SEED_ZONE = (179, 773, 230, 166)
     EMPTY_READY_ZONE = (124, 729, 347, 236)
     HARVEST_ZONE = (222, 703, 218, 191)
@@ -58,6 +62,21 @@ class PlantingActions:
     def rose_path(cls) -> tuple[tuple[int, int], ...]:
         """Return the immutable AUTO PRO reference path for 27 pots."""
         return cls.FARM_PATH_27
+
+    def _go_up_one(self) -> None:
+        """Mirror the AUTO PRO transition used immediately after goDownLast."""
+        self.context.ensure_running()
+        self.vision.driver.click(*self.CLOSE_SIDE_POINT)
+        self.waiter.sleep(0.20)
+        self.vision.driver.swipe(
+            *self.GO_UP_ONE_START,
+            *self.GO_UP_ONE_END,
+            duration=self.GO_UP_ONE_DURATION,
+        )
+        self.waiter.sleep(0.65)
+        self.context.log(
+            "AUTO trồng • đã lên đúng mốc cây bằng AUTO PRO goUp(1)"
+        )
 
     def _count_changed_pots(self, before, after) -> int:
         """Require visible pot changes; sending a swipe alone is never PASS."""
@@ -110,10 +129,8 @@ class PlantingActions:
         self.waiter.sleep(0.50)
 
     def _open_seed_picker(self):
+        self._go_up_one()
         baseline = self.vision.frame()
-        self.context.log(
-            "AUTO trồng • giữ mốc tầng 1 hiện tại • không gọi goUp(4)"
-        )
         for attempt in range(1, 6):
             state, _match = self._scan_first_pot_state()
             if state == "EMPTY":
