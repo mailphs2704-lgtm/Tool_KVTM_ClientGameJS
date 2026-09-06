@@ -36,6 +36,8 @@ class ProductionActions:
     DRYER_POINT = (262, 917)
     DRIED_APPLE_TEMPLATE = "tao_say"
     PRODUCT_SEARCH_ZONE = (9, 341, 402, 386)
+    DRIED_APPLE_GUARD_ZONE = (180, 360, 150, 125)
+    DRIED_APPLE_GUARD_THRESHOLD = 0.35
     EMPTY_SLOT_TEMPLATE = "o_trong"
     EMPTY_SLOT_ZONE = (335, 781, 395, 186)
     PRODUCT_SLOT_0 = (252, 421)
@@ -157,23 +159,28 @@ class ProductionActions:
         for attempt in range(1, 4):
             product = self.vision.find(
                 self.DRIED_APPLE_TEMPLATE,
-                threshold=0.95,
-                zone=self.PRODUCT_SEARCH_ZONE,
-                scales=(0.90, 1.00, 1.10),
+                threshold=self.DRIED_APPLE_GUARD_THRESHOLD,
+                zone=self.DRIED_APPLE_GUARD_ZONE,
+                scales=(0.75, 0.90, 1.00, 1.10, 1.25),
                 click=False,
             )
             if product is not None:
                 break
             self.context.log(
-                f"AUTO sản xuất • chờ danh sách Táo sấy render • lần {attempt}/3"
+                "AUTO sản xuất • chưa khớp Táo sấy tại slot cố định "
+                f"(252,421) • lần {attempt}/3"
             )
             self.waiter.sleep(0.35)
         if product is None:
             self.vision.driver.click(*self.CLOSE_POINT)
             raise ScreenTimeout(
-                "Panel máy đã mở nhưng không nhận diện được Táo sấy; "
+                "Panel máy đã mở nhưng slot cố định (252,421) không khớp Táo sấy; "
                 "không chọn vật phẩm khác"
             )
+        self.context.log(
+            "AUTO sản xuất • xác minh Táo sấy tại slot cố định "
+            f"• score={product.score:.3f} • center={product.center}"
+        )
         empty = self._count_matches(
             self.EMPTY_SLOT_TEMPLATE, self.EMPTY_SLOT_ZONE, 0.90
         )
