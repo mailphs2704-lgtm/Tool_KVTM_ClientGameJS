@@ -1,0 +1,180 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from ..context import AutomationContext
+from ..errors import ScreenTimeout
+from ..runtime.auto_speed_config import AutoSpeedConfig
+from ..runtime.vision import VisionEngine
+from ..runtime.wait import Waiter
+
+
+__all__ = ["ProductionResult", "ProductionActions"]
+FILE_FUNCTIONS = (
+    "Mở máy sấy tại tầng 1 bằng tọa độ AUTO PRO đối chiếu",
+    "Xác minh đúng máy bằng template Táo sấy trước khi thao tác",
+    "Đếm ô sản xuất trống bằng template và loại trùng hình học",
+    "Kéo đúng chín Táo sấy theo slot AUTO PRO",
+    "Hậu kiểm số ô trống giảm và dừng an toàn nếu giao dịch không khớp",
+)
+
+
+@dataclass(frozen=True)
+class ProductionResult:
+    item_id: str
+    requested_count: int
+    queued_count: int
+    empty_before: int
+    empty_after: int
+
+
+class ProductionActions:
+    """Clean production transaction; AUTO PRO is coordinate reference only."""
+
+    DRYER_FLOOR = 1
+    DRYER_POINT = (262, 917)
+    DRIED_APPLE_TEMPLATE = "tao_say"
+    PRODUCT_SEARCH_ZONE = (9, 341, 402, 386)
+    EMPTY_SLOT_TEMPLATE = "o_trong"
+    EMPTY_SLOT_ZONE = (335, 781, 395, 186)
+    PRODUCT_SLOT_0 = (252, 421)
+    QUEUE_DROP_POINT = (400, 719)
+    MATERIAL_ERROR_TEMPLATE = "x"
+    MATERIAL_ERROR_ZONE = (682, 337, 142, 120)
+    CLOSE_POINT = (965, 198)
+    REQUIRED_COUNT = 9
+    MIN_DISTANCE = 34
+
+    def __init__(
+        self,
+        context: AutomationContext,
+        vision: VisionEngine,
+        waiter: Waiter,
+        speed_config: AutoSpeedConfig | None = None,
+    ) -> None:
+        self.context = context
+        self.vision = vision
+        self.waiter = waiter
+        self.speed_config = speed_config or AutoSpeedConfig()
+
+    def _count_matches(
+        self,
+        name: str,
+        zone: tuple[int, int, int, int],
+        threshold: float,
+    ) -> int:
+        import cv2
+
+        frame = self.vision.frame()
+        if frame.ndim == 3 and frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        x, y, width, height = zone
+        roi = frame[y:y + height, x:x + width]
+        centers: list[tuple[int, int, float]] = []
+        for path in self.vision.assets.candidates(name):
+            template = cv2.imread(str(path), cv2.IMREAD_COLOR)
+            if template is None or template.size == 0:
+                continue
+            if template.shape[0] > roi.shape[0] or template.shape[1] > roi.shape[1]:
+                continue
+            scores = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+            while True:
+                _minimum, maximum, _min_loc, maximum_location = cv2.minMaxLoc(scores)
+                if float(maximum) < threshold:
+                    break
+                cx = x + maximum_location[0] + template.shape[1] // 2
+                cy = y + maximum_location[1] + template.shape[0] // 2
+                if all(
+                    (cx - old_x) ** 2 + (cy - old_y) ** 2 >= self.MIN_DISTANCE ** 2
+                    for old_x, old_y, _score in centers
+                ):
+                    centers.append((cx, cy, float(maximum)))
+                left = max(0, maximum_location[0] - template.shape[1] // 2)
+                top = max(0, maximum_location[1] - template.shape[0] // 2)
+                right = min(scores.shape[1], maximum_location[0] + template.shape[1] // 2)
+                bottom = min(scores.shape[0], maximum_location[1] + template.shape[0] // 2)
+                scores[top:bottom, left:right] = -1.0
+        self.context.detail(
+            f"AUTO production matches | template={name} | count={len(centers)} | "
+            f"threshold={threshold:.2f} | zone={zone}"
+        )
+        return len(centers)
+
+    def _open_verified_dryer(self) -> int:
+        self.context.ensure_running()
+        self.vision.driver.click(*self.DRYER_POINT)
+        self.waiter.sleep(0.50)
+        product = self.vision.find(
+            self.DRIED_APPLE_TEMPLATE,
+            threshold=0.95,
+            zone=self.PRODUCT_SEARCH_ZONE,
+            scales=(0.90, 1.00, 1.10),
+            click=False,
+        )
+        if product is None:
+            self.vision.driver.click(*self.CLOSE_POINT)
+            raise ScreenTimeout(
+                "Không xác minh được máy sấy tầng 1 có Táo sấy; không thao tác mù"
+            )
+        empty = self._count_matches(
+            self.EMPTY_SLOT_TEMPLATE, self.EMPTY_SLOT_ZONE, 0.90
+        )
+        if empty < self.REQUIRED_COUNT:
+            self.vision.driver.click(*self.CLOSE_POINT)
+            raise ScreenTimeout(
+                f"Máy sấy chỉ có {empty}/9 ô trống; chưa đủ để sản xuất đúng 9 Táo sấy"
+            )
+        self.context.log(
+            f"AUTO sản xuất • đúng máy sấy tầng 1 • có {empty} ô trống"
+        )
+        return empty
+
+    def produce_9_dried_apples(self) -> ProductionResult:
+        empty_before = self._open_verified_dryer()
+        queued = 0
+        for ordinal in range(1, self.REQUIRED_COUNT + 1):
+            self.context.ensure_running()
+            self.vision.driver.swipe_points(
+                (self.PRODUCT_SLOT_0, self.QUEUE_DROP_POINT),
+                duration=0.02,
+            )
+            self.waiter.sleep(self.speed_config.vp_production_delay)
+            missing = self.vision.find(
+                self.MATERIAL_ERROR_TEMPLATE,
+                threshold=0.80,
+                zone=self.MATERIAL_ERROR_ZONE,
+                scales=(0.90, 1.00, 1.10),
+                click=False,
+            )
+            if missing is not None:
+                self.vision.driver.click(*missing.center)
+                self.vision.driver.click(*self.CLOSE_POINT)
+                raise ScreenTimeout(
+                    f"Thiếu nguyên liệu khi xếp Táo sấy {ordinal}/9"
+                )
+            queued += 1
+            self.context.log(
+                f"AUTO sản xuất • đã xếp Táo sấy {ordinal}/9 vào hàng chờ"
+            )
+
+        self.waiter.sleep(0.40)
+        empty_after = self._count_matches(
+            self.EMPTY_SLOT_TEMPLATE, self.EMPTY_SLOT_ZONE, 0.90
+        )
+        consumed = max(0, empty_before - empty_after)
+        self.vision.driver.click(*self.CLOSE_POINT)
+        if consumed < self.REQUIRED_COUNT:
+            raise ScreenTimeout(
+                "Hậu kiểm máy sấy không đủ 9 ô thay đổi: "
+                f"trước={empty_before}, sau={empty_after}, xác minh={consumed}/9"
+            )
+        self.context.log(
+            "AUTO sản xuất Táo sấy hoàn tất • đã xác minh đủ 9/9 ô"
+        )
+        return ProductionResult(
+            item_id=self.DRIED_APPLE_TEMPLATE,
+            requested_count=self.REQUIRED_COUNT,
+            queued_count=queued,
+            empty_before=empty_before,
+            empty_after=empty_after,
+        )
