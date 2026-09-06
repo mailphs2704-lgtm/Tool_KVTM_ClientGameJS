@@ -43,3 +43,15 @@ Không bắt đầu lớp Vải vàng trước khi lớp Táo sấy PASS live c�
 - Match `tao_say` dưới `0.70` bị từ chối. Mức `0.301` đã được xác định là khớp giả trên ô trống.
 - Sau mỗi gesture, tổng ô trống phải giảm đúng theo tiến độ; nếu không giảm thì đóng panel và dừng ngay.
 - Chỉ PASS khi đủ chín lần thay đổi trạng thái được xác minh; số gesture đã gửi không phải số sản phẩm đã xếp.
+
+
+## Giai đoạn Nước táo → Vải vàng
+
+- `9 Vải vàng` cần `9 Nước táo` được sản xuất tại máy tầng 2.
+- Nguyên liệu cho 9 Nước táo là `36 cây Táo`: sáu hàng, mỗi hàng sáu cây.
+- Lượt gieo đầu trồng năm tầng × sáu cây = 30 cây; sau đó chuyển từ tầng 1 lên tầng 6 và trồng thêm một hàng × sáu cây.
+- Trước khi ghép vào pipeline, nút độc lập `Demo tầng 1 → 6` chỉ chạy năm nhịp `floors.up(5)`. Người vận hành phải đặt clone tại tầng 1 trước khi bấm. Mỗi nhịp phải có thay đổi hình ảnh; thiếu một nhịp thì fail-closed.
+
+## Module sửa quầy dùng chung
+
+Sau khi sản xuất ở bất kỳ máy nào, hệ thống về sau phải chạy thao tác sửa quầy dùng chung. Triển khai thành module độc lập để tái sử dụng cho mọi máy, không nhúng riêng vào Táo sấy hoặc Nước táo. Chưa ghép module này vào pipeline trong mốc demo tầng 1 → 6.
