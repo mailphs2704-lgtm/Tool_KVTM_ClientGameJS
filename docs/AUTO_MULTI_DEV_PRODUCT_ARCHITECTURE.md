@@ -34,3 +34,12 @@ Không bắt đầu lớp Vải vàng trước khi lớp Táo sấy PASS live c�
 - `tools/verify_auto_main_production_contract.py`
 - Full Build trong BAT Control Center
 - Live log phải thấy ô trên từ `o_trong.png` của Multi Dev, tổng 9/9 trước sản xuất và thay đổi đủ 9/9 sau sản xuất.
+
+
+## Contract kéo sản xuất Táo sấy
+
+- Nguồn kéo phải là tâm match của `components/clientjs-auto/assets/items/tao_say.png`; không dùng `kho_tao_say.png`, tọa độ cứng hoặc ảnh debug.
+- Đích kéo phải là tâm match ô trên của `components/clientjs-auto/assets/items/o_trong.png`; không dùng điểm thả cố định.
+- Match `tao_say` dưới `0.70` bị từ chối. Mức `0.301` đã được xác định là khớp giả trên ô trống.
+- Sau mỗi gesture, tổng ô trống phải giảm đúng theo tiến độ; nếu không giảm thì đóng panel và dừng ngay.
+- Chỉ PASS khi đủ chín lần thay đổi trạng thái được xác minh; số gesture đã gửi không phải số sản phẩm đã xếp.
