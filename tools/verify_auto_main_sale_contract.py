@@ -61,13 +61,35 @@ def main() -> int:
     require(action, 'log_prefix="AUTO SELL VP"', "Sale recognition log label missing")
     require(action, "self.recognition.scan_samples(", "Allowed-item scan missing")
     forbid(action, "self.inventory.select_storage(", "AUTO sale must not trust unverified shared storage selection")
-    require(action, "max(recognized", "Best recognized VP selection missing")
-    require(action, "self.selling._finish_batch_from_match(", "Verified listing gate missing")
+    require(
+        action,
+        'ITEM_ORDER = ("tao_say", "vai_vang", "tinh_dau_hh")',
+        "Three-item round-robin order missing",
+    )
+    require(action, "self._next_item_index", "Round-robin cursor missing")
+    require(action, '"sl10"', "Exact x10 quantity gate missing")
+    require(action, "if quantity_marker is None:", "Below-x10 branch missing")
+    require(action, "self.selling._cancel_dialog()", "Below-x10 cancel missing")
+    require(
+        action,
+        "self._insufficient_item_ids.add(selected.item_id)",
+        "Insufficient item exclusion missing",
+    )
+    require(action, 'status="NO_EXACT_TEN_ITEMS"', "All-items-short stop missing")
+    require(action, "_mean_difference(before, after)", "Screen-change verification missing")
+    forbid(
+        action,
+        "self.selling._finish_batch_from_match(",
+        "AUTO Main exact-x10 flow must not use Dọn quầy placement wording/policy",
+    )
     require(action, 'status="NO_ALLOWED_ITEM"', "No-item safe stop missing")
 
     require(workflow, "collect_own_stall_gold(maximum=8)", "Gold-before-sale order missing")
     require(workflow, "attempt = self.sale.sell_next_allowed", "Per-view sale missing")
     require(workflow, "self.auto.stall.next_view()", "Two-swipe next-view step missing")
+    require(workflow, "sold_by_item[attempt.item_id] += 1", "Per-item accounting missing")
+    require(workflow, '"NO_EXACT_TEN_ITEMS"', "All-items-short workflow stop missing")
+    require(workflow, '"AUTO bán VP • tổng kết x10 | "', "Per-item summary log missing")
     require(workflow, "finally:", "Own-stall cleanup guard missing")
     require(workflow, "self.auto.stall.close_own_stall()", "Own-stall close missing")
     if workflow.index("collected += self.auto.stall.collect_own_stall_gold") > workflow.index("attempt = self.sale.sell_next_allowed"):
@@ -87,7 +109,7 @@ def main() -> int:
 
     print("AUTO MULTI DEV VP SALE STATIC CONTRACT VERIFIED")
     print("runtime=resident")
-    print("flow=home_open_stall_collect_gold_sell_two_swipes_repeat")
+    print("flow=collect_gold_round_robin_exact_x10_two_swipes_repeat")
     print("allowed_items=tao_say,vai_vang,tinh_dau_hh")
     print("clear_stall_runtime=untouched")
     return 0
