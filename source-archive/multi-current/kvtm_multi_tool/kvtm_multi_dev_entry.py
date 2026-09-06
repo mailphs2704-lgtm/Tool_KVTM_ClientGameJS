@@ -827,9 +827,6 @@ class MultiDevApp(production.MultiApp):
         storage = max(1, min(5, int(job.get("target_stall_id", 2) or 2)))
         quantity = max(10, min(1000, int(job.get("buy_quantity", 10) or 10)))
         quantity = max(10, (quantity // 10) * 10)
-        if profile_id in self._clear_stall_scheduled_profiles:
-            # Scheduled full-clear always runs the complete GATE 5 contract.
-            quantity = max(20, quantity)
         max_stall_passes = 1
         default_items = [item_id for item_id, _label in core.CLEAR_STALL_ITEM_OPTIONS]
         raw_items = job.get("allowed_item_ids", default_items)
@@ -1050,8 +1047,14 @@ class MultiDevApp(production.MultiApp):
             sold = int(payload.get("sold_quantity") or 0)
             collected_gold = int(payload.get("collected_gold_slots") or 0)
             transaction_gate = str(payload.get("transaction_gate") or "")
-            is_gate5 = transaction_gate == "COLLECT_GOLD_RESELL_TARGET_EXACT"
-            is_gate4 = transaction_gate == "COLLECT_GOLD_RESELL_ONE_EXACT"
+            is_gate5 = (
+                transaction_gate == "COLLECT_GOLD_RESELL_TARGET_EXACT"
+                or profile_id in self._clear_stall_gate5_profiles
+            )
+            is_gate4 = (
+                transaction_gate == "COLLECT_GOLD_RESELL_ONE_EXACT"
+                and not is_gate5
+            )
             is_gate3 = transaction_gate == "PURCHASE_TARGET_MULTI_HOUSE"
             is_gate2 = transaction_gate == "PURCHASE_ONE_LISTING"
 
