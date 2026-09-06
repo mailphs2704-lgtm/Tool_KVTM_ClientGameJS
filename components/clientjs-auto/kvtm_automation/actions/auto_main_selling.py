@@ -33,6 +33,12 @@ class AutoMainSellingActions:
     """Balanced exact-x10 AUTO sale, isolated from clear-stall accounting."""
 
     ITEM_ORDER = ("tao_say", "vai_vang", "tinh_dau_hh")
+    SELECTED_ITEM_TEMPLATES = {
+        "tao_say": "tao_say",
+        "vai_vang": "vai_vang",
+        "tinh_dau_hh": "tinh_dau_hh",
+    }
+    SELECTED_ITEM_ZONE = (680, 240, 180, 180)
 
     def __init__(
         self,
@@ -44,6 +50,7 @@ class AutoMainSellingActions:
         self.context = selling.context
         self._next_item_index = 0
         self._insufficient_item_ids: set[str] = set()
+        self._unsafe_item_ids: set[str] = set()
 
     def _open_and_scan_finished_goods(self) -> tuple[VpRecognition, ...]:
         """Click the basket tab and require repeated fresh-frame recognition."""
@@ -74,7 +81,10 @@ class AutoMainSellingActions:
         for offset in range(len(self.ITEM_ORDER)):
             index = (self._next_item_index + offset) % len(self.ITEM_ORDER)
             item_id = self.ITEM_ORDER[index]
-            if item_id in self._insufficient_item_ids:
+            if (
+                item_id in self._insufficient_item_ids
+                or item_id in self._unsafe_item_ids
+            ):
                 continue
             item = by_id.get(item_id)
             if item is None:
@@ -83,8 +93,8 @@ class AutoMainSellingActions:
             return item
         return None
 
-    def _place_exact_ten(self, item: VpRecognition) -> bool:
-        """Select one item; return False without selling when quantity is below x10."""
+    def _place_exact_ten(self, item: VpRecognition) -> str:
+        """Return SOLD, BELOW_TEN or WRONG_ITEM without unsafe placement."""
         assert item.center is not None
         self.selling.vision.driver.click(*item.center)
         self.selling.waiter.sleep(0.30)
@@ -105,24 +115,42 @@ class AutoMainSellingActions:
                 f"{item.label} không mở được màn hình đặt bán"
             ) from exc
 
-        quantity_marker = None
+        selected_template = self.SELECTED_ITEM_TEMPLATES[item.item_id]
+        selected_match = self.selling.vision.find(
+            selected_template,
+            threshold=0.78,
+            zone=self.SELECTED_ITEM_ZONE,
+            scales=(0.85, 1.0, 1.15, 1.30, 1.45),
+        )
+        if selected_match is None:
+            self.context.log(
+                f"AUTO bán VP • CHẶN SAI VP: dialog không đúng {item.label} • "
+                "hủy và chuyển VP kế tiếp"
+            )
+            self.selling._cancel_dialog()
+            return "WRONG_ITEM"
+
+        quantity_passes = 0
         for quantity_attempt in range(1, 4):
             quantity_marker = self.selling.vision.find(
                 "sl10",
-                threshold=0.62,
+                threshold=0.95,
                 zone=self.selling.SL10_ZONE,
             )
-            if quantity_marker is not None:
+            quantity_passes = (
+                quantity_passes + 1 if quantity_marker is not None else 0
+            )
+            if quantity_passes >= 2:
                 break
             if quantity_attempt < 3:
                 self.selling.waiter.sleep(0.20)
-        if quantity_marker is None:
+        if quantity_passes < 2:
             self.context.log(
                 f"AUTO bán VP • {item.label} còn dưới x10 • "
                 "hủy và chuyển VP kế tiếp"
             )
             self.selling._cancel_dialog()
-            return False
+            return "BELOW_TEN"
 
         before = self.selling.vision.frame()[330:760, 180:820].copy()
         self.selling.vision.driver.click(*self.selling.PLACE_BUTTON)
@@ -144,7 +172,7 @@ class AutoMainSellingActions:
                     f"AUTO MAIN đã treo {item.label} x10 "
                     f"(match={item.score:.3f}, change={best_change:.2f})"
                 )
-                return True
+                return "SOLD"
             self.selling.waiter.settle(0.20)
         self.selling._cancel_dialog(cancelable=False)
         raise TransactionError(
@@ -158,8 +186,11 @@ class AutoMainSellingActions:
             raise ValueError("AUTO Main chỉ bán VP từ kho thành phẩm số 2")
 
         for _candidate_attempt in range(len(self.ITEM_ORDER)):
-            if len(self._insufficient_item_ids) == len(self.ITEM_ORDER):
-                return AutoSaleAttempt(status="NO_EXACT_TEN_ITEMS")
+            blocked_item_ids = (
+                self._insufficient_item_ids | self._unsafe_item_ids
+            )
+            if len(blocked_item_ids) == len(self.ITEM_ORDER):
+                return AutoSaleAttempt(status="NO_SAFE_EXACT_TEN_ITEMS")
             if not self.selling._find_empty_slot():
                 return AutoSaleAttempt(status="NO_EMPTY_SLOT")
 
@@ -171,14 +202,18 @@ class AutoMainSellingActions:
             selected = self._next_candidate(recognized)
             if selected is None:
                 self.selling.close_inventory_read_only()
-                return AutoSaleAttempt(status="NO_EXACT_TEN_ITEMS")
+                return AutoSaleAttempt(status="NO_SAFE_EXACT_TEN_ITEMS")
 
             self.context.log(
                 f"AUTO bán VP • lượt cân bằng chọn {selected.label} • "
                 f"score={selected.score:.3f}"
             )
-            if not self._place_exact_ten(selected):
-                self._insufficient_item_ids.add(selected.item_id)
+            placement = self._place_exact_ten(selected)
+            if placement != "SOLD":
+                if placement == "BELOW_TEN":
+                    self._insufficient_item_ids.add(selected.item_id)
+                else:
+                    self._unsafe_item_ids.add(selected.item_id)
                 self._next_item_index = (
                     self.ITEM_ORDER.index(selected.item_id) + 1
                 ) % len(self.ITEM_ORDER)
