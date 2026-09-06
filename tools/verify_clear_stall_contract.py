@@ -787,13 +787,13 @@ def main() -> int:
     )
     require(
         builder,
-        "Test-Path -LiteralPath $currentProfiles -PathType Leaf",
-        "Temporary cleanup must require authoritative profiles",
+        "Test-Path -LiteralPath $preflightProfiles -PathType Leaf",
+        "Pre-build cleanup must require authoritative profiles",
     )
     require(
         builder,
-        "Test-Path -LiteralPath $currentSettings -PathType Leaf",
-        "Temporary cleanup must require authoritative settings",
+        "Test-Path -LiteralPath $preflightSettings -PathType Leaf",
+        "Pre-build cleanup must require authoritative settings",
     )
     forbid(
         builder,
