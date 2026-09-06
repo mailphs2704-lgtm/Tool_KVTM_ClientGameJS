@@ -106,16 +106,20 @@ class PlantingActions:
         self.waiter.sleep(0.45)
         frame = self.vision.frame()
         harvest = self.vision.find(
-            "harvestBasket", threshold=0.80, zone=self.HARVEST_ZONE,
-            scales=(0.80, 0.90, 1.00, 1.10, 1.20), frame=frame,
+            "thu_hoach", threshold=0.80, zone=self.HARVEST_ZONE,
+            scales=(0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30), frame=frame,
         )
         empty = self.vision.find(
             "next_gieo_trai", threshold=0.70, zone=self.EMPTY_READY_ZONE,
             scales=(0.80, 0.90, 1.00, 1.10, 1.20), frame=frame,
         )
+        rose = self.vision.find(
+            self.ROSE_TEMPLATE, threshold=0.87, zone=self.SEED_ZONE,
+            scales=(0.80, 0.90, 1.00, 1.10, 1.20), frame=frame,
+        )
         if harvest is not None:
             return "RIPE", harvest
-        if empty is not None:
+        if empty is not None and rose is not None:
             return "EMPTY", empty
         return "UNKNOWN", None
 

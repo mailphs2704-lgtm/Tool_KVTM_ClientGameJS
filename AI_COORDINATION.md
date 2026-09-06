@@ -408,3 +408,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Cổng xác minh cây chín/chậu trống và hậu kiểm tối thiểu 20/27 vùng chậu vẫn giữ nguyên.
 - Chỉ sửa planting/verifier/docs; bán VP, Dọn quầy, GUI, queue, Bridge và driver không đổi.
 - Static syntax PASS; LIVE retest PENDING.
+
+
+## 2026-09-06 — Sửa ánh xạ giỏ thu hoạch trong Clean Vision
+
+- Live 15:05: người vận hành nhìn thấy giỏ thu hoạch sau click chậu đầu nhưng action ghi UNKNOWN; đến lần 3 match `next_gieo_trai` rồi không thấy `cay_hong`.
+- Nguyên nhân xác định: AUTO PRO gọi khóa logic `harvestBasket`, nhưng `GameConstants` ánh xạ khóa đó tới file thật `assets/items/thu_hoach.png`. Clean `AssetLibrary.candidates` chỉ tra theo stem/tên file và không tự ánh xạ khóa.
+- Planting dùng template thật `thu_hoach`, giữ threshold 0.80 và mở rộng scale 0.70..1.30.
+- Trạng thái EMPTY nay cần đồng thời thấy `next_gieo_trai` và `cay_hong` trên cùng fresh frame; không còn nhận false empty khi giỏ thu hoạch đang mở.
+- Không sửa AssetLibrary dùng chung, bán VP, Dọn quầy, GUI, Bridge hoặc driver.
+- Static syntax PASS; LIVE retest PENDING.
