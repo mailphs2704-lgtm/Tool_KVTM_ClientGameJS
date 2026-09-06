@@ -105,11 +105,17 @@ class AutoMainSellingActions:
                 f"{item.label} không mở được màn hình đặt bán"
             ) from exc
 
-        quantity_marker = self.selling.vision.find(
-            "sl10",
-            threshold=0.62,
-            zone=self.selling.SL10_ZONE,
-        )
+        quantity_marker = None
+        for quantity_attempt in range(1, 4):
+            quantity_marker = self.selling.vision.find(
+                "sl10",
+                threshold=0.62,
+                zone=self.selling.SL10_ZONE,
+            )
+            if quantity_marker is not None:
+                break
+            if quantity_attempt < 3:
+                self.selling.waiter.sleep(0.20)
         if quantity_marker is None:
             self.context.log(
                 f"AUTO bán VP • {item.label} còn dưới x10 • "
