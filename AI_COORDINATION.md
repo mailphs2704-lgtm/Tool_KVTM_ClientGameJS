@@ -333,3 +333,15 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - `auto_main_selling.py` nay bấm trực tiếp nút kho thành phẩm số 2/biểu tượng giỏ hàng tại điểm AUTO PRO 1000x1000 `(450, 442)`, chờ render và quét tối đa ba fresh frame.
 - Log chỉ nói “đã bấm nút” thay vì báo chọn thành công giả. Chỉ kết luận `NO_ALLOWED_ITEM` sau ba lượt không nhận ra VP.
 - Static contract cấm AUTO Main quay lại dùng `self.inventory.select_storage()`. AST syntax PASS; live Windows cần chạy lại sau `[1]`.
+
+
+## 2026-09-06 — AUTO Main bán cân bằng ba VP, bắt buộc lô x10
+
+- Quy tắc người dùng xác nhận: bán luân phiên Táo sấy → Vải vàng → Tinh dầu hoa hồng → lặp lại.
+- Sau khi chọn vật phẩm và mở dialog đặt bán, AUTO bắt buộc thấy marker `sl10`. Marker được thử tối đa ba fresh frame để tránh loại nhầm khi UI đang render.
+- Nếu loại hiện tại còn 1..9, AUTO hủy dialog, đánh dấu loại đó không còn lô x10 trong lượt chạy và chuyển ngay sang loại kế tiếp; không thử lại loại đã thiếu.
+- Dừng khi quầy hết ô trống hoặc cả ba loại đều không còn lô x10. Chỉ ghi nhận sau khi screen-change vượt ngưỡng xác minh.
+- Action log dùng câu AUTO Main và tên VP thật; không còn phát câu `CLEAR_STALL resale` / `VP đã mua` cho luồng này.
+- Kết quả có kế toán riêng `sold_by_item` và tổng kết số lô x10 của từng VP.
+- Thay đổi chỉ ở `auto_main_selling.py`, `auto_vp_sale/workflow.py` và verifier AUTO Main; không sửa các file runtime Dọn quầy ổn định.
+- AST syntax PASS; Windows live cần chạy lại sau `[1]`.
