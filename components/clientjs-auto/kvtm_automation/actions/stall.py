@@ -202,11 +202,8 @@ class StallActions:
         for local_slot in range(1, visible_limit + 1):
             self.context.ensure_running()
             frame = self.vision.frame()
-            # An unsold listing has the orange price coin. Its price artwork can
-            # resemble the small gold-pile template but is never collectible.
-            if self.listing_is_available(frame, local_slot):
-                continue
-
+            # Do not reuse the friend-stall price-coin heuristic here: the
+            # collectible gold pile is also orange and was incorrectly skipped.
             cx, cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
             top = 480 if local_slot <= 4 else 670
             slot_zone = (cx - 52, top, 104, 55)
