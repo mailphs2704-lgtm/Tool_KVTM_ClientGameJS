@@ -559,7 +559,6 @@ def main() -> int:
     require(stall, "def close_own_stall", "Verified own-stall close action missing")
     require(stall, "for local_slot in range(1, visible_limit + 1):", "Optional gold must be scanned once per visible slot")
     require(stall, "slot_zone = (cx - 58, cy - 70, 116, 100)", "Gold recognition must stay in the slot body above the price bar")
-    forbid(gold_method, "top = 480 if", "Gold collection must never scan the price-coin band")
     require(selling, "scales=(0.85, 0.92, 1.0, 1.08, 1.15)", "Empty own-stall slot recognition must tolerate edge-swipe scale changes")
     require(selling, "threshold=0.66", "Calibrated empty-slot threshold missing")
     require(stall, 'threshold=0.82', "Gold recognition threshold must reject weak stall decorations")
@@ -569,6 +568,7 @@ def main() -> int:
     gold_method = stall.split("def collect_own_stall_gold", 1)[1].split("def next_view", 1)[0]
     if gold_method.index("raise ScreenTimeout(") > gold_method.index("collected += 1"):
         raise AssertionError("Gold accounting occurs before unresolved-gold failure")
+    forbid(gold_method, "top = 480 if", "Gold collection must never scan the price-coin band")
     forbid(gold_method, "listing_is_available", "Collectible gold must not use the friend-stall price-coin filter")
     require(stall, "self.vision.driver.click(cx, cy)", "Gold collection slot-center retry missing")
     require(stall, "Có vàng nhưng không thu được; giữ nguyên view, không swipe", "Unresolved gold must block view advance")
