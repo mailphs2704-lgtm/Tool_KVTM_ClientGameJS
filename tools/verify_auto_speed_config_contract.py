@@ -53,8 +53,24 @@ def main() -> int:
     require(automation, "AutoSpeedConfig.from_mapping",
             "Speed normalization missing")
     require(dev, "Tốc độ MULTI DEV |", "Speed audit log missing")
-    require(gui, "AUTO PRO cũ • Tốc độ cào",
-            "Legacy AUTO PRO compatibility label missing")
+    require(gui, "MULTI_DEV_TUNING_KEYS = (",
+            "Dedicated Multi DEV tuning key group missing")
+    require(gui, "AUTO_LEGACY_TUNING_KEYS = tuple(",
+            "Legacy AUTO tuning key group missing")
+    require(gui, "def _auto_multi_dev_configure",
+            "Dedicated Multi DEV speed dialog missing")
+    require(gui, "keys=MULTI_DEV_TUNING_KEYS",
+            "Multi DEV dialog must only show its own settings")
+    require(gui, "keys=AUTO_LEGACY_TUNING_KEYS",
+            "Legacy AUTO dialog must use a separate setting group")
+    require(gui, "command=self._auto_multi_dev_configure",
+            "Multi DEV settings button wiring missing")
+    require(gui, 'style="Panel.TLabelframe"',
+            "Speed dialog must reuse the GUI panel theme")
+    require(gui, "ttk.Spinbox(",
+            "Speed dialog controls must reuse the ttk GUI theme")
+    if "AUTO PRO cũ" in gui:
+        raise AssertionError("Obsolete AUTO PRO label still leaks into Multi DEV settings")
     print("AUTO MULTI DEV SPEED CONFIG STATIC CONTRACT VERIFIED")
     print("floor_swipe=independent")
     print("plant_harvest=independent")
