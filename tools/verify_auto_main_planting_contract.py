@@ -9,6 +9,7 @@ ACTION_PATH = ROOT / "components/clientjs-auto/kvtm_automation/actions/planting.
 WORKFLOW_PATH = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_planting/workflow.py"
 DEV_ENTRY_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 GUI_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
+AUTO_MAIN_PATH = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
 
 
 def require(text: str, needle: str, message: str) -> None:
@@ -24,7 +25,7 @@ def check_function_limit(path: Path) -> None:
 
 
 def main() -> int:
-    paths = (ACTION_PATH, WORKFLOW_PATH, DEV_ENTRY_PATH, GUI_PATH)
+    paths = (ACTION_PATH, WORKFLOW_PATH, DEV_ENTRY_PATH, GUI_PATH, AUTO_MAIN_PATH)
     for path in paths:
         if not path.is_file():
             raise AssertionError(f"Missing planting contract file: {path}")
@@ -36,6 +37,7 @@ def main() -> int:
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     dev = DEV_ENTRY_PATH.read_text(encoding="utf-8")
     gui = GUI_PATH.read_text(encoding="utf-8")
+    auto_main = AUTO_MAIN_PATH.read_text(encoding="utf-8")
 
     require(action, 'ROSE_TEMPLATE = "cay_hong"', "Rose template missing")
     require(action, "TREE_COUNT = 27", "Exactly 27 trees required")
@@ -61,8 +63,12 @@ def main() -> int:
     require(action, "self.rose_path()[1:]", "Seed center must replace reference start point")
     require(action, 'raise ScreenTimeout(', "Fail-closed planting guard missing")
     require(workflow, "self.auto.planting.plant_27_roses()", "Workflow planting call missing")
-    require(dev, "run_rose_plant: bool", "Resident planting selector missing")
-    require(dev, 'outcome = "rose_plant_finished"', "Planting completion outcome missing")
+    require(auto_main, "RosePlantingWorkflow(self.auto).run",
+            "Consolidated start must execute the stable planting workflow")
+    require(dev, "AutoMainWorkflow(automation).run",
+            "Consolidated resident workflow wiring missing")
+    require(dev, 'outcome = "auto_main_ready"',
+            "Consolidated AUTO Main result handling missing")
     require(gui, 'text="▶ Bắt đầu AUTO MULTI DEV"', "Consolidated AUTO Multi DEV start button missing")
     require(gui, 'text="⚙ Cấu hình tốc độ"', "AUTO Multi DEV speed settings button missing")
     if "▶ Trồng 27 Hoa hồng" in gui:
