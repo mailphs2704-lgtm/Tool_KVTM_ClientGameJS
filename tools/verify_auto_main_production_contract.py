@@ -11,6 +11,7 @@ WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_apple
 AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.png"
+MULTI_DEV_EMPTY_SLOT = ROOT / "components/clientjs-auto/assets/items/o_trong.png"
 
 
 def require(text: str, token: str, message: str) -> None:
@@ -32,6 +33,8 @@ def main() -> int:
 
     if not MULTI_DEV_DRIED_APPLE.is_file():
         raise AssertionError("Multi Dev production asset missing: tao_say.png")
+    if not MULTI_DEV_EMPTY_SLOT.is_file():
+        raise AssertionError("Multi Dev production asset missing: o_trong.png")
 
     action = ACTION.read_text(encoding="utf-8")
     automation = AUTOMATION.read_text(encoding="utf-8")
@@ -66,6 +69,14 @@ def main() -> int:
             "Collection/panel fail-close missing")
     require(action, "for attempt in range(1, 4)", "Three product-render retries missing")
     require(action, 'threshold=0.70', "AUTO PRO initial empty-slot gate missing")
+    require(action, "TOP_EMPTY_SLOT_ZONE = (335, 650, 130, 135)",
+            "Upper queue slot zone missing")
+    require(action, "top = min(1, self._count_matches(",
+            "Upper queue slot must count once")
+    require(action, "lower = min(8, self._count_matches(",
+            "Lower queue slots must count at most eight")
+    require(action, "total = top + lower",
+            "Nine-slot queue total must include upper and lower slots")
     require(action, "slot cố định (252,421) không khớp Táo sấy",
             "Wrong-item fail-close missing")
     require(automation, "self.production = ProductionActions(", "Resident production wiring missing")

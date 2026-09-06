@@ -39,6 +39,7 @@ class ProductionActions:
     DRIED_APPLE_GUARD_ZONE = (180, 360, 150, 125)
     DRIED_APPLE_GUARD_THRESHOLD = 0.28
     EMPTY_SLOT_TEMPLATE = "o_trong"
+    TOP_EMPTY_SLOT_ZONE = (335, 650, 130, 135)
     EMPTY_SLOT_ZONE = (335, 781, 395, 186)
     PRODUCT_SLOT_0 = (252, 421)
     QUEUE_DROP_POINT = (400, 719)
@@ -102,6 +103,19 @@ class ProductionActions:
             f"threshold={threshold:.2f} | zone={zone}"
         )
         return len(centers)
+
+    def _count_empty_slots(self) -> int:
+        top = min(1, self._count_matches(
+            self.EMPTY_SLOT_TEMPLATE, self.TOP_EMPTY_SLOT_ZONE, 0.90
+        ))
+        lower = min(8, self._count_matches(
+            self.EMPTY_SLOT_TEMPLATE, self.EMPTY_SLOT_ZONE, 0.90
+        ))
+        total = top + lower
+        self.context.detail(
+            f"AUTO production empty slots | top={top}/1 | lower={lower}/8 | total={total}/9"
+        )
+        return total
 
     def _panel_state(self) -> tuple[bool, bool]:
         frame = self.vision.frame()
@@ -181,9 +195,7 @@ class ProductionActions:
             "AUTO sản xuất • xác minh Táo sấy tại slot cố định "
             f"• score={product.score:.3f} • center={product.center}"
         )
-        empty = self._count_matches(
-            self.EMPTY_SLOT_TEMPLATE, self.EMPTY_SLOT_ZONE, 0.90
-        )
+        empty = self._count_empty_slots()
         if empty < self.REQUIRED_COUNT:
             self.vision.driver.click(*self.CLOSE_POINT)
             raise ScreenTimeout(
@@ -223,9 +235,7 @@ class ProductionActions:
             )
 
         self.waiter.sleep(0.40)
-        empty_after = self._count_matches(
-            self.EMPTY_SLOT_TEMPLATE, self.EMPTY_SLOT_ZONE, 0.90
-        )
+        empty_after = self._count_empty_slots()
         consumed = max(0, empty_before - empty_after)
         self.vision.driver.click(*self.CLOSE_POINT)
         if consumed < self.REQUIRED_COUNT:
