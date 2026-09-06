@@ -16,6 +16,7 @@ FILE_FUNCTIONS = (
     "Chọn luân phiên Táo sấy, Vải vàng và Tinh dầu hoa hồng",
     "Bắt buộc xác nhận số lượng x10 trước khi đặt bán",
     "Bỏ qua loại còn dưới x10 và chuyển sang loại kế tiếp",
+    "Hủy dialog có xác minh rồi tiếp tục trong cùng kho đang mở",
     "Xác minh màn hình thay đổi trước khi ghi nhận đã treo",
     "Trả trạng thái rõ ràng cho workflow điều phối",
 )
@@ -93,6 +94,32 @@ class AutoMainSellingActions:
             return item
         return None
 
+    def _cancel_selected_item(self) -> None:
+        """Return from sale dialog to the still-open inventory and verify it."""
+        for attempt in range(1, 4):
+            self.context.ensure_running()
+            self.selling.vision.driver.press("back")
+            self.selling.waiter.sleep(0.35)
+            dialog_open = self.selling.vision.find(
+                "dat_ban",
+                threshold=0.78,
+                zone=self.selling.DAT_BAN_ZONE,
+            )
+            inventory_open = self.selling.vision.find(
+                "kho_thanh_pham",
+                threshold=0.72,
+                zone=self.selling.inventory.STORAGE_ZONE,
+            )
+            if dialog_open is None and inventory_open is not None:
+                self.context.log(
+                    f"AUTO bán VP • đã hủy dialog và trở lại kho • "
+                    f"lần {attempt}/3"
+                )
+                return
+        raise ScreenTimeout(
+            "Không hủy được dialog bán VP; dừng trước khi thao tác tiếp"
+        )
+
     def _place_exact_ten(self, item: VpRecognition) -> str:
         """Return SOLD, BELOW_TEN or WRONG_ITEM without unsafe placement."""
         assert item.center is not None
@@ -127,7 +154,7 @@ class AutoMainSellingActions:
                 f"AUTO bán VP • CHẶN SAI VP: dialog không đúng {item.label} • "
                 "hủy và chuyển VP kế tiếp"
             )
-            self.selling._cancel_dialog()
+            self._cancel_selected_item()
             return "WRONG_ITEM"
 
         quantity_passes = 0
@@ -149,7 +176,7 @@ class AutoMainSellingActions:
                 f"AUTO bán VP • {item.label} còn dưới x10 • "
                 "hủy và chuyển VP kế tiếp"
             )
-            self.selling._cancel_dialog()
+            self._cancel_selected_item()
             return "BELOW_TEN"
 
         before = self.selling.vision.frame()[330:760, 180:820].copy()
@@ -180,19 +207,22 @@ class AutoMainSellingActions:
         )
 
     def sell_next_allowed(self, *, storage_id: int = 2) -> AutoSaleAttempt:
-        """Sell the next round-robin x10 item, skipping each insufficient type."""
+        """Check all three types in one open inventory before reporting stop."""
         self.context.ensure_running()
         if int(storage_id) != 2:
             raise ValueError("AUTO Main chỉ bán VP từ kho thành phẩm số 2")
+        # Select the empty stall slot exactly once. If one item is below x10,
+        # cancellation returns to this same open inventory for the next type.
+        if not self.selling._find_empty_slot():
+            return AutoSaleAttempt(status="NO_EMPTY_SLOT")
 
-        for _candidate_attempt in range(len(self.ITEM_ORDER)):
+        for checked_count in range(1, len(self.ITEM_ORDER) + 1):
             blocked_item_ids = (
                 self._insufficient_item_ids | self._unsafe_item_ids
             )
             if len(blocked_item_ids) == len(self.ITEM_ORDER):
+                self.selling.close_inventory_read_only()
                 return AutoSaleAttempt(status="NO_SAFE_EXACT_TEN_ITEMS")
-            if not self.selling._find_empty_slot():
-                return AutoSaleAttempt(status="NO_EMPTY_SLOT")
 
             recognized = self._open_and_scan_finished_goods()
             if not recognized:
@@ -205,8 +235,8 @@ class AutoMainSellingActions:
                 return AutoSaleAttempt(status="NO_SAFE_EXACT_TEN_ITEMS")
 
             self.context.log(
-                f"AUTO bán VP • lượt cân bằng chọn {selected.label} • "
-                f"score={selected.score:.3f}"
+                f"AUTO bán VP • kiểm tra {checked_count}/3 • "
+                f"chọn {selected.label} • score={selected.score:.3f}"
             )
             placement = self._place_exact_ten(selected)
             if placement != "SOLD":
@@ -229,4 +259,5 @@ class AutoMainSellingActions:
                 score=float(selected.score),
             )
 
-        return AutoSaleAttempt(status="NO_EXACT_TEN_ITEMS")
+        self.selling.close_inventory_read_only()
+        return AutoSaleAttempt(status="NO_SAFE_EXACT_TEN_ITEMS")
