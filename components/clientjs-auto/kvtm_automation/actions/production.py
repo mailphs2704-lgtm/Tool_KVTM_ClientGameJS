@@ -11,7 +11,8 @@ from ..runtime.wait import Waiter
 
 __all__ = ["ProductionResult", "ProductionActions"]
 FILE_FUNCTIONS = (
-    "Mở máy sấy tại tầng 1 bằng tọa độ AUTO PRO đối chiếu",
+    "Thu VP hoàn thành đang chắn trước máy bằng nhịp AUTO PRO đối chiếu",
+    "Chỉ mở máy sấy tầng 1 sau khi đã thu VP và xác minh panel",
     "Xác minh đúng máy bằng template Táo sấy trước khi thao tác",
     "Đếm ô sản xuất trống bằng template và loại trùng hình học",
     "Kéo đúng chín Táo sấy theo slot AUTO PRO",
@@ -100,50 +101,57 @@ class ProductionActions:
         )
         return len(centers)
 
-    def _open_verified_dryer(self) -> int:
+    def _panel_state(self) -> tuple[bool, bool]:
+        frame = self.vision.frame()
+        warehouse_full = self.vision.find(
+            "fullkho",
+            threshold=0.90,
+            zone=(333, 363, 313, 115),
+            scales=(0.90, 1.00, 1.10),
+            click=False,
+            frame=frame,
+        )
+        empty_ready = self.vision.find(
+            self.EMPTY_SLOT_TEMPLATE,
+            threshold=0.70,
+            zone=self.EMPTY_SLOT_ZONE,
+            scales=(0.90, 1.00, 1.10),
+            click=False,
+            frame=frame,
+        )
+        return warehouse_full is not None, empty_ready is not None
+
+    def _collect_finished_before_open(self) -> None:
+        """Collect finished output first; opening the panel is the verification."""
+
         self.context.ensure_running()
-        panel_ready = False
-        for attempt in range(1, 4):
-            click_count = 1 if attempt == 1 else 5
+        for batch, click_count in ((1, 1), (2, 5), (3, 5)):
             for _pulse in range(click_count):
                 self.vision.driver.click(*self.DRYER_POINT)
                 self.waiter.sleep(0.10)
             self.waiter.sleep(0.50)
-            frame = self.vision.frame()
-            warehouse_full = self.vision.find(
-                "fullkho",
-                threshold=0.90,
-                zone=(333, 363, 313, 115),
-                scales=(0.90, 1.00, 1.10),
-                click=False,
-                frame=frame,
-            )
-            empty_ready = self.vision.find(
-                self.EMPTY_SLOT_TEMPLATE,
-                threshold=0.70,
-                zone=self.EMPTY_SLOT_ZONE,
-                scales=(0.90, 1.00, 1.10),
-                click=False,
-                frame=frame,
-            )
+            warehouse_full, panel_ready = self._panel_state()
             self.context.log(
-                "AUTO sản xuất • kiểm tra mở máy sấy "
-                f"lần {attempt}/3 • fullkho={warehouse_full is not None} • "
-                f"o_trong={empty_ready is not None}"
+                "AUTO sản xuất • thu VP trước máy "
+                f"nhịp {batch}/3 • clicks={click_count} • "
+                f"panel={panel_ready} • fullkho={warehouse_full}"
             )
-            if warehouse_full is not None:
+            if warehouse_full:
                 self.vision.driver.click(*self.CLOSE_POINT)
                 raise ScreenTimeout(
-                    "Kho đang đầy khi mở máy sấy; dừng trước khi sản xuất"
+                    "Đã thu VP trước máy nhưng kho đang đầy; dừng trước khi sản xuất"
                 )
-            if empty_ready is not None:
-                panel_ready = True
-                break
-        if not panel_ready:
-            self.vision.driver.click(*self.CLOSE_POINT)
-            raise ScreenTimeout(
-                "Không mở được panel máy sấy tầng 1 sau 3 lần xác minh"
-            )
+            if panel_ready:
+                self.context.log(
+                    "AUTO sản xuất • đã thu hết VP chắn máy và mở được panel tầng 1"
+                )
+                return
+        raise ScreenTimeout(
+            "Không thu hết VP hoàn thành hoặc không mở được panel máy sấy tầng 1"
+        )
+
+    def _open_verified_dryer(self) -> int:
+        self._collect_finished_before_open()
 
         product = None
         for attempt in range(1, 4):
