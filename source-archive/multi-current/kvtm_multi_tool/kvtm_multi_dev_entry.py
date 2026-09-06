@@ -111,6 +111,7 @@ class MultiDevApp(production.MultiApp):
         self._clear_stall_gate3_profiles: set[str] = set()
         self._clear_stall_gate4_profiles: set[str] = set()
         self._clear_stall_gate5_profiles: set[str] = set()
+        self._clear_stall_scheduled_profiles: set[str] = set()
         super()._build_auto_panel()
         # Production entry adds its historical check button after resolving the
         # compatibility anchor. DEV exposes only the single full-action button.
@@ -448,6 +449,7 @@ class MultiDevApp(production.MultiApp):
         self._prepare_probe_console(profile_id, profile)
         self._clear_stall_gate3_profiles.add(profile_id)
         self._clear_stall_gate5_profiles.add(profile_id)
+        self._clear_stall_scheduled_profiles.add(profile_id)
         job["next_run_at"] = 0
         job["last_checkpoint"] = "Đến lịch • đang tự mở clone"
         self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
@@ -464,6 +466,7 @@ class MultiDevApp(production.MultiApp):
             self._clear_stall_probe_starting.discard(profile_id)
             self._clear_stall_gate3_profiles.discard(profile_id)
             self._clear_stall_gate5_profiles.discard(profile_id)
+            self._clear_stall_scheduled_profiles.discard(profile_id)
             interval = max(5, int(job.get("interval_minutes", 65) or 65))
             job["next_run_at"] = time.time() + min(5, interval) * 60
             job["last_checkpoint"] = f"Lỗi tự mở clone • thử lại sau 5 phút: {exc}"
@@ -651,6 +654,7 @@ class MultiDevApp(production.MultiApp):
         self._clear_stall_gate3_profiles.discard(profile_id)
         self._clear_stall_gate4_profiles.discard(profile_id)
         self._clear_stall_gate5_profiles.discard(profile_id)
+        self._clear_stall_scheduled_profiles.discard(profile_id)
         try:
             paths[1].write_text("done\n", encoding="ascii")
         except OSError:
@@ -823,6 +827,9 @@ class MultiDevApp(production.MultiApp):
         storage = max(1, min(5, int(job.get("target_stall_id", 2) or 2)))
         quantity = max(10, min(1000, int(job.get("buy_quantity", 10) or 10)))
         quantity = max(10, (quantity // 10) * 10)
+        if profile_id in self._clear_stall_scheduled_profiles:
+            # Scheduled full-clear always runs the complete GATE 5 contract.
+            quantity = max(20, quantity)
         max_stall_passes = 1
         default_items = [item_id for item_id, _label in core.CLEAR_STALL_ITEM_OPTIONS]
         raw_items = job.get("allowed_item_ids", default_items)
@@ -1138,6 +1145,7 @@ class MultiDevApp(production.MultiApp):
             )
         elif event == "probe_error":
             error = str(payload.get("error") or "Lỗi probe không xác định")
+            scheduled_run = profile_id in self._clear_stall_scheduled_profiles
             self._clear_stall_probe_terminal[profile_id] = "FAIL"
             self._set_clear_stall_checkpoint(
                 profile_id,
@@ -1152,7 +1160,33 @@ class MultiDevApp(production.MultiApp):
                     "report": str(payload.get("report") or ""),
                 },
             )
-            if profile_id == self._active_profile_id:
+            if scheduled_run:
+                job = self._clear_stall_job(profile_id)
+                interval = max(5, int(job.get("interval_minutes", 65) or 65))
+                finished_at = time.time()
+                job["last_checkpoint"] = (
+                    f"Lỗi tự động • đã đóng clone; thử lại sau {interval} phút: {error}"
+                )
+                job["last_result"] = {
+                    "ok": False,
+                    "scheduled_failure": True,
+                    "finished_at": finished_at,
+                    "error": error,
+                }
+                job["next_run_at"] = (
+                    finished_at + interval * 60 if job.get("enabled", False) else 0
+                )
+                self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
+                core.save_settings(self.settings)
+                proc = self.processes.get(profile_id)
+                if proc and proc.poll() is None:
+                    try:
+                        proc.terminate()
+                    except OSError as exc:
+                        self._append_probe_log(
+                            profile_id, f"Scheduled close ClientJS failed: {exc}"
+                        )
+            elif profile_id == self._active_profile_id:
                 core.messagebox.showerror(core.APP_NAME, f"{gate_name} lỗi:\n{error}")
         elif event == "probe_exit":
             if profile_id not in self._clear_stall_probe_terminal:
