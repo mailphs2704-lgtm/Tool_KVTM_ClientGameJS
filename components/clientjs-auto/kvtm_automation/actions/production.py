@@ -11,11 +11,11 @@ from ..runtime.wait import Waiter
 
 __all__ = ["ProductionResult", "ProductionActions"]
 FILE_FUNCTIONS = (
-    "Thu VP hoàn thành đang chắn trước máy bằng nhịp AUTO PRO đối chiếu",
+    "Thu VP hoàn thành đang chắn trước máy bằng nhịp giới hạn",
     "Chỉ mở máy sấy tầng 1 sau khi đã thu VP và xác minh panel",
     "Xác minh đúng máy bằng template Táo sấy trước khi thao tác",
     "Đếm ô sản xuất trống bằng template và loại trùng hình học",
-    "Kéo đúng chín Táo sấy theo slot AUTO PRO",
+    "Kéo đúng chín Táo sấy từ ảnh thư viện xuống tâm ô top",
     "Hậu kiểm số ô trống giảm và dừng an toàn nếu giao dịch không khớp",
 )
 
@@ -30,19 +30,16 @@ class ProductionResult:
 
 
 class ProductionActions:
-    """Clean production transaction; AUTO PRO is coordinate reference only."""
+    """Self-contained Multi Dev dried-apple production transaction."""
 
     DRYER_FLOOR = 1
     DRYER_POINT = (262, 917)
     DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"
-    PRODUCT_SEARCH_ZONE = (9, 341, 402, 386)
-    DRIED_APPLE_GUARD_ZONE = (180, 360, 150, 125)
-    DRIED_APPLE_GUARD_THRESHOLD = 0.28
+    PRODUCT_SEARCH_ZONE = None
+    DRIED_APPLE_GUARD_THRESHOLD = 0.70
     EMPTY_SLOT_TEMPLATE = "o_trong"
     TOP_EMPTY_SLOT_ZONE = (335, 650, 130, 135)
     EMPTY_SLOT_ZONE = (335, 781, 395, 186)
-    PRODUCT_SLOT_0 = (252, 421)
-    QUEUE_DROP_POINT = (400, 719)
     MATERIAL_ERROR_TEMPLATE = "x"
     MATERIAL_ERROR_ZONE = (682, 337, 142, 120)
     CLOSE_POINT = (965, 198)
@@ -104,14 +101,17 @@ class ProductionActions:
         )
         return len(centers)
 
-    def _count_empty_slots(self) -> int:
-        top_match = self.vision.find(
+    def _find_top_empty_slot(self):
+        return self.vision.find(
             self.EMPTY_SLOT_TEMPLATE,
             threshold=0.82,
             zone=self.TOP_EMPTY_SLOT_ZONE,
             scales=(1.00, 1.15, 1.30, 1.45, 1.60),
             click=False,
         )
+
+    def _count_empty_slots(self) -> int:
+        top_match = self._find_top_empty_slot()
         top = 1 if top_match is not None else 0
         lower = min(8, self._count_matches(
             self.EMPTY_SLOT_TEMPLATE, self.EMPTY_SLOT_ZONE, 0.90
@@ -171,7 +171,7 @@ class ProductionActions:
             "Không thu hết VP hoàn thành hoặc không mở được panel máy sấy tầng 1"
         )
 
-    def _open_verified_dryer(self) -> tuple[int, tuple[int, int]]:
+    def _open_verified_dryer(self) -> tuple[int, tuple[int, int], tuple[int, int]]:
         self._collect_finished_before_open()
 
         product = None
@@ -179,27 +179,33 @@ class ProductionActions:
             product = self.vision.find(
                 self.DRIED_APPLE_PRODUCTION_TEMPLATE,
                 threshold=self.DRIED_APPLE_GUARD_THRESHOLD,
-                zone=self.DRIED_APPLE_GUARD_ZONE,
+                zone=self.PRODUCT_SEARCH_ZONE,
                 scales=(0.75, 0.90, 1.00, 1.10, 1.25),
                 click=False,
             )
             if product is not None:
                 break
             self.context.log(
-                "AUTO sản xuất • chưa khớp Táo sấy tại slot cố định "
-                f"(252,421) • lần {attempt}/3"
+                "AUTO sản xuất • chưa khớp ảnh thư viện tao_say trên panel "
+                f"• lần {attempt}/3"
             )
             self.waiter.sleep(0.35)
         if product is None:
             self.vision.driver.click(*self.CLOSE_POINT)
             raise ScreenTimeout(
-                "Panel máy đã mở nhưng slot cố định (252,421) không khớp Táo sấy; "
-                "không chọn vật phẩm khác"
+                "Panel máy đã mở nhưng không khớp chắc chắn ảnh thư viện tao_say; "
+                "dừng trước gesture để không chọn nhầm vật phẩm"
             )
         self.context.log(
-            "AUTO sản xuất • xác minh Táo sấy tại slot cố định "
+            "AUTO sản xuất • xác minh ảnh thư viện tao_say "
             f"• score={product.score:.3f} • center={product.center}"
         )
+        top_slot = self._find_top_empty_slot()
+        if top_slot is None:
+            self.vision.driver.click(*self.CLOSE_POINT)
+            raise ScreenTimeout(
+                "Không tìm thấy ô top bằng ảnh thư viện o_trong; dừng trước gesture"
+            )
         empty = self._count_empty_slots()
         if empty < self.REQUIRED_COUNT:
             self.vision.driver.click(*self.CLOSE_POINT)
@@ -209,15 +215,20 @@ class ProductionActions:
         self.context.log(
             f"AUTO sản xuất • đúng máy sấy tầng 1 • có {empty} ô trống"
         )
-        return empty, product.center
+        self.context.log(
+            "AUTO sản xuất • đường kéo đã xác minh "
+            f"• tao_say={product.center} → top={top_slot.center}"
+        )
+        return empty, product.center, top_slot.center
 
     def produce_9_dried_apples(self) -> ProductionResult:
-        empty_before, product_point = self._open_verified_dryer()
+        empty_before, product_point, top_point = self._open_verified_dryer()
+        empty_after = empty_before
         queued = 0
         for ordinal in range(1, self.REQUIRED_COUNT + 1):
             self.context.ensure_running()
             self.vision.driver.swipe_points(
-                (product_point, self.QUEUE_DROP_POINT),
+                (product_point, top_point),
                 duration=0.02,
             )
             self.waiter.sleep(self.speed_config.vp_production_delay)
@@ -234,18 +245,26 @@ class ProductionActions:
                 raise ScreenTimeout(
                     f"Thiếu nguyên liệu khi xếp Táo sấy {ordinal}/9"
                 )
+            current_empty = self._count_empty_slots()
+            if current_empty >= empty_after:
+                self.vision.driver.click(*self.CLOSE_POINT)
+                raise ScreenTimeout(
+                    "Kéo Táo sấy không làm giảm ô trống: "
+                    f"lần={ordinal}/9, trước={empty_after}, sau={current_empty}, "
+                    f"từ={product_point}, đến_top={top_point}"
+                )
+            empty_after = current_empty
             queued += 1
             self.context.log(
-                f"AUTO sản xuất • đã xếp Táo sấy {ordinal}/9 vào hàng chờ"
+                f"AUTO sản xuất • đã xác minh xếp Táo sấy {ordinal}/9 "
+                f"• ô trống còn={empty_after}"
             )
 
-        self.waiter.sleep(0.40)
-        empty_after = self._count_empty_slots()
         consumed = max(0, empty_before - empty_after)
         self.vision.driver.click(*self.CLOSE_POINT)
-        if consumed < self.REQUIRED_COUNT:
+        if consumed != self.REQUIRED_COUNT:
             raise ScreenTimeout(
-                "Hậu kiểm máy sấy không đủ 9 ô thay đổi: "
+                "Hậu kiểm máy sấy không đúng 9 ô thay đổi: "
                 f"trước={empty_before}, sau={empty_after}, xác minh={consumed}/9"
             )
         self.context.log(
