@@ -67,13 +67,19 @@ def main() -> int:
         "Three-item round-robin order missing",
     )
     require(action, "self._next_item_index", "Round-robin cursor missing")
+    require(action, "SELECTED_ITEM_TEMPLATES", "Post-selection item map missing")
+    require(action, "SELECTED_ITEM_ZONE", "Post-selection item verification zone missing")
+    require(action, 'return "WRONG_ITEM"', "Wrong-item safe cancel missing")
+    require(action, "self._unsafe_item_ids.add", "Wrong-item exclusion missing")
     require(action, '"sl10"', "Exact x10 quantity gate missing")
+    require(action, "threshold=0.95", "Exact-ten threshold must reject 1..9")
+    require(action, "quantity_passes >= 2", "Exact-ten result must be stable on two frames")
     require(
         action,
         "for quantity_attempt in range(1, 4):",
         "Bounded x10 render retries missing",
     )
-    require(action, "if quantity_marker is None:", "Below-x10 branch missing")
+    require(action, "if quantity_passes < 2:", "Below-x10 branch missing")
     require(action, "self.selling._cancel_dialog()", "Below-x10 cancel missing")
     require(
         action,
@@ -94,6 +100,11 @@ def main() -> int:
     require(workflow, "self.auto.stall.next_view()", "Two-swipe next-view step missing")
     require(workflow, "sold_by_item[attempt.item_id] += 1", "Per-item accounting missing")
     require(workflow, '"NO_EXACT_TEN_ITEMS"', "All-items-short workflow stop missing")
+    require(
+        workflow,
+        '"NO_SAFE_EXACT_TEN_ITEMS"',
+        "Wrong-item/all-short workflow stop missing",
+    )
     require(workflow, '"AUTO bán VP • tổng kết x10 | "', "Per-item summary log missing")
     require(workflow, "finally:", "Own-stall cleanup guard missing")
     require(workflow, "self.auto.stall.close_own_stall()", "Own-stall close missing")
