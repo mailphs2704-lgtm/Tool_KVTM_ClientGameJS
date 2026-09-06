@@ -566,7 +566,7 @@ def main() -> int:
     gold_method = stall.split("def collect_own_stall_gold", 1)[1].split("def next_view", 1)[0]
     if gold_method.index("raise ScreenTimeout(") > gold_method.index("collected += 1"):
         raise AssertionError("Gold accounting occurs before unresolved-gold failure")
-    require(stall, "if self.listing_is_available(frame, local_slot):", "Unsold price coins must never be treated as collectible gold")
+    forbid(gold_method, "listing_is_available", "Collectible gold must not use the friend-stall price-coin filter")
     require(stall, "self.vision.driver.click(cx, cy)", "Gold collection slot-center retry missing")
     require(stall, "Có vàng nhưng không thu được; giữ nguyên view, không swipe", "Unresolved gold must block view advance")
     forbid(stall, "while collected < visible_limit", "Gold is optional; collector must not chase a target count")
