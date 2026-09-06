@@ -80,7 +80,26 @@ def main() -> int:
         "Bounded x10 render retries missing",
     )
     require(action, "if quantity_passes < 2:", "Below-x10 branch missing")
-    require(action, "self.selling._cancel_dialog()", "Below-x10 cancel missing")
+    require(action, "def _cancel_selected_item", "Verified dialog cancel missing")
+    require(
+        action,
+        "dialog_open is None and inventory_open is not None",
+        "Cancel must prove the inventory remains open",
+    )
+    require(
+        action,
+        '"Không hủy được dialog bán VP; dừng trước khi thao tác tiếp"',
+        "Unsafe cancel failure stop missing",
+    )
+    require(
+        action,
+        'for checked_count in range(1, len(self.ITEM_ORDER) + 1):',
+        "All three items must be checked in the same inventory operation",
+    )
+    if action.count("self.selling._find_empty_slot()") != 1:
+        raise AssertionError(
+            "Empty stall slot must be selected once before checking all three items"
+        )
     require(
         action,
         "self._insufficient_item_ids.add(selected.item_id)",
