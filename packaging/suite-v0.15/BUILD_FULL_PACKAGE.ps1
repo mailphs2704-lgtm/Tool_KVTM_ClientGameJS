@@ -101,6 +101,50 @@ function Copy-PreservedDirectory {
     Write-Host "[DATA] Bao toan $Label xong sau ${elapsed}s." -ForegroundColor Green
 }
 
+function Copy-BoundedDiagnosticDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [long]$MaxBytes = 134217728
+    )
+    Write-Host "[DATA] Bao toan clear-stall-probe co gioi han 128 MiB..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    $allFiles = @(
+        Get-ChildItem -LiteralPath $Source -Recurse -File -ErrorAction SilentlyContinue
+    )
+    $essential = @(
+        $allFiles | Where-Object {
+            $_.Extension -in @(".log", ".json", ".jsonl", ".txt", ".csv")
+        } | Sort-Object LastWriteTime
+    )
+    $diagnostics = @(
+        $allFiles | Where-Object {
+            $_.Extension -notin @(".log", ".json", ".jsonl", ".txt", ".csv")
+        } | Sort-Object LastWriteTime -Descending
+    )
+    $copiedBytes = 0L
+    $copiedFiles = 0
+    foreach ($file in @($essential + $diagnostics)) {
+        $isEssential = $file.Extension -in @(".log", ".json", ".jsonl", ".txt", ".csv")
+        if (-not $isEssential -and ($copiedBytes + $file.Length) -gt $MaxBytes) {
+            continue
+        }
+        $relative = $file.FullName.Substring($Source.Length).TrimStart("\")
+        $target = Join-Path $Destination $relative
+        $targetParent = Split-Path -Parent $target
+        New-Item -ItemType Directory -Path $targetParent -Force | Out-Null
+        Copy-Item -LiteralPath $file.FullName -Destination $target -Force
+        $copiedBytes += [long]$file.Length
+        $copiedFiles += 1
+    }
+    $copiedMiB = [Math]::Round($copiedBytes / 1MB, 1)
+    Write-Host (
+        "[DATA] clear-stall-probe da giu {0} file/{1} MiB; " +
+        "log/report duoc uu tien, anh moi nhat nam trong gioi han." -f
+        $copiedFiles, $copiedMiB
+    ) -ForegroundColor Green
+}
+
 
 function Get-GitLfsPointers {
     param([Parameter(Mandatory = $true)][string]$Root)
@@ -406,6 +450,25 @@ if (Test-Path -LiteralPath $MainProfileDir -PathType Container) {
     $DataCandidates += $MainProfileDir
 }
 
+# A failed previous build can leave a partial temporary copy that consumes
+# the disk. Delete it only when the fixed DEV folder still contains both
+# authoritative profile/settings files.
+$currentProfiles = Join-Path $CurrentData "profiles.json"
+$currentSettings = Join-Path $CurrentData "settings.json"
+if (
+    (Test-Path -LiteralPath $currentProfiles -PathType Leaf) -and
+    (Test-Path -LiteralPath $currentSettings -PathType Leaf)
+) {
+    $stalePreserveRoots = @(
+        Get-ChildItem -LiteralPath $DistRoot -Directory -Filter ".kvtm-dev-data-*" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -ne $PreserveRoot }
+    )
+    foreach ($staleRoot in $stalePreserveRoots) {
+        Write-Host "[DATA] Xoa ban sao tam cua build loi: $($staleRoot.Name)" -ForegroundColor Yellow
+        Remove-Item -LiteralPath $staleRoot.FullName -Recurse -Force -ErrorAction Stop
+    }
+}
+
 New-Item -ItemType Directory -Path $PreserveRoot -Force | Out-Null
 foreach ($name in @("profiles.json", "settings.json")) {
     foreach ($candidate in $DataCandidates) {
@@ -438,7 +501,7 @@ if (Test-Path -LiteralPath $CurrentClearStall -PathType Container) {
 $CurrentClearStallProbe = Join-Path $CurrentData "clear-stall-probe"
 if (Test-Path -LiteralPath $CurrentClearStallProbe -PathType Container) {
     $PreservedClearStallProbePath = Join-Path $PreserveRoot "clear-stall-probe"
-    Copy-PreservedDirectory -Source $CurrentClearStallProbe -Destination $PreservedClearStallProbePath -Label "clear-stall-probe"
+    Copy-BoundedDiagnosticDirectory -Source $CurrentClearStallProbe -Destination $PreservedClearStallProbePath
     $PreservedClearStallProbe = $true
 }
 
@@ -746,6 +809,6 @@ if ($PreservedClearStall) {
     Write-Host "DATA KEPT: clear-stall diagnostic runs only; carryover purged" -ForegroundColor Cyan
 }
 if ($PreservedClearStallProbe) {
-    Write-Host "DATA KEPT: clear-stall-probe screenshots/reports" -ForegroundColor Cyan
+    Write-Host "DATA KEPT: clear-stall-probe logs/reports + newest diagnostics (bounded 128 MiB)" -ForegroundColor Cyan
 }
 Write-Host "FIXED DEV: use this same folder for every build" -ForegroundColor Cyan
