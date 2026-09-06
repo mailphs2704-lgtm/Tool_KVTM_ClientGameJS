@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/production.py"
+FLOOR_ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/floor_navigation.py"
 AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
 WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_apple_dryer/workflow.py"
 AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
@@ -20,7 +21,7 @@ def require(text: str, token: str, message: str) -> None:
 
 
 def main() -> int:
-    for path in (ACTION, AUTOMATION, WORKFLOW, AUTO_MAIN, DEV_ENTRY):
+    for path in (ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, AUTO_MAIN, DEV_ENTRY):
         if not path.is_file():
             raise AssertionError(f"Missing production contract file: {path}")
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -28,7 +29,7 @@ def main() -> int:
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             for node in ast.walk(tree)
         )
-        if path in (ACTION, WORKFLOW) and functions > 10:
+        if path in (ACTION, FLOOR_ACTION, WORKFLOW) and functions > 10:
             raise AssertionError(f"{path}: {functions} functions exceeds limit 10")
 
     if not MULTI_DEV_DRIED_APPLE.is_file():
@@ -37,6 +38,7 @@ def main() -> int:
         raise AssertionError("Multi Dev production asset missing: o_trong.png")
 
     action = ACTION.read_text(encoding="utf-8")
+    floor_action = FLOOR_ACTION.read_text(encoding="utf-8")
     automation = AUTOMATION.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
     auto_main = AUTO_MAIN.read_text(encoding="utf-8")
@@ -91,12 +93,20 @@ def main() -> int:
     require(workflow, "produce_9_dried_apples()", "Dried apple production step missing")
     require(auto_main, "AppleDryerWorkflow(self.auto).run", "Function one pipeline missing")
     require(dev, "PASS CHỨC NĂNG 1", "GUI result status missing")
-    require(dev, 'text="↟ Demo tầng 1 → 6"', "Dedicated floor demo button missing")
+    require(dev, 'text="↟ Demo chính → tầng 6"', "Dedicated floor demo button missing")
     require(dev, "profile_id in self._clean_floor_demo_requested",
             "Floor demo request is not isolated per profile")
-    require(dev, "automation.floors.up(5)",
-            "Floor 1-to-6 demo must execute exactly five verified upward moves")
+    require(dev, "automation.floors.glide_up(6)",
+            "Main-to-floor-6 demo must execute one six-unit continuous glide")
     require(dev, '"floor_demo_finished"', "Floor demo result path missing")
+    require(automation, "self.floors = FloorNavigationActions(",
+            "Resident floor navigation wiring missing")
+    require(floor_action, "GLIDE_UNIT_PIXELS = 100",
+            "Floor glide unit changed")
+    require(floor_action, "endpoint = y1 + self.GLIDE_UNIT_PIXELS * requested",
+            "Continuous floor glide endpoint missing")
+    require(floor_action, "frame_change_scores=(change,)",
+            "Floor glide must verify once after the complete gesture")
 
     forbidden = (
         "clear_stall_probe_runtime",
