@@ -504,3 +504,11 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Hình học gieo: 5 tầng × 6 cây, sau đó từ tầng 1 lên tầng 6 và gieo thêm 1 hàng × 6 cây.
 - Mốc hiện tại chỉ thêm nút demo độc lập `Demo tầng 1 → 6`; operator đặt clone ở tầng 1, demo chạy đúng 5 nhịp UP có hậu kiểm thay đổi frame.
 - Ghi backlog: tách thao tác sửa quầy sau sản xuất thành module dùng chung cho tất cả máy rồi mới ghép vào các workflow.
+
+
+## 2026-09-07 — Demo tầng 1 → 6 lần đầu NOT PASS
+
+- Live log xác nhận bản cũ gửi 5 gesture rời `(514,214)→(514,314)`, mỗi gesture chờ `0.65s`; kết quả thực tế chỉ tới tầng 5.
+- Sửa contract: từ màn hình chính cần sáu đơn vị tầng và phải lướt một mạch theo Auto Pro.
+- Demo mới gọi `floors.glide_up(6)`, tạo đúng một gesture `(514,214)→(514,814)` rồi hậu kiểm frame một lần.
+- Không được ghi LIVE PASS trước khi người dùng retest và xác nhận đang ở đúng tầng 6.
