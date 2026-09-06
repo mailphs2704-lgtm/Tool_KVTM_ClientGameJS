@@ -70,7 +70,8 @@ def main() -> int:
         raise AssertionError("AUTO Main must collect gold before listing VP")
 
     require(gui, 'text="▶ Bán VP AUTO"', "AUTO sale button missing")
-    require(gui, "command=self._start_clean_vp_sale", "AUTO sale button wiring missing")
+    require(gui, 'getattr(self, "_start_clean_vp_sale", None)', "DEV-only sale callback guard missing")
+    require(gui, "command=sale_command", "AUTO sale button wiring missing")
     require(entry, "def _start_clean_vp_sale", "AUTO sale launcher missing")
     require(entry, "AutoVpSaleWorkflow(automation).run", "Resident sale workflow missing")
     require(entry, 'outcome = "sale_finished"', "AUTO sale result handling missing")
