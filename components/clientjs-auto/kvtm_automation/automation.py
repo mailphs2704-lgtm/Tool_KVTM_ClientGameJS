@@ -12,6 +12,7 @@ from .actions import (
     NavigationActions,
     PopupActions,
     PlantingActions,
+    ProductionActions,
     SellingActions,
     StallActions,
 )
@@ -111,6 +112,9 @@ class KVAutomation:
             context, self.vision, self.wait, self.speed_config
         )
         self.floors = FloorNavigationActions(
+            context, self.vision, self.wait, self.speed_config
+        )
+        self.production = ProductionActions(
             context, self.vision, self.wait, self.speed_config
         )
         self.navigation = NavigationActions(
