@@ -449,3 +449,15 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Module trồng chỉ nhận hai tốc độ tương ứng. Tốc độ sản xuất VP được chuẩn hóa/lưu sẵn, chưa nối vào nghiệp vụ vì module sản xuất chưa xây.
 - Không sửa logic bán VP, Dọn quầy, queue, bridge hay driver.
 - Có static contract riêng và được chèn vào build trước đóng gói; Windows build/LIVE retest PENDING.
+
+
+## 2026-09-06 — AUTO MULTI DEV: module chuyển tầng trước sản xuất VP
+
+- Yêu cầu người dùng: hoàn thiện chuyển tầng chính xác trước khi xây module sản xuất VP, vì chỉ sau khi camera nằm đúng view mới được quét/chọn máy.
+- Đối chiếu điểm LIVE đã PASS của AUTO PRO trong luồng trồng: một nhịp `goUp(1)` dùng tọa độ 1000x1000 `(514,214)->(514,314)`. Không dùng lại `goUp(4)` vì đã có bằng chứng live bỏ qua khoảng hai tầng.
+- Thêm `actions/floor_navigation.py`: mỗi tầng đúng một swipe; hướng DOWN đảo đối xứng; tối đa năm tầng cho một yêu cầu; dùng riêng `floor_swipe_duration`.
+- Mỗi nhịp bắt buộc chụp fresh frame trước/sau, chờ 0.65s và dừng trước khi quét/chọn máy nếu không thấy phản hồi hình ảnh.
+- Module chỉ cung cấp primitive chuyển tầng `up/down/move`; module sản xuất kế tiếp phải quét máy sau từng tầng, không suy đoán máy theo số lần kéo.
+- Wiring mới là `automation.floors` trong resident runtime. Không sửa `planting.py`, bán VP, Dọn quầy, queue, Bridge hoặc driver.
+- Builder chạy `verify_auto_floor_navigation_contract.py`; static contract cấm `goUp(4)`, khóa hình học, giới hạn năm tầng và ranh giới an toàn trước sản xuất.
+- Trạng thái: source/static ready; Windows build và LIVE chuyển tầng vẫn PENDING.
