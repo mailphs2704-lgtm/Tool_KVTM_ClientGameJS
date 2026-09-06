@@ -78,3 +78,10 @@ LIVE đầu tiên chứng minh năm gesture rời chỉ tới tầng 5. Mốc n�
 3. Xây tiêu chí nhận dạng tầng 6 hoặc một bằng chứng live riêng; thay đổi hình ảnh chung không đủ để PASS.
 4. Thử trong nút demo độc lập trước; chỉ sau khi tầng 6 LIVE PASS mới ghép thao tác trồng hàng thứ sáu.
 5. Giữ backlog module sửa quầy dùng chung, chưa ghép vào workflow.
+
+
+### Bằng chứng hình ảnh tầng 6 và giới hạn nhận dạng
+
+Ảnh người dùng cung cấp ngày 2026-09-07 xác nhận bố cục trực quan khi đứng tại tầng 6, nhưng chỉ là bằng chứng tham khảo và không được đưa vào thư viện template. Những thành phần sau không ổn định: VP/cây trên chậu, giao diện máy, số sao/cấp máy và hình mây. Không được dùng riêng bất kỳ thành phần này để kết luận tầng 6.
+
+Quyết định kỹ thuật: chưa xây detector tầng 6 từ screenshot. Phải nghiên cứu Auto Pro để xác định nó dựa vào bộ đếm nội bộ, trạng thái camera, số nhịp gesture, tọa độ máy hay một dấu hiệu ổn định khác. Chỉ sao chép asset nghiệp vụ từ Auto Pro nếu chứng minh đó là asset mà logic gốc thật sự sử dụng; không cắt ảnh debug của người dùng.
