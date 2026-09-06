@@ -350,6 +350,16 @@ class MultiDevApp(production.MultiApp):
     ) -> None:
         self._clean_main_threads.pop(profile_id, None)
         self._clean_main_stop_events.pop(profile_id, None)
+        if outcome == "auto_main_ready":
+            sold = int(payload.get("sold_listings", 0) or 0)
+            gold = int(payload.get("collected_gold_slots", 0) or 0)
+            planted = int(payload.get("planted_count", 0) or 0)
+            self.auto_multi_dev_status.set(
+                "PASS GIAI ĐOẠN • "
+                f"bán {sold} ô • thu vàng {gold} ô • "
+                f"trồng {planted}/27 • sẵn sàng sản xuất"
+            )
+            return
         if outcome == "finished":
             self.auto_multi_dev_status.set(
                 "PASS • Đã vào game, đóng popup và xác nhận màn hình chính"
