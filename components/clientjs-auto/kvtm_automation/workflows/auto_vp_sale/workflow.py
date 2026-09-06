@@ -81,10 +81,11 @@ class AutoVpSaleWorkflow:
                     if attempt.status in (
                         "NO_ALLOWED_ITEM",
                         "NO_EXACT_TEN_ITEMS",
+                        "NO_SAFE_EXACT_TEN_ITEMS",
                     ):
                         depleted = True
                         self.context.log(
-                            "AUTO bán VP • cả ba VP không còn lô x10; dừng treo"
+                            "AUTO bán VP • cả ba VP không còn lựa chọn đúng loại và đủ x10; dừng treo"
                         )
                     else:
                         self.context.log(
