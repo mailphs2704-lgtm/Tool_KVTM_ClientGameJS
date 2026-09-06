@@ -138,9 +138,10 @@ def main() -> int:
     if workflow.index("collected += self.auto.stall.collect_own_stall_gold") > workflow.index("attempt = self.sale.sell_next_allowed"):
         raise AssertionError("AUTO Main must collect gold before listing VP")
 
-    require(gui, 'text="▶ Bán VP AUTO"', "AUTO sale button missing")
-    require(gui, 'getattr(self, "_start_clean_vp_sale", None)', "DEV-only sale callback guard missing")
-    require(gui, "command=sale_command", "AUTO sale button wiring missing")
+    require(gui, 'text="▶ Bắt đầu AUTO MULTI DEV"', "Consolidated AUTO Multi DEV start button missing")
+    require(gui, 'text="⚙ Cấu hình tốc độ"', "AUTO Multi DEV speed settings button missing")
+    if "▶ Bán VP AUTO" in gui:
+        raise AssertionError("Passed standalone VP sale button must stay removed")
     require(entry, "def _start_clean_vp_sale", "AUTO sale launcher missing")
     require(entry, "AutoVpSaleWorkflow(automation).run", "Resident sale workflow missing")
     require(entry, 'outcome = "sale_finished"', "AUTO sale result handling missing")
