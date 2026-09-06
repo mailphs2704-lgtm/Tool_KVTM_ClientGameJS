@@ -49,6 +49,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO Main planting static contract: VERIFIED" -ForegroundColor Green
 
+$AutoSpeedVerifier = Join-Path $RepoRoot "tools\verify_auto_speed_config_contract.py"
+if (-not (Test-Path -LiteralPath $AutoSpeedVerifier -PathType Leaf)) {
+    throw "Missing AUTO MULTI DEV speed contract verifier: $AutoSpeedVerifier"
+}
+& py.exe -3.11 $AutoSpeedVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw "AUTO MULTI DEV speed static contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "AUTO MULTI DEV speed static contract: VERIFIED" -ForegroundColor Green
+
 function Test-GitLfsPointer {
     param([Parameter(Mandatory = $true)][string]$Path)
 
