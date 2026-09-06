@@ -7,6 +7,7 @@ from typing import Any
 from .actions import (
     AutoVpRecognitionActions,
     BuyingActions,
+    FloorNavigationActions,
     InventoryActions,
     NavigationActions,
     PopupActions,
@@ -107,6 +108,9 @@ class KVAutomation:
 
         self.popup = PopupActions(context, self.vision, self.wait)
         self.planting = PlantingActions(
+            context, self.vision, self.wait, self.speed_config
+        )
+        self.floors = FloorNavigationActions(
             context, self.vision, self.wait, self.speed_config
         )
         self.navigation = NavigationActions(
