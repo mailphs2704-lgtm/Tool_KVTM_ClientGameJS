@@ -427,3 +427,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Baseline và after nay bắt buộc `.copy()` ngay khi capture để tạo hai snapshot bất biến trước khi so sánh 27 vùng chậu.
 - Không đổi thao tác goUp(1), nhận diện thu hoạch, đường kéo hay ngưỡng hình ảnh; không sửa bán VP, Dọn quầy, GUI, Bridge hoặc driver.
 - User live xác nhận nghiệp vụ thu hoạch + trồng PASS; hậu kiểm mới cần retest sau build.
+
+
+## 2026-09-06 — Bỏ cổng lỗi sai dựa trên waypoint của đường swipe
+
+- Live 15:37 lần thứ hai xác nhận game thu hoạch và trồng đúng, nhưng `changed_pots=0/27` vẫn phát ScreenTimeout.
+- Kết luận: các điểm trong `FARM_PATH_27` là waypoint điều khiển đường swipe liên tục, không phải tâm hình học của 27 chậu. Dùng crop quanh waypoint để đếm chậu đổi trạng thái là mô hình sai.
+- Giữ phép đo này ở detail log với `non_blocking=true` để chẩn đoán; tuyệt đối không dùng nó làm cổng FAIL.
+- Cổng nghiệp vụ vẫn gồm: nhận đúng `thu_hoach`, thực hiện harvest path, nhận đồng thời `next_gieo_trai+cay_hong`, rồi thực hiện đúng swipe path 27.
+- Hai lượt live 15:29 và 15:37 đã được người vận hành xác nhận thu hoạch/trồng đúng. Runtime planting transaction: PASS; heuristic waypoint: DISABLED_AS_GATE.
+- Không đổi thao tác trồng đang PASS và không sửa bán VP, Dọn quầy, GUI, queue, Bridge hoặc driver.

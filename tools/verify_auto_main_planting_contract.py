@@ -48,7 +48,10 @@ def main() -> int:
     require(action, "def _count_changed_pots", "Post-plant image verification missing")
     require(action, "baseline = self.vision.frame().copy()", "Baseline must detach shared capture buffer")
     require(action, "after = self.vision.frame().copy()", "After frame must detach shared capture buffer")
-    require(action, "if changed < 20:", "False PASS guard missing")
+    require(action, "changed_waypoint_regions=", "Planting diagnostic log missing")
+    require(action, "non_blocking=true", "Waypoint heuristic must remain non-blocking")
+    if "Swipe gieo chưa được xác minh" in action:
+        raise AssertionError("Invalid waypoint heuristic still blocks a proven planting transaction")
     require(action, '"thu_hoach", threshold=0.80', "Mapped ripe-tree template missing")
     require(action, '"next_gieo_trai", threshold=0.70', "Empty-pot scan missing")
     require(action, "if empty is not None and rose is not None:", "Empty state must prove seed picker")
