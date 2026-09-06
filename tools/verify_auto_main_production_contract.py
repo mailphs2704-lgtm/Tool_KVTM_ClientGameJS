@@ -36,11 +36,17 @@ def main() -> int:
     dev = DEV_ENTRY.read_text(encoding="utf-8")
 
     require(action, "DRYER_POINT = (262, 917)", "AUTO PRO dryer coordinate changed")
-    require(action, 'DRIED_APPLE_TEMPLATE = "tao_say"', "Dried apple guard missing")
+    require(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"', "AUTO PRO production template missing")
+    if 'DRIED_APPLE_PRODUCTION_TEMPLATE = "kho_tao_say"' in action:
+        raise AssertionError("Warehouse dried-apple template must never drive production")
     require(action, "PRODUCT_SEARCH_ZONE = (9, 341, 402, 386)", "Product reference zone changed")
     require(action, "DRIED_APPLE_GUARD_ZONE = (180, 360, 150, 125)",
             "Fixed dried-apple guard zone changed")
-    require(action, "PRODUCT_SLOT_0 = (252, 421)", "Dried apple slot changed")
+    require(action, "PRODUCT_SLOT_0 = (252, 421)", "Dried apple reference slot changed")
+    require(action, "empty_before, product_point = self._open_verified_dryer()",
+            "Detected production center is not returned to queue loop")
+    require(action, "(product_point, self.QUEUE_DROP_POINT)",
+            "Production swipe must start from detected AUTO PRO icon")
     require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.28", "Live-calibrated dried-apple threshold changed")
     require(action, "QUEUE_DROP_POINT = (400, 719)", "Queue drop point changed")
     require(action, "REQUIRED_COUNT = 9", "Exactly nine dried apples required")
