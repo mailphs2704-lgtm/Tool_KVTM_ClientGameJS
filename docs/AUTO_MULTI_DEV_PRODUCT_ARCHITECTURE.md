@@ -60,3 +60,21 @@ Sau khi sản xuất ở bất kỳ máy nào, hệ thống về sau phải ch�
 ### Hiệu chỉnh demo tầng 6 từ LIVE
 
 LIVE đầu tiên chứng minh năm gesture rời chỉ tới tầng 5. Mốc này bị đánh dấu NOT PASS. Contract đúng là sáu đơn vị tầng trong một gesture liên tục, mô phỏng nhịp lướt nhanh của Auto Pro; chỉ kết quả retest mới được phép nâng thành LIVE PASS.
+
+
+## Tạm dừng 2026-09-07 — Demo điều hướng tầng 6 NOT PASS
+
+- Retest `floors.glide_up(6)` với một gesture `(514,214)→(514,814)`, thời lượng `0.060s`, chỉ đưa màn hình từ màn hình chính lên tầng 1.
+- Log bridge xác nhận gesture thật đã gửi: `DOWN`, bốn `MOVE` tại y=`364/514/664/814`, rồi `UP`; `frame_change=75.49` chỉ chứng minh màn hình có đổi, không chứng minh đúng tầng.
+- Nguyên nhân đã biết: gesture quá nhanh; game gộp toàn đường kéo thành một lần chuyển tầng. Giả định “100 px = một tầng trong cùng gesture” bị bác bỏ.
+- Trạng thái nút `Demo chính → tầng 6`: tồn tại để thử nghiệm nhưng **NOT PASS / KHÔNG DÙNG trong pipeline**.
+- Không thay đổi kết quả đã xác nhận: lớp Táo sấy vẫn LIVE PASS `9/9`.
+- Lớp `36 Táo → 9 Nước táo → 9 Vải vàng` chưa triển khai.
+
+### Điểm tiếp tục ngày mai
+
+1. Đối chiếu lại chính xác bytecode/log của `goUp(n)` trong Auto Pro, gồm số touch, khoảng nghỉ giữa touch và cách giữ/ngắt gesture.
+2. Không suy diễn số tầng từ độ dài pixel hoặc chỉ từ `frame_change`.
+3. Xây tiêu chí nhận dạng tầng 6 hoặc một bằng chứng live riêng; thay đổi hình ảnh chung không đủ để PASS.
+4. Thử trong nút demo độc lập trước; chỉ sau khi tầng 6 LIVE PASS mới ghép thao tác trồng hàng thứ sáu.
+5. Giữ backlog module sửa quầy dùng chung, chưa ghép vào workflow.
