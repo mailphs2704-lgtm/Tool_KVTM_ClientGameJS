@@ -16,6 +16,7 @@ FILE_FUNCTIONS = (
     "Giới hạn mỗi yêu cầu trong tối đa năm tầng",
     "Chụp fresh frame trước và sau từng nhịp để phát hiện thao tác không phản hồi",
     "Chờ camera ổn định sau từng tầng trước khi module sản xuất quét máy",
+    "Lướt liên tục nhiều tầng bằng một gesture dài theo nhịp AUTO PRO",
 )
 
 
@@ -36,6 +37,8 @@ class FloorNavigationActions:
     VIEW_ZONE = (180, 170, 700, 720)
     MIN_FRAME_CHANGE = 1.0
     SETTLE_SECONDS = 0.65
+    GLIDE_UNIT_PIXELS = 100
+    MAX_GLIDE_STEPS = 6
 
     def __init__(
         self,
@@ -101,6 +104,43 @@ class FloorNavigationActions:
             requested_steps=requested,
             completed_steps=len(scores),
             frame_change_scores=tuple(scores),
+        )
+
+    def glide_up(self, steps: int = 6) -> FloorMoveResult:
+        """Move upward in one uninterrupted gesture; one 100px unit per floor."""
+        requested = int(steps)
+        if not 1 <= requested <= self.MAX_GLIDE_STEPS:
+            raise ValueError("glide steps phải nằm trong khoảng 1..6")
+        self.context.ensure_running()
+        x1, y1, _x2, _y2 = self.UP_SWIPE
+        endpoint = y1 + self.GLIDE_UNIT_PIXELS * requested
+        before = self.vision.frame().copy()
+        self.vision.driver.swipe(
+            x1, y1, x1, endpoint,
+            duration=self.speed_config.floor_swipe_duration,
+        )
+        self.waiter.sleep(self.SETTLE_SECONDS)
+        after = self.vision.frame().copy()
+        change = self._frame_change(before, after)
+        self.context.detail(
+            "AUTO floor glide | direction=UP | "
+            f"units={requested} | path=({x1},{y1})->({x1},{endpoint}) | "
+            f"duration={self.speed_config.floor_swipe_duration:.3f}s | "
+            f"frame_change={change:.2f}"
+        )
+        if change < self.MIN_FRAME_CHANGE:
+            raise ScreenTimeout(
+                "Lướt tầng liên tục không tạo thay đổi hình ảnh; dừng demo"
+            )
+        self.context.log(
+            "AUTO chuyển tầng • UP liên tục một gesture • "
+            f"{requested} đơn vị tầng đã có phản hồi hình ảnh"
+        )
+        return FloorMoveResult(
+            direction="UP",
+            requested_steps=requested,
+            completed_steps=requested,
+            frame_change_scores=(change,),
         )
 
     def up(self, steps: int = 1) -> FloorMoveResult:
