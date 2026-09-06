@@ -44,8 +44,8 @@ def main() -> int:
     for key in keys:
         require(config, key, f"Config key missing: {key}")
         require(gui, f'"{key}"', f"GUI key missing: {key}")
-        require(dev, f"speed_config={key}" if False else "speed_config=speed_values",
-                "Resident runtime speed injection missing")
+    require(dev, "speed_config=speed_values",
+            "Resident runtime speed injection missing")
     require(action, "self.speed_config.floor_swipe_duration",
             "Floor speed not applied")
     require(action, "self.speed_config.plant_harvest_duration",
