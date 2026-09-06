@@ -68,6 +68,11 @@ def main() -> int:
     )
     require(action, "self._next_item_index", "Round-robin cursor missing")
     require(action, '"sl10"', "Exact x10 quantity gate missing")
+    require(
+        action,
+        "for quantity_attempt in range(1, 4):",
+        "Bounded x10 render retries missing",
+    )
     require(action, "if quantity_marker is None:", "Below-x10 branch missing")
     require(action, "self.selling._cancel_dialog()", "Below-x10 cancel missing")
     require(
