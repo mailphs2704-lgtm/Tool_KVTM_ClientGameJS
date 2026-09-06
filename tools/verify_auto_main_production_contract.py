@@ -10,6 +10,7 @@ AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
 WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_apple_dryer/workflow.py"
 AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
+MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.png"
 
 
 def require(text: str, token: str, message: str) -> None:
@@ -28,6 +29,9 @@ def main() -> int:
         )
         if path in (ACTION, WORKFLOW) and functions > 10:
             raise AssertionError(f"{path}: {functions} functions exceeds limit 10")
+
+    if not MULTI_DEV_DRIED_APPLE.is_file():
+        raise AssertionError("Multi Dev production asset missing: tao_say.png")
 
     action = ACTION.read_text(encoding="utf-8")
     automation = AUTOMATION.read_text(encoding="utf-8")
