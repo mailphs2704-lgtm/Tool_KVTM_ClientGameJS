@@ -324,3 +324,12 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Logic nằm riêng tại `actions/auto_main_selling.py` và `workflows/auto_vp_sale/`. Không sửa `selling.py`, `stall.py`, `clear_stall_probe_runtime.py`, hàng đợi hoặc kế toán Dọn quầy.
 - Chạm dùng chung có giới hạn: thêm một nút trong khối GUI AUTO MULTI DEV, thêm nhãn log tùy ngữ cảnh với mặc định tương thích, và thêm verifier vào build.
 - Mỗi file Python mới có `FILE_FUNCTIONS`, không quá 10 trách nhiệm. AST syntax PASS; static contract được khóa bởi `tools/verify_auto_main_sale_contract.py`. Windows [1] build và live sale vẫn cần người vận hành xác minh trước khi gọi runtime PASS.
+
+
+## 2026-09-06 — AUTO Main sửa xác nhận giả khi chọn kho thành phẩm
+
+- Live log cho thấy `InventoryActions.select_storage(2)` ghi “Đã chọn” ngay sau click dù chưa xác minh tab giỏ hàng đã mở; AUTO quét sớm và kết luận sai ba VP đều NOT_FOUND.
+- Không sửa `inventory.py` vì đây là lớp dùng chung với Dọn quầy đang theo dõi ổn định.
+- `auto_main_selling.py` nay bấm trực tiếp nút kho thành phẩm số 2/biểu tượng giỏ hàng tại điểm AUTO PRO 1000x1000 `(450, 442)`, chờ render và quét tối đa ba fresh frame.
+- Log chỉ nói “đã bấm nút” thay vì báo chọn thành công giả. Chỉ kết luận `NO_ALLOWED_ITEM` sau ba lượt không nhận ra VP.
+- Static contract cấm AUTO Main quay lại dùng `self.inventory.select_storage()`. AST syntax PASS; live Windows cần chạy lại sau `[1]`.
