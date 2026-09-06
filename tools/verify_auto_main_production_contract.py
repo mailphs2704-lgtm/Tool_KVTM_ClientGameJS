@@ -46,19 +46,19 @@ def main() -> int:
     require(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"', "AUTO PRO production template missing")
     if 'DRIED_APPLE_PRODUCTION_TEMPLATE = "kho_tao_say"' in action:
         raise AssertionError("Warehouse dried-apple template must never drive production")
-    require(action, "PRODUCT_SEARCH_ZONE = (9, 341, 402, 386)", "Product reference zone changed")
-    require(action, "DRIED_APPLE_GUARD_ZONE = (180, 360, 150, 125)",
-            "Fixed dried-apple guard zone changed")
-    require(action, "PRODUCT_SLOT_0 = (252, 421)", "Dried apple reference slot changed")
-    require(action, "empty_before, product_point = self._open_verified_dryer()",
-            "Detected production center is not returned to queue loop")
-    require(action, "(product_point, self.QUEUE_DROP_POINT)",
-            "Production swipe must start from detected AUTO PRO icon")
-    require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.28", "Live-calibrated dried-apple threshold changed")
-    require(action, "QUEUE_DROP_POINT = (400, 719)", "Queue drop point changed")
+    require(action, "PRODUCT_SEARCH_ZONE = None",
+            "Production image must be searched across the open panel")
+    require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.70",
+            "Production image threshold must reject the observed 0.301 false match")
+    require(action, "empty_before, product_point, top_point = self._open_verified_dryer()",
+            "Detected source and top-slot centers are not returned to queue loop")
+    require(action, "(product_point, top_point)",
+            "Production swipe must run from library tao_say to detected top slot")
     require(action, "REQUIRED_COUNT = 9", "Exactly nine dried apples required")
     require(action, "empty < self.REQUIRED_COUNT", "Nine-empty-slot precondition missing")
-    require(action, "consumed < self.REQUIRED_COUNT", "Post-production accounting missing")
+    require(action, "current_empty >= empty_after",
+            "Per-drag empty-slot state-change gate missing")
+    require(action, "consumed != self.REQUIRED_COUNT", "Exact post-production accounting missing")
     require(action, "self.speed_config.vp_production_delay", "Production speed binding missing")
     require(action, "_collect_finished_before_open()", "Finished-output collection gate missing")
     require(action, "for batch, click_count in ((1, 1), (2, 5), (3, 5))",
@@ -72,16 +72,20 @@ def main() -> int:
     require(action, '"full_kho"', "Canonical full warehouse template missing")
     require(action, "TOP_EMPTY_SLOT_ZONE = (335, 650, 130, 135)",
             "Upper queue slot zone missing")
-    require(action, "top_match = self.vision.find(",
-            "Upper queue slot must use scalable library template")
+    require(action, "def _find_top_empty_slot(self):",
+            "Reusable upper queue-slot detector missing")
+    require(action, "top_match = self._find_top_empty_slot()",
+            "Upper queue count must use detected library template")
     require(action, "scales=(1.00, 1.15, 1.30, 1.45, 1.60)",
             "Upper queue slot scales changed")
     require(action, "lower = min(8, self._count_matches(",
             "Lower queue slots must count at most eight")
     require(action, "total = top + lower",
             "Nine-slot queue total must include upper and lower slots")
-    require(action, "slot cố định (252,421) không khớp Táo sấy",
+    require(action, "không khớp chắc chắn ảnh thư viện tao_say",
             "Wrong-item fail-close missing")
+    require(action, "Không tìm thấy ô top bằng ảnh thư viện o_trong",
+            "Top destination fail-close missing")
     require(automation, "self.production = ProductionActions(", "Resident production wiring missing")
     require(workflow, "plant_27_apples()", "Apple planting step missing")
     require(workflow, "produce_9_dried_apples()", "Dried apple production step missing")
