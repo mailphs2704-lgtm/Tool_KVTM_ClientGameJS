@@ -205,8 +205,9 @@ class StallActions:
             # Do not reuse the friend-stall price-coin heuristic here: the
             # collectible gold pile is also orange and was incorrectly skipped.
             cx, cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
-            top = 480 if local_slot <= 4 else 670
-            slot_zone = (cx - 52, top, 104, 55)
+            # Gold pile is inside the slot body. Keep the price bar below
+            # (top y~498, bottom y~688) completely outside this zone.
+            slot_zone = (cx - 58, cy - 70, 116, 100)
             match = self.vision.find(
                 "vang",
                 threshold=0.82,
