@@ -561,7 +561,11 @@ def main() -> int:
     require(stall, "slot_zone = (cx - 52, top, 104, 55)", "Gold recognition must stay inside one sale-slot band")
     require(stall, 'threshold=0.82', "Gold recognition threshold must reject weak stall decorations")
     require(stall, "verify_deadline = time.monotonic() + 2.0", "Gold collection acknowledgement timeout missing")
-    require(stall, "if disappeared:", "Only disappeared gold may increment accounting")
+    require(stall, "if not disappeared:", "Unresolved gold fail-closed guard missing")
+    require(stall, "raise ScreenTimeout(", "Unresolved gold must stop before accounting")
+    gold_method = stall.split("def collect_own_stall_gold", 1)[1].split("def next_view", 1)[0]
+    if gold_method.index("raise ScreenTimeout(") > gold_method.index("collected += 1"):
+        raise AssertionError("Gold accounting occurs before unresolved-gold failure")
     require(stall, "if self.listing_is_available(frame, local_slot):", "Unsold price coins must never be treated as collectible gold")
     require(stall, "self.vision.driver.click(cx, cy)", "Gold collection slot-center retry missing")
     require(stall, "Có vàng nhưng không thu được; giữ nguyên view, không swipe", "Unresolved gold must block view advance")
