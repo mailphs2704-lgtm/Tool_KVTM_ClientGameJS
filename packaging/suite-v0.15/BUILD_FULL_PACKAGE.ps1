@@ -139,8 +139,7 @@ function Copy-BoundedDiagnosticDirectory {
     }
     $copiedMiB = [Math]::Round($copiedBytes / 1MB, 1)
     Write-Host (
-        "[DATA] clear-stall-probe da giu {0} file/{1} MiB; " +
-        "log/report duoc uu tien, anh moi nhat nam trong gioi han." -f
+        "[DATA] clear-stall-probe da giu {0} file/{1} MiB; log/report duoc uu tien, anh moi nhat nam trong gioi han." -f
         $copiedFiles, $copiedMiB
     ) -ForegroundColor Green
 }
