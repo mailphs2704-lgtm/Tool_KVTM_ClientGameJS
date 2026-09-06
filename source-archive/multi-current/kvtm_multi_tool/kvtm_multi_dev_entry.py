@@ -127,7 +127,7 @@ class MultiDevApp(production.MultiApp):
         clean_actions = self.auto_multi_dev_stop_button.master
         self.auto_multi_dev_floor_demo_button = core.ttk.Button(
             clean_actions,
-            text="↟ Demo tầng 1 → 6",
+            text="↟ Demo chính → tầng 6",
             width=21,
             style="Action.TButton",
             command=self._start_clean_floor_demo,
@@ -174,11 +174,11 @@ class MultiDevApp(production.MultiApp):
         self._start_clean_auto_session()
 
     def _start_clean_floor_demo(self) -> None:
-        """Demo only: operator places the clone at floor 1, then move up five floors."""
+        """Demo only: start at the main farm view and glide continuously to floor 6."""
         selected = list(map(str, self.selected_ids()))
         if not selected:
             core.messagebox.showinfo(
-                core.APP_NAME, "Hãy chọn ít nhất một tài khoản đang ở tầng 1."
+                core.APP_NAME, "Hãy chọn ít nhất một tài khoản đang ở màn hình chính."
             )
             return
         self._clean_floor_demo_requested.update(selected)
@@ -345,16 +345,16 @@ class MultiDevApp(production.MultiApp):
             log_writer.action("PASS | vào game, đóng popup, xác nhận màn hình chính")
             if run_floor_demo:
                 context.stage("floor-demo-1-to-6-start")
-                log("DEMO chuyển tầng • tiền điều kiện: clone đang ở tầng 1")
-                movement = automation.floors.up(5)
+                log("DEMO chuyển tầng • tiền điều kiện: clone đang ở màn hình chính")
+                movement = automation.floors.glide_up(6)
                 payload = {
                     "requested_steps": movement.requested_steps,
                     "completed_steps": movement.completed_steps,
                     "frame_change_scores": list(movement.frame_change_scores),
                 }
                 log(
-                    "DEMO chuyển tầng PASS • tầng 1 → tầng 6 "
-                    f"• đã xác minh phản hồi {movement.completed_steps}/5 nhịp"
+                    "DEMO chuyển tầng PASS • màn hình chính → tầng 6 "
+                    "• một gesture liên tục, đã có phản hồi hình ảnh"
                 )
                 self.after(
                     0,
@@ -400,7 +400,7 @@ class MultiDevApp(production.MultiApp):
         if outcome == "floor_demo_finished":
             completed = int(payload.get("completed_steps", 0) or 0)
             self.auto_multi_dev_status.set(
-                f"DEMO PASS • tầng 1 → tầng 6 • {completed}/5 nhịp có phản hồi"
+                f"DEMO PASS • màn hình chính → tầng 6 • glide={completed}/6"
             )
             return
         if outcome == "auto_main_ready":
