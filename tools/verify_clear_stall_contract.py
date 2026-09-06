@@ -611,8 +611,13 @@ def main() -> int:
     require(multi, "def _stop_clean_auto_session", "Clean AUTO stop action missing")
     require(
         dev_entry,
-        "KVAutomation(context, image_runtime_ready=True)",
+        "image_runtime_ready=True",
         "AUTO MULTI DEV must reuse the resident image runtime",
+    )
+    require(
+        dev_entry,
+        "speed_config=speed_values",
+        "AUTO MULTI DEV speed configuration must preserve resident runtime wiring",
     )
     require(
         dev_entry,
