@@ -8,7 +8,7 @@ from ..runtime.wait import Waiter
 
 __all__ = ["PlantingActions"]
 FILE_FUNCTIONS = (
-    "Đưa farm lên đúng cụm tầng chứa điểm bắt đầu",
+    "Giữ nguyên mốc tầng 1 do Clean Main vừa xác nhận",
     "Mở trạng thái chậu đầu tầng một",
     "Phân biệt cây chín và chậu trống bằng template AUTO PRO",
     "Thu hoạch đúng 27 chậu nếu phát hiện cây chín",
@@ -38,15 +38,11 @@ class PlantingActions:
         (335, 40), (578, 40),
     )
     OPEN_PLANT_POINT = (388, 946)
-    CLOSE_SIDE_POINT = (975, 316)
     CLOSE_POINT = (965, 198)
-    GO_UP_START = (387, 69)
-    GO_UP_END = (387, 918)
     SEED_ZONE = (179, 773, 230, 166)
     EMPTY_READY_ZONE = (124, 729, 347, 236)
     HARVEST_ZONE = (222, 703, 218, 191)
     SWIPE_DURATION = 0.035
-    GO_UP_DURATION = 0.35
 
     def __init__(
         self,
@@ -63,16 +59,27 @@ class PlantingActions:
         """Return the immutable AUTO PRO reference path for 27 pots."""
         return cls.FARM_PATH_27
 
-    def _go_up_four(self) -> None:
-        """Mirror AUTO PRO goUp(4) before a 27-tree planting operation."""
-        self.context.ensure_running()
-        self.vision.driver.click(*self.CLOSE_SIDE_POINT)
-        self.waiter.sleep(0.20)
-        self.vision.driver.swipe(
-            *self.GO_UP_START, *self.GO_UP_END, duration=self.GO_UP_DURATION
+    def _count_changed_pots(self, before, after) -> int:
+        """Require visible pot changes; sending a swipe alone is never PASS."""
+        centers = (
+            (335, 940), (490, 940), (578, 940), (645, 940), (720, 940), (835, 940),
+            (835, 725), (665, 725), (595, 725), (505, 725), (430, 725), (335, 725),
+            (335, 505), (490, 505), (578, 505), (645, 505), (720, 505), (835, 505),
+            (835, 280), (665, 280), (595, 280), (505, 280), (430, 280), (335, 280),
+            (335, 40), (490, 40), (578, 40),
         )
-        self.waiter.sleep(0.65)
-        self.context.log("AUTO trồng • đã lên tầng gieo theo AUTO PRO goUp(4)")
+        height, width = before.shape[:2]
+        changed = 0
+        for x, y in centers:
+            x0, x1 = max(0, x - 24), min(width, x + 24)
+            y0, y1 = max(0, y - 24), min(height, y + 24)
+            old = before[y0:y1, x0:x1].astype("int16")
+            new = after[y0:y1, x0:x1].astype("int16")
+            if old.shape == new.shape and old.size:
+                difference = float(abs(new - old).mean())
+                if difference >= 8.0:
+                    changed += 1
+        return changed
 
     def _scan_first_pot_state(self) -> tuple[str, object | None]:
         self.context.ensure_running()
@@ -102,15 +109,18 @@ class PlantingActions:
         )
         self.waiter.sleep(0.50)
 
-    def _open_seed_picker(self) -> None:
-        self._go_up_four()
+    def _open_seed_picker(self):
+        baseline = self.vision.frame()
+        self.context.log(
+            "AUTO trồng • giữ mốc tầng 1 hiện tại • không gọi goUp(4)"
+        )
         for attempt in range(1, 6):
             state, _match = self._scan_first_pot_state()
             if state == "EMPTY":
                 self.context.log(
                     f"AUTO trồng • chậu trống và bảng hạt READY • lần {attempt}/5"
                 )
-                return
+                return baseline
             if state == "RIPE":
                 self._harvest_27()
                 continue
@@ -124,7 +134,7 @@ class PlantingActions:
         )
 
     def plant_27_roses(self) -> int:
-        self._open_seed_picker()
+        baseline = self._open_seed_picker()
         self.context.ensure_running()
         rose = self.vision.find(
             self.ROSE_TEMPLATE, threshold=0.87, zone=self.SEED_ZONE,
@@ -140,8 +150,17 @@ class PlantingActions:
         self.vision.driver.swipe_points(path, duration=self.SWIPE_DURATION)
         self.waiter.sleep(0.40)
         self.vision.driver.click(*self.CLOSE_POINT)
-        self.waiter.sleep(0.30)
+        self.waiter.sleep(0.55)
+        after = self.vision.frame()
+        changed = self._count_changed_pots(baseline, after)
+        self.context.detail(
+            f"AUTO rose planting verification | changed_pots={changed}/27 | minimum=20"
+        )
+        if changed < 20:
+            raise ScreenTimeout(
+                f"Swipe gieo chưa được xác minh: chỉ {changed}/27 vùng chậu thay đổi"
+            )
         self.context.log(
-            "AUTO trồng • đã gửi đường gieo Hoa hồng 27/27 chậu • chờ LIVE xác minh"
+            f"AUTO trồng • xác minh hình ảnh {changed}/27 vùng chậu đã thay đổi"
         )
         return self.TREE_COUNT

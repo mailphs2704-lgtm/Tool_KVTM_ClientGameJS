@@ -388,3 +388,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Nếu cây chín thì thu hoạch đúng đường 27 chậu và quét lại; chỉ khi chậu trống mới gieo.
 - Chỉ sửa module/verifier trồng và tài liệu; không sửa bán VP, Dọn quầy, GUI, queue, bridge hoặc driver.
 - Static syntax PASS; Windows build/LIVE retest PENDING.
+
+
+## 2026-09-06 — Loại false PASS và bỏ goUp(4) thừa trong Clean Main
+
+- Live 14:52 báo `planted=27/27` dù người vận hành xác nhận camera đã bỏ qua khoảng hai tầng.
+- Nguyên nhân: `goUp(4)` trong AUTO PRO là thao tác tương đối phụ thuộc trạng thái camera của chuỗi sản xuất cũ; Clean Main vừa vào farm đã có mốc tầng 1 nên gọi lại làm lệch mốc.
+- Lớp trồng không gọi `goUp(4)` nữa; giữ mốc farm vừa được `ensure_main_screen` xác nhận và kiểm tra trực tiếp chậu đầu `(388,946)`.
+- Bổ sung cổng hậu kiểm 27 vùng chậu: tối thiểu 20/27 vùng phải thay đổi sau swipe. Không đạt thì ScreenTimeout, tuyệt đối không ghi `planted=27/27`.
+- Chỉ sửa planting/verifier/docs; bán VP, Dọn quầy, GUI, queue, Bridge và driver không đổi.
+- Static syntax PASS; LIVE retest PENDING.
