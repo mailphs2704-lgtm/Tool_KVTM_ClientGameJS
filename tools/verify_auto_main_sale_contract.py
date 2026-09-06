@@ -56,7 +56,11 @@ def main() -> int:
 
     require(action, "class AutoMainSellingActions", "Isolated sale action missing")
     require(action, "if not self.selling._find_empty_slot()", "Empty-slot gate missing")
+    require(action, "basket_button = (450, 442)", "Exact basket-tab point missing")
+    require(action, "for attempt in range(1, 4):", "Bounded storage render retries missing")
+    require(action, 'log_prefix="AUTO SELL VP"', "Sale recognition log label missing")
     require(action, "self.recognition.scan_samples(", "Allowed-item scan missing")
+    forbid(action, "self.inventory.select_storage(", "AUTO sale must not trust unverified shared storage selection")
     require(action, "max(recognized", "Best recognized VP selection missing")
     require(action, "self.selling._finish_batch_from_match(", "Verified listing gate missing")
     require(action, 'status="NO_ALLOWED_ITEM"', "No-item safe stop missing")
