@@ -1116,11 +1116,11 @@ class MultiApp(tk.Tk):
             clean_body.columnconfigure(column, weight=1)
         clean_actions = ttk.Frame(multi_dev_tab, style="Detail.TFrame")
         clean_actions.pack(fill="x", padx=8, pady=(16, 0))
-        self.auto_multi_dev_start_button = ttk.Button(
-            clean_actions, text="▶ Vào game + đóng popup", width=28,
-            style="AutoStart.TButton", command=self._start_clean_auto_session,
+        self.auto_multi_dev_speed_button = ttk.Button(
+            clean_actions, text="⚙ Cấu hình tốc độ", width=24,
+            style="Action.TButton", command=self._auto_ui_configure,
         )
-        self.auto_multi_dev_start_button.pack(side="left", padx=(0, 8))
+        self.auto_multi_dev_speed_button.pack(side="left", padx=(0, 8))
         self.auto_multi_dev_stop_button = ttk.Button(
             clean_actions, text="■ Dừng AUTO sạch", width=22,
             style="AutoStop.TButton", command=self._stop_clean_auto_session,
@@ -1138,37 +1138,6 @@ class MultiApp(tk.Tk):
             command=lambda: self._open_clean_main_log("detail"),
         )
         self.auto_multi_dev_detail_log_button.pack(side="left")
-
-        clean_probe_actions = ttk.Frame(multi_dev_tab, style="Detail.TFrame")
-        clean_probe_actions.pack(fill="x", padx=8, pady=(8, 0))
-        self.auto_multi_dev_vp_probe_button = ttk.Button(
-            clean_probe_actions,
-            text="⌕ Kiểm tra nhận diện VP (READ-ONLY)",
-            width=36,
-            style="Action.TButton",
-            command=self._start_clean_vp_recognition_probe,
-        )
-        self.auto_multi_dev_vp_probe_button.pack(side="left", padx=(0, 8))
-        sale_command = getattr(self, "_start_clean_vp_sale", None)
-        if sale_command is not None:
-            self.auto_multi_dev_vp_sale_button = ttk.Button(
-                clean_probe_actions,
-                text="▶ Bán VP AUTO",
-                width=22,
-                style="AutoStart.TButton",
-                command=sale_command,
-            )
-            self.auto_multi_dev_vp_sale_button.pack(side="left", padx=(0, 8))
-        plant_command = getattr(self, "_start_clean_rose_plant", None)
-        if plant_command is not None:
-            self.auto_multi_dev_rose_plant_button = ttk.Button(
-                clean_probe_actions,
-                text="▶ Trồng 27 Hoa hồng",
-                width=22,
-                style="AutoStart.TButton",
-                command=plant_command,
-            )
-            self.auto_multi_dev_rose_plant_button.pack(side="left")
 
         main_tab = self.auto_feature_tabs["main"]
         # These switches map one-to-one to AUTO PRO's legacy option keys.
