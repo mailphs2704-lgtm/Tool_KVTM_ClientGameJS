@@ -356,3 +356,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Chỉ khi cả item guard và exact-10 guard PASS mới bấm Đặt bán; screen-change verification vẫn là cổng kế toán cuối.
 - Thay đổi chỉ trong action/workflow/verifier AUTO Main. Không sửa Dọn quầy.
 - Log mới người dùng gửi lúc 12:57 kết thúc bằng `AutomationStopped` do yêu cầu dừng, không phải crash Bridge.
+
+
+## 2026-09-06 — AUTO Main tiếp tục đủ ba VP sau một loại dưới x10
+
+- Live run 13:08: Táo sấy được phát hiện còn 5 và exact-x10 guard đã chặn đúng, nhưng action quay lại tìm ô trống khi dialog/kho còn mở nên trả sai `NO_EMPTY_SLOT`; workflow bỏ qua hai loại còn lại.
+- Sửa transaction scope: click ô trống đúng một lần, mở kho một lần, rồi kiểm tra tối đa đủ ba loại trong cùng chức năng.
+- Khi một loại dưới x10 hoặc sai icon, nhấn Back để hủy dialog; bắt buộc xác minh `dat_ban` biến mất và `kho_thanh_pham` vẫn hiện trước khi chọn loại kế tiếp.
+- Nếu không chứng minh được đã trở lại kho sau ba lần thì dừng bằng ScreenTimeout, không thao tác mù.
+- Chỉ kết luận hết lựa chọn sau khi đã kiểm tra đủ ba loại hoặc cả ba đã bị đánh dấu thiếu/không an toàn.
+- Không sửa workflow/runtime Dọn quầy.
