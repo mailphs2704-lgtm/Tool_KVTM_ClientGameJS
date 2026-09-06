@@ -495,3 +495,12 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Chuẩn hóa lỗi `fullkho` thành asset thật `full_kho`.
 - Full Build chạy `verify_multi_dev_asset_contract.py`.
 - Chức năng 1 vẫn là `9 Táo sấy → 9 Vải vàng`; hiện tiếp tục LIVE lớp sản xuất Táo sấy.
+
+
+## 2026-09-06 — Mốc tiếp theo Chức năng 1: Nước táo
+
+- Táo sấy đã LIVE PASS `9/9`: match `tao_say=1.000`, đường kéo động tới ô top và ô trống giảm `9→0`.
+- Công thức tiếp theo: `36 Táo → 9 Nước táo` tại máy tầng 2 → `9 Vải vàng`.
+- Hình học gieo: 5 tầng × 6 cây, sau đó từ tầng 1 lên tầng 6 và gieo thêm 1 hàng × 6 cây.
+- Mốc hiện tại chỉ thêm nút demo độc lập `Demo tầng 1 → 6`; operator đặt clone ở tầng 1, demo chạy đúng 5 nhịp UP có hậu kiểm thay đổi frame.
+- Ghi backlog: tách thao tác sửa quầy sau sản xuất thành module dùng chung cho tất cả máy rồi mới ghép vào các workflow.
