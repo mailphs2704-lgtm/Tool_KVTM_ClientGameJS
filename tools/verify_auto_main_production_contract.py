@@ -44,8 +44,14 @@ def main() -> int:
     require(action, "empty < self.REQUIRED_COUNT", "Nine-empty-slot precondition missing")
     require(action, "consumed < self.REQUIRED_COUNT", "Post-production accounting missing")
     require(action, "self.speed_config.vp_production_delay", "Production speed binding missing")
-    require(action, "Không mở được panel máy sấy tầng 1", "Panel-open fail-close missing")
-    require(action, "for attempt in range(1, 4)", "Three verified panel retries missing")
+    require(action, "_collect_finished_before_open()", "Finished-output collection gate missing")
+    require(action, "for batch, click_count in ((1, 1), (2, 5), (3, 5))",
+            "AUTO PRO bounded collection pulses missing")
+    require(action, "đã thu hết VP chắn máy và mở được panel tầng 1",
+            "Collection-to-panel verification missing")
+    require(action, "Không thu hết VP hoàn thành hoặc không mở được panel",
+            "Collection/panel fail-close missing")
+    require(action, "for attempt in range(1, 4)", "Three product-render retries missing")
     require(action, 'threshold=0.70', "AUTO PRO initial empty-slot gate missing")
     require(action, "Panel máy đã mở nhưng không nhận diện được Táo sấy",
             "Wrong-item fail-close missing")
@@ -67,7 +73,7 @@ def main() -> int:
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=clean_resident")
-    print("flow=plant_27_apples_then_queue_9_dried_apples")
+    print("flow=plant_27_apples_then_collect_finished_output_then_queue_9_dried_apples")
     print("dryer_floor=1")
     print("legacy_auto_pro=reference_only")
     print("stable_sale_and_clear_stall=untouched")
