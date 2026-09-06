@@ -106,9 +106,9 @@ def main() -> int:
         'for checked_count in range(1, len(self.ITEM_ORDER) + 1):',
         "All three items must be checked in the same inventory operation",
     )
-    if action.count("self.selling._find_empty_slot()") != 1:
+    if action.count("self.selling._find_empty_slot()") != 2:
         raise AssertionError(
-            "Empty stall slot must be selected once before checking all three items"
+            "Empty-slot calls must be limited to initial selection plus verified recovery"
         )
     require(
         action,
