@@ -522,3 +522,11 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Trạng thái chức năng 1: bán VP/trồng 27 Táo/sản xuất Táo sấy đã đạt mốc trước; Táo sấy LIVE PASS `9/9`. Nước táo và Vải vàng chưa triển khai.
 - NEXT: forensic `Auto Pro goUp(n)` chính xác; xác định cadence touch/gesture và bằng chứng tầng 6; sửa demo rồi LIVE retest.
 - Backlog giữ nguyên: `36 Táo = 30 + 6 tầng 6`, máy Nước táo tầng 2, module sửa quầy dùng chung sau sản xuất.
+
+
+## 2026-09-07 — Ràng buộc nhận dạng tầng 6
+
+- Screenshot tầng 6 mới chỉ là evidence, không phải template.
+- Không dùng VP/cây, giao diện máy, sao/cấp máy hoặc mây để nhận dạng vì tất cả đều thay đổi.
+- Không crop screenshot người dùng vào asset Multi Dev.
+- NEXT bắt buộc: forensic Auto Pro để tìm cơ chế xác định tầng thật; không tiếp tục suy đoán bằng pixel, `frame_change` hoặc template cảnh tổng hợp.
