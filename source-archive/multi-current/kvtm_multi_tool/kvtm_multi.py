@@ -65,11 +65,19 @@ DEFAULT_AUTO_TUNING = {
     "check_nang_kho": 0.5,
     "delay_vao_game": 55,
 }
+MULTI_DEV_TUNING_KEYS = (
+    "floor_swipe_duration",
+    "plant_harvest_duration",
+    "vp_production_delay",
+)
+AUTO_LEGACY_TUNING_KEYS = tuple(
+    key for key in DEFAULT_AUTO_TUNING if key not in MULTI_DEV_TUNING_KEYS
+)
 AUTO_TUNING_SPECS = {
-    "floor_swipe_duration": ("MULTI DEV • Kéo tầng (giây/swipe)", 0.05, 3.0, False),
-    "plant_harvest_duration": ("MULTI DEV • Trồng/thu cây (giây/đoạn)", 0.01, 3.0, False),
-    "vp_production_delay": ("MULTI DEV • Sản xuất VP (giây/thao tác)", 0.05, 10.0, False),
-    "harvest_speed": ("AUTO PRO cũ • Tốc độ cào", 0.01, 3.0, False),
+    "floor_swipe_duration": ("Kéo tầng (giây/swipe)", 0.05, 3.0, False),
+    "plant_harvest_duration": ("Trồng/thu cây (giây/đoạn)", 0.01, 3.0, False),
+    "vp_production_delay": ("Sản xuất VP (giây/thao tác)", 0.05, 10.0, False),
+    "harvest_speed": ("Tốc độ cào", 0.01, 3.0, False),
     "go_up_wait": ("Chờ sau khi kéo tầng", 0.05, 10.0, False),
     "production_wait": ("Chờ sản xuất", 0.05, 10.0, False),
     "swipe_count": ("Số lần kéo màn", 1, 20, True),
@@ -1123,7 +1131,7 @@ class MultiApp(tk.Tk):
         self.auto_multi_dev_start_button.pack(side="left", padx=(0, 8))
         self.auto_multi_dev_speed_button = ttk.Button(
             clean_actions, text="⚙ Cấu hình tốc độ", width=24,
-            style="Action.TButton", command=self._auto_ui_configure,
+            style="Action.TButton", command=self._auto_multi_dev_configure,
         )
         self.auto_multi_dev_speed_button.pack(side="left", padx=(0, 8))
         self.auto_multi_dev_stop_button = ttk.Button(
@@ -3475,59 +3483,75 @@ class MultiApp(tk.Tk):
             self.auto_progress_text.set("0%")
 
     def _auto_ui_configure(self) -> None:
+        self._open_auto_tuning_dialog(
+            title="Cấu hình AUTO",
+            heading="CẤU HÌNH TỐC ĐỘ AUTO",
+            description="Các thông số riêng của luồng AUTO hiện tại.",
+            keys=AUTO_LEGACY_TUNING_KEYS,
+        )
+
+    def _auto_multi_dev_configure(self) -> None:
+        self._open_auto_tuning_dialog(
+            title="Cấu hình tốc độ AUTO MULTI DEV",
+            heading="CẤU HÌNH TỐC ĐỘ AUTO MULTI DEV",
+            description=(
+                "Chỉ hiển thị các tốc độ tác động trực tiếp đến AUTO MULTI DEV. "
+                "Số nhỏ hơn chạy nhanh hơn."
+            ),
+            keys=MULTI_DEV_TUNING_KEYS,
+        )
+
+    def _open_auto_tuning_dialog(
+        self, *, title: str, heading: str, description: str, keys: tuple[str, ...]
+    ) -> None:
         dialog = tk.Toplevel(self)
-        dialog.title("Cấu hình tốc độ AUTO ClientJS")
+        dialog.title(title)
         dialog.transient(self)
         dialog.resizable(False, False)
         dialog.configure(background="#f3f6fa")
         dialog.grab_set()
 
-        header = ttk.Frame(dialog, padding=(16, 14, 16, 8))
-        header.pack(fill="x")
+        panel = ttk.Frame(dialog, padding=(16, 14), style="Detail.TFrame")
+        panel.pack(fill="both", expand=True)
+        ttk.Label(panel, text=heading, style="AutoKey.TLabel").pack(anchor="w")
         ttk.Label(
-            header, text="CẤU HÌNH TỐC ĐỘ AUTO CLIENTJS",
-            style="AutoKey.TLabel",
-        ).pack(anchor="w")
-        ttk.Label(
-            header,
-            text=(
-                "Ba dòng MULTI DEV được tách độc lập theo yêu cầu. "
-                "Các dòng AUTO PRO cũ được giữ để tương thích."
-            ),
-            style="AutoValue.TLabel",
-        ).pack(anchor="w", pady=(4, 0))
+            panel, text=description, style="AutoValue.TLabel",
+        ).pack(anchor="w", pady=(4, 10))
+        ttk.Separator(panel, orient="horizontal").pack(fill="x", pady=(0, 10))
 
-        body = ttk.Frame(dialog, padding=(16, 4, 16, 8))
+        body = ttk.LabelFrame(
+            panel, text="THÔNG SỐ TỐC ĐỘ", padding=(12, 8),
+            style="Panel.TLabelframe",
+        )
         body.pack(fill="both", expand=True)
         current = self._collect_auto_tuning()
         variables = {}
-        items = list(AUTO_TUNING_SPECS.items())
-        split_at = (len(items) + 1) // 2
+        items = [(key, AUTO_TUNING_SPECS[key]) for key in keys]
+        split_at = len(items) if len(items) <= 6 else (len(items) + 1) // 2
         for index, (key, (label, minimum, maximum, integer)) in enumerate(items):
             column_group = 0 if index < split_at else 1
             row = index if column_group == 0 else index - split_at
             base_column = column_group * 2
             ttk.Label(body, text=label, style="AutoValue.TLabel").grid(
                 row=row, column=base_column, sticky="w",
-                padx=(0 if column_group == 0 else 24, 8), pady=5,
+                padx=(0 if column_group == 0 else 24, 12), pady=6,
             )
-            value = current.get(key, DEFAULT_AUTO_TUNING[key])
-            variable = tk.StringVar(value=str(value))
+            variable = tk.StringVar(
+                value=str(current.get(key, DEFAULT_AUTO_TUNING[key]))
+            )
             variables[key] = variable
             increment = 1 if integer else (0.01 if minimum < 0.05 else 0.05)
-            tk.Spinbox(
+            ttk.Spinbox(
                 body, from_=minimum, to=maximum, increment=increment,
-                textvariable=variable, width=9, justify="right",
-                font=("Segoe UI", 10),
-            ).grid(row=row, column=base_column + 1, sticky="e", pady=5)
+                textvariable=variable, width=10, justify="right",
+            ).grid(row=row, column=base_column + 1, sticky="e", pady=6)
 
-        ttk.Separator(dialog, orient="horizontal").pack(fill="x", padx=16)
-        actions = ttk.Frame(dialog, padding=(16, 10, 16, 14))
-        actions.pack(fill="x")
+        actions = ttk.Frame(panel, style="Detail.TFrame")
+        actions.pack(fill="x", pady=(12, 0))
 
         def reset_defaults():
-            for key, default in DEFAULT_AUTO_TUNING.items():
-                variables[key].set(str(default))
+            for key in keys:
+                variables[key].set(str(DEFAULT_AUTO_TUNING[key]))
 
         def save_values():
             validated = {}
@@ -3548,17 +3572,21 @@ class MultiApp(tk.Tk):
                     )
                     return
                 validated[key] = value
-            self.settings["auto_tuning"] = validated
+
+            saved = dict(self.settings.get("auto_tuning", {}))
+            saved.update(validated)
+            self.settings["auto_tuning"] = saved
             save_settings(self.settings)
-            updated_workers = 0
+            full_tuning = self._collect_auto_tuning()
             payload = json.dumps(
-                {"command": "update_tuning", "tuning": validated},
+                {"command": "update_tuning", "tuning": full_tuning},
                 ensure_ascii=True, separators=(",", ":"),
             ) + "\n"
+            updated_workers = 0
             for worker in [
-            *list(self._auto_workers.values()),
-            *list(self._clean_auto_workers.values()),
-        ]:
+                *list(self._auto_workers.values()),
+                *list(self._clean_auto_workers.values()),
+            ]:
                 try:
                     if worker.poll() is None and worker.stdin:
                         worker.stdin.write(payload)
@@ -3566,14 +3594,11 @@ class MultiApp(tk.Tk):
                         updated_workers += 1
                 except (OSError, ValueError):
                     pass
-            if updated_workers:
-                self.note.set(
-                    f"Đã lưu và áp dụng tốc độ mới cho {updated_workers} AUTO đang chạy."
-                )
-            else:
-                self.note.set(
-                    "Đã lưu cấu hình; sẽ áp dụng khi bắt đầu AUTO."
-                )
+            self.note.set(
+                f"Đã lưu và áp dụng cho {updated_workers} AUTO đang chạy."
+                if updated_workers
+                else "Đã lưu cấu hình; sẽ áp dụng khi bắt đầu AUTO."
+            )
             dialog.destroy()
 
         ttk.Button(
@@ -3590,8 +3615,12 @@ class MultiApp(tk.Tk):
         ).pack(side="right", padx=(0, 8))
 
         dialog.update_idletasks()
-        x = self.winfo_rootx() + max(0, (self.winfo_width() - dialog.winfo_width()) // 2)
-        y = self.winfo_rooty() + max(0, (self.winfo_height() - dialog.winfo_height()) // 2)
+        x = self.winfo_rootx() + max(
+            0, (self.winfo_width() - dialog.winfo_width()) // 2
+        )
+        y = self.winfo_rooty() + max(
+            0, (self.winfo_height() - dialog.winfo_height()) // 2
+        )
         dialog.geometry(f"+{x}+{y}")
         dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
         dialog.wait_window()
