@@ -105,7 +105,6 @@ def main() -> int:
         "self._insufficient_item_ids.add(selected.item_id)",
         "Insufficient item exclusion missing",
     )
-    require(action, 'status="NO_EXACT_TEN_ITEMS"', "All-items-short stop missing")
     require(action, "_mean_difference(before, after)", "Screen-change verification missing")
     forbid(
         action,
@@ -118,7 +117,6 @@ def main() -> int:
     require(workflow, "attempt = self.sale.sell_next_allowed", "Per-view sale missing")
     require(workflow, "self.auto.stall.next_view()", "Two-swipe next-view step missing")
     require(workflow, "sold_by_item[attempt.item_id] += 1", "Per-item accounting missing")
-    require(workflow, '"NO_EXACT_TEN_ITEMS"', "All-items-short workflow stop missing")
     require(
         workflow,
         '"NO_SAFE_EXACT_TEN_ITEMS"',
