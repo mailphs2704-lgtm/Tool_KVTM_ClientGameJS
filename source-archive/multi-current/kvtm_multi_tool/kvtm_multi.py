@@ -1116,6 +1116,11 @@ class MultiApp(tk.Tk):
             clean_body.columnconfigure(column, weight=1)
         clean_actions = ttk.Frame(multi_dev_tab, style="Detail.TFrame")
         clean_actions.pack(fill="x", padx=8, pady=(16, 0))
+        self.auto_multi_dev_start_button = ttk.Button(
+            clean_actions, text="▶ Bắt đầu AUTO MULTI DEV", width=28,
+            style="AutoStart.TButton", command=self._start_clean_auto_session,
+        )
+        self.auto_multi_dev_start_button.pack(side="left", padx=(0, 8))
         self.auto_multi_dev_speed_button = ttk.Button(
             clean_actions, text="⚙ Cấu hình tốc độ", width=24,
             style="Action.TButton", command=self._auto_ui_configure,
