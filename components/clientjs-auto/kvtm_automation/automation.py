@@ -16,6 +16,7 @@ from .actions import (
 )
 from .context import AutomationContext
 from .runtime.assets import AssetLibrary
+from .runtime.auto_speed_config import AutoSpeedConfig
 from .runtime.bootstrap import install_binary_dependencies
 from .runtime.driver import ClientJSDriverFactory
 from .runtime.vision import VisionEngine
@@ -52,8 +53,14 @@ class KVAutomation:
         *,
         driver: Any | None = None,
         image_runtime_ready: bool = False,
+        speed_config: AutoSpeedConfig | dict[str, object] | None = None,
     ) -> None:
         self.context = context
+        self.speed_config = (
+            speed_config
+            if isinstance(speed_config, AutoSpeedConfig)
+            else AutoSpeedConfig.from_mapping(speed_config)
+        )
         self.component_root = Path(__file__).resolve().parents[1]
         self.driver_factory = ClientJSDriverFactory(
             self.component_root,
@@ -99,7 +106,9 @@ class KVAutomation:
         self.wait = Waiter(context)
 
         self.popup = PopupActions(context, self.vision, self.wait)
-        self.planting = PlantingActions(context, self.vision, self.wait)
+        self.planting = PlantingActions(
+            context, self.vision, self.wait, self.speed_config
+        )
         self.navigation = NavigationActions(
             context,
             self.vision,
