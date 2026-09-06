@@ -57,7 +57,7 @@ def main() -> int:
     require(action, "if empty is not None and rose is not None:", "Empty state must prove seed picker")
     require(action, "self._harvest_27()", "Harvest-before-plant transition missing")
     require(action, "zone=self.SEED_ZONE", "Rose seed zone guard missing")
-    require(action, "swipe_points(path, duration=self.SWIPE_DURATION)", "Single path swipe missing")
+    require(action, "duration=self.speed_config.plant_harvest_duration", "Configured planting speed missing")
     require(action, "self.rose_path()[1:]", "Seed center must replace reference start point")
     require(action, 'raise ScreenTimeout(', "Fail-closed planting guard missing")
     require(workflow, "self.auto.planting.plant_27_roses()", "Workflow planting call missing")
