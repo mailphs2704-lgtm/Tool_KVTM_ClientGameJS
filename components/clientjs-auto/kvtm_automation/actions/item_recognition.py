@@ -65,7 +65,7 @@ class AutoVpRecognitionActions:
         self.waiter = waiter
         self.inventory = inventory
 
-    def scan_samples(self) -> tuple[VpRecognition, ...]:
+    def scan_samples(self, *, log_prefix: str = "READ-ONLY VP") -> tuple[VpRecognition, ...]:
         """Scan configured samples without clicking an inventory item."""
         self.context.ensure_running()
         results: list[VpRecognition] = []
@@ -93,7 +93,7 @@ class AutoVpRecognitionActions:
             )
             results.append(result)
             self.context.log(
-                f"READ-ONLY VP | {spec.label} | "
+                f"{log_prefix} | {spec.label} | "
                 + (
                     f"FOUND score={result.score:.3f} center={result.center}"
                     if result.found else "NOT_FOUND"
