@@ -249,7 +249,7 @@ class MultiDevApp(production.MultiApp):
         self._clean_rose_plant_requested.difference_update(selected)
         if launched:
             self.auto_multi_dev_status.set(
-                f"Resident runtime • đang vào game và đóng popup • {launched} tài khoản"
+                f"AUTO MULTI DEV • đang chạy chuỗi bán → trồng • {launched} tài khoản"
             )
         if busy:
             self.note.set("AUTO MULTI DEV bỏ qua tài khoản đang bận: " + ", ".join(busy))
@@ -316,41 +316,18 @@ class MultiDevApp(production.MultiApp):
             result = GameSessionWorkflow(automation).run(timeout=180.0)
             payload = result.to_dict()
             log_writer.action("PASS | vào game, đóng popup, xác nhận màn hình chính")
-            outcome = "finished"
-            if run_vp_sale:
-                from kvtm_automation.workflows.auto_vp_sale import (
-                    AutoVpSaleWorkflow,
-                )
-                sale_result = AutoVpSaleWorkflow(automation).run(timeout=120.0)
-                payload = sale_result.to_dict()
-                outcome = "sale_finished"
-                log_writer.action(
-                    "AUTO bán VP hoàn tất | "
-                    f"listed={payload.get('sold_listings', 0)} | "
-                    f"gold={payload.get('collected_gold_slots', 0)}"
-                )
-            elif run_rose_plant:
-                from kvtm_automation.workflows.auto_planting import (
-                    RosePlantingWorkflow,
-                )
-                plant_result = RosePlantingWorkflow(automation).run(timeout=90.0)
-                payload = plant_result.to_dict()
-                outcome = "rose_plant_finished"
-                log_writer.action(
-                    "AUTO trồng Hoa hồng hoàn tất | "
-                    f"planted={payload.get('planted_count', 0)}/27"
-                )
-            elif run_vp_probe:
-                from kvtm_automation.workflows.vp_recognition import (
-                    VpRecognitionProbeWorkflow,
-                )
-                vp_result = VpRecognitionProbeWorkflow(automation).run(timeout=90.0)
-                payload = vp_result.to_dict()
-                outcome = "vp_finished"
-                log_writer.action(
-                    "READ-ONLY VP hoàn tất | "
-                    f"recognized={payload.get('recognized_count', 0)}/3"
-                )
+            from kvtm_automation.workflows.auto_main import AutoMainWorkflow
+
+            main_result = AutoMainWorkflow(automation).run()
+            payload = main_result.to_dict()
+            outcome = "auto_main_ready"
+            log_writer.action(
+                "AUTO MULTI DEV hoàn tất giai đoạn hiện tại | "
+                f"listed={payload.get('sold_listings', 0)} | "
+                f"gold={payload.get('collected_gold_slots', 0)} | "
+                f"planted={payload.get('planted_count', 0)}/27 | "
+                "production=READY"
+            )
             self.after(
                 0,
                 lambda data=payload, result_kind=outcome: self._finish_clean_main(
