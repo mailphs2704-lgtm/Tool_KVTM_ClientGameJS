@@ -432,6 +432,28 @@ class CocosBridgeDriver:
             self._touch_event("up", x, y)
             time.sleep(0.035)
 
+    def press(self, key: str) -> None:
+        """Send a bounded keyboard command to the current ClientJS window."""
+        normalized = str(key).strip().lower()
+        virtual_keys = {
+            "back": 0x1B,
+            "esc": 0x1B,
+            "escape": 0x1B,
+        }
+        virtual_key = virtual_keys.get(normalized)
+        if virtual_key is None:
+            raise ValueError(f"Phím Bridge chưa hỗ trợ: {key!r}")
+
+        hwnd = window_capture.find_window(self.pid)
+        user32 = ctypes.windll.user32
+        if not user32.PostMessageW(hwnd, 0x0100, virtual_key, 0):
+            raise ctypes.WinError()
+        time.sleep(0.045)
+        if not user32.PostMessageW(hwnd, 0x0101, virtual_key, 0):
+            raise ctypes.WinError()
+        time.sleep(0.035)
+        self._log(f"DLL bridge: KEY {normalized} -> hwnd={hwnd}")
+
     def swipe(
         self,
         x1: float,
