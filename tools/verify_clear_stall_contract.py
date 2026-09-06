@@ -539,7 +539,17 @@ def main() -> int:
     require(main_log, "FILE_FUNCTIONS = (", "Log module function manifest missing")
     require(main_log_viewer, "FILE_FUNCTIONS = (", "Log viewer function manifest missing")
     require(main_log_viewer, 'bg="#202020"', "Console-style log viewer missing")
-    require(multi, 'text="⌕ Kiểm tra nhận diện VP (READ-ONLY)"', "VP probe button missing")
+    require(multi, 'text="▶ Bắt đầu AUTO MULTI DEV"', "Consolidated AUTO Multi DEV start button missing")
+    require(multi, "command=self._start_clean_auto_session", "Consolidated AUTO Multi DEV start wiring missing")
+    require(multi, 'text="⚙ Cấu hình tốc độ"', "AUTO Multi DEV speed settings button missing")
+    require(multi, "command=self._auto_ui_configure", "AUTO Multi DEV speed settings wiring missing")
+    for passed_button in (
+        "▶ Vào game + đóng popup",
+        "⌕ Kiểm tra nhận diện VP (READ-ONLY)",
+        "▶ Bán VP AUTO",
+        "▶ Trồng 27 Hoa hồng",
+    ):
+        forbid(multi, passed_button, f"Passed test button must stay removed: {passed_button}")
     require(vp_recognition, "FILE_FUNCTIONS = (", "VP recognizer function manifest missing")
     require(vp_workflow, "FILE_FUNCTIONS = (", "VP workflow function manifest missing")
     for item_id in ("tao_say", "vai_vang", "tinh_dau_hh"):
