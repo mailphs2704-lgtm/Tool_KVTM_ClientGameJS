@@ -11,6 +11,8 @@ from typing import Callable
 
 PROBE_VERSION = 16
 STALL_VIEW_COUNT = 4
+# Five scan positions are required to expose the complete friend-stall tail.
+FRIEND_STALL_SCAN_COUNT = 5
 # The last two own-stall cells can remain just outside the fourth nominal view.
 # Permit one terminal two-swipe alignment and force a final scan before failing.
 OWN_STALL_RESALE_SCAN_LIMIT = STALL_VIEW_COUNT + 1
@@ -570,9 +572,12 @@ def run_probe(
             nonlocal current_view
             bought_before = purchased_quantity
             current_view = 1
-            for view in range(1, STALL_VIEW_COUNT + 1):
+            for view in range(1, FRIEND_STALL_SCAN_COUNT + 1):
                 context.ensure_running()
-                current_view = view
+                # The fifth scan is a terminal edge alignment. Reuse the
+                # fourth logical slot mapping while scanning the newly exposed tail.
+                mapping_view = min(view, STALL_VIEW_COUNT)
+                current_view = mapping_view
                 checkpoint(
                     f"friend-{friend_index:02d}-pass-{stall_pass:02d}-"
                     f"scan-view-{view:02d}"
@@ -592,8 +597,8 @@ def run_probe(
                     template_root = pass_root / "templates"
                 save_frame(view_path, frame)
                 observations = automation.stall.scan_view(
-                    view,
-                    template_root,
+                    mapping_view,
+                    template_root / f"scan-{view:02d}",
                     frame=frame,
                 )
                 observed_physical = [
@@ -662,13 +667,19 @@ def run_probe(
                         still_unmatched=len(unmatched) - newly_matched,
                     )
                 if primary_report:
-                    new_local = automation.stall.new_local_slots(view)
-                    new_physical = [
-                        automation.stall.physical_slot(view, slot)
-                        for slot in new_local
-                    ]
-                    covered.extend(new_physical)
-                    occupied.extend(observed_physical)
+                    # Scan 5 overlaps logical view 4 and exists only to expose
+                    # the far tail; do not duplicate the 20-slot map/report.
+                    if view <= STALL_VIEW_COUNT:
+                        new_local = automation.stall.new_local_slots(mapping_view)
+                        new_physical = [
+                            automation.stall.physical_slot(mapping_view, slot)
+                            for slot in new_local
+                        ]
+                        covered.extend(new_physical)
+                        occupied.extend(observed_physical)
+                    else:
+                        new_local = ()
+                        new_physical = []
                     view_entry = {
                         "view": view,
                         "capture": str(view_path),
@@ -699,7 +710,8 @@ def run_probe(
                     "probe_progress",
                     message=(
                         f"Nhà {friend_index} lượt {stall_pass} • "
-                        f"view {view}/4 • {len(eligible_observations)}/"
+                        f"view {view}/{FRIEND_STALL_SCAN_COUNT} • "
+                        f"{len(eligible_observations)}/"
                         f"{len(observations)} ô đúng danh sách VP"
                     ),
                     friend_ordinal=friend_index,
@@ -714,87 +726,19 @@ def run_probe(
                     buy_visible(eligible_observations, friend_index, stall_pass)
                     if purchased_quantity >= expected_quantity:
                         break
-                if view < STALL_VIEW_COUNT:
+                if view < FRIEND_STALL_SCAN_COUNT:
                     checkpoint(
                         "stall-step-start",
                         friend_ordinal=friend_index,
                         stall_pass=stall_pass,
                         from_view=view,
                         to_view=view + 1,
-                        swipe_pulses=2,
+                        swipe_pulses=automation.stall.swipe_pulses,
+                        order="BUY_THEN_TWO_SWIPES_THEN_SCAN",
                     )
-                    # A logical step contains two physical swipe pulses. An
-                    # eligible listing can be fully visible only between those
-                    # pulses, so scan and buy after every pulse instead of
-                    # jumping directly to the next nominal view.
-                    intermediate_bought = 0
-                    for swipe_index in range(1, automation.stall.swipe_pulses + 1):
-                        context.ensure_running()
-                        automation.vision.driver.swipe(
-                            *automation.stall.swipe_start,
-                            *automation.stall.swipe_end,
-                            duration=automation.stall.swipe_duration,
-                        )
-                        context.log(
-                            f"Kéo quầy • swipe {swipe_index}/"
-                            f"{automation.stall.swipe_pulses} • "
-                            f"duration={automation.stall.swipe_duration:.2f}s"
-                        )
-                        automation.stall.waiter.sleep(automation.stall.swipe_settle)
-                        if (
-                            purchase_limit <= 0
-                            or swipe_index >= automation.stall.swipe_pulses
-                        ):
-                            continue
-
-                        mid_frame = automation.vision.frame()
-                        mid_root = (
-                            work_dir
-                            / f"friend-{friend_index:02d}"
-                            / f"pass-{stall_pass:02d}"
-                            / f"between-view-{view:02d}-{view + 1:02d}"
-                        )
-                        mid_path = mid_root / f"after-swipe-{swipe_index:02d}.png"
-                        save_frame(mid_path, mid_frame)
-                        mid_observations = automation.stall.scan_view(
-                            view,
-                            mid_root / "templates",
-                            frame=mid_frame,
-                        )
-                        mid_eligible = []
-                        for observation in mid_observations:
-                            cx, cy = observation.center
-                            zone = (cx - 50, cy - 58, 100, 108)
-                            for item_id in allowed_item_ids:
-                                if automation.vision.find(
-                                    item_id,
-                                    threshold=designer_policy.recognition_threshold,
-                                    zone=zone,
-                                    scales=(0.85, 0.90, 1.0, 1.10, 1.15),
-                                    frame=mid_frame,
-                                ) is not None:
-                                    mid_eligible.append((observation, item_id))
-                                    break
-                        checkpoint(
-                            "stall-intermediate-swipe-scan",
-                            friend_ordinal=friend_index,
-                            stall_pass=stall_pass,
-                            from_view=view,
-                            to_view=view + 1,
-                            swipe_index=swipe_index,
-                            eligible_count=len(mid_eligible),
-                            observed_count=len(mid_observations),
-                            capture=str(mid_path),
-                            order="SWIPE_SCAN_BUY_THEN_SWIPE",
-                        )
-                        intermediate_bought += buy_visible(
-                            mid_eligible, friend_index, stall_pass
-                        )
-                        if purchased_quantity >= expected_quantity:
-                            break
-
-                    if purchased_quantity >= expected_quantity:
-                        break
+                    # One logical movement is exactly two consecutive swipes.
+                    # Never scan or buy between pulse 1 and pulse 2.
+                    automation.stall.next_view()
                     transition_path = (
                         work_dir / f"friend-{friend_index:02d}-pass-"
                         f"{stall_pass:02d}-after-step-{view:02d}.png"
@@ -806,8 +750,8 @@ def run_probe(
                         stall_pass=stall_pass,
                         next_view=view + 1,
                         swipe_pulses=automation.stall.swipe_pulses,
-                        intermediate_bought_quantity=intermediate_bought,
                         capture=str(transition_path),
+                        order="TWO_SWIPES_THEN_SCAN_BUY",
                     )
             return purchased_quantity - bought_before
 
