@@ -91,6 +91,12 @@ def main() -> int:
     require(workflow, "produce_9_dried_apples()", "Dried apple production step missing")
     require(auto_main, "AppleDryerWorkflow(self.auto).run", "Function one pipeline missing")
     require(dev, "PASS CHỨC NĂNG 1", "GUI result status missing")
+    require(dev, 'text="↟ Demo tầng 1 → 6"', "Dedicated floor demo button missing")
+    require(dev, "profile_id in self._clean_floor_demo_requested",
+            "Floor demo request is not isolated per profile")
+    require(dev, "automation.floors.up(5)",
+            "Floor 1-to-6 demo must execute exactly five verified upward moves")
+    require(dev, '"floor_demo_finished"', "Floor demo result path missing")
 
     forbidden = (
         "clear_stall_probe_runtime",
