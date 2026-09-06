@@ -5,6 +5,7 @@ from .item_recognition import AutoVpRecognitionActions, AutoVpSpec, VpRecognitio
 from .navigation import NavigationActions
 from .popup import PopupActions
 from .planting import PlantingActions
+from .production import ProductionActions, ProductionResult
 from .selling import SellingActions
 from .stall import StallActions
 
@@ -19,6 +20,8 @@ __all__ = [
     "NavigationActions",
     "PopupActions",
     "PlantingActions",
+    "ProductionActions",
+    "ProductionResult",
     "SellingActions",
     "StallActions",
 ]
