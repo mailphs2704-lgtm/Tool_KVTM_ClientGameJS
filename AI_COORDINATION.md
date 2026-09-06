@@ -377,3 +377,14 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Fail-closed: nếu chậu đầu có cây chín, không nhận ra hạt hoặc không mở được bảng gieo thì dừng, không kéo mù.
 - Không sửa `auto_main_selling.py`, `auto_vp_sale`, `stall.py`, Dọn quầy, queue, bridge hay driver.
 - Static contract/syntax cần build Windows xác nhận; LIVE planting PENDING.
+
+
+## 2026-09-06 — Sửa lớp trồng: định vị tầng và kiểm tra trạng thái chậu
+
+- Live FAIL 14:44: luồng vào farm PASS nhưng chưa thực hiện bước `goUp(4)` của AUTO PRO.
+- Đối chiếu `produceItems_293`: trước `plantTrees(cay_hong, num_tree=27, gieo_tang=1, next_gieo_trai)` có `goUp(4)`.
+- Module nay đóng panel cạnh `(975,316)`, kéo `(387,69)->(387,918)`, rồi click chậu đầu `(388,946)`.
+- Phải nhận ra `harvestBasket` threshold 0.80 hoặc `next_gieo_trai` threshold 0.70 trên cùng fresh frame.
+- Nếu cây chín thì thu hoạch đúng đường 27 chậu và quét lại; chỉ khi chậu trống mới gieo.
+- Chỉ sửa module/verifier trồng và tài liệu; không sửa bán VP, Dọn quầy, GUI, queue, bridge hoặc driver.
+- Static syntax PASS; Windows build/LIVE retest PENDING.

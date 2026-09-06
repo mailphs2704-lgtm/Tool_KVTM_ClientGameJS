@@ -8,8 +8,10 @@ from ..runtime.wait import Waiter
 
 __all__ = ["PlantingActions"]
 FILE_FUNCTIONS = (
-    "Mở bảng chọn hạt giống từ chậu đầu tầng một",
-    "Xác minh bảng gieo hoặc chặn khi chậu đang có cây chín",
+    "Đưa farm lên đúng cụm tầng chứa điểm bắt đầu",
+    "Mở trạng thái chậu đầu tầng một",
+    "Phân biệt cây chín và chậu trống bằng template AUTO PRO",
+    "Thu hoạch đúng 27 chậu nếu phát hiện cây chín",
     "Nhận diện đúng hạt Hoa hồng bằng template AUTO PRO",
     "Tạo đường zíc-zắc 27 chậu qua năm tầng",
     "Kéo một lần từ hạt giống qua đúng 27 chậu",
@@ -36,11 +38,15 @@ class PlantingActions:
         (335, 40), (578, 40),
     )
     OPEN_PLANT_POINT = (388, 946)
+    CLOSE_SIDE_POINT = (975, 316)
     CLOSE_POINT = (965, 198)
+    GO_UP_START = (387, 69)
+    GO_UP_END = (387, 918)
     SEED_ZONE = (179, 773, 230, 166)
-    LEFT_READY_ZONE = (124, 729, 347, 236)
-    RIGHT_READY_ZONE = (363, 769, 121, 162)
+    EMPTY_READY_ZONE = (124, 729, 347, 236)
+    HARVEST_ZONE = (222, 703, 218, 191)
     SWIPE_DURATION = 0.035
+    GO_UP_DURATION = 0.35
 
     def __init__(
         self,
@@ -57,51 +63,76 @@ class PlantingActions:
         """Return the immutable AUTO PRO reference path for 27 pots."""
         return cls.FARM_PATH_27
 
-    def _open_seed_picker(self):
-        for attempt in range(1, 4):
-            self.context.ensure_running()
-            self.vision.driver.click(*self.OPEN_PLANT_POINT)
-            self.waiter.sleep(0.45)
-            left = self.vision.find(
-                "next_gieo_trai", threshold=0.70,
-                zone=self.LEFT_READY_ZONE,
-                scales=(0.80, 0.90, 1.00, 1.10, 1.20),
-            )
-            right = self.vision.find(
-                "next_gieo", threshold=0.70,
-                zone=self.RIGHT_READY_ZONE,
-                scales=(0.80, 0.90, 1.00, 1.10, 1.20),
-            )
-            if left is not None or right is not None:
+    def _go_up_four(self) -> None:
+        """Mirror AUTO PRO goUp(4) before a 27-tree planting operation."""
+        self.context.ensure_running()
+        self.vision.driver.click(*self.CLOSE_SIDE_POINT)
+        self.waiter.sleep(0.20)
+        self.vision.driver.swipe(
+            *self.GO_UP_START, *self.GO_UP_END, duration=self.GO_UP_DURATION
+        )
+        self.waiter.sleep(0.65)
+        self.context.log("AUTO trồng • đã lên tầng gieo theo AUTO PRO goUp(4)")
+
+    def _scan_first_pot_state(self) -> tuple[str, object | None]:
+        self.context.ensure_running()
+        self.vision.driver.click(*self.OPEN_PLANT_POINT)
+        self.waiter.sleep(0.45)
+        frame = self.vision.frame()
+        harvest = self.vision.find(
+            "harvestBasket", threshold=0.80, zone=self.HARVEST_ZONE,
+            scales=(0.80, 0.90, 1.00, 1.10, 1.20), frame=frame,
+        )
+        empty = self.vision.find(
+            "next_gieo_trai", threshold=0.70, zone=self.EMPTY_READY_ZONE,
+            scales=(0.80, 0.90, 1.00, 1.10, 1.20), frame=frame,
+        )
+        if harvest is not None:
+            return "RIPE", harvest
+        if empty is not None:
+            return "EMPTY", empty
+        return "UNKNOWN", None
+
+    def _harvest_27(self) -> None:
+        self.context.log(
+            "AUTO trồng • phát hiện cây chín • thu hoạch 27 chậu trước khi gieo"
+        )
+        self.vision.driver.swipe_points(
+            self.rose_path(), duration=self.SWIPE_DURATION
+        )
+        self.waiter.sleep(0.50)
+
+    def _open_seed_picker(self) -> None:
+        self._go_up_four()
+        for attempt in range(1, 6):
+            state, _match = self._scan_first_pot_state()
+            if state == "EMPTY":
                 self.context.log(
-                    f"AUTO trồng • bảng hạt giống READY • lần {attempt}/3"
+                    f"AUTO trồng • chậu trống và bảng hạt READY • lần {attempt}/5"
                 )
                 return
-            harvest = self.vision.find(
-                "harvestBasket", threshold=0.80,
-                zone=(222, 703, 218, 191),
-                scales=(0.80, 0.90, 1.00, 1.10, 1.20),
+            if state == "RIPE":
+                self._harvest_27()
+                continue
+            self.context.log(
+                f"AUTO trồng • chưa xác định cây chín/chậu trống • lần {attempt}/5"
             )
-            if harvest is not None:
-                raise ScreenTimeout(
-                    "Chậu đầu đang có cây chín; chưa trồng đè trong lượt thử Hoa hồng"
-                )
-        raise ScreenTimeout("Không mở được bảng chọn hạt giống tại chậu đầu tầng 1")
+            self.vision.driver.click(*self.CLOSE_POINT)
+            self.waiter.sleep(0.30)
+        raise ScreenTimeout(
+            "Không xác minh được cây chín hoặc chậu trống tại tầng gieo"
+        )
 
     def plant_27_roses(self) -> int:
         self._open_seed_picker()
         self.context.ensure_running()
         rose = self.vision.find(
-            self.ROSE_TEMPLATE,
-            threshold=0.87,
-            zone=self.SEED_ZONE,
-            scales=(0.80, 0.90, 1.00, 1.10, 1.20),
-            click=False,
+            self.ROSE_TEMPLATE, threshold=0.87, zone=self.SEED_ZONE,
+            scales=(0.80, 0.90, 1.00, 1.10, 1.20), click=False,
         )
         if rose is None:
             self.vision.driver.click(*self.CLOSE_POINT)
             raise ScreenTimeout("Không nhận diện được hạt Hoa hồng trong bảng gieo")
-
         path = (rose.center,) + self.rose_path()[1:]
         self.context.log(
             "AUTO trồng • chọn Hoa hồng • kéo 27 chậu từ tầng 1 đến 3 chậu tầng 5"
