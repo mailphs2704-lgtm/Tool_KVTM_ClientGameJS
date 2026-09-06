@@ -43,6 +43,11 @@ CLEAR_STALL_ITEM_OPTIONS = (
 )
 
 DEFAULT_AUTO_TUNING = {
+    # AUTO MULTI DEV: three independent controls. Legacy AUTO PRO keys below
+    # remain intact for compatibility with the historical worker.
+    "floor_swipe_duration": 0.35,
+    "plant_harvest_duration": 0.035,
+    "vp_production_delay": 0.4,
     "harvest_speed": 0.045,
     "go_up_wait": 0.7,
     "production_wait": 0.4,
@@ -61,7 +66,10 @@ DEFAULT_AUTO_TUNING = {
     "delay_vao_game": 55,
 }
 AUTO_TUNING_SPECS = {
-    "harvest_speed": ("Tốc độ thu hoạch", 0.01, 3.0, False),
+    "floor_swipe_duration": ("MULTI DEV • Kéo tầng (giây/swipe)", 0.05, 3.0, False),
+    "plant_harvest_duration": ("MULTI DEV • Trồng/thu cây (giây/đoạn)", 0.01, 3.0, False),
+    "vp_production_delay": ("MULTI DEV • Sản xuất VP (giây/thao tác)", 0.05, 10.0, False),
+    "harvest_speed": ("AUTO PRO cũ • Tốc độ cào", 0.01, 3.0, False),
     "go_up_wait": ("Chờ sau khi kéo tầng", 0.05, 10.0, False),
     "production_wait": ("Chờ sản xuất", 0.05, 10.0, False),
     "swipe_count": ("Số lần kéo màn", 1, 20, True),
@@ -3508,7 +3516,10 @@ class MultiApp(tk.Tk):
         ).pack(anchor="w")
         ttk.Label(
             header,
-            text="Đơn vị thời gian là giây. Số nhỏ hơn chạy nhanh hơn nhưng dễ thao tác sai.",
+            text=(
+                "Ba dòng MULTI DEV được tách độc lập theo yêu cầu. "
+                "Các dòng AUTO PRO cũ được giữ để tương thích."
+            ),
             style="AutoValue.TLabel",
         ).pack(anchor="w", pady=(4, 0))
 
