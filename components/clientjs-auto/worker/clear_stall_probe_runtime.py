@@ -107,12 +107,6 @@ def run_probe(
             ),
         })
         return 2
-    if resale_batch_limit and purchase_limit <= 1:
-        emit_event({
-            "event": "probe_error",
-            "error": "Gate treo lại yêu cầu chạy mua target trước",
-        })
-        return 2
     if resale_batch_limit > 20:
         emit_event({
             "event": "probe_error",
