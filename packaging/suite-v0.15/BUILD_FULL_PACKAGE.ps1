@@ -59,6 +59,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO MULTI DEV speed static contract: VERIFIED" -ForegroundColor Green
 
+$AutoFloorVerifier = Join-Path $RepoRoot "tools\verify_auto_floor_navigation_contract.py"
+if (-not (Test-Path -LiteralPath $AutoFloorVerifier -PathType Leaf)) {
+    throw "Missing AUTO MULTI DEV floor navigation verifier: $AutoFloorVerifier"
+}
+& py.exe -3.11 $AutoFloorVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw "AUTO MULTI DEV floor navigation static contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "AUTO MULTI DEV floor navigation static contract: VERIFIED" -ForegroundColor Green
+
 function Test-GitLfsPointer {
     param([Parameter(Mandatory = $true)][string]$Path)
 
