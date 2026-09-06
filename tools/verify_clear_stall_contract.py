@@ -757,8 +757,43 @@ def main() -> int:
     require(builder, "Dang bao toan $Label", "Diagnostic preservation heartbeat missing")
     require(
         builder,
-        'Copy-PreservedDirectory -Source $CurrentClearStallProbe',
-        "clear-stall-probe must use bounded visible preservation",
+        "function Copy-BoundedDiagnosticDirectory",
+        "Bounded clear-stall-probe preservation helper missing",
+    )
+    require(
+        builder,
+        "[long]$MaxBytes = 134217728",
+        "clear-stall-probe preservation must be capped at 128 MiB",
+    )
+    require(
+        builder,
+        '(".log", ".json", ".jsonl", ".txt", ".csv")',
+        "clear-stall-probe must prioritize logs and reports",
+    )
+    require(
+        builder,
+        "Sort-Object LastWriteTime -Descending",
+        "Newest diagnostic evidence must be preserved first",
+    )
+    require(
+        builder,
+        "Copy-BoundedDiagnosticDirectory -Source $CurrentClearStallProbe",
+        "clear-stall-probe must use bounded diagnostic preservation",
+    )
+    require(
+        builder,
+        'Get-ChildItem -LiteralPath $DistRoot -Directory -Filter ".kvtm-dev-data-*"',
+        "Failed-build temporary copy cleanup missing",
+    )
+    require(
+        builder,
+        "Test-Path -LiteralPath $currentProfiles -PathType Leaf",
+        "Temporary cleanup must require authoritative profiles",
+    )
+    require(
+        builder,
+        "Test-Path -LiteralPath $currentSettings -PathType Leaf",
+        "Temporary cleanup must require authoritative settings",
     )
     forbid(
         builder,
@@ -795,7 +830,7 @@ def main() -> int:
     print("gui=single_full_clear_stall_action")
     print("cycle=pass_close_reset_countdown_release_queue")
     print("backup=one_click_local_only")
-    print("diagnostic_preservation=robocopy_mt8_heartbeat_timeout600")
+    print("diagnostic_preservation=logs_reports_plus_newest_images_max128mib")
     print("selected_items=rose_water,rose_oil,yellow_fabric,dried_apple,iced_tea")
     print("clientjs_reset=live_capture_ready")
     print("chest=supplied_auto_pro_bytecode_exact")
