@@ -42,7 +42,7 @@ def main() -> int:
     require(action, "START_POINT = (325, 799)", "AUTO PRO start point changed")
     require(action, "(335, 40), (578, 40)", "Hidden fifth-floor endpoint changed")
     require(action, "threshold=0.87", "AUTO PRO rose threshold changed")
-    require(action, '"không gọi goUp(4)"', "Clean Main floor-one anchor policy missing")
+    require(action, "không gọi goUp(4)", "Clean Main floor-one anchor policy missing")
     require(action, "def _count_changed_pots", "Post-plant image verification missing")
     require(action, "if changed < 20:", "False PASS guard missing")
     require(action, '"harvestBasket", threshold=0.80', "Ripe-tree scan missing")
