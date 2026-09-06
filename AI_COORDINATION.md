@@ -472,3 +472,15 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Static contract bán/trồng được chuyển từ wiring nút thử sang wiring workflow tổng. Nội bộ bán VP, trồng Hoa hồng và Dọn quầy không đổi.
 - Thêm công cụ chỉ đọc `tools/inspect_autopro_production_reference.py` để trích `makeItems/goUp/goDownLast/produceItems_293` từ marshal AUTO PRO trước khi viết click máy sản xuất; không đoán tọa độ.
 - Trạng thái: AST syntax PASS cho workflow, DEV entry và ba verifier; Windows build/LIVE pipeline PENDING. Sản xuất VP chưa được phép click cho tới khi trích xong reference.
+
+
+## 2026-09-06 — AUTO MULTI DEV chức năng 1: 27 Táo → 9 Táo sấy
+
+- Xác nhận kiến trúc: đây là AUTO MULTI DEV sạch hoàn toàn. AUTO PRO chỉ cung cấp bằng chứng đối chiếu tọa độ/thứ tự; runtime mới không gọi `makeItems`, `goUp`, `goDownLast` hay pyc cũ.
+- Sửa công cụ trích xuất để quét toàn bộ `raw_marshal/*.marshal`; reference đầy đủ xác nhận máy sấy tầng 1 `(262,917)`, Táo sấy slot 0 `(252,421)`, điểm thả hàng chờ `(400,719)`, vùng tìm sản phẩm `(9,341,402,386)`.
+- `PlantingActions` được tham số hóa tối thiểu: giữ nguyên `plant_27_roses()` đã PASS và thêm `plant_27_apples()`; cùng dùng hình học 27 chậu đã xác minh. Không sửa Dọn quầy hoặc bán VP.
+- Thêm `ProductionActions`: chỉ mở máy tầng 1; bắt buộc nhận đúng `tao_say` threshold 0.95 và đếm được ít nhất 9 `o_trong` trước khi thao tác.
+- Mỗi Táo sấy là một swipe riêng từ slot 0 tới hàng chờ; dùng `vp_production_delay` độc lập. Nếu hiện dấu lỗi nguyên liệu thì dừng ngay.
+- Kế toán không dựa trên số lệnh đã gửi: sau 9 swipe, số ô trống phải giảm ít nhất 9 mới trả PASS.
+- Thêm `AppleDryerWorkflow` và đổi nút tổng sang: bán VP ổn định → trồng/thu 27 Táo → sản xuất 9 Táo sấy. Kết quả GUI ghi riêng `planted_apples` và `dried_apples`.
+- Builder chạy `verify_auto_main_production_contract.py`. AST PASS cho action, workflow, automation, DEV entry và toàn bộ verifier liên quan. Windows build/LIVE vẫn PENDING.
