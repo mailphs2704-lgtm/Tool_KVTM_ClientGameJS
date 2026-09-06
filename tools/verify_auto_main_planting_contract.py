@@ -40,6 +40,8 @@ def main() -> int:
     auto_main = AUTO_MAIN_PATH.read_text(encoding="utf-8")
 
     require(action, 'ROSE_TEMPLATE = "cay_hong"', "Rose template missing")
+    require(action, 'APPLE_TEMPLATE = "cay_tao"', "Apple template missing")
+    require(action, "def plant_27_apples", "Parameterized apple planting action missing")
     require(action, "TREE_COUNT = 27", "Exactly 27 trees required")
     require(action, "START_POINT = (325, 799)", "AUTO PRO start point changed")
     require(action, "(335, 40), (578, 40)", "Hidden fifth-floor endpoint changed")
@@ -63,8 +65,8 @@ def main() -> int:
     require(action, "self.rose_path()[1:]", "Seed center must replace reference start point")
     require(action, 'raise ScreenTimeout(', "Fail-closed planting guard missing")
     require(workflow, "self.auto.planting.plant_27_roses()", "Workflow planting call missing")
-    require(auto_main, "RosePlantingWorkflow(self.auto).run",
-            "Consolidated start must execute the stable planting workflow")
+    require(auto_main, "AppleDryerWorkflow(self.auto).run",
+            "Consolidated start must execute clean apple dryer workflow")
     require(dev, "AutoMainWorkflow(automation).run",
             "Consolidated resident workflow wiring missing")
     require(dev, 'outcome = "auto_main_ready"',
@@ -79,7 +81,8 @@ def main() -> int:
         if token in action or token in workflow:
             raise AssertionError(f"Planting module touches forbidden stable path: {token}")
     print("AUTO MAIN PLANTING STATIC CONTRACT VERIFIED")
-    print("item=cay_hong")
+    print("stable_item=cay_hong")
+    print("function_one_item=cay_tao")
     print("tree_count=27")
     print("floors=6+6+6+6+3")
     print("floor5_endpoint=(578,40)")
