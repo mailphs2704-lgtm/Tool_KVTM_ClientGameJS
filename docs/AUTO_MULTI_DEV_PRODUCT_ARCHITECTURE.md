@@ -50,8 +50,13 @@ Không bắt đầu lớp Vải vàng trước khi lớp Táo sấy PASS live c�
 - `9 Vải vàng` cần `9 Nước táo` được sản xuất tại máy tầng 2.
 - Nguyên liệu cho 9 Nước táo là `36 cây Táo`: sáu hàng, mỗi hàng sáu cây.
 - Lượt gieo đầu trồng năm tầng × sáu cây = 30 cây; sau đó chuyển từ tầng 1 lên tầng 6 và trồng thêm một hàng × sáu cây.
-- Trước khi ghép vào pipeline, nút độc lập `Demo tầng 1 → 6` chỉ chạy năm nhịp `floors.up(5)`. Người vận hành phải đặt clone tại tầng 1 trước khi bấm. Mỗi nhịp phải có thay đổi hình ảnh; thiếu một nhịp thì fail-closed.
+- Trước khi ghép vào pipeline, nút độc lập `Demo chính → tầng 6` chạy `floors.glide_up(6)`: một gesture liên tục từ `(514,214)` đến `(514,814)`, tương ứng sáu đơn vị tầng. Người vận hành đặt clone tại màn hình chính trước khi bấm. Hậu kiểm ảnh được thực hiện sau toàn cú lướt; không quay lại cách gửi từng tầng rồi chờ `0.65s`.
 
 ## Module sửa quầy dùng chung
 
 Sau khi sản xuất ở bất kỳ máy nào, hệ thống về sau phải chạy thao tác sửa quầy dùng chung. Triển khai thành module độc lập để tái sử dụng cho mọi máy, không nhúng riêng vào Táo sấy hoặc Nước táo. Chưa ghép module này vào pipeline trong mốc demo tầng 1 → 6.
+
+
+### Hiệu chỉnh demo tầng 6 từ LIVE
+
+LIVE đầu tiên chứng minh năm gesture rời chỉ tới tầng 5. Mốc này bị đánh dấu NOT PASS. Contract đúng là sáu đơn vị tầng trong một gesture liên tục, mô phỏng nhịp lướt nhanh của Auto Pro; chỉ kết quả retest mới được phép nâng thành LIVE PASS.
