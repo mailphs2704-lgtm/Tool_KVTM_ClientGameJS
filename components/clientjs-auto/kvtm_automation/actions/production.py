@@ -34,7 +34,7 @@ class ProductionActions:
 
     DRYER_FLOOR = 1
     DRYER_POINT = (262, 917)
-    DRIED_APPLE_TEMPLATE = "tao_say"
+    DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"
     PRODUCT_SEARCH_ZONE = (9, 341, 402, 386)
     DRIED_APPLE_GUARD_ZONE = (180, 360, 150, 125)
     DRIED_APPLE_GUARD_THRESHOLD = 0.28
@@ -152,13 +152,13 @@ class ProductionActions:
             "Không thu hết VP hoàn thành hoặc không mở được panel máy sấy tầng 1"
         )
 
-    def _open_verified_dryer(self) -> int:
+    def _open_verified_dryer(self) -> tuple[int, tuple[int, int]]:
         self._collect_finished_before_open()
 
         product = None
         for attempt in range(1, 4):
             product = self.vision.find(
-                self.DRIED_APPLE_TEMPLATE,
+                self.DRIED_APPLE_PRODUCTION_TEMPLATE,
                 threshold=self.DRIED_APPLE_GUARD_THRESHOLD,
                 zone=self.DRIED_APPLE_GUARD_ZONE,
                 scales=(0.75, 0.90, 1.00, 1.10, 1.25),
@@ -192,15 +192,15 @@ class ProductionActions:
         self.context.log(
             f"AUTO sản xuất • đúng máy sấy tầng 1 • có {empty} ô trống"
         )
-        return empty
+        return empty, product.center
 
     def produce_9_dried_apples(self) -> ProductionResult:
-        empty_before = self._open_verified_dryer()
+        empty_before, product_point = self._open_verified_dryer()
         queued = 0
         for ordinal in range(1, self.REQUIRED_COUNT + 1):
             self.context.ensure_running()
             self.vision.driver.swipe_points(
-                (self.PRODUCT_SLOT_0, self.QUEUE_DROP_POINT),
+                (product_point, self.QUEUE_DROP_POINT),
                 duration=0.02,
             )
             self.waiter.sleep(self.speed_config.vp_production_delay)
@@ -237,7 +237,7 @@ class ProductionActions:
             "AUTO sản xuất Táo sấy hoàn tất • đã xác minh đủ 9/9 ô"
         )
         return ProductionResult(
-            item_id=self.DRIED_APPLE_TEMPLATE,
+            item_id=self.DRIED_APPLE_PRODUCTION_TEMPLATE,
             requested_count=self.REQUIRED_COUNT,
             queued_count=queued,
             empty_before=empty_before,
