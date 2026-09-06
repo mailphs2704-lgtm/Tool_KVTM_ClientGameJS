@@ -345,3 +345,14 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Kết quả có kế toán riêng `sold_by_item` và tổng kết số lô x10 của từng VP.
 - Thay đổi chỉ ở `auto_main_selling.py`, `auto_vp_sale/workflow.py` và verifier AUTO Main; không sửa các file runtime Dọn quầy ổn định.
 - AST syntax PASS; Windows live cần chạy lại sau `[1]`.
+
+
+## 2026-09-06 — Khóa giao dịch AUTO Main sau live sai VP/dưới x10
+
+- Live evidence: AUTO đã treo nhầm một VP gần giống và treo các stack x3/x7. Nguyên nhân: match trong kho chưa được kiểm tra lại sau click; template `sl10` dùng threshold 0.62 chỉ là match hình ảnh nên có thể PASS nhầm chữ số 1..9.
+- Quy tắc chuẩn: tồn kho mỗi VP phải >=10; dialog bán phải mặc định hiển thị chính xác 10 trước khi được phép đặt bán.
+- Thêm post-selection guard trong vùng icon lớn của dialog: template `tao_say`, `vai_vang` hoặc `tinh_dau_hh` phải khớp đúng loại đã chọn. Sai loại thì hủy dialog và khóa loại đó trong lượt.
+- Marker số 10 tăng threshold lên 0.95 và phải PASS hai frame liên tiếp trong tối đa ba lần. Không đạt thì hủy, đánh dấu loại dưới x10 và chuyển loại khác.
+- Chỉ khi cả item guard và exact-10 guard PASS mới bấm Đặt bán; screen-change verification vẫn là cổng kế toán cuối.
+- Thay đổi chỉ trong action/workflow/verifier AUTO Main. Không sửa Dọn quầy.
+- Log mới người dùng gửi lúc 12:57 kết thúc bằng `AutomationStopped` do yêu cầu dừng, không phải crash Bridge.
