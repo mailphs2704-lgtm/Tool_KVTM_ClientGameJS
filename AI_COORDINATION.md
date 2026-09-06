@@ -313,3 +313,14 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - The current VP probe follows the same per-view transaction skeleton but remains READ_ONLY: inventory recognition replaces the real sell click until live recognition is confirmed PASS.
 - The probe always closes an opened inventory and the clone's own stall; profile storage remains READ_ONLY.
 - Static syntax verification: PASS. Live ClientJS verification: PENDING.
+
+
+## 2026-09-06 — AUTO MULTI DEV: lớp bán VP chính tách biệt Dọn quầy
+
+- Người dùng xác nhận Dọn quầy đang ổn định và chuyển sang theo dõi; mọi thay đổi có thể chạm phần ổn định phải được báo và giải thích trước.
+- Thêm nút riêng `▶ Bán VP AUTO` trong tab AUTO MULTI DEV. Nút vào game/đóng popup và probe READ-ONLY vẫn giữ nguyên.
+- Luồng mới: về home, mở quầy clone; từng view thu vàng nếu có; mở ô trống; chỉ nhận diện Táo sấy, Vải vàng hoặc Tinh dầu hoa hồng; chọn match tốt nhất; treo bằng cổng xác minh screen-change; kéo đúng hai swipe; lặp tối đa bốn view.
+- Nếu view không còn ô trống thì chuyển view; nếu kho không còn ba VP được phép thì dừng treo an toàn. Không click vật phẩm không nhận diện.
+- Logic nằm riêng tại `actions/auto_main_selling.py` và `workflows/auto_vp_sale/`. Không sửa `selling.py`, `stall.py`, `clear_stall_probe_runtime.py`, hàng đợi hoặc kế toán Dọn quầy.
+- Chạm dùng chung có giới hạn: thêm một nút trong khối GUI AUTO MULTI DEV, thêm nhãn log tùy ngữ cảnh với mặc định tương thích, và thêm verifier vào build.
+- Mỗi file Python mới có `FILE_FUNCTIONS`, không quá 10 trách nhiệm. AST syntax PASS; static contract được khóa bởi `tools/verify_auto_main_sale_contract.py`. Windows [1] build và live sale vẫn cần người vận hành xác minh trước khi gọi runtime PASS.
