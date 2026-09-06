@@ -3,6 +3,7 @@ from __future__ import annotations
 import dis
 import json
 import marshal
+import sys
 from pathlib import Path
 import types
 
@@ -61,6 +62,8 @@ def summarize(code: types.CodeType) -> dict:
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="strict")
     if not MARSHAL_FILE.is_file():
         raise SystemExit(f"Không tìm thấy AUTO PRO marshal: {MARSHAL_FILE}")
     root = marshal.loads(MARSHAL_FILE.read_bytes())
@@ -75,7 +78,7 @@ def main() -> int:
             "targets": sorted(TARGETS),
             "found": found,
         },
-        ensure_ascii=False,
+        ensure_ascii=True,
         indent=2,
     ))
     if not any(item["name"] == "makeItems" for item in found):
