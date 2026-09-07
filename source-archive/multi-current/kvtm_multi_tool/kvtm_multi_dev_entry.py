@@ -102,6 +102,7 @@ class MultiDevApp(production.MultiApp):
         self._dev_probe_threads: dict[str, threading.Thread] = {}
         self._dev_probe_stop_events: dict[str, threading.Event] = {}
         self._clean_main_threads: dict[str, threading.Thread] = {}
+        self._clean_main_workers: dict[str, subprocess.Popen] = {}
         self._clean_main_stop_events: dict[str, threading.Event] = {}
         self._clean_main_log_paths: dict[str, tuple[Path, Path]] = {}
         self._clean_vp_probe_requested: set[str] = set()
@@ -232,6 +233,16 @@ class MultiDevApp(production.MultiApp):
                 failed.append(f"{name} (ClientJS không khởi động)")
                 continue
 
+            # A CAPTURE3 mapping has exactly one automation owner. Close any
+            # explicit preview consumer before the isolated worker starts.
+            preview = self.previews.pop(profile_id, None)
+            if preview is not None:
+                try:
+                    preview.close()
+                except Exception:
+                    pass
+            self._live_enabled.discard(profile_id)
+
             stop_event = threading.Event()
             run_id = time.strftime("%Y%m%d-%H%M%S")
             work_dir = core.APP_DIR / "auto-multi-dev" / profile_id / run_id
@@ -245,7 +256,8 @@ class MultiDevApp(production.MultiApp):
                 f"AUTO MULTI DEV start | profile={name} | pid={int(process.pid)}"
             )
             log_writer.detail(
-                f"Runtime=resident | profile_id={profile_id} | pid={int(process.pid)}"
+                f"Runtime=isolated-worker | bridge=V3 | "
+                f"profile_id={profile_id} | pid={int(process.pid)}"
             )
             thread = threading.Thread(
                 target=self._run_clean_main_thread,
@@ -300,106 +312,161 @@ class MultiDevApp(production.MultiApp):
         run_floor_demo: bool,
         speed_values: dict,
     ) -> None:
-        try:
-            _component_root, _worker_root, auto_root = _install_runtime_paths()
-            from kvtm_automation import AutomationContext, KVAutomation
-            from kvtm_automation.workflows.game_session import GameSessionWorkflow
+        """Supervise one isolated AUTO MULTI DEV worker process."""
 
-            def log(message: str) -> None:
-                log_writer.action(str(message))
-                self.after(
-                    0,
-                    lambda text=str(message): (
-                        self.auto_multi_dev_status.set(text),
-                        self.note.set(text),
-                    ),
-                )
-
-            context = AutomationContext(
-                pid=int(pid),
-                profile_id=profile_id,
-                profile_name=str(profile.get("name") or profile_id),
-                auto_root=auto_root,
-                work_dir=work_dir,
-                stop_event=stop_event,
-                logger=log,
-                stage_reporter=log,
-                detail_logger=log_writer.detail,
-                profile_file=core.PROFILE_FILE,
-            )
-            log("Clean Runtime dùng chung READY • không import lại cv2/numpy/PIL")
-            automation = KVAutomation(
-                context,
-                image_runtime_ready=True,
-                speed_config=speed_values,
-            )
-            speed_config = automation.speed_config
-            log_writer.action(
-                "Tốc độ MULTI DEV | "
-                f"kéo tầng={speed_config.floor_swipe_duration:.3f}s | "
-                f"trồng/thu={speed_config.plant_harvest_duration:.3f}s | "
-                f"sản xuất VP={speed_config.vp_production_delay:.3f}s | "
-                f"check cây={speed_config.crop_check_interval:.3f}s"
-            )
-            result = GameSessionWorkflow(automation).run(timeout=180.0)
-            payload = result.to_dict()
-            log_writer.action("PASS | vào game, đóng popup, xác nhận màn hình chính")
-            if run_floor_demo:
-                context.stage("floor-demo-1-to-6-start")
-                log("DEMO Auto Pro tới tầng 6 • bắt đầu từ màn hình chính")
-                movement = automation.floors.reference_main_to_floor_6()
-                payload = {
-                    "requested_steps": movement.requested_steps,
-                    "completed_steps": movement.completed_steps,
-                    "frame_change_scores": list(movement.frame_change_scores),
-                }
-                log(
-                    "DEMO • đã gửi goUp(1) → goUp(4) → goUp(1) "
-                    "• chờ xác nhận tầng 6"
-                )
-                self.after(
-                    0,
-                    lambda data=payload: self._finish_clean_main(
-                        profile_id, "floor_demo_finished", data
-                    ),
-                )
-                return
-            from kvtm_automation.workflows.auto_main import AutoMainWorkflow
-
-            main_result = AutoMainWorkflow(automation).run()
-            payload = main_result.to_dict()
-            outcome = "auto_main_ready"
-            log_writer.action(
-                "AUTO MULTI DEV hoàn tất giai đoạn hiện tại | "
-                f"listed={payload.get('sold_listings', 0)} | "
-                f"gold={payload.get('collected_gold_slots', 0)} | "
-                f"planted_apples={payload.get('planted_count', 0)}/27 | "
-                f"dried_apples={payload.get('produced_count', 0)}/9 | "
-                f"apple_juices={payload.get('apple_juice_count', 0)}/9 | "
-                f"progress={payload.get('function_progress_steps', 0)}/"
-                f"{payload.get('function_total_steps', 3)}"
-            )
+        _component_root, worker_root, auto_root = _install_runtime_paths()
+        worker_file = worker_root / "auto_multi_dev_worker.py"
+        if not worker_file.is_file():
+            payload = {"error": f"Thiếu worker AUTO MULTI DEV: {worker_file}"}
             self.after(
-                0,
-                lambda data=payload, result_kind=outcome: self._finish_clean_main(
-                    profile_id, result_kind, data
-                ),
+                0, lambda data=payload: self._finish_clean_main(
+                    profile_id, "error", data
+                )
             )
+            return
+
+        args = [
+            core.sys.executable, str(worker_file),
+            "--auto-root", str(auto_root),
+            "--pid", str(int(pid)),
+            "--profile-id", str(profile_id),
+            "--profile-name", str(profile.get("name") or profile_id),
+            "--profile-file", str(core.PROFILE_FILE),
+            "--work-dir", str(work_dir),
+            "--mode", "floor-demo" if run_floor_demo else "main",
+            "--speed-json", json.dumps(
+                speed_values, ensure_ascii=True, separators=(",", ":")
+            ),
+            "--timeout", "180",
+        ]
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        terminal = False
+        worker = None
+        try:
+            worker = subprocess.Popen(
+                args,
+                cwd=str(auto_root),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                creationflags=flags,
+            )
+            self._clean_main_workers[profile_id] = worker
+            log_writer.action(
+                f"AUTO MULTI DEV worker READY | worker_pid={worker.pid} | "
+                "runtime=isolated | bridge=V3 | capture_owner=single-worker"
+            )
+
+            def relay_stop() -> None:
+                stop_event.wait()
+                if worker.poll() is None and worker.stdin:
+                    try:
+                        worker.stdin.write(json.dumps({"command": "stop"}) + "\n")
+                        worker.stdin.flush()
+                    except (OSError, ValueError):
+                        pass
+
+            threading.Thread(
+                target=relay_stop,
+                name=f"auto-multi-dev-stop-{profile_id[:8]}",
+                daemon=True,
+            ).start()
+
+            if worker.stdout:
+                for raw_line in worker.stdout:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        event = {"event": "detail", "message": line}
+                    kind = str(event.get("event") or "")
+                    message = str(event.get("message") or "")
+                    if kind == "detail":
+                        if message:
+                            log_writer.detail(message)
+                        continue
+                    if kind in {"progress", "stage", "worker_started", "worker_stopping"}:
+                        if message:
+                            log_writer.action(message)
+                            self.after(
+                                0, lambda text=message: (
+                                    self.auto_multi_dev_status.set(text),
+                                    self.note.set(text),
+                                )
+                            )
+                        elif kind == "worker_started":
+                            log_writer.action(
+                                "Worker V3 độc lập đã khởi động • một chủ CAPTURE3"
+                            )
+                        continue
+                    if kind == "worker_finished":
+                        terminal = True
+                        outcome = str(event.pop("outcome", "auto_main_ready"))
+                        self.after(
+                            0, lambda data=dict(event), result_kind=outcome:
+                            self._finish_clean_main(profile_id, result_kind, data)
+                        )
+                        break
+                    if kind == "worker_stopped":
+                        terminal = True
+                        self.after(
+                            0, lambda data=dict(event):
+                            self._finish_clean_main(profile_id, "stopped", data)
+                        )
+                        break
+                    if kind == "worker_error":
+                        terminal = True
+                        error = str(event.get("error") or "Lỗi worker AUTO MULTI DEV")
+                        log_writer.action(f"ERROR | {error}")
+                        if event.get("traceback"):
+                            log_writer.detail(str(event["traceback"]))
+                        self.after(
+                            0, lambda data=dict(event):
+                            self._finish_clean_main(profile_id, "error", data)
+                        )
+                        break
+
+            returncode = worker.wait()
+            if not terminal:
+                payload = {
+                    "error": (
+                        "Worker AUTO MULTI DEV kết thúc không có kết quả "
+                        f"(exit={returncode})"
+                    )
+                }
+                self.after(
+                    0, lambda data=payload: self._finish_clean_main(
+                        profile_id, "error", data
+                    )
+                )
         except Exception as exc:
             payload = {"error": repr(exc), "traceback": traceback.format_exc()}
             log_writer.action(f"ERROR | {repr(exc)}")
             log_writer.detail(payload["traceback"])
             self.after(
-                0,
-                lambda data=payload: self._finish_clean_main(
+                0, lambda data=payload: self._finish_clean_main(
                     profile_id, "error", data
-                ),
+                )
             )
+        finally:
+            self._clean_main_workers.pop(profile_id, None)
+            if worker is not None and worker.poll() is None:
+                try:
+                    worker.terminate()
+                except OSError:
+                    pass
 
     def _finish_clean_main(
         self, profile_id: str, outcome: str, payload: dict
     ) -> None:
         self._clean_main_threads.pop(profile_id, None)
+        self._clean_main_workers.pop(profile_id, None)
         self._clean_main_stop_events.pop(profile_id, None)
         if outcome == "floor_demo_finished":
             completed = int(payload.get("completed_steps", 0) or 0)
@@ -458,7 +525,7 @@ class MultiDevApp(production.MultiApp):
         for _profile_id, event in targets:
             event.set()
         self.auto_multi_dev_status.set(
-            f"Đã gửi dừng an toàn • {len(targets)} tác vụ resident"
+            f"Đã gửi dừng an toàn • {len(targets)} worker độc lập"
             if targets else "AUTO MULTI DEV hiện không chạy"
         )
 
