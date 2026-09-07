@@ -135,3 +135,7 @@ Demo được thay bằng chuỗi 1-4-1, hậu kiểm từng lệnh có phản h
 ### Tính nguyên tử của CAPTURE3
 
 Một lần chụp V3 giữ cùng `_pipe_lock` từ lúc gửi `CAPTURE`, nhận `OK FRAME`, mở mapping cho đến khi sao chép và hậu kiểm header xong. Vì shared mapping thuộc PID nên một consumer CAPTURE3 khác vẫn có thể xuất bản frame mới hơn; reader được phép nhận frame hoàn tất có `frame_id >= expected_frame`, nhưng phải đối chiếu toàn bộ header trước và sau khi copy theo seqlock. Frame đang ghi, frame cũ hoặc header thay đổi trong lúc copy đều phải retry. Reader vẫn fail-close và không dùng HWND fallback.
+
+### Input không chiếm chuột
+
+`EngineDriver` phải override trực tiếp `click` và `swipe`, đồng thời thay `self.touch` bằng `EngineTouchProxy`. Cả bốn API `click`, `swipe`, `swipe_points`, `touch.down/move/up` chỉ được gửi qua INPUT4/BATCH_SWIPE trong DLL V3; cấm kế thừa đường Windows mouse/touch từ bất kỳ `PCDriver` resident nào.
