@@ -85,3 +85,21 @@ LIVE đầu tiên chứng minh năm gesture rời chỉ tới tầng 5. Mốc n�
 Ảnh người dùng cung cấp ngày 2026-09-07 xác nhận bố cục trực quan khi đứng tại tầng 6, nhưng chỉ là bằng chứng tham khảo và không được đưa vào thư viện template. Những thành phần sau không ổn định: VP/cây trên chậu, giao diện máy, số sao/cấp máy và hình mây. Không được dùng riêng bất kỳ thành phần này để kết luận tầng 6.
 
 Quyết định kỹ thuật: chưa xây detector tầng 6 từ screenshot. Phải nghiên cứu Auto Pro để xác định nó dựa vào bộ đếm nội bộ, trạng thái camera, số nhịp gesture, tọa độ máy hay một dấu hiệu ổn định khác. Chỉ sao chép asset nghiệp vụ từ Auto Pro nếu chứng minh đó là asset mà logic gốc thật sự sử dụng; không cắt ảnh debug của người dùng.
+
+
+## Forensic Auto Pro `goUp` — kết quả bytecode gốc
+
+Nguồn: `source-archive/auto-pro-reference/recovery_notes/raw_marshal/adb_controller.marshal`, code object `goUp`, dòng gốc 614.
+
+`num_up` không phải số tầng để lặp. Auto Pro dùng nó như mã chọn bốn thao tác:
+
+- `goUp(1)`: swipe `(514,214)→(514,314)`, duration=`harvest_speed`.
+- `goUp(2)`: click `(257,416)`.
+- `goUp(3)`: click `(257,191)`.
+- `goUp(4)`: swipe `(387,69)→(387,918)`, duration=`harvest_speed`.
+- Mỗi nhánh chờ `go_up_wait`; cuối hàm còn chờ `0.15s`.
+- Trước khi chọn nhánh, hàm click đóng panel cạnh `(975,316)`.
+
+Bản thân `goUp` không nhận dạng và không xác nhận tầng tuyệt đối. Auto Pro giữ mốc bằng thứ tự workflow; `goDownLast` mới tìm `quay_hang/check_xuong` để xác nhận đã về màn hình chính. Vì vậy `frame_change` không được chuyển thành kết luận tầng.
+
+Nút demo mới chỉ phát lại đúng `goUp(4)` từ màn hình chính và báo `ĐÃ GỬI`, không báo tầng 6 PASS. Hai thuật toán tự suy diễn cũ — năm swipe nhỏ và gesture 600 px/0.06s — đều bị loại khỏi demo.
