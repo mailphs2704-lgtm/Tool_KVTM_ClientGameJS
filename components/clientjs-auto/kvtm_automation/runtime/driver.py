@@ -7,7 +7,6 @@ import sys
 from typing import Any, Callable
 
 from .bootstrap import install_binary_dependencies
-from .cocos_bridge import CocosBridgeDriver
 
 
 @dataclass(frozen=True)
@@ -18,42 +17,41 @@ class DriverBundle:
 
 
 class ClientJSDriverFactory:
-    """Construct ClientJS drivers for clean automation.
+    """Construct strict Bridge V3 drivers for AUTO MULTI DEV.
 
-    Transaction-capable clean automation always sends touches through
-    :class:`CocosBridgeDriver` and ``kvtm_bridge.dll``. Capture is negotiated
-    from the bridge PING response: CAPTURE1 uses DLL shared memory; older bridge
-    binaries use the same Win32 capture fallback as the working AUTO.
-
-    Image dependencies are prepared by :class:`KVAutomation` before the DLL
-    bridge is connected. The transport path therefore never performs heavy
-    native Python imports after a successful bridge PING.
+    The main Multi Dev automation must negotiate CAPTURE3/INPUT4/BATCH_SWIPE.
+    CAPTURE1 and HWND capture are not accepted as silent fallbacks.
     """
+
+    REQUIRED_V3_TOKENS = (
+        "KVTM_BRIDGE_V3",
+        "CAPTURE3",
+        "INPUT4",
+        "BATCH_SWIPE",
+        "NO_LAYOUT",
+    )
 
     def __init__(self, component_root: Path, auto_root: Path) -> None:
         self.component_root = Path(component_root).resolve()
         self.auto_root = Path(auto_root).resolve()
 
     def _pc_driver_root(self) -> Path:
-        candidates = (
-            self.component_root / "bridge",
-            self.auto_root,
-        )
+        candidates = (self.component_root / "bridge", self.auto_root)
         for root in candidates:
             if (root / "pc_driver.py").is_file():
                 return root
         raise RuntimeError("Thiếu pc_driver.py cho diagnostic capture")
 
-    def _load_pc_driver(self) -> tuple[Any, Path]:
+    def _load_module(self, name: str):
         install_binary_dependencies(self.auto_root)
         root = self._pc_driver_root()
-        text = str(root)
-        if text not in sys.path:
-            sys.path.insert(0, text)
-        return importlib.import_module("pc_driver"), root
+        root_text = str(root)
+        if root_text not in sys.path:
+            sys.path.insert(0, root_text)
+        return importlib.import_module(name), root
 
     def raw(self, pid: int) -> DriverBundle:
-        pc_driver, root = self._load_pc_driver()
+        pc_driver, root = self._load_module("pc_driver")
         return DriverBundle(
             driver=pc_driver.PCDriver(int(pid), reference_size=(1000, 1000)),
             bridge_root=root,
@@ -68,30 +66,38 @@ class ClientJSDriverFactory:
         profile_id: str | None = None,
         profile_file: Path | None = None,
     ) -> DriverBundle:
-        """Connect Cocos touch transport and negotiate capture capability."""
+        """Connect only the packaged Bridge V3 engine transport."""
 
         if logger is not None:
-            logger("DLL bridge: bắt đầu kết nối trực tiếp ClientJS")
-        driver = CocosBridgeDriver(
-            int(pid),
-            self.auto_root,
-            reference_size=(1000, 1000),
-            logger=logger,
-            profile_id=profile_id,
-            profile_file=profile_file,
-        )
-        mode = (
-            "cocos-dll-shared-capture"
-            if driver.shared_capture_supported
-            else "cocos-dll-touch-win32-capture"
-        )
+            logger("DLL bridge V3: bắt đầu kết nối trực tiếp ClientJS")
+        engine_driver, root = self._load_module("engine_driver")
+        if profile_file is not None:
+            engine_driver.PROFILE_FILE = Path(profile_file).resolve()
         if logger is not None:
+            logger(f"DLL bridge V3: loader={engine_driver.LOADER}")
+            logger(f"DLL bridge V3: dll={engine_driver.BRIDGE}")
+        driver = engine_driver.EngineDriver(
+            int(pid), reference_size=(1000, 1000)
+        )
+        response = driver._pipe("PING\n", 1000)
+        missing = [token for token in self.REQUIRED_V3_TOKENS if token not in response]
+        if missing:
+            close_pipe = getattr(driver, "_close_pipe", None)
+            if callable(close_pipe):
+                close_pipe()
+            raise RuntimeError(
+                "AUTO MULTI DEV yêu cầu Bridge V3; PING thiếu "
+                + ", ".join(missing)
+                + f": {response}"
+            )
+        if logger is not None:
+            logger(f"DLL bridge V3: PING sẵn sàng -> {response}")
             logger(
-                "DLL bridge: transport sẵn sàng; image runtime đã nạp trước; "
-                f"mode={mode}"
+                "DLL bridge V3: transport sẵn sàng; "
+                "mode=cocos-dll-v3-batch-swipe-capture3"
             )
         return DriverBundle(
             driver=driver,
-            bridge_root=self.auto_root / "bin",
-            mode=mode,
+            bridge_root=root / "bin",
+            mode="cocos-dll-v3-batch-swipe-capture3",
         )
