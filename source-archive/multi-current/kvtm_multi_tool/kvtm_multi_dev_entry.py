@@ -360,6 +360,27 @@ class MultiDevApp(production.MultiApp):
                 f"AUTO MULTI DEV worker READY | worker_pid={worker.pid} | "
                 "runtime=isolated | bridge=V3 | capture_owner=single-worker"
             )
+            runtime_ready_event = threading.Event()
+            startup_timed_out = threading.Event()
+
+            def guard_worker_startup() -> None:
+                if runtime_ready_event.wait(90.0):
+                    return
+                if worker.poll() is None:
+                    startup_timed_out.set()
+                    log_writer.action(
+                        "ERROR | Worker chưa READY sau 90s • GUI cha kết thúc worker"
+                    )
+                    try:
+                        worker.terminate()
+                    except OSError:
+                        pass
+
+            threading.Thread(
+                target=guard_worker_startup,
+                name=f"auto-multi-dev-startup-{profile_id[:8]}",
+                daemon=True,
+            ).start()
 
             def relay_stop() -> None:
                 while worker.poll() is None:
@@ -392,6 +413,12 @@ class MultiDevApp(production.MultiApp):
                         event = {"event": "detail", "message": line}
                     kind = str(event.get("event") or "")
                     message = str(event.get("message") or "")
+                    if kind == "runtime_ready":
+                        runtime_ready_event.set()
+                        log_writer.action(
+                            "AUTO MULTI DEV runtime READY • Bridge V3 + image stack"
+                        )
+                        continue
                     if kind == "detail":
                         if message:
                             log_writer.detail(message)
@@ -441,8 +468,12 @@ class MultiDevApp(production.MultiApp):
             if not terminal:
                 payload = {
                     "error": (
-                        "Worker AUTO MULTI DEV kết thúc không có kết quả "
-                        f"(exit={returncode})"
+                        "Runtime ảnh worker bị treo quá 90 giây; GUI cha đã dừng"
+                        if startup_timed_out.is_set()
+                        else (
+                            "Worker AUTO MULTI DEV kết thúc không có kết quả "
+                            f"(exit={returncode})"
+                        )
                     )
                 }
                 self.after(
