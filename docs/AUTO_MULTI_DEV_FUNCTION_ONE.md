@@ -27,3 +27,7 @@ Chức năng 1 chỉ hoàn thành khi cùng một vòng đã sản xuất đủ 
 - Tầng 6: nếu hàng dưới cùng là chậu trống thì gieo ngay; nếu có cây chưa chín mới tiếp tục kiểm tra.
 
 - Khi máy còn VP hoàn thành che phía trước, auto click liên tục tại máy; không giới hạn ba nhịp. Chỉ dừng click khi panel máy được xác minh đã mở. Lệnh Dừng AUTO và chặn kho đầy vẫn có hiệu lực.
+
+## Điều kiện runtime của chuỗi
+
+Toàn bộ kéo tầng, kéo trồng/thu và kéo sản xuất trong Chức năng 1 chạy trên Bridge V3. Đường kéo nhiều điểm được gửi thành một batch native để một cấu hình thời gian có một chủ sở hữu duy nhất; không dùng luồng `CAPTURE1` cũ.
