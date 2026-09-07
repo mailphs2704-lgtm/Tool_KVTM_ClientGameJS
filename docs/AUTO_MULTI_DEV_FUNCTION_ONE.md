@@ -25,3 +25,5 @@ Chức năng 1 chỉ hoàn thành khi cùng một vòng đã sản xuất đủ 
 - Route màn hình chính → tầng 6 (demo) là 1,4,1. Route tầng 1 → tầng 6 của chức năng là 4,1.
 - Chờ cây chín có timeout 120 giây, mặc định kiểm tra mỗi 0.3 giây theo cấu hình Multi Dev và luôn tôn trọng stop event.
 - Tầng 6: nếu hàng dưới cùng là chậu trống thì gieo ngay; nếu có cây chưa chín mới tiếp tục kiểm tra.
+
+- Khi máy còn VP hoàn thành che phía trước, auto click liên tục tại máy; không giới hạn ba nhịp. Chỉ dừng click khi panel máy được xác minh đã mở. Lệnh Dừng AUTO và chặn kho đầy vẫn có hiệu lực.

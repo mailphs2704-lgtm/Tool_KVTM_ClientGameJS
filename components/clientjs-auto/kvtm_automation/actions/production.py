@@ -11,7 +11,7 @@ from ..runtime.wait import Waiter
 
 __all__ = ["ProductionResult", "ProductionActions"]
 FILE_FUNCTIONS = (
-    "Thu VP hoàn thành đang chắn trước máy bằng nhịp giới hạn",
+    "Click thu VP liên tục đến khi panel máy thực sự mở",
     "Chỉ mở máy sấy tầng 1 sau khi đã thu VP và xác minh panel",
     "Xác minh đúng máy bằng template Táo sấy trước khi thao tác",
     "Đếm ô sản xuất trống bằng template và loại trùng hình học",
@@ -145,18 +145,19 @@ class ProductionActions:
     def _collect_finished_before_open(self) -> None:
         """Collect finished output first; opening the panel is the verification."""
 
-        self.context.ensure_running()
-        for batch, click_count in ((1, 1), (2, 5), (3, 5)):
-            for _pulse in range(click_count):
-                self.vision.driver.click(*self.DRYER_POINT)
-                self.waiter.sleep(0.10)
-            self.waiter.sleep(0.50)
+        click_count = 0
+        while True:
+            self.context.ensure_running()
+            click_count += 1
+            self.vision.driver.click(*self.DRYER_POINT)
+            self.waiter.sleep(0.30)
             warehouse_full, panel_ready = self._panel_state()
-            self.context.log(
-                "AUTO sản xuất • thu VP trước máy "
-                f"nhịp {batch}/3 • clicks={click_count} • "
-                f"panel={panel_ready} • fullkho={warehouse_full}"
-            )
+            if click_count == 1 or click_count % 5 == 0 or panel_ready:
+                self.context.log(
+                    "AUTO sản xuất • click thu VP/mở máy "
+                    f"• clicks={click_count} • panel={panel_ready} • "
+                    f"fullkho={warehouse_full}"
+                )
             if warehouse_full:
                 self.vision.driver.click(*self.CLOSE_POINT)
                 raise ScreenTimeout(
@@ -164,12 +165,10 @@ class ProductionActions:
                 )
             if panel_ready:
                 self.context.log(
-                    "AUTO sản xuất • đã thu hết VP chắn máy và mở được panel tầng 1"
+                    "AUTO sản xuất • đã thu hết VP chắn máy và mở được panel tầng 1 "
+                    f"• dừng click sau {click_count} lần"
                 )
                 return
-        raise ScreenTimeout(
-            "Không thu hết VP hoàn thành hoặc không mở được panel máy sấy tầng 1"
-        )
 
     def _open_verified_dryer(self) -> tuple[int, tuple[int, int], tuple[int, int]]:
         self._collect_finished_before_open()

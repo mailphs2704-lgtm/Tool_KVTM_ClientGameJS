@@ -67,12 +67,14 @@ def main() -> int:
     require(action, "consumed != self.REQUIRED_COUNT", "Exact post-production accounting missing")
     require(action, "self.speed_config.vp_production_delay", "Production speed binding missing")
     require(action, "_collect_finished_before_open()", "Finished-output collection gate missing")
-    require(action, "for batch, click_count in ((1, 1), (2, 5), (3, 5))",
-            "AUTO PRO bounded collection pulses missing")
+    require(action, "while True:",
+            "Machine opening must keep clicking until the panel is verified")
+    require(action, "self.context.ensure_running()",
+            "Continuous machine click loop must remain stoppable")
     require(action, "đã thu hết VP chắn máy và mở được panel tầng 1",
             "Collection-to-panel verification missing")
-    require(action, "Không thu hết VP hoàn thành hoặc không mở được panel",
-            "Collection/panel fail-close missing")
+    require(action, "dừng click sau",
+            "Machine click loop must stop only after panel verification")
     require(action, "for attempt in range(1, 4)", "Three product-render retries missing")
     require(action, 'threshold=0.70', "AUTO PRO initial empty-slot gate missing")
     require(action, '"full_kho"', "Canonical full warehouse template missing")
@@ -100,6 +102,8 @@ def main() -> int:
     require(function_one, "floor_1_to_floor_6()", "Floor-1 to floor-6 route missing")
     require(function_one, "produce_9_apple_juices()", "Apple-juice intermediate stage missing")
     require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice production asset missing")
+    require(apple_juice, "while True:", "Apple-juice machine must click until panel opens")
+    require(apple_juice, "if panel_ready:", "Apple-juice panel verification missing")
     require(dev, "TẠM PASS 2/3 CHỨC NĂNG 1", "GUI temporary result status missing")
     require(dev, 'text="↟ Demo Auto Pro tới tầng 6"', "Dedicated floor demo button missing")
     require(dev, "profile_id in self._clean_floor_demo_requested",

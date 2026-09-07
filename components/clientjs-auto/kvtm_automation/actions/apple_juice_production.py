@@ -34,31 +34,53 @@ class AppleJuiceProductionActions:
         self.slots = ProductionActions(context, vision, waiter, self.speed_config)
 
     def _open_verified(self):
-        for pulse in range(1, 4):
+        click_count = 0
+        while True:
+            self.context.ensure_running()
+            click_count += 1
             self.vision.driver.click(*self.MACHINE_POINT)
-            self.waiter.sleep(0.55)
+            self.waiter.sleep(0.30)
+            warehouse_full, panel_ready = self.slots._panel_state()
+            if click_count == 1 or click_count % 5 == 0 or panel_ready:
+                self.context.log(
+                    "AUTO Nước táo • click thu VP/mở máy tầng 2 "
+                    f"• clicks={click_count} • panel={panel_ready}"
+                )
+            if warehouse_full:
+                self.vision.driver.click(*self.CLOSE_POINT)
+                raise ScreenTimeout(
+                    "Đã thu VP trước máy Nước táo nhưng kho đang đầy"
+                )
+            if panel_ready:
+                break
+
+        product = None
+        for attempt in range(1, 4):
             product = self.vision.find(
                 self.PRODUCT_TEMPLATE, threshold=0.70, zone=None,
                 scales=(0.75, 0.90, 1.00, 1.10, 1.25), click=False,
             )
-            top = self.slots._find_top_empty_slot()
-            if product is not None and top is not None:
-                empty = self.slots._count_empty_slots()
-                if empty != self.REQUIRED_COUNT:
-                    self.vision.driver.click(*self.CLOSE_POINT)
-                    raise ScreenTimeout(
-                        f"Máy Nước táo có {empty}/9 ô trống; yêu cầu đúng 9"
-                    )
-                self.context.log(
-                    "AUTO Nước táo • xác minh ảnh thư viện nuoc_tao "
-                    f"score={product.score:.3f} • đường kéo={product.center} → {top.center}"
-                )
-                return empty, product.center, top.center
-            self.context.log(
-                f"AUTO Nước táo • chưa xác minh panel tầng 2 • nhịp {pulse}/3"
+            if product is not None:
+                break
+            self.waiter.sleep(0.20)
+        top = self.slots._find_top_empty_slot()
+        if product is None or top is None:
+            self.vision.driver.click(*self.CLOSE_POINT)
+            raise ScreenTimeout(
+                "Panel tầng 2 đã mở nhưng chưa xác minh được nuoc_tao hoặc ô top"
             )
-        self.vision.driver.click(*self.CLOSE_POINT)
-        raise ScreenTimeout("Không xác minh được máy tầng 2 bằng ảnh nuoc_tao")
+        empty = self.slots._count_empty_slots()
+        if empty != self.REQUIRED_COUNT:
+            self.vision.driver.click(*self.CLOSE_POINT)
+            raise ScreenTimeout(
+                f"Máy Nước táo có {empty}/9 ô trống; yêu cầu đúng 9"
+            )
+        self.context.log(
+            "AUTO Nước táo • panel đã mở, dừng click • "
+            f"clicks={click_count} • score={product.score:.3f} • "
+            f"đường kéo={product.center} → {top.center}"
+        )
+        return empty, product.center, top.center
 
     def produce_9_apple_juices(self) -> ProductionResult:
         empty_before, product_point, top_point = self._open_verified()
