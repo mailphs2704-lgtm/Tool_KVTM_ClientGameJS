@@ -106,6 +106,38 @@ if hasattr(ctypes, "windll"):
     kernel32.UnmapViewOfFile.restype = wintypes.BOOL
 
 
+class EngineTouchProxy:
+    """Chained touch API that never delegates to Windows or the real cursor."""
+
+    def __init__(self, driver) -> None:
+        self.driver = driver
+        self._locked = False
+
+    def down(self, x: float, y: float):
+        _GESTURE_LOCK.acquire()
+        self._locked = True
+        try:
+            self.driver._touch_event("down", x, y)
+        except Exception:
+            self._locked = False
+            _GESTURE_LOCK.release()
+            raise
+        return self
+
+    def move(self, x: float, y: float):
+        self.driver._touch_event("move", x, y)
+        return self
+
+    def up(self, x: float, y: float):
+        try:
+            self.driver._touch_event("up", x, y)
+        finally:
+            if self._locked:
+                self._locked = False
+                _GESTURE_LOCK.release()
+        return self
+
+
 class EngineDriver(PCDriver):
     """PCDriver whose coordinates are delivered inside the Cocos engine."""
 
@@ -133,6 +165,9 @@ class EngineDriver(PCDriver):
         else:
             pid = int(device_key)
         super().__init__(pid, reference_size=reference_size)
+        # Never retain TouchProxy from whichever resident PCDriver happened to
+        # be imported. Every chained touch must enter the Cocos V3 pipe.
+        self.touch = EngineTouchProxy(self)
         if self._restart_profile is None:
             self._restart_profile = self._resolve_restart_profile(pid)
             if self._restart_profile:
@@ -402,6 +437,28 @@ class EngineDriver(PCDriver):
                 logical=[float(x), float(y)], error=str(exc),
             )
             raise RuntimeError(f"Cocos touch {phase} thất bại: {exc}") from exc
+
+    def click(self, x: float, y: float) -> None:
+        """Tap through INPUT4 without Windows mouse/touch injection."""
+        with _GESTURE_LOCK:
+            self._touch_event("down", x, y)
+            time.sleep(0.045)
+            self._touch_event("up", x, y)
+            time.sleep(0.035)
+
+    def swipe(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        duration: float = 0.3,
+    ):
+        """Send a two-point gesture as one native BATCH_SWIPE command."""
+        return self.swipe_points(
+            [(float(x1), float(y1)), (float(x2), float(y2))],
+            duration=duration,
+        )
 
     @property
     def capture_mapping_name(self) -> str:
