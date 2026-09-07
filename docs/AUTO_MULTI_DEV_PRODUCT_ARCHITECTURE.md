@@ -110,3 +110,12 @@ Nút demo mới chỉ phát lại đúng `goUp(4)` từ màn hình chính và b�
 Người vận hành xác nhận rõ: xuất phát từ màn hình chính, `goUp(4)` nguyên bản dừng tại tầng 3. Đây là mốc live, không phải suy luận từ `frame_change`.
 
 Bytecode vòng điều hướng Auto Pro chia `target=6`: khi còn ít nhất 4 đơn vị gọi mode 4, sau đó còn 2 đơn vị gọi mode 3. Vì vậy demo kế tiếp phát đúng thứ tự `goUp(4) → goUp(3)`; mode 3 là click `(257,191)`. Demo kiểm tra mỗi lệnh có phản hồi ảnh nhưng chỉ ghi `ĐÃ GỬI`; người vận hành vẫn là nguồn xác nhận tầng 6 trong lượt live này.
+
+
+## LIVE `goUp(4) → goUp(3)` chỉ tới tầng 5 — sửa state machine target 6
+
+Live xác nhận từ màn hình chính, chuỗi mode 4 rồi mode 3 dừng ở tầng 5. Chuỗi này bị đánh dấu NOT PASS.
+
+Đọc lại phần khởi tạo vòng target của Auto Pro cho thấy bước bắt buộc đã bị bỏ sót: `cur=0`; nếu `target>0`, gọi `goUp(1)` và đặt `cur=1`. Với `target=6`, vòng còn 5 nên gọi `goUp(4)` để thành `cur=5`; còn 1 nên gọi `goUp(1)` lần cuối. Chuỗi đúng theo state machine là `goUp(1) → goUp(4) → goUp(1)`.
+
+Demo được thay bằng chuỗi 1-4-1, hậu kiểm từng lệnh có phản hồi nhưng vẫn chỉ báo ĐÃ GỬI. Chỉ xác nhận trực tiếp của người vận hành mới nâng tầng 6 thành LIVE PASS.
