@@ -362,13 +362,18 @@ class MultiDevApp(production.MultiApp):
             )
 
             def relay_stop() -> None:
-                stop_event.wait()
-                if worker.poll() is None and worker.stdin:
-                    try:
-                        worker.stdin.write(json.dumps({"command": "stop"}) + "\n")
-                        worker.stdin.flush()
-                    except (OSError, ValueError):
-                        pass
+                while worker.poll() is None:
+                    if not stop_event.wait(0.10):
+                        continue
+                    if worker.stdin:
+                        try:
+                            worker.stdin.write(
+                                json.dumps({"command": "stop"}) + "\n"
+                            )
+                            worker.stdin.flush()
+                        except (OSError, ValueError):
+                            pass
+                    return
 
             threading.Thread(
                 target=relay_stop,
@@ -468,6 +473,9 @@ class MultiDevApp(production.MultiApp):
         self._clean_main_threads.pop(profile_id, None)
         self._clean_main_workers.pop(profile_id, None)
         self._clean_main_stop_events.pop(profile_id, None)
+        if outcome == "stopped":
+            self.auto_multi_dev_status.set("ĐÃ DỪNG • worker AUTO MULTI DEV đã thoát an toàn")
+            return
         if outcome == "floor_demo_finished":
             completed = int(payload.get("completed_steps", 0) or 0)
             self.auto_multi_dev_status.set(
