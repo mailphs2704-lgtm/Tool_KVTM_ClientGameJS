@@ -557,3 +557,7 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - State machine Auto Pro target6 đúng: initial mode1 → remaining5 mode4 → remaining1 mode1; chuỗi `goUp(1)→goUp(4)→goUp(1)`.
 - Demo đã đổi sang 1-4-1, kiểm tra phản hồi riêng ba command và chỉ báo ĐÃ GỬI.
 - NEXT LIVE: từ màn hình chính xác nhận vị trí cuối; không ghép pipeline nếu chưa đúng tầng 6.
+
+## AUTO MULTI DEV — hợp đồng Bridge V3
+
+Mọi phiên AI sửa AUTO MULTI DEV phải giữ factory tại `components/clientjs-auto/kvtm_automation/runtime/driver.py` nối tới `engine_driver.EngineDriver`. Runtime chính phải xác minh đủ `KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT` và fail-close nếu thiếu; cấm fallback về `CocosBridgeDriver`/CAPTURE1. Các thao tác swipe nhiều điểm phải đi qua một lệnh native batch. Trước khi bàn giao phải chạy `tools/verify_multi_dev_bridge_v3_contract.py`; BAT build cũng thực thi gate này. Không áp quyết định migration này lên AUTO PRO hoặc Dọn quầy nếu không có yêu cầu riêng.
