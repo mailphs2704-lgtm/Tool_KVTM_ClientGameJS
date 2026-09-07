@@ -33,35 +33,57 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _bootstrap_proven_image_runtime(auto_root: Path, profile_id: str) -> None:
-    """Run the proven AUTO bootstrap before any clean module or worker thread."""
+def _bootstrap_shared_image_runtime(auto_root: Path, profile_id: str) -> None:
+    """Prepare only the clean shared image stack before Bridge V3 construction.
+
+    Do not import ``local_launcher`` here.  It belongs to the legacy AUTO PRO
+    runtime and can enter the native robot-image initialization path before the
+    isolated Multi Dev worker reaches EngineDriver.  The clean worker needs only
+    packaged Pillow/OpenCV/NumPy plus adaptive matching; EngineDriver itself is
+    still selected later by ``ClientJSDriverFactory`` and remains the sole V3
+    capture/input transport.
+    """
 
     root = Path(auto_root).resolve()
+    install_component_path()
+    os.environ["KVTM_SKIP_RUNTIME_SYNC"] = "1"
+
+    def bootstrap_log(message: str) -> None:
+        emit(
+            "detail", workflow=WORKFLOW_NAME, profile_id=profile_id,
+            message=str(message),
+        )
+
+    emit(
+        "detail", workflow=WORKFLOW_NAME, profile_id=profile_id,
+        message="Image bootstrap: shared clean runtime START",
+    )
+    from shared_runtime.image_runtime import install_binary_dependencies
+
+    install_binary_dependencies(root, logger=bootstrap_log)
+
+    # adaptive_cv is a small technical compatibility shim shipped beside
+    # engine_driver.  Import it only after cv2 is resident so its installation
+    # cannot become the first native image bootstrap in this process.
     root_text = str(root)
     if root_text not in sys.path:
         sys.path.insert(0, root_text)
-    os.environ["KVTM_SKIP_RUNTIME_SYNC"] = "1"
-    emit(
-        "detail", workflow=WORKFLOW_NAME, profile_id=profile_id,
-        message="Image bootstrap: local_launcher proven route START",
-    )
-    importlib.import_module("local_launcher")
-    importlib.import_module("engine_driver")
     adaptive_cv = importlib.import_module("adaptive_cv")
     adaptive_cv.install_adaptive_matching()
+
     missing = [
         name for name in ("PIL", "numpy", "cv2")
         if name not in sys.modules
     ]
     if missing:
         raise RuntimeError(
-            "Bootstrap AUTO PRO không nạp đủ image runtime: " + ", ".join(missing)
+            "Shared image runtime không nạp đủ module: " + ", ".join(missing)
         )
     emit(
         "detail", workflow=WORKFLOW_NAME, profile_id=profile_id,
         message=(
-            "Image bootstrap: proven route READY • "
-            "PIL/numpy/cv2 đã resident trong worker độc lập"
+            "Image bootstrap: shared clean runtime READY • "
+            "PIL/numpy/cv2 resident • local_launcher=disabled"
         ),
     )
 
@@ -84,9 +106,9 @@ def main() -> int:
             runtime="isolated-process", bridge="V3",
             capture_owner="single-worker",
         )
-        # This ordering is intentional and matches the working AUTO worker:
-        # native/image bootstrap first; clean imports and threads only after READY.
-        _bootstrap_proven_image_runtime(
+        # Bootstrap only the shared third-party image runtime.  AUTO PRO main
+        # wiring remains untouched and is not imported into this worker.
+        _bootstrap_shared_image_runtime(
             Path(args.auto_root), str(args.profile_id)
         )
 
@@ -141,7 +163,7 @@ def main() -> int:
         emit(
             "runtime_ready", workflow=WORKFLOW_NAME,
             profile_id=args.profile_id, bridge="V3",
-            image_runtime="proven-bootstrap",
+            image_runtime="shared-clean-bootstrap",
         )
         speed = automation.speed_config
         log(

@@ -9,6 +9,7 @@ ENGINE = ROOT / "test-candidates/auto-pro-clientjs-temp/engine_driver.py"
 NATIVE = ROOT / "bridge-v3/native/kvtm_bridge_v3.cpp"
 PACKAGE = ROOT / "packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1"
 WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
+SHARED_IMAGE = ROOT / "components/clientjs-auto/shared_runtime/image_runtime.py"
 ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 
 
@@ -19,7 +20,7 @@ def require(text: str, token: str, message: str) -> None:
 
 def main() -> int:
     texts = {}
-    for path in (FACTORY, ENGINE, NATIVE, PACKAGE, WORKER, ENTRY):
+    for path in (FACTORY, ENGINE, NATIVE, PACKAGE, WORKER, SHARED_IMAGE, ENTRY):
         if not path.is_file():
             raise AssertionError(f"Missing Bridge V3 contract file: {path}")
         source = path.read_text(encoding="utf-8")
@@ -32,6 +33,7 @@ def main() -> int:
     native = texts[NATIVE]
     package = texts[PACKAGE]
     worker = texts[WORKER]
+    shared_image = texts[SHARED_IMAGE]
     entry = texts[ENTRY]
 
     require(factory, '_load_module("engine_driver")',
@@ -78,18 +80,37 @@ def main() -> int:
             "V3 binaries are not packaged")
     require(package, 'worker\\auto_multi_dev_worker.py',
             "Isolated AUTO MULTI DEV worker is not a required package input")
+
     require(worker, 'runtime="isolated-process"',
             "AUTO MULTI DEV worker isolation marker missing")
     require(worker, 'bridge="V3"', "AUTO MULTI DEV worker V3 marker missing")
-    require(worker, 'importlib.import_module("local_launcher")',
-            "Worker must use the proven AUTO image bootstrap")
+    require(worker, "from shared_runtime.image_runtime import install_binary_dependencies",
+            "Worker must use the shared clean image runtime")
+    require(worker, "install_binary_dependencies(root, logger=bootstrap_log)",
+            "Worker shared image bootstrap call missing")
+    if 'importlib.import_module("local_launcher")' in worker:
+        raise AssertionError(
+            "AUTO MULTI DEV must not bootstrap through legacy local_launcher"
+        )
     require(worker, "adaptive_cv.install_adaptive_matching()",
-            "Worker must complete proven OpenCV initialization")
+            "Worker must complete adaptive OpenCV initialization")
     require(worker, "image_runtime_ready=True",
             "Clean workflow must reuse worker-prepared image modules")
     require(worker, "KVAutomation(", "Worker must own KVAutomation")
     require(worker, "AutoMainWorkflow(automation).run()",
             "Worker must own the complete main workflow")
+
+    require(shared_image, 'importlib.import_module("PIL._imaging")',
+            "Shared runtime must preload Pillow native extension")
+    require(shared_image, 'importlib.import_module("cv2")',
+            "Shared runtime must load OpenCV")
+    require(shared_image, 'importlib.import_module("numpy")',
+            "Shared runtime must load NumPy")
+    require(shared_image, "_FORBIDDEN_BUSINESS_MODULES",
+            "Shared runtime must guard against AUTO PRO business imports")
+    require(shared_image, "không gọi local_launcher",
+            "Shared runtime must document local_launcher isolation")
+
     require(entry, 'worker_root / "auto_multi_dev_worker.py"',
             "Multi GUI does not launch the isolated worker")
     require(entry, "self._live_enabled.discard(profile_id)",
@@ -104,6 +125,7 @@ def main() -> int:
 
     print("AUTO MULTI DEV BRIDGE V3 CONTRACT VERIFIED")
     print("protocol=KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT")
+    print("image_runtime=shared-clean local_launcher=false")
     print("legacy_capture1_fallback=false")
     return 0
 
