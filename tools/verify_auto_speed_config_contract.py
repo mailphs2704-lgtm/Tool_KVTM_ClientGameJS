@@ -49,8 +49,10 @@ def main() -> int:
     for key in keys:
         require(config, key, f"Config key missing: {key}")
         require(gui, f'"{key}"', f"GUI key missing: {key}")
-    require(dev, "speed_config=speed_values",
-            "Resident runtime speed injection missing")
+    require(worker, "speed_config=speed_values",
+            "Isolated worker speed injection missing")
+    require(worker, "Tốc độ MULTI DEV |", "Worker speed audit log missing")
+    require(dev, '"--speed-json"', "GUI speed JSON handoff missing")
     require(action, "self.speed_config.floor_swipe_duration",
             "Floor speed not applied")
     require(action, "self.speed_config.plant_harvest_duration",
@@ -61,7 +63,6 @@ def main() -> int:
             "Floor 6 must allow immediate planting on empty pots")
     require(automation, "AutoSpeedConfig.from_mapping",
             "Speed normalization missing")
-    require(dev, "Tốc độ MULTI DEV |", "Speed audit log missing")
     require(gui, "MULTI_DEV_TUNING_KEYS = (",
             "Dedicated Multi DEV tuning key group missing")
     require(gui, "AUTO_LEGACY_TUNING_KEYS = tuple(",
