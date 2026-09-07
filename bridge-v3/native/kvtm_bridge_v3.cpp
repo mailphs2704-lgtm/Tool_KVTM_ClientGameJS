@@ -49,6 +49,8 @@ struct CaptureHeader {
     DWORD status;
     ULONGLONG timestamp_ms;
 };
+constexpr DWORD kCaptureMappingBytes =
+    static_cast<DWORD>(sizeof(CaptureHeader)) + kMaxCaptureBytes;
 
 using DirectorGetInstance = void* (__cdecl*)();
 using DirectorGetOpenGLView = void* (__thiscall*)(void*);
@@ -72,7 +74,6 @@ GlReadBuffer g_gl_read_buffer = nullptr;
 GlPixelStorei g_gl_pixel_store_i = nullptr;
 HANDLE g_capture_mapping = nullptr;
 CaptureHeader* g_capture_header = nullptr;
-DWORD g_capture_capacity = 0;
 volatile LONG g_capture_frame = 0;
 
 bool same_process_window(HWND hwnd) {
@@ -121,29 +122,43 @@ bool resolve_opengl() {
 }
 
 bool ensure_capture_mapping(DWORD pixel_bytes) {
-    const DWORD required = static_cast<DWORD>(sizeof(CaptureHeader)) + pixel_bytes;
-    if (g_capture_header && g_capture_capacity >= required) return true;
-    if (g_capture_header) {
-        UnmapViewOfFile(g_capture_header);
-        g_capture_header = nullptr;
+    if (pixel_bytes > kMaxCaptureBytes) {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return false;
     }
-    if (g_capture_mapping) {
-        CloseHandle(g_capture_mapping);
-        g_capture_mapping = nullptr;
+    // CAPTURE3_FIXEDMAP: create one section object for the whole lifetime of
+    // this ClientJS process. Never resize/recreate a named mapping when the
+    // client area changes, because an external reader can keep the old section
+    // alive under the same name and split writer/reader frame counters.
+    if (g_capture_header && g_capture_mapping) return true;
+    if (g_capture_header || g_capture_mapping) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return false;
     }
+
     wchar_t name[96]{};
     swprintf_s(name, L"Local\\KVTM-CaptureV3-%lu", GetCurrentProcessId());
+    SetLastError(ERROR_SUCCESS);
     g_capture_mapping = CreateFileMappingW(
-        INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, required, name);
+        INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0,
+        kCaptureMappingBytes, name);
     if (!g_capture_mapping) return false;
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        CloseHandle(g_capture_mapping);
+        g_capture_mapping = nullptr;
+        SetLastError(ERROR_ALREADY_EXISTS);
+        return false;
+    }
     g_capture_header = static_cast<CaptureHeader*>(
-        MapViewOfFile(g_capture_mapping, FILE_MAP_ALL_ACCESS, 0, 0, required));
+        MapViewOfFile(
+            g_capture_mapping, FILE_MAP_ALL_ACCESS, 0, 0,
+            kCaptureMappingBytes));
     if (!g_capture_header) {
         CloseHandle(g_capture_mapping);
         g_capture_mapping = nullptr;
         return false;
     }
-    g_capture_capacity = required;
+    ZeroMemory(g_capture_header, sizeof(CaptureHeader));
     return true;
 }
 
@@ -385,10 +400,9 @@ DWORD WINAPI pipe_thread(void*) {
                 const char* response = "ERR PARSE\n";
                 char output[64]{};
                 if (std::strncmp(input, "PING", 4) == 0) {
-                    // CAPTURE3_SYNC2 identifies the status-first writer fix. A
-                    // running ClientJS keeps an injected DLL resident, so this
-                    // token lets Multi Dev reject stale pre-fix V3 binaries.
-                    response = "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT CAPTURE3_SYNC2\n";
+                    // CAPTURE3_FIXEDMAP identifies the lifetime-fixed named
+                    // section. Multi Dev rejects resident pre-fixed-map DLLs.
+                    response = "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP\n";
                 } else if (std::strncmp(input, "CAPTURE", 7) == 0) {
                     CaptureCommand command{};
                     SendMessageW(
