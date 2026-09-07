@@ -14,13 +14,14 @@ RECOGNITION = ROOT / "components/clientjs-auto/kvtm_automation/actions/item_reco
 CORE_GUI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
+AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 
 FILE_FUNCTIONS = (
     "Đọc và parse các file AUTO Main bắt buộc",
     "Khóa đúng hai VP của chức năng 1",
     "Khóa thứ tự thu vàng, treo VP và hai swipe",
     "Khóa xác minh giao dịch trước khi ghi nhận",
-    "Khóa wiring resident runtime và nút bán riêng",
+    "Khóa wiring isolated worker và nút bán riêng",
     "Cấm phụ thuộc pyc và gọi workflow Dọn quầy",
 )
 
@@ -52,6 +53,7 @@ def main() -> int:
     gui = read(CORE_GUI)
     entry = read(DEV_ENTRY)
     auto_main = read(AUTO_MAIN)
+    auto_multi_worker = read(AUTO_MULTI_WORKER)
 
     for token in ('"tao_say"', '"vai_vang"', '"tinh_dau_hh"'):
         require(recognition, token, f"Missing allowed AUTO VP: {token}")
@@ -146,10 +148,14 @@ def main() -> int:
         raise AssertionError("Passed standalone VP sale button must stay removed")
     require(auto_main, "AutoVpSaleWorkflow(self.auto).run",
             "Consolidated start must execute the stable sale workflow")
-    require(entry, "AutoMainWorkflow(automation).run",
-            "Consolidated resident workflow wiring missing")
-    require(entry, 'outcome = "auto_main_ready"',
-            "Consolidated AUTO Main result handling missing")
+    require(auto_multi_worker, "AutoMainWorkflow(automation).run",
+            "Consolidated isolated-worker workflow wiring missing")
+    require(auto_multi_worker, 'outcome="auto_main_ready"',
+            "Worker AUTO Main result marker missing")
+    require(entry, 'worker_root / "auto_multi_dev_worker.py"',
+            "GUI isolated-worker launch wiring missing")
+    require(entry, 'outcome = str(event.pop("outcome", "auto_main_ready"))',
+            "GUI AUTO Main result handling missing")
 
     for text in (action, workflow):
         forbid(text, ".pyc", "AUTO Main sale must not load legacy pyc")
@@ -157,7 +163,7 @@ def main() -> int:
         require(text, "FILE_FUNCTIONS", "Every new AUTO Main module needs FILE_FUNCTIONS")
 
     print("AUTO MULTI DEV VP SALE STATIC CONTRACT VERIFIED")
-    print("runtime=resident")
+    print("runtime=isolated_worker_v3")
     print("flow=collect_gold_round_robin_exact_x10_two_swipes_repeat")
     print("allowed_items=tao_say,vai_vang")
     print("clear_stall_runtime=untouched")
