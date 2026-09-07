@@ -44,6 +44,14 @@ def main() -> int:
 
     require(engine, "def _trace(self, _action: str, **_details)",
             "EngineDriver must own its trace compatibility shim")
+    require(engine, "class EngineTouchProxy:",
+            "EngineDriver must own a cursor-free chained touch proxy")
+    require(engine, "self.touch = EngineTouchProxy(self)",
+            "Resident PCDriver touch proxy must be replaced")
+    require(engine, "def click(self, x: float, y: float)",
+            "EngineDriver must override inherited click")
+    require(engine, "return self.swipe_points(",
+            "EngineDriver must override inherited swipe with native batch")
     if engine.index("def _trace(self, _action: str, **_details)") > engine.index("def __init__(self, device_key"):
         raise AssertionError("EngineDriver trace shim must exist before construction")
     require(engine, "with self._pipe_lock:",
