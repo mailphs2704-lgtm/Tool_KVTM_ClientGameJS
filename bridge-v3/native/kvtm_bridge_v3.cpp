@@ -385,7 +385,10 @@ DWORD WINAPI pipe_thread(void*) {
                 const char* response = "ERR PARSE\n";
                 char output[64]{};
                 if (std::strncmp(input, "PING", 4) == 0) {
-                    response = "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT\n";
+                    // CAPTURE3_SYNC2 identifies the status-first writer fix. A
+                    // running ClientJS keeps an injected DLL resident, so this
+                    // token lets Multi Dev reject stale pre-fix V3 binaries.
+                    response = "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT CAPTURE3_SYNC2\n";
                 } else if (std::strncmp(input, "CAPTURE", 7) == 0) {
                     CaptureCommand command{};
                     SendMessageW(
