@@ -8,6 +8,8 @@ FACTORY = ROOT / "components/clientjs-auto/kvtm_automation/runtime/driver.py"
 ENGINE = ROOT / "test-candidates/auto-pro-clientjs-temp/engine_driver.py"
 NATIVE = ROOT / "bridge-v3/native/kvtm_bridge_v3.cpp"
 PACKAGE = ROOT / "packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1"
+WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
+ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 
 
 def require(text: str, token: str, message: str) -> None:
@@ -17,7 +19,7 @@ def require(text: str, token: str, message: str) -> None:
 
 def main() -> int:
     texts = {}
-    for path in (FACTORY, ENGINE, NATIVE, PACKAGE):
+    for path in (FACTORY, ENGINE, NATIVE, PACKAGE, WORKER, ENTRY):
         if not path.is_file():
             raise AssertionError(f"Missing Bridge V3 contract file: {path}")
         source = path.read_text(encoding="utf-8")
@@ -29,6 +31,8 @@ def main() -> int:
     engine = texts[ENGINE]
     native = texts[NATIVE]
     package = texts[PACKAGE]
+    worker = texts[WORKER]
+    entry = texts[ENTRY]
 
     require(factory, '_load_module("engine_driver")',
             "Multi Dev does not select EngineDriver V3")
@@ -72,6 +76,25 @@ def main() -> int:
             "Single-batch timing evidence missing")
     require(package, '"kvtm_loader_v3.exe", "kvtm_bridge_v3.dll"',
             "V3 binaries are not packaged")
+    require(package, 'worker\\auto_multi_dev_worker.py',
+            "Isolated AUTO MULTI DEV worker is not a required package input")
+    require(worker, 'runtime="isolated-process"',
+            "AUTO MULTI DEV worker isolation marker missing")
+    require(worker, 'bridge="V3"', "AUTO MULTI DEV worker V3 marker missing")
+    require(worker, "KVAutomation(", "Worker must own KVAutomation")
+    require(worker, "AutoMainWorkflow(automation).run()",
+            "Worker must own the complete main workflow")
+    require(entry, 'worker_root / "auto_multi_dev_worker.py"',
+            "Multi GUI does not launch the isolated worker")
+    require(entry, "self._live_enabled.discard(profile_id)",
+            "Live capture must yield before AUTO MULTI DEV starts")
+    thread_body = entry.split("def _run_clean_main_thread", 1)[1].split(
+        "def _finish_clean_main", 1
+    )[0]
+    if "KVAutomation(" in thread_body:
+        raise AssertionError("Multi GUI thread still constructs automation in-process")
+    require(thread_body, "subprocess.Popen(",
+            "Multi GUI thread must supervise a worker process")
 
     print("AUTO MULTI DEV BRIDGE V3 CONTRACT VERIFIED")
     print("protocol=KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT")
