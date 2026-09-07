@@ -408,6 +408,14 @@ class EngineDriver(PCDriver):
         return rf"Local\KVTM-CaptureV3-{self.pid}"
 
     def _capture_shared_bgra_once(self) -> tuple[bytes, int, int]:
+        # Keep the pipe transaction and shared-memory copy atomic relative to
+        # every other command from this driver. Without this outer RLock,
+        # another screenshot can publish a newer frame after OK FRAME but
+        # before the current pixels/header have been copied.
+        with self._pipe_lock:
+            return self._capture_shared_bgra_once_locked()
+
+    def _capture_shared_bgra_once_locked(self) -> tuple[bytes, int, int]:
         response = self._pipe("CAPTURE\n", 3000)
         parts = response.split()
         if len(parts) != 6 or parts[:2] != ["OK", "FRAME"]:
