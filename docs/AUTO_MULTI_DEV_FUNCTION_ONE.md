@@ -31,3 +31,7 @@ Chức năng 1 chỉ hoàn thành khi cùng một vòng đã sản xuất đủ 
 ## Điều kiện runtime của chuỗi
 
 Toàn bộ kéo tầng, kéo trồng/thu và kéo sản xuất trong Chức năng 1 chạy trên Bridge V3. Đường kéo nhiều điểm được gửi thành một batch native để một cấu hình thời gian có một chủ sở hữu duy nhất; không dùng luồng `CAPTURE1` cũ.
+
+## Biên thực thi
+
+Chuỗi Chức năng 1 chạy trọn vẹn trong một worker process riêng cho từng profile. Từ vào game, bán VP, trồng Táo, sản xuất Táo sấy đến Nước táo đều dùng cùng một `EngineDriver V3`; không chuyển driver giữa các chừng và không chạy logic automation trong GUI Multi.
