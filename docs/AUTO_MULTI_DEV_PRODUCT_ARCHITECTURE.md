@@ -127,3 +127,7 @@ Demo được thay bằng chuỗi 1-4-1, hậu kiểm từng lệnh có phản h
 - Các đường kéo nhiều điểm dùng một lệnh native `SWIPE` (`pipe_mode=single_batch`). Python không phát từng `MOVE` qua pipe vì sẽ tạo nhiều lớp xử lý và làm tốc độ trồng/thu thay đổi giữa đường.
 - Việc còn đóng gói DLL cũ phục vụ luồng ổn định khác không cho phép AUTO MULTI DEV chọn DLL cũ. Build gate `verify_multi_dev_bridge_v3_contract.py` bảo vệ ranh giới này.
 - Khi chạy đúng, log phải hiện rõ `kvtm_loader_v3.exe`, `kvtm_bridge_v3.dll`, PING `CAPTURE3 ... BATCH_SWIPE` và mode `cocos-dll-v3-batch-swipe-capture3`.
+
+### Tương thích runtime resident
+
+`engine_driver.EngineDriver` phải tự cung cấp `_trace` nhẹ và không dựa vào implementation của module tên chung `pc_driver` đã resident trong process. Không bật chụp ảnh trace theo từng input trong đường production vì lớp capture phụ này làm sai nhịp batch swipe. Log nghiệp vụ tiếp tục do AUTO MULTI DEV quản lý.
