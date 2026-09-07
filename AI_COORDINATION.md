@@ -565,3 +565,5 @@ Mọi phiên AI sửa AUTO MULTI DEV phải giữ factory tại `components/clie
 ## AUTO MULTI DEV — worker isolation bắt buộc
 
 Chức năng chính AUTO MULTI DEV phải chạy qua `components/clientjs-auto/worker/auto_multi_dev_worker.py`. Cấm đưa `KVAutomation` hoặc `AutoMainWorkflow` trở lại `_run_clean_main_thread` của GUI; hàm này chỉ được giám sát subprocess và chuyển log/Stop. Một profile có đúng một worker sở hữu Bridge V3/CAPTURE3, và preview phải nhường capture trước khi chạy. Riêng luồng này chủ động nạp image runtime trong worker; không tối ưu bằng cách chia sẻ namespace resident. Build phải qua `verify_multi_dev_bridge_v3_contract.py`.
+
+AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh của AUTO PRO trước khi dựng workflow sạch: `local_launcher`, `engine_driver`, rồi `adaptive_cv.install_adaptive_matching()`. Không đổi lại thành cold-import trực tiếp PIL/NumPy/cv2 chỉ dựa trên suy đoán thứ tự import; lần thử đó đã treo 90 giây tại NumPy. Việc loại bỏ bootstrap AUTO PRO chỉ được thực hiện sau khi runtime ảnh Multi Dev độc lập có live gate tương đương.
