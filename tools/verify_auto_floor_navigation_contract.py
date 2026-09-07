@@ -55,14 +55,20 @@ def main() -> int:
             "Floor navigation is not wired to resident automation")
     require(actions_init, "FloorNavigationActions",
             "Floor navigation export missing")
-    if "goUp(4)" in action:
-        raise AssertionError("Rejected multi-floor jump reintroduced")
+    require(action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)",
+            "Exact Auto Pro goUp(4) swipe missing")
+    require(action, "def reference_go_up_4(self)",
+            "Isolated Auto Pro goUp(4) reference method missing")
+    require(action, "duration=self.speed_config.plant_harvest_duration",
+            "Auto Pro goUp(4) harvest-speed binding missing")
+    require(action, "chờ người vận hành xác nhận tầng thực tế",
+            "Reference demo must not claim an absolute-floor PASS")
     if "FloorNavigationActions" in planting:
         raise AssertionError("Stable planting flow must not be rewritten by floor navigation")
 
     print("AUTO MULTI DEV FLOOR NAVIGATION STATIC CONTRACT VERIFIED")
-    print("reference=auto_pro_goUp_1")
-    print("movement=one_floor_one_pulse")
+    print("reference=auto_pro_goUp_1_and_exact_goUp_4")
+    print("movement=stable_one_floor_primitive_plus_isolated_goUp_4_reference")
     print("maximum_steps=5")
     print("pre_production_scan=fresh_frame_required")
     print("stable_planting=untouched")
