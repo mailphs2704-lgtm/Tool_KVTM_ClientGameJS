@@ -561,3 +561,7 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 ## AUTO MULTI DEV — hợp đồng Bridge V3
 
 Mọi phiên AI sửa AUTO MULTI DEV phải giữ factory tại `components/clientjs-auto/kvtm_automation/runtime/driver.py` nối tới `engine_driver.EngineDriver`. Runtime chính phải xác minh đủ `KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT` và fail-close nếu thiếu; cấm fallback về `CocosBridgeDriver`/CAPTURE1. Các thao tác swipe nhiều điểm phải đi qua một lệnh native batch. Trước khi bàn giao phải chạy `tools/verify_multi_dev_bridge_v3_contract.py`; BAT build cũng thực thi gate này. Không áp quyết định migration này lên AUTO PRO hoặc Dọn quầy nếu không có yêu cầu riêng.
+
+## AUTO MULTI DEV — worker isolation bắt buộc
+
+Chức năng chính AUTO MULTI DEV phải chạy qua `components/clientjs-auto/worker/auto_multi_dev_worker.py`. Cấm đưa `KVAutomation` hoặc `AutoMainWorkflow` trở lại `_run_clean_main_thread` của GUI; hàm này chỉ được giám sát subprocess và chuyển log/Stop. Một profile có đúng một worker sở hữu Bridge V3/CAPTURE3, và preview phải nhường capture trước khi chạy. Riêng luồng này chủ động nạp image runtime trong worker; không tối ưu bằng cách chia sẻ namespace resident. Build phải qua `verify_multi_dev_bridge_v3_contract.py`.
