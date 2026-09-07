@@ -38,6 +38,7 @@ class FloorNavigationActions:
     MIN_FRAME_CHANGE = 1.0
     SETTLE_SECONDS = 0.65
     AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)
+    AUTO_PRO_GO_UP_3_POINT = (257, 191)
     AUTO_PRO_GO_UP_WAIT = 0.70
     AUTO_PRO_POST_WAIT = 0.15
     CLOSE_SIDE_POINT = (975, 316)
@@ -108,10 +109,11 @@ class FloorNavigationActions:
             frame_change_scores=tuple(scores),
         )
 
-    def reference_go_up_4(self) -> FloorMoveResult:
-        """Replay the exact Auto Pro goUp(4) branch; do not infer an absolute floor."""
+    def reference_main_to_floor_6(self) -> FloorMoveResult:
+        """Replay Auto Pro's target-6 sequence: goUp(4), then goUp(3)."""
         self.context.ensure_running()
         before = self.vision.frame().copy()
+
         self.vision.driver.click(*self.CLOSE_SIDE_POINT)
         self.vision.driver.swipe(
             *self.AUTO_PRO_GO_UP_4_SWIPE,
@@ -119,28 +121,43 @@ class FloorNavigationActions:
         )
         self.waiter.sleep(self.AUTO_PRO_GO_UP_WAIT)
         self.waiter.sleep(self.AUTO_PRO_POST_WAIT)
-        after = self.vision.frame().copy()
-        change = self._frame_change(before, after)
-        self.context.detail(
-            "AUTO PRO floor reference | command=goUp(4) | "
-            f"path={self.AUTO_PRO_GO_UP_4_SWIPE} | "
-            f"duration={self.speed_config.plant_harvest_duration:.3f}s | "
-            f"go_up_wait={self.AUTO_PRO_GO_UP_WAIT:.2f}s | "
-            f"post_wait={self.AUTO_PRO_POST_WAIT:.2f}s | frame_change={change:.2f}"
-        )
-        if change < self.MIN_FRAME_CHANGE:
+        after_mode_4 = self.vision.frame().copy()
+        first_change = self._frame_change(before, after_mode_4)
+        if first_change < self.MIN_FRAME_CHANGE:
             raise ScreenTimeout(
-                "Lệnh tham chiếu Auto Pro goUp(4) không tạo thay đổi hình ảnh"
+                "Auto Pro goUp(4) không tạo thay đổi; chưa tới mốc live tầng 3"
             )
         self.context.log(
-            "DEMO • đã gửi nguyên lệnh Auto Pro goUp(4) • "
-            "chờ người vận hành xác nhận tầng thực tế"
+            "DEMO • goUp(4) đã có phản hồi • mốc live kỳ vọng=tầng 3"
+        )
+
+        self.context.ensure_running()
+        self.vision.driver.click(*self.CLOSE_SIDE_POINT)
+        self.vision.driver.click(*self.AUTO_PRO_GO_UP_3_POINT)
+        self.waiter.sleep(self.AUTO_PRO_GO_UP_WAIT)
+        self.waiter.sleep(self.AUTO_PRO_POST_WAIT)
+        after_mode_3 = self.vision.frame().copy()
+        second_change = self._frame_change(after_mode_4, after_mode_3)
+        if second_change < self.MIN_FRAME_CHANGE:
+            raise ScreenTimeout(
+                "Auto Pro goUp(3) không tạo thay đổi sau mốc tầng 3"
+            )
+        self.context.detail(
+            "AUTO PRO floor sequence | target=6 | commands=goUp(4),goUp(3) | "
+            f"mode4_path={self.AUTO_PRO_GO_UP_4_SWIPE} | "
+            f"mode3_click={self.AUTO_PRO_GO_UP_3_POINT} | "
+            f"duration={self.speed_config.plant_harvest_duration:.3f}s | "
+            f"changes=({first_change:.2f},{second_change:.2f})"
+        )
+        self.context.log(
+            "DEMO • đã gửi chuỗi Auto Pro goUp(4) → goUp(3) • "
+            "chờ người vận hành xác nhận tầng 6"
         )
         return FloorMoveResult(
-            direction="AUTO_PRO_GO_UP_4",
-            requested_steps=4,
-            completed_steps=1,
-            frame_change_scores=(change,),
+            direction="AUTO_PRO_TARGET_6",
+            requested_steps=6,
+            completed_steps=2,
+            frame_change_scores=(first_change, second_change),
         )
 
     def up(self, steps: int = 1) -> FloorMoveResult:
