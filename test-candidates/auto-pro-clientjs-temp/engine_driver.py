@@ -506,7 +506,11 @@ class EngineDriver(PCDriver):
             if frame_id == expected_frame and (width, height, stride) != (
                 expected_width, expected_height, expected_stride
             ):
-                raise RuntimeError("Kích thước shared capture không khớp phản hồi")
+                raise RuntimeError(
+                    "Kích thước shared capture không khớp phản hồi "
+                    f"(frame={frame_id}, response={expected_width}x{expected_height} "
+                    f"stride={expected_stride}, shared={width}x{height} stride={stride})"
+                )
             if (
                 pixel_format != 2
                 or stride != width * 4
@@ -542,6 +546,7 @@ class EngineDriver(PCDriver):
                 transient = (
                     "frame chưa hoàn tất hoặc cũ hơn phản hồi" in message
                     or "frame thay đổi trong lúc sao chép" in message
+                    or "Kích thước shared capture không khớp phản hồi" in message
                 )
                 if not transient:
                     raise
