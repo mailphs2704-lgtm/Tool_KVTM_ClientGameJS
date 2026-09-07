@@ -540,3 +540,11 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - `goUp` không vision-check tầng. `goDownLast` mới dùng `quay_hang/check_xuong` làm mốc màn hình chính. Không được coi `frame_change` là floor detector.
 - Demo chuyển sang phát lại nguyên `goUp(4)` và chỉ báo ĐÃ GỬI/chờ operator xác nhận; không tự ghi tầng 6 PASS.
 - NEXT LIVE: từ màn hình chính bấm demo, xác nhận tầng thực tế. Chưa ghép Nước táo/hàng cây thứ sáu.
+
+
+## 2026-09-07 — Live goUp(4)=tầng 3; demo target 6
+
+- User xác nhận từ màn hình chính, Auto Pro `goUp(4)` exact chỉ tới tầng 3.
+- Kết hợp bytecode vòng target: target 6 chạy mode4 trước, remaining=2 chạy mode3; mode3 click `(257,191)`.
+- Demo mới: `reference_main_to_floor_6()` phát `goUp(4) → goUp(3)`, hậu kiểm phản hồi riêng từng lệnh, nhưng chỉ báo ĐÃ GỬI.
+- NEXT LIVE: xác nhận sau mode3 có đứng đúng tầng 6 hay không. Không ghép pipeline trước xác nhận.
