@@ -69,6 +69,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO MULTI DEV floor navigation static contract: VERIFIED" -ForegroundColor Green
 
+$MultiDevBridgeV3Verifier = Join-Path $RepoRoot "tools\verify_multi_dev_bridge_v3_contract.py"
+if (-not (Test-Path -LiteralPath $MultiDevBridgeV3Verifier -PathType Leaf)) {
+    throw "Missing AUTO MULTI DEV Bridge V3 verifier: $MultiDevBridgeV3Verifier"
+}
+& py.exe -3.11 $MultiDevBridgeV3Verifier
+if ($LASTEXITCODE -ne 0) {
+    throw "AUTO MULTI DEV Bridge V3 static contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "AUTO MULTI DEV Bridge V3 static contract: VERIFIED" -ForegroundColor Green
+
 $AutoProductionVerifier = Join-Path $RepoRoot "tools\verify_auto_main_production_contract.py"
 if (-not (Test-Path -LiteralPath $AutoProductionVerifier -PathType Leaf)) {
     throw "Missing AUTO MULTI DEV production contract verifier: $AutoProductionVerifier"
