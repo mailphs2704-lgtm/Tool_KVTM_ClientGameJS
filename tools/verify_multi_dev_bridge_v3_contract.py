@@ -150,6 +150,14 @@ def main() -> int:
     require(worker, "KVAutomation(", "Worker must own KVAutomation")
     require(worker, "AutoMainWorkflow(automation).run()",
             "Worker must own the complete main workflow")
+    require(worker, "result_payload = result.to_dict()",
+            "AUTO MULTI DEV result payload normalization missing")
+    require(worker, 'result_payload.pop("profile_id", None)',
+            "AUTO MULTI DEV result event may duplicate profile_id")
+    if "**result.to_dict()" in worker:
+        raise AssertionError(
+            "AUTO MULTI DEV worker expands result profile_id directly into emit"
+        )
 
     require(shared_image, 'importlib.import_module("PIL._imaging")',
             "Shared runtime must preload Pillow native extension")
@@ -180,6 +188,7 @@ def main() -> int:
     print("capture3_mapping=fixed-lifetime-64m")
     print("capture3_reader=dimension-handoff-retry")
     print("resident_bridge=revision-gated")
+    print("worker_result_emit=profile-id-normalized")
     print("image_runtime=shared-clean local_launcher=false")
     print("legacy_capture1_fallback=false")
     return 0
