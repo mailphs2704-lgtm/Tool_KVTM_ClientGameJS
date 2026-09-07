@@ -183,10 +183,12 @@ def main() -> int:
 
         from kvtm_automation.workflows.auto_main import AutoMainWorkflow
         result = AutoMainWorkflow(automation).run()
+        result_payload = result.to_dict()
+        result_payload.pop("profile_id", None)
         emit(
             "worker_finished", workflow=WORKFLOW_NAME,
             profile_id=args.profile_id, outcome="auto_main_ready",
-            **result.to_dict(),
+            **result_payload,
         )
         return 0
     except Exception as exc:
