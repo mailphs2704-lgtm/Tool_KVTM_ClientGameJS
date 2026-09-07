@@ -29,6 +29,7 @@ class ClientJSDriverFactory:
         "INPUT4",
         "BATCH_SWIPE",
         "NO_LAYOUT",
+        "CAPTURE3_SYNC2",
     )
 
     def __init__(self, component_root: Path, auto_root: Path) -> None:
@@ -85,6 +86,12 @@ class ClientJSDriverFactory:
             close_pipe = getattr(driver, "_close_pipe", None)
             if callable(close_pipe):
                 close_pipe()
+            if "CAPTURE3_SYNC2" in missing and "KVTM_BRIDGE_V3" in response:
+                raise RuntimeError(
+                    "ClientJS đang giữ Bridge V3 resident cũ (thiếu CAPTURE3_SYNC2). "
+                    "DLL đã inject không thể thay nóng; hãy đóng/mở lại đúng ClientJS "
+                    "sau khi build runtime DEV rồi chạy AUTO MULTI DEV lại."
+                )
             raise RuntimeError(
                 "AUTO MULTI DEV yêu cầu Bridge V3; PING thiếu "
                 + ", ".join(missing)
