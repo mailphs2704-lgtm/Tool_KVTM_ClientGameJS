@@ -88,8 +88,8 @@ def install_binary_dependencies(
 
     One subtle but important compatibility detail is the native import order. The
     original local launcher explicitly loads Pillow's `_imaging` extension
-    first. NumPy is then initialized explicitly before OpenCV so cv2 never
-    attempts a nested first-time NumPy/native bootstrap inside its loader.
+    before the AUTO image stack reaches OpenCV. Clean automation follows that
+    proven Pillow-native, OpenCV, NumPy order.
     """
 
     def log(message: str) -> None:
@@ -171,18 +171,18 @@ def install_binary_dependencies(
             f"source={_module_file(PIL)} image={_module_file(Image)}"
         )
 
-        log("Thư viện ảnh: import numpy trước cv2...")
-        numpy = importlib.import_module("numpy")
-        log(
-            "Thư viện ảnh: numpy READY "
-            f"{getattr(numpy, '__version__', '?')} source={_module_file(numpy)}"
-        )
-
-        log("Thư viện ảnh: import cv2 sau khi numpy READY...")
+        log("Thư viện ảnh: import cv2 sau PIL native...")
         cv2 = importlib.import_module("cv2")
         log(
             "Thư viện ảnh: cv2 READY "
             f"{getattr(cv2, '__version__', '?')} source={_module_file(cv2)}"
+        )
+
+        log("Thư viện ảnh: xác nhận numpy do cv2/runtime đã nạp...")
+        numpy = importlib.import_module("numpy")
+        log(
+            "Thư viện ảnh: numpy READY "
+            f"{getattr(numpy, '__version__', '?')} source={_module_file(numpy)}"
         )
 
         for name, module in (("numpy", numpy), ("cv2", cv2), ("PIL", PIL)):
