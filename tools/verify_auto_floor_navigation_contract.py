@@ -67,8 +67,8 @@ def main() -> int:
             "Target-6 four-unit branch missing")
     require(action, "goUp(1) → goUp(4) → goUp(1)",
             "Target-6 command order missing")
-    require(action, "chờ người vận hành xác nhận tầng 6",
-            "Reference demo must not claim an absolute-floor PASS")
+    require(action, "chờ xác nhận tầng 6",
+            "Reference demo must remain evidence-only and await floor-6 confirmation")
     if "FloorNavigationActions" in planting:
         raise AssertionError("Stable planting flow must not be rewritten by floor navigation")
 
