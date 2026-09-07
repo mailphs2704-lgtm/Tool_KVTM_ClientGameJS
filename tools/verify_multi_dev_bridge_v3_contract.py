@@ -46,6 +46,12 @@ def main() -> int:
             "EngineDriver must own its trace compatibility shim")
     if engine.index("def _trace(self, _action: str, **_details)") > engine.index("def __init__(self, device_key"):
         raise AssertionError("EngineDriver trace shim must exist before construction")
+    require(engine, "with self._pipe_lock:",
+            "V3 capture must hold the pipe lock through shared-memory copy")
+    require(engine, "return self._capture_shared_bgra_once_locked()",
+            "Atomic V3 capture wrapper missing")
+    require(engine, "def _capture_shared_bgra_once_locked",
+            "Locked V3 shared-memory reader missing")
     require(engine, 'command = f"SWIPE {segment_steps}',
             "EngineDriver native batch command missing")
     require(engine, 'pipe_mode="single_batch"',
