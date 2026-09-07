@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 from pathlib import Path
+import sys
 import threading
 import traceback
 
@@ -112,9 +114,37 @@ def main() -> int:
             runtime="isolated-process", bridge="V3",
             capture_owner="single-worker",
         )
+
+        # Use the exact image/bootstrap route already proven by the historical
+        # AUTO worker. This is technical runtime preparation only; the clean
+        # Multi Dev workflow and assets remain the sole business implementation.
+        auto_root = Path(args.auto_root).resolve()
+        auto_root_text = str(auto_root)
+        if auto_root_text not in sys.path:
+            sys.path.insert(0, auto_root_text)
+        os.environ["KVTM_SKIP_RUNTIME_SYNC"] = "1"
+        detail("Image bootstrap: local_launcher proven route START")
+        importlib.import_module("local_launcher")
+        # engine_driver imports adaptive_cv, which initializes the same
+        # NumPy/OpenCV stack used successfully by the AUTO PRO worker.
+        importlib.import_module("engine_driver")
+        missing_image_modules = [
+            name for name in ("PIL", "numpy", "cv2")
+            if name not in sys.modules
+        ]
+        if missing_image_modules:
+            raise RuntimeError(
+                "Bootstrap AUTO PRO không nạp đủ image runtime: "
+                + ", ".join(missing_image_modules)
+            )
+        detail(
+            "Image bootstrap: proven route READY • "
+            "PIL/numpy/cv2 đã resident trong worker độc lập"
+        )
+
         automation = KVAutomation(
             context,
-            image_runtime_ready=False,
+            image_runtime_ready=True,
             speed_config=speed_values,
         )
         runtime_ready.set()
