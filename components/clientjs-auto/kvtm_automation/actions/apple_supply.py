@@ -64,13 +64,14 @@ class AppleSupplyActions:
         self.vision.driver.click(*self.CLOSE_PANEL)
         return "GROWING", None
 
-    def _wait_state(self, *, allow_empty: bool, label: str) -> tuple[str, object | None]:
+    def _wait_state(self, *, allow_empty: bool, label: str,
+                    accept_ripe: bool = True) -> tuple[str, object | None]:
         deadline = time.monotonic() + self.RIPE_TIMEOUT
         attempt = 0
         while time.monotonic() < deadline:
             attempt += 1
             state, match = self._scan_state()
-            if state == "RIPE" or (allow_empty and state == "EMPTY"):
+            if (accept_ripe and state == "RIPE") or (allow_empty and state == "EMPTY"):
                 self.context.log(
                     f"AUTO nguyên liệu • {label}={state} • kiểm tra {attempt} • "
                     f"chu kỳ={self.speed_config.crop_check_interval:.3f}s"
@@ -103,7 +104,9 @@ class AppleSupplyActions:
             self.FIVE_FLOOR_PATH, duration=self.speed_config.plant_harvest_duration
         )
         self.waiter.sleep(0.55)
-        state, seed = self._wait_state(allow_empty=True, label="5 tầng sau thu hoạch")
+        state, seed = self._wait_state(
+            allow_empty=True, accept_ripe=False, label="5 tầng sau thu hoạch"
+        )
         if state != "EMPTY" or seed is None:
             raise ScreenTimeout("Thu hoạch 5 tầng chưa chuyển thành chậu trống")
         return self._plant_open_panel(seed, self.FIVE_FLOOR_PATH, 30, "5 tầng x 6 Táo")
@@ -117,7 +120,9 @@ class AppleSupplyActions:
             self.FLOOR_6_ROW, duration=self.speed_config.plant_harvest_duration
         )
         self.waiter.sleep(0.55)
-        state, seed = self._wait_state(allow_empty=True, label="hàng tầng 6 sau thu hoạch")
+        state, seed = self._wait_state(
+            allow_empty=True, accept_ripe=False, label="hàng tầng 6 sau thu hoạch"
+        )
         if state != "EMPTY" or seed is None:
             raise ScreenTimeout("Thu hoạch tầng 6 chưa chuyển thành chậu trống")
         return self._plant_open_panel(seed, self.FLOOR_6_ROW, 6, "hàng tầng 6 x 6 Táo")
