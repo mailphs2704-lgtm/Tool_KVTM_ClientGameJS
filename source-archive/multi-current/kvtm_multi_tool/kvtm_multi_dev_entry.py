@@ -127,7 +127,7 @@ class MultiDevApp(production.MultiApp):
         clean_actions = self.auto_multi_dev_stop_button.master
         self.auto_multi_dev_floor_demo_button = core.ttk.Button(
             clean_actions,
-            text="↟ Demo Auto Pro goUp(4)",
+            text="↟ Demo Auto Pro tới tầng 6",
             width=21,
             style="Action.TButton",
             command=self._start_clean_floor_demo,
@@ -174,7 +174,7 @@ class MultiDevApp(production.MultiApp):
         self._start_clean_auto_session()
 
     def _start_clean_floor_demo(self) -> None:
-        """Demo only: replay Auto Pro goUp(4) from the main farm view."""
+        """Demo only: replay Auto Pro goUp(4) then goUp(3) from main."""
         selected = list(map(str, self.selected_ids()))
         if not selected:
             core.messagebox.showinfo(
@@ -345,16 +345,16 @@ class MultiDevApp(production.MultiApp):
             log_writer.action("PASS | vào game, đóng popup, xác nhận màn hình chính")
             if run_floor_demo:
                 context.stage("floor-demo-1-to-6-start")
-                log("DEMO goUp(4) • tiền điều kiện: clone đang ở màn hình chính")
-                movement = automation.floors.reference_go_up_4()
+                log("DEMO Auto Pro tới tầng 6 • bắt đầu từ màn hình chính")
+                movement = automation.floors.reference_main_to_floor_6()
                 payload = {
                     "requested_steps": movement.requested_steps,
                     "completed_steps": movement.completed_steps,
                     "frame_change_scores": list(movement.frame_change_scores),
                 }
                 log(
-                    "DEMO goUp(4) • đã gửi nguyên lệnh Auto Pro "
-                    "• chờ xác nhận tầng thực tế"
+                    "DEMO • đã gửi goUp(4) → goUp(3) "
+                    "• chờ xác nhận tầng 6"
                 )
                 self.after(
                     0,
@@ -400,7 +400,7 @@ class MultiDevApp(production.MultiApp):
         if outcome == "floor_demo_finished":
             completed = int(payload.get("completed_steps", 0) or 0)
             self.auto_multi_dev_status.set(
-                f"DEMO ĐÃ GỬI • Auto Pro goUp(4) • commands={completed}/1"
+                f"DEMO ĐÃ GỬI • goUp(4) → goUp(3) • commands={completed}/2"
             )
             return
         if outcome == "auto_main_ready":
