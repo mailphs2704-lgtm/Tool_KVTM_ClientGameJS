@@ -29,6 +29,7 @@ ENGINE_DRIVER = ROOT / "test-candidates/auto-pro-clientjs-temp/engine_driver.py"
 DESIGNER = ROOT / "source-archive/multi-current/kvtm_multi_tool/clear_stall_designer.py"
 AUTO_CATALOG = ROOT / "components/clientjs-auto/catalog/functions.json"
 CLEAN_AUTO_WORKER = ROOT / "components/clientjs-auto/worker/clean_auto_worker.py"
+AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 GAME_SESSION = ROOT / "components/clientjs-auto/kvtm_automation/workflows/game_session/workflow.py"
 CLEAN_CONTEXT = ROOT / "components/clientjs-auto/kvtm_automation/context.py"
 CLEAN_AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
@@ -79,6 +80,7 @@ def main() -> int:
     engine_driver = ENGINE_DRIVER.read_text(encoding="utf-8")
     auto_catalog = json.loads(AUTO_CATALOG.read_text(encoding="utf-8"))
     clean_auto_worker = CLEAN_AUTO_WORKER.read_text(encoding="utf-8")
+    auto_multi_worker = AUTO_MULTI_WORKER.read_text(encoding="utf-8")
     game_session = GAME_SESSION.read_text(encoding="utf-8")
     clean_context = CLEAN_CONTEXT.read_text(encoding="utf-8")
     clean_automation = CLEAN_AUTOMATION.read_text(encoding="utf-8")
@@ -91,6 +93,7 @@ def main() -> int:
     vp_workflow = VP_WORKFLOW.read_text(encoding="utf-8")
     for path, source in (
         (CLEAN_AUTO_WORKER, clean_auto_worker),
+        (AUTO_MULTI_WORKER, auto_multi_worker),
         (GAME_SESSION, game_session),
         (CLEAN_CONTEXT, clean_context),
         (CLEAN_AUTOMATION, clean_automation),
@@ -612,27 +615,36 @@ def main() -> int:
     require(selling, "zone=(930, 0, 70, 70)", "READ-ONLY inventory close must target only the top-right X")
     require(selling, "self.vision.driver.click(968, 28)", "READ-ONLY inventory fixed close fallback missing")
     require(selling, "Không đóng được kho READ-ONLY", "READ-ONLY inventory close verification missing")
-    require(dev_entry, "AutoMainWorkflow(automation).run", "Consolidated resident AUTO Main wiring missing")
-    require(dev_entry, "detail_logger=log_writer.detail", "Detail logger not connected to Main context")
+    require(auto_multi_worker, "AutoMainWorkflow(automation).run", "Isolated AUTO Main wiring missing")
+    require(auto_multi_worker, "detail_logger=detail", "Worker detail logger not connected to Main context")
+    require(dev_entry, 'worker_root / "auto_multi_dev_worker.py"', "GUI does not launch isolated AUTO Main worker")
     require(clean_automation, "detail_logger=context.detail", "Vision detail logger not connected")
     require(multi, "def _start_clean_auto_session", "Clean AUTO start action missing")
     require(multi, '"clean_auto_worker.py"', "Clean AUTO worker launch missing")
     require(multi, '"--profile-file", str(PROFILE_FILE)', "Clean AUTO profile identity handoff missing")
     require(multi, "def _stop_clean_auto_session", "Clean AUTO stop action missing")
     require(
-        dev_entry,
-        "image_runtime_ready=True",
-        "AUTO MULTI DEV must reuse the resident image runtime",
+        auto_multi_worker,
+        "image_runtime_ready=False",
+        "AUTO MULTI DEV must load image runtime inside its isolated worker",
     )
     require(
-        dev_entry,
+        auto_multi_worker,
         "speed_config=speed_values",
-        "AUTO MULTI DEV speed configuration must preserve resident runtime wiring",
+        "AUTO MULTI DEV speed configuration must reach the isolated worker",
     )
     require(
         dev_entry,
-        "Clean Runtime dùng chung READY • không import lại cv2/numpy/PIL",
-        "Resident Main runtime status contract missing",
+        "Runtime=isolated-worker | bridge=V3",
+        "Isolated Main runtime status contract missing",
+    )
+    main_thread = dev_entry.split("def _run_clean_main_thread", 1)[1].split(
+        "def _finish_clean_main", 1
+    )[0]
+    forbid(
+        main_thread,
+        "KVAutomation(",
+        "AUTO MULTI DEV must not construct automation in the GUI process",
     )
     require(
         dev_entry,
