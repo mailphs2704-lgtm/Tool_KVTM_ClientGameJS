@@ -103,3 +103,10 @@ Nguồn: `source-archive/auto-pro-reference/recovery_notes/raw_marshal/adb_contr
 Bản thân `goUp` không nhận dạng và không xác nhận tầng tuyệt đối. Auto Pro giữ mốc bằng thứ tự workflow; `goDownLast` mới tìm `quay_hang/check_xuong` để xác nhận đã về màn hình chính. Vì vậy `frame_change` không được chuyển thành kết luận tầng.
 
 Nút demo mới chỉ phát lại đúng `goUp(4)` từ màn hình chính và báo `ĐÃ GỬI`, không báo tầng 6 PASS. Hai thuật toán tự suy diễn cũ — năm swipe nhỏ và gesture 600 px/0.06s — đều bị loại khỏi demo.
+
+
+## LIVE mốc `goUp(4)` và chuỗi mục tiêu 6
+
+Người vận hành xác nhận rõ: xuất phát từ màn hình chính, `goUp(4)` nguyên bản dừng tại tầng 3. Đây là mốc live, không phải suy luận từ `frame_change`.
+
+Bytecode vòng điều hướng Auto Pro chia `target=6`: khi còn ít nhất 4 đơn vị gọi mode 4, sau đó còn 2 đơn vị gọi mode 3. Vì vậy demo kế tiếp phát đúng thứ tự `goUp(4) → goUp(3)`; mode 3 là click `(257,191)`. Demo kiểm tra mỗi lệnh có phản hồi ảnh nhưng chỉ ghi `ĐÃ GỬI`; người vận hành vẫn là nguồn xác nhận tầng 6 trong lượt live này.
