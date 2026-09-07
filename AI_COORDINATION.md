@@ -548,3 +548,12 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Kết hợp bytecode vòng target: target 6 chạy mode4 trước, remaining=2 chạy mode3; mode3 click `(257,191)`.
 - Demo mới: `reference_main_to_floor_6()` phát `goUp(4) → goUp(3)`, hậu kiểm phản hồi riêng từng lệnh, nhưng chỉ báo ĐÃ GỬI.
 - NEXT LIVE: xác nhận sau mode3 có đứng đúng tầng 6 hay không. Không ghép pipeline trước xác nhận.
+
+
+## 2026-09-07 — Chuỗi 4→3 chỉ tới tầng 5; sửa target 6 thành 1→4→1
+
+- Live log: mode4 swipe và mode3 click đều có phản hồi (`changes=69.91,27.86`), nhưng người dùng xác nhận chỉ tới tầng 5.
+- Sai sót forensic: bỏ qua phần khởi tạo `cur=0; target>0 => goUp(1); cur=1`.
+- State machine Auto Pro target6 đúng: initial mode1 → remaining5 mode4 → remaining1 mode1; chuỗi `goUp(1)→goUp(4)→goUp(1)`.
+- Demo đã đổi sang 1-4-1, kiểm tra phản hồi riêng ba command và chỉ báo ĐÃ GỬI.
+- NEXT LIVE: từ màn hình chính xác nhận vị trí cuối; không ghép pipeline nếu chưa đúng tầng 6.
