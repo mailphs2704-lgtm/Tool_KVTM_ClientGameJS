@@ -41,14 +41,15 @@ def main() -> int:
     require(factory, 'driver._pipe("PING\\n", 1000)',
             "Strict V3 PING gate missing")
     for token in ("KVTM_BRIDGE_V3", "CAPTURE3", "INPUT4",
-                  "BATCH_SWIPE", "NO_LAYOUT", "CAPTURE3_SYNC2"):
+                  "BATCH_SWIPE", "NO_LAYOUT", "CAPTURE3_SYNC2",
+                  "CAPTURE3_FIXEDMAP"):
         require(factory, token, f"Factory V3 capability gate missing: {token}")
         require(native, token, f"Native V3 capability missing: {token}")
 
     require(factory, "ClientJS đang giữ Bridge V3 resident cũ",
             "Stale resident Bridge V3 fail-closed message missing")
-    require(factory, '"CAPTURE3_SYNC2" in missing',
-            "Factory must reject pre-sync resident V3 binaries")
+    require(factory, '"CAPTURE3_FIXEDMAP" in missing',
+            "Factory must reject pre-fixed-map resident V3 binaries")
 
     if "CocosBridgeDriver(" in factory or "kvtm_bridge.dll" in factory:
         raise AssertionError("AUTO MULTI DEV still wires the legacy CAPTURE1 bridge")
@@ -83,6 +84,26 @@ def main() -> int:
             "Capture3 mismatch diagnostics must include response dimensions")
     require(engine, "shared={width}x{height}",
             "Capture3 mismatch diagnostics must include shared dimensions")
+
+    mapping_body = native.split("bool ensure_capture_mapping", 1)[1].split(
+        "LONG dispatch_capture", 1
+    )[0]
+    require(native, "kCaptureMappingBytes",
+            "Capture3 fixed mapping capacity missing")
+    require(mapping_body, "if (g_capture_header && g_capture_mapping) return true;",
+            "Capture3 mapping must be reused for the ClientJS lifetime")
+    require(mapping_body, "kCaptureMappingBytes, name",
+            "Capture3 mapping must be created at fixed maximum capacity")
+    require(mapping_body, "ERROR_ALREADY_EXISTS",
+            "Capture3 mapping name collision must fail closed")
+    if "g_capture_capacity" in native:
+        raise AssertionError(
+            "Capture3 still tracks resize capacity and may recreate named mappings"
+        )
+    if "UnmapViewOfFile(g_capture_header)" in mapping_body:
+        raise AssertionError(
+            "Capture3 fixed mapping must not unmap/recreate on client size changes"
+        )
 
     capture_body = native.split("LONG dispatch_capture", 1)[1].split(
         "LONG dispatch_touch", 1
@@ -154,8 +175,9 @@ def main() -> int:
             "Multi GUI thread must supervise a worker process")
 
     print("AUTO MULTI DEV BRIDGE V3 CONTRACT VERIFIED")
-    print("protocol=KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT CAPTURE3_SYNC2")
+    print("protocol=KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP")
     print("capture3_writer=status-first-seqlock")
+    print("capture3_mapping=fixed-lifetime-64m")
     print("capture3_reader=dimension-handoff-retry")
     print("resident_bridge=revision-gated")
     print("image_runtime=shared-clean local_launcher=false")
