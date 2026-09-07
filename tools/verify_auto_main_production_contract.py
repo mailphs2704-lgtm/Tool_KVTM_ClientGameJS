@@ -10,6 +10,8 @@ FLOOR_ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/floor_na
 AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
 WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_apple_dryer/workflow.py"
 AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
+FUNCTION_ONE = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_function_one/workflow.py"
+APPLE_JUICE = ROOT / "components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.png"
 MULTI_DEV_EMPTY_SLOT = ROOT / "components/clientjs-auto/assets/items/o_trong.png"
@@ -21,7 +23,7 @@ def require(text: str, token: str, message: str) -> None:
 
 
 def main() -> int:
-    for path in (ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, AUTO_MAIN, DEV_ENTRY):
+    for path in (ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, AUTO_MAIN, FUNCTION_ONE, APPLE_JUICE, DEV_ENTRY):
         if not path.is_file():
             raise AssertionError(f"Missing production contract file: {path}")
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -42,6 +44,8 @@ def main() -> int:
     automation = AUTOMATION.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
     auto_main = AUTO_MAIN.read_text(encoding="utf-8")
+    function_one = FUNCTION_ONE.read_text(encoding="utf-8")
+    apple_juice = APPLE_JUICE.read_text(encoding="utf-8")
     dev = DEV_ENTRY.read_text(encoding="utf-8")
 
     require(action, "DRYER_POINT = (262, 917)", "AUTO PRO dryer coordinate changed")
@@ -91,8 +95,12 @@ def main() -> int:
     require(automation, "self.production = ProductionActions(", "Resident production wiring missing")
     require(workflow, "plant_27_apples()", "Apple planting step missing")
     require(workflow, "produce_9_dried_apples()", "Dried apple production step missing")
-    require(auto_main, "AppleDryerWorkflow(self.auto).run", "Function one pipeline missing")
-    require(dev, "PASS CHỨC NĂNG 1", "GUI result status missing")
+    require(auto_main, "FunctionOneWorkflow(self.auto).run", "Function one pipeline missing")
+    require(function_one, "AppleDryerWorkflow(self.auto).run", "Stable dried-apple stage missing")
+    require(function_one, "floor_1_to_floor_6()", "Floor-1 to floor-6 route missing")
+    require(function_one, "produce_9_apple_juices()", "Apple-juice intermediate stage missing")
+    require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice production asset missing")
+    require(dev, "TẠM PASS 2/3 CHỨC NĂNG 1", "GUI temporary result status missing")
     require(dev, 'text="↟ Demo Auto Pro tới tầng 6"', "Dedicated floor demo button missing")
     require(dev, "profile_id in self._clean_floor_demo_requested",
             "Floor demo request is not isolated per profile")

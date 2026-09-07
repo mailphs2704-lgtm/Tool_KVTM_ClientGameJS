@@ -65,8 +65,8 @@ def main() -> int:
     require(action, "self.rose_path()[1:]", "Seed center must replace reference start point")
     require(action, 'raise ScreenTimeout(', "Fail-closed planting guard missing")
     require(workflow, "self.auto.planting.plant_27_roses()", "Workflow planting call missing")
-    require(auto_main, "AppleDryerWorkflow(self.auto).run",
-            "Consolidated start must execute clean apple dryer workflow")
+    require(auto_main, "FunctionOneWorkflow(self.auto).run",
+            "Consolidated start must execute Function 1 workflow")
     require(dev, "AutoMainWorkflow(automation).run",
             "Consolidated resident workflow wiring missing")
     require(dev, 'outcome = "auto_main_ready"',

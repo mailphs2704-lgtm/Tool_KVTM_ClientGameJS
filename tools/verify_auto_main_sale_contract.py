@@ -17,7 +17,7 @@ AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main
 
 FILE_FUNCTIONS = (
     "Đọc và parse các file AUTO Main bắt buộc",
-    "Khóa đúng ba VP được phép",
+    "Khóa đúng hai VP của chức năng 1",
     "Khóa thứ tự thu vàng, treo VP và hai swipe",
     "Khóa xác minh giao dịch trước khi ghi nhận",
     "Khóa wiring resident runtime và nút bán riêng",
@@ -65,8 +65,8 @@ def main() -> int:
     forbid(action, "self.inventory.select_storage(", "AUTO sale must not trust unverified shared storage selection")
     require(
         action,
-        'ITEM_ORDER = ("tao_say", "vai_vang", "tinh_dau_hh")',
-        "Three-item round-robin order missing",
+        'ITEM_ORDER = ("tao_say", "vai_vang")',
+        "Function-1 two-item round-robin order missing",
     )
     require(action, "self._next_item_index", "Round-robin cursor missing")
     require(action, "SELECTED_ITEM_TEMPLATES", "Post-selection item map missing")
@@ -106,7 +106,7 @@ def main() -> int:
     require(
         action,
         'for checked_count in range(1, len(self.ITEM_ORDER) + 1):',
-        "All three items must be checked in the same inventory operation",
+        "Both Function-1 items must be checked in the same inventory operation",
     )
     if action.count("self.selling._find_empty_slot()") != 2:
         raise AssertionError(
@@ -159,7 +159,7 @@ def main() -> int:
     print("AUTO MULTI DEV VP SALE STATIC CONTRACT VERIFIED")
     print("runtime=resident")
     print("flow=collect_gold_round_robin_exact_x10_two_swipes_repeat")
-    print("allowed_items=tao_say,vai_vang,tinh_dau_hh")
+    print("allowed_items=tao_say,vai_vang")
     print("clear_stall_runtime=untouched")
     return 0
 
