@@ -13,6 +13,7 @@ AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main
 FUNCTION_ONE = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_function_one/workflow.py"
 APPLE_JUICE = ROOT / "components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
+AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.png"
 MULTI_DEV_EMPTY_SLOT = ROOT / "components/clientjs-auto/assets/items/o_trong.png"
 
@@ -23,7 +24,7 @@ def require(text: str, token: str, message: str) -> None:
 
 
 def main() -> int:
-    for path in (ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, AUTO_MAIN, FUNCTION_ONE, APPLE_JUICE, DEV_ENTRY):
+    for path in (ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, AUTO_MAIN, FUNCTION_ONE, APPLE_JUICE, DEV_ENTRY, AUTO_MULTI_WORKER):
         if not path.is_file():
             raise AssertionError(f"Missing production contract file: {path}")
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -47,6 +48,7 @@ def main() -> int:
     function_one = FUNCTION_ONE.read_text(encoding="utf-8")
     apple_juice = APPLE_JUICE.read_text(encoding="utf-8")
     dev = DEV_ENTRY.read_text(encoding="utf-8")
+    auto_multi_worker = AUTO_MULTI_WORKER.read_text(encoding="utf-8")
 
     require(action, "DRYER_POINT = (262, 917)", "AUTO PRO dryer coordinate changed")
     require(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"', "AUTO PRO production template missing")
@@ -108,8 +110,8 @@ def main() -> int:
     require(dev, 'text="↟ Demo Auto Pro tới tầng 6"', "Dedicated floor demo button missing")
     require(dev, "profile_id in self._clean_floor_demo_requested",
             "Floor demo request is not isolated per profile")
-    require(dev, "automation.floors.reference_main_to_floor_6()",
-            "Floor demo must replay Auto Pro target=6 state machine")
+    require(auto_multi_worker, "automation.floors.reference_main_to_floor_6()",
+            "Floor demo worker must replay Auto Pro target=6 state machine")
     require(dev, '"floor_demo_finished"', "Floor demo result path missing")
     require(automation, "self.floors = FloorNavigationActions(",
             "Resident floor navigation wiring missing")
@@ -135,7 +137,7 @@ def main() -> int:
             raise AssertionError(f"New production module touches stable/legacy path: {token}")
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
-    print("runtime=clean_resident")
+    print("runtime=isolated_worker_v3")
     print("flow=plant_27_apples_then_collect_finished_output_then_queue_9_dried_apples")
     print("dryer_floor=1")
     print("legacy_auto_pro=reference_only")
