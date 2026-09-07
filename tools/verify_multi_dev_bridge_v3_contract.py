@@ -72,6 +72,12 @@ def main() -> int:
             "Capture3 seqlock post-copy verification missing")
     if "status != 2 or frame_id != expected_frame" in engine:
         raise AssertionError("Capture3 reader still rejects valid newer frames")
+    require(engine, 'or "Kích thước shared capture không khớp phản hồi" in message',
+            "Capture3 dimension handoff mismatch must be retried as transient")
+    require(engine, "response={expected_width}x{expected_height}",
+            "Capture3 mismatch diagnostics must include response dimensions")
+    require(engine, "shared={width}x{height}",
+            "Capture3 mismatch diagnostics must include shared dimensions")
 
     capture_body = native.split("LONG dispatch_capture", 1)[1].split(
         "LONG dispatch_touch", 1
@@ -145,6 +151,7 @@ def main() -> int:
     print("AUTO MULTI DEV BRIDGE V3 CONTRACT VERIFIED")
     print("protocol=KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT")
     print("capture3_writer=status-first-seqlock")
+    print("capture3_reader=dimension-handoff-retry")
     print("image_runtime=shared-clean local_launcher=false")
     print("legacy_capture1_fallback=false")
     return 0
