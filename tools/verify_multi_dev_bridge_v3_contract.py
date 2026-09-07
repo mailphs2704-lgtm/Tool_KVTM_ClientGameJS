@@ -42,6 +42,10 @@ def main() -> int:
     if "CocosBridgeDriver(" in factory or "kvtm_bridge.dll" in factory:
         raise AssertionError("AUTO MULTI DEV still wires the legacy CAPTURE1 bridge")
 
+    require(engine, "def _trace(self, _action: str, **_details)",
+            "EngineDriver must own its trace compatibility shim")
+    if engine.index("def _trace(self, _action: str, **_details)") > engine.index("def __init__(self, device_key"):
+        raise AssertionError("EngineDriver trace shim must exist before construction")
     require(engine, 'command = f"SWIPE {segment_steps}',
             "EngineDriver native batch command missing")
     require(engine, 'pipe_mode="single_batch"',
