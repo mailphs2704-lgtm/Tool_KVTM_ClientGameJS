@@ -39,7 +39,8 @@ Write-Host "Git HEAD preflight: $($probeHead.Trim())" -ForegroundColor Green
 # LASTEXITCODE after piping native git output through Select-Object. On Windows
 # PowerShell 5.1 that value can become stale/-1 even though git succeeded.
 # Create a temporary sibling copy so PSScriptRoot stays identical and patch only
-# that stamp block. The authoritative builder file itself remains untouched.
+# compatibility-sensitive blocks. The authoritative builder file itself remains
+# untouched.
 $source = Get-Content -LiteralPath $Builder -Raw -Encoding UTF8
 $oldBlock = @'
 $head = (& git -C $RepoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
@@ -59,6 +60,22 @@ if (-not $source.Contains($oldBlock)) {
     throw "PS5.1 compatibility patch target not found in BUILD_FULL_PACKAGE.ps1."
 }
 $patched = $source.Replace($oldBlock, $newBlock)
+
+# The clear-stall verifier predates the independent AUTO MULTI DEV image runtime
+# and still contains one obsolete assertion that requires local_launcher. Keep
+# every other clear-stall safety check active by routing only this build through
+# a migration-aware adapter. The dedicated Bridge V3 verifier remains mandatory.
+$ClearStallAdapter = Join-Path $RepoRoot "tools\verify_clear_stall_contract_build.py"
+if (-not (Test-Path -LiteralPath $ClearStallAdapter -PathType Leaf)) {
+    throw "Missing migration-aware clear-stall verifier: $ClearStallAdapter"
+}
+$oldClearStallVerifier = '$ClearStallVerifier = Join-Path $RepoRoot "tools\verify_clear_stall_contract.py"'
+$newClearStallVerifier = '$ClearStallVerifier = Join-Path $RepoRoot "tools\verify_clear_stall_contract_build.py"'
+if (-not $patched.Contains($oldClearStallVerifier)) {
+    throw "Clear-stall verifier patch target not found in BUILD_FULL_PACKAGE.ps1."
+}
+$patched = $patched.Replace($oldClearStallVerifier, $newClearStallVerifier)
+
 $RuntimeBuilder = Join-Path $PSScriptRoot "BUILD_FULL_PACKAGE_PS51.runtime.ps1"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($RuntimeBuilder, $patched, $utf8NoBom)
@@ -67,6 +84,7 @@ $previousGitExe = $env:KVTM_PS51_GIT_EXE
 $env:KVTM_PS51_GIT_EXE = $KvtmGitExe
 try {
     Write-Host "PS5.1 HEAD stamp patch: READY" -ForegroundColor Green
+    Write-Host "AUTO MULTI DEV clear-stall migration gate: READY" -ForegroundColor Green
     & $RuntimeBuilder -OutputName $OutputName
 }
 finally {
