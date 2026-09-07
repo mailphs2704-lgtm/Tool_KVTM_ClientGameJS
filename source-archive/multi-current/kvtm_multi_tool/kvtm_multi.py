@@ -43,11 +43,12 @@ CLEAR_STALL_ITEM_OPTIONS = (
 )
 
 DEFAULT_AUTO_TUNING = {
-    # AUTO MULTI DEV: three independent controls. Legacy AUTO PRO keys below
+    # AUTO MULTI DEV: four independent controls. Legacy AUTO PRO keys below
     # remain intact for compatibility with the historical worker.
     "floor_swipe_duration": 0.35,
     "plant_harvest_duration": 0.035,
     "vp_production_delay": 0.4,
+    "crop_check_interval": 0.3,
     "harvest_speed": 0.045,
     "go_up_wait": 0.7,
     "production_wait": 0.4,
@@ -69,6 +70,7 @@ MULTI_DEV_TUNING_KEYS = (
     "floor_swipe_duration",
     "plant_harvest_duration",
     "vp_production_delay",
+    "crop_check_interval",
 )
 AUTO_LEGACY_TUNING_KEYS = tuple(
     key for key in DEFAULT_AUTO_TUNING if key not in MULTI_DEV_TUNING_KEYS
@@ -77,6 +79,7 @@ AUTO_TUNING_SPECS = {
     "floor_swipe_duration": ("Kéo tầng (giây/swipe)", 0.05, 3.0, False),
     "plant_harvest_duration": ("Trồng/thu cây (giây/đoạn)", 0.01, 3.0, False),
     "vp_production_delay": ("Sản xuất VP (giây/thao tác)", 0.05, 10.0, False),
+    "crop_check_interval": ("Kiểm tra cây chín (giây/lần)", 0.05, 5.0, False),
     "harvest_speed": ("Tốc độ cào", 0.01, 3.0, False),
     "go_up_wait": ("Chờ sau khi kéo tầng", 0.05, 10.0, False),
     "production_wait": ("Chờ sản xuất", 0.05, 10.0, False),

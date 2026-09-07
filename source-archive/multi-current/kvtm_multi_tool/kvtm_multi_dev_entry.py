@@ -338,7 +338,8 @@ class MultiDevApp(production.MultiApp):
                 "Tốc độ MULTI DEV | "
                 f"kéo tầng={speed_config.floor_swipe_duration:.3f}s | "
                 f"trồng/thu={speed_config.plant_harvest_duration:.3f}s | "
-                f"sản xuất VP={speed_config.vp_production_delay:.3f}s"
+                f"sản xuất VP={speed_config.vp_production_delay:.3f}s | "
+                f"check cây={speed_config.crop_check_interval:.3f}s"
             )
             result = GameSessionWorkflow(automation).run(timeout=180.0)
             payload = result.to_dict()

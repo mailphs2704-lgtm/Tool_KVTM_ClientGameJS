@@ -23,4 +23,5 @@ Chức năng 1 chỉ hoàn thành khi cùng một vòng đã sản xuất đủ 
 - Ảnh sản xuất dùng template sản xuất, không dùng ảnh kho và không dùng ảnh chụp người dùng.
 - Mỗi gesture sản xuất phải làm giảm bộ đếm ô trống; không thay đổi thì dừng.
 - Route màn hình chính → tầng 6 (demo) là 1,4,1. Route tầng 1 → tầng 6 của chức năng là 4,1.
-- Chờ cây chín có timeout bốn giờ, kiểm tra mỗi 20 giây và luôn tôn trọng stop event.
+- Chờ cây chín có timeout 120 giây, mặc định kiểm tra mỗi 0.3 giây theo cấu hình Multi Dev và luôn tôn trọng stop event.
+- Tầng 6: nếu hàng dưới cùng là chậu trống thì gieo ngay; nếu có cây chưa chín mới tiếp tục kiểm tra.
