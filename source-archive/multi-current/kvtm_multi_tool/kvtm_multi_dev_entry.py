@@ -174,7 +174,7 @@ class MultiDevApp(production.MultiApp):
         self._start_clean_auto_session()
 
     def _start_clean_floor_demo(self) -> None:
-        """Demo only: replay Auto Pro goUp(4) then goUp(3) from main."""
+        """Demo only: replay Auto Pro target-6 state machine from main."""
         selected = list(map(str, self.selected_ids()))
         if not selected:
             core.messagebox.showinfo(
@@ -353,7 +353,7 @@ class MultiDevApp(production.MultiApp):
                     "frame_change_scores": list(movement.frame_change_scores),
                 }
                 log(
-                    "DEMO • đã gửi goUp(4) → goUp(3) "
+                    "DEMO • đã gửi goUp(1) → goUp(4) → goUp(1) "
                     "• chờ xác nhận tầng 6"
                 )
                 self.after(
@@ -400,7 +400,7 @@ class MultiDevApp(production.MultiApp):
         if outcome == "floor_demo_finished":
             completed = int(payload.get("completed_steps", 0) or 0)
             self.auto_multi_dev_status.set(
-                f"DEMO ĐÃ GỬI • goUp(4) → goUp(3) • commands={completed}/2"
+                f"DEMO ĐÃ GỬI • goUp(1) → goUp(4) → goUp(1) • commands={completed}/3"
             )
             return
         if outcome == "auto_main_ready":
