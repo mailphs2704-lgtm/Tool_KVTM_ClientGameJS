@@ -109,6 +109,14 @@ if hasattr(ctypes, "windll"):
 class EngineDriver(PCDriver):
     """PCDriver whose coordinates are delivered inside the Cocos engine."""
 
+    def _trace(self, _action: str, **_details) -> None:
+        """Keep Bridge V3 independent from whichever resident PCDriver is loaded.
+
+        AUTO MULTI DEV owns user-facing logging. Per-input screenshot tracing here
+        would add another capture layer and distort native batch timing.
+        """
+        return None
+
     def __init__(self, device_key: int | str, reference_size=(1000, 1000)) -> None:
         self.profile_id = None
         self._restart_profile = None
