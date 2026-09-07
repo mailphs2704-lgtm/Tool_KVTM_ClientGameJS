@@ -52,6 +52,12 @@ def main() -> int:
             "Atomic V3 capture wrapper missing")
     require(engine, "def _capture_shared_bgra_once_locked",
             "Locked V3 shared-memory reader missing")
+    require(engine, "frame_id < expected_frame",
+            "Capture3 reader must accept a stable newer completed frame")
+    require(engine, "verified_key != snapshot_key",
+            "Capture3 seqlock post-copy verification missing")
+    if "status != 2 or frame_id != expected_frame" in engine:
+        raise AssertionError("Capture3 reader still rejects valid newer frames")
     require(engine, 'command = f"SWIPE {segment_steps}',
             "EngineDriver native batch command missing")
     require(engine, 'pipe_mode="single_batch"',
