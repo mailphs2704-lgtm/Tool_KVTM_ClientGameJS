@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import sys
-import threading
 import traceback
 
 from clean_worker_support import (
@@ -34,6 +33,39 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _bootstrap_proven_image_runtime(auto_root: Path, profile_id: str) -> None:
+    """Run the proven AUTO bootstrap before any clean module or worker thread."""
+
+    root = Path(auto_root).resolve()
+    root_text = str(root)
+    if root_text not in sys.path:
+        sys.path.insert(0, root_text)
+    os.environ["KVTM_SKIP_RUNTIME_SYNC"] = "1"
+    emit(
+        "detail", workflow=WORKFLOW_NAME, profile_id=profile_id,
+        message="Image bootstrap: local_launcher proven route START",
+    )
+    importlib.import_module("local_launcher")
+    importlib.import_module("engine_driver")
+    adaptive_cv = importlib.import_module("adaptive_cv")
+    adaptive_cv.install_adaptive_matching()
+    missing = [
+        name for name in ("PIL", "numpy", "cv2")
+        if name not in sys.modules
+    ]
+    if missing:
+        raise RuntimeError(
+            "Bootstrap AUTO PRO không nạp đủ image runtime: " + ", ".join(missing)
+        )
+    emit(
+        "detail", workflow=WORKFLOW_NAME, profile_id=profile_id,
+        message=(
+            "Image bootstrap: proven route READY • "
+            "PIL/numpy/cv2 đã resident trong worker độc lập"
+        ),
+    )
+
+
 def main() -> int:
     configure_utf8_stdio()
     args = _parser().parse_args()
@@ -45,111 +77,72 @@ def main() -> int:
         emit("worker_error", workflow=WORKFLOW_NAME, error=str(exc))
         return 2
 
-    install_component_path()
-    from kvtm_automation import AutomationContext, KVAutomation
-    from kvtm_automation.errors import AutomationStopped
-    from kvtm_automation.workflows.game_session import GameSessionWorkflow
-
-    channel = StopChannel(
-        on_stop=lambda command: emit(
-            "worker_stopping", workflow=WORKFLOW_NAME,
-            profile_id=args.profile_id, command=command,
-        )
-    )
-    channel.start()
-
-    def log(message: str) -> None:
-        emit(
-            "progress", workflow=WORKFLOW_NAME,
-            profile_id=args.profile_id, message=str(message),
-        )
-
-    def detail(message: str) -> None:
-        emit(
-            "detail", workflow=WORKFLOW_NAME,
-            profile_id=args.profile_id, message=str(message),
-        )
-
-    def stage(name: str) -> None:
-        emit(
-            "stage", workflow=WORKFLOW_NAME,
-            profile_id=args.profile_id, stage=str(name), message=str(name),
-        )
-
-    context = AutomationContext(
-        pid=args.pid,
-        profile_id=args.profile_id,
-        profile_name=args.profile_name,
-        auto_root=Path(args.auto_root),
-        work_dir=Path(args.work_dir),
-        stop_event=channel.event,
-        logger=log,
-        stage_reporter=stage,
-        detail_logger=detail,
-        profile_file=Path(args.profile_file),
-    )
-
     try:
-        runtime_ready = threading.Event()
-
-        def runtime_watchdog() -> None:
-            if runtime_ready.wait(90.0):
-                return
-            emit(
-                "worker_error", workflow=WORKFLOW_NAME,
-                profile_id=args.profile_id,
-                error="Runtime ảnh worker bị treo quá 90 giây",
-                stage="image-runtime-loading",
-            )
-            os._exit(86)
-
-        threading.Thread(
-            target=runtime_watchdog,
-            name="auto-multi-dev-worker-watchdog",
-            daemon=True,
-        ).start()
         emit(
             "worker_started", workflow=WORKFLOW_NAME,
             profile_id=args.profile_id, pid=args.pid,
             runtime="isolated-process", bridge="V3",
             capture_owner="single-worker",
         )
-
-        # Use the exact image/bootstrap route already proven by the historical
-        # AUTO worker. This is technical runtime preparation only; the clean
-        # Multi Dev workflow and assets remain the sole business implementation.
-        auto_root = Path(args.auto_root).resolve()
-        auto_root_text = str(auto_root)
-        if auto_root_text not in sys.path:
-            sys.path.insert(0, auto_root_text)
-        os.environ["KVTM_SKIP_RUNTIME_SYNC"] = "1"
-        detail("Image bootstrap: local_launcher proven route START")
-        importlib.import_module("local_launcher")
-        # engine_driver imports adaptive_cv, which initializes the same
-        # NumPy/OpenCV stack used successfully by the AUTO PRO worker.
-        importlib.import_module("engine_driver")
-        adaptive_cv = importlib.import_module("adaptive_cv")
-        adaptive_cv.install_adaptive_matching()
-        missing_image_modules = [
-            name for name in ("PIL", "numpy", "cv2")
-            if name not in sys.modules
-        ]
-        if missing_image_modules:
-            raise RuntimeError(
-                "Bootstrap AUTO PRO không nạp đủ image runtime: "
-                + ", ".join(missing_image_modules)
-            )
-        detail(
-            "Image bootstrap: proven route READY • "
-            "PIL/numpy/cv2 đã resident trong worker độc lập"
+        # This ordering is intentional and matches the working AUTO worker:
+        # native/image bootstrap first; clean imports and threads only after READY.
+        _bootstrap_proven_image_runtime(
+            Path(args.auto_root), str(args.profile_id)
         )
 
+        install_component_path()
+        from kvtm_automation import AutomationContext, KVAutomation
+        from kvtm_automation.errors import AutomationStopped
+        from kvtm_automation.workflows.game_session import GameSessionWorkflow
+
+        channel = StopChannel(
+            on_stop=lambda command: emit(
+                "worker_stopping", workflow=WORKFLOW_NAME,
+                profile_id=args.profile_id, command=command,
+            )
+        )
+        channel.start()
+
+        def log(message: str) -> None:
+            emit(
+                "progress", workflow=WORKFLOW_NAME,
+                profile_id=args.profile_id, message=str(message),
+            )
+
+        def detail(message: str) -> None:
+            emit(
+                "detail", workflow=WORKFLOW_NAME,
+                profile_id=args.profile_id, message=str(message),
+            )
+
+        def stage(name: str) -> None:
+            emit(
+                "stage", workflow=WORKFLOW_NAME,
+                profile_id=args.profile_id, stage=str(name), message=str(name),
+            )
+
+        context = AutomationContext(
+            pid=args.pid,
+            profile_id=args.profile_id,
+            profile_name=args.profile_name,
+            auto_root=Path(args.auto_root),
+            work_dir=Path(args.work_dir),
+            stop_event=channel.event,
+            logger=log,
+            stage_reporter=stage,
+            detail_logger=detail,
+            profile_file=Path(args.profile_file),
+        )
         automation = KVAutomation(
             context,
             image_runtime_ready=True,
             speed_config=speed_values,
         )
-        runtime_ready.set()
+        emit(
+            "runtime_ready", workflow=WORKFLOW_NAME,
+            profile_id=args.profile_id, bridge="V3",
+            image_runtime="proven-bootstrap",
+        )
         speed = automation.speed_config
         log(
             "Tốc độ MULTI DEV | "
@@ -158,7 +151,7 @@ def main() -> int:
             f"sản xuất VP={speed.vp_production_delay:.3f}s | "
             f"check cây={speed.crop_check_interval:.3f}s"
         )
-        session = GameSessionWorkflow(automation).run(timeout=args.timeout)
+        GameSessionWorkflow(automation).run(timeout=args.timeout)
         log("PASS | vào game, đóng popup, xác nhận màn hình chính")
 
         if args.mode == "floor-demo":
@@ -181,13 +174,16 @@ def main() -> int:
             **result.to_dict(),
         )
         return 0
-    except AutomationStopped as exc:
-        emit(
-            "worker_stopped", workflow=WORKFLOW_NAME,
-            profile_id=args.profile_id, reason=str(exc),
-        )
-        return 0
     except Exception as exc:
+        try:
+            if "AutomationStopped" in locals() and isinstance(exc, AutomationStopped):
+                emit(
+                    "worker_stopped", workflow=WORKFLOW_NAME,
+                    profile_id=args.profile_id, reason=str(exc),
+                )
+                return 0
+        except Exception:
+            pass
         emit(
             "worker_error", workflow=WORKFLOW_NAME,
             profile_id=args.profile_id, error=repr(exc),
