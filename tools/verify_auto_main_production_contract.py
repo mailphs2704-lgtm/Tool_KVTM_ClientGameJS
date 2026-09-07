@@ -93,16 +93,18 @@ def main() -> int:
     require(workflow, "produce_9_dried_apples()", "Dried apple production step missing")
     require(auto_main, "AppleDryerWorkflow(self.auto).run", "Function one pipeline missing")
     require(dev, "PASS CHỨC NĂNG 1", "GUI result status missing")
-    require(dev, 'text="↟ Demo Auto Pro goUp(4)"', "Dedicated floor demo button missing")
+    require(dev, 'text="↟ Demo Auto Pro tới tầng 6"', "Dedicated floor demo button missing")
     require(dev, "profile_id in self._clean_floor_demo_requested",
             "Floor demo request is not isolated per profile")
-    require(dev, "automation.floors.reference_go_up_4()",
-            "Floor demo must replay the exact Auto Pro goUp(4) branch")
+    require(dev, "automation.floors.reference_main_to_floor_6()",
+            "Floor demo must replay Auto Pro goUp(4) then goUp(3)")
     require(dev, '"floor_demo_finished"', "Floor demo result path missing")
     require(automation, "self.floors = FloorNavigationActions(",
             "Resident floor navigation wiring missing")
     require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)",
             "Exact Auto Pro goUp(4) geometry missing")
+    require(floor_action, "AUTO_PRO_GO_UP_3_POINT = (257, 191)",
+            "Exact Auto Pro goUp(3) click missing")
     require(floor_action, "duration=self.speed_config.plant_harvest_duration",
             "Auto Pro goUp(4) must use the harvest-speed equivalent")
     require(floor_action, "AUTO_PRO_GO_UP_WAIT = 0.70",
