@@ -10,6 +10,7 @@ WORKFLOW_PATH = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_
 DEV_ENTRY_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 GUI_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 AUTO_MAIN_PATH = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
+AUTO_MULTI_WORKER_PATH = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 
 
 def require(text: str, needle: str, message: str) -> None:
@@ -25,7 +26,7 @@ def check_function_limit(path: Path) -> None:
 
 
 def main() -> int:
-    paths = (ACTION_PATH, WORKFLOW_PATH, DEV_ENTRY_PATH, GUI_PATH, AUTO_MAIN_PATH)
+    paths = (ACTION_PATH, WORKFLOW_PATH, DEV_ENTRY_PATH, GUI_PATH, AUTO_MAIN_PATH, AUTO_MULTI_WORKER_PATH)
     for path in paths:
         if not path.is_file():
             raise AssertionError(f"Missing planting contract file: {path}")
@@ -38,6 +39,7 @@ def main() -> int:
     dev = DEV_ENTRY_PATH.read_text(encoding="utf-8")
     gui = GUI_PATH.read_text(encoding="utf-8")
     auto_main = AUTO_MAIN_PATH.read_text(encoding="utf-8")
+    auto_multi_worker = AUTO_MULTI_WORKER_PATH.read_text(encoding="utf-8")
 
     require(action, 'ROSE_TEMPLATE = "cay_hong"', "Rose template missing")
     require(action, 'APPLE_TEMPLATE = "cay_tao"', "Apple template missing")
@@ -67,10 +69,14 @@ def main() -> int:
     require(workflow, "self.auto.planting.plant_27_roses()", "Workflow planting call missing")
     require(auto_main, "FunctionOneWorkflow(self.auto).run",
             "Consolidated start must execute Function 1 workflow")
-    require(dev, "AutoMainWorkflow(automation).run",
-            "Consolidated resident workflow wiring missing")
-    require(dev, 'outcome = "auto_main_ready"',
-            "Consolidated AUTO Main result handling missing")
+    require(auto_multi_worker, "AutoMainWorkflow(automation).run",
+            "Consolidated isolated-worker workflow wiring missing")
+    require(auto_multi_worker, 'outcome="auto_main_ready"',
+            "Worker AUTO Main result marker missing")
+    require(dev, 'worker_root / "auto_multi_dev_worker.py"',
+            "GUI isolated-worker launch wiring missing")
+    require(dev, 'outcome = str(event.pop("outcome", "auto_main_ready"))',
+            "GUI AUTO Main result handling missing")
     require(gui, 'text="▶ Bắt đầu AUTO MULTI DEV"', "Consolidated AUTO Multi DEV start button missing")
     require(gui, 'text="⚙ Cấu hình tốc độ"', "AUTO Multi DEV speed settings button missing")
     if "▶ Trồng 27 Hoa hồng" in gui:
