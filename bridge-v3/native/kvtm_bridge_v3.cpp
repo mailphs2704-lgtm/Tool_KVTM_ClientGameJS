@@ -161,6 +161,11 @@ LONG dispatch_capture(CaptureCommand* command) {
     if (!ensure_capture_mapping(pixel_bytes)) return GetLastError();
 
     CaptureHeader* header = g_capture_header;
+    // The in-progress marker is the writer lock for CAPTURE3. Publish it before
+    // changing any metadata so a reader can never observe old frame_id/status=2
+    // together with width/height/stride from the next frame.
+    header->status = 1;
+    MemoryBarrier();
     std::memcpy(header->magic, "KCAP", 4);
     header->version = kCaptureVersion;
     header->header_size = sizeof(CaptureHeader);
@@ -169,7 +174,6 @@ LONG dispatch_capture(CaptureCommand* command) {
     header->stride = stride;
     header->pixel_format = kPixelFormatBgra8TopDown;
     header->buffer_size = pixel_bytes;
-    header->status = 1;
     MemoryBarrier();
 
     auto* pixels = reinterpret_cast<unsigned char*>(header) + sizeof(CaptureHeader);
