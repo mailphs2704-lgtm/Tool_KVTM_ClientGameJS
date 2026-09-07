@@ -81,6 +81,12 @@ def main() -> int:
     require(worker, 'runtime="isolated-process"',
             "AUTO MULTI DEV worker isolation marker missing")
     require(worker, 'bridge="V3"', "AUTO MULTI DEV worker V3 marker missing")
+    require(worker, 'importlib.import_module("local_launcher")',
+            "Worker must use the proven AUTO image bootstrap")
+    require(worker, "adaptive_cv.install_adaptive_matching()",
+            "Worker must complete proven OpenCV initialization")
+    require(worker, "image_runtime_ready=True",
+            "Clean workflow must reuse worker-prepared image modules")
     require(worker, "KVAutomation(", "Worker must own KVAutomation")
     require(worker, "AutoMainWorkflow(automation).run()",
             "Worker must own the complete main workflow")
