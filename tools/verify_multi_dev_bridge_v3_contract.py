@@ -72,6 +72,25 @@ def main() -> int:
             "Capture3 seqlock post-copy verification missing")
     if "status != 2 or frame_id != expected_frame" in engine:
         raise AssertionError("Capture3 reader still rejects valid newer frames")
+
+    capture_body = native.split("LONG dispatch_capture", 1)[1].split(
+        "LONG dispatch_touch", 1
+    )[0]
+    require(capture_body, "header->status = 1;",
+            "Capture3 writer must publish in-progress status")
+    require(capture_body, "header->width = width;",
+            "Capture3 writer dimensions missing")
+    if capture_body.index("header->status = 1;") > capture_body.index("header->width = width;"):
+        raise AssertionError(
+            "Capture3 writer must publish status=1 before changing frame metadata"
+        )
+    require(capture_body, "MemoryBarrier();",
+            "Capture3 writer memory barrier missing")
+    if capture_body.rindex("header->status = 2;") < capture_body.index("header->frame_id = frame;"):
+        raise AssertionError(
+            "Capture3 writer must publish completed status only after frame id"
+        )
+
     require(engine, 'command = f"SWIPE {segment_steps}',
             "EngineDriver native batch command missing")
     require(engine, 'pipe_mode="single_batch"',
@@ -125,6 +144,7 @@ def main() -> int:
 
     print("AUTO MULTI DEV BRIDGE V3 CONTRACT VERIFIED")
     print("protocol=KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT")
+    print("capture3_writer=status-first-seqlock")
     print("image_runtime=shared-clean local_launcher=false")
     print("legacy_capture1_fallback=false")
     return 0
