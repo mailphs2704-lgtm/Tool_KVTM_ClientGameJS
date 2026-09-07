@@ -128,6 +128,8 @@ def main() -> int:
         # engine_driver imports adaptive_cv, which initializes the same
         # NumPy/OpenCV stack used successfully by the AUTO PRO worker.
         importlib.import_module("engine_driver")
+        adaptive_cv = importlib.import_module("adaptive_cv")
+        adaptive_cv.install_adaptive_matching()
         missing_image_modules = [
             name for name in ("PIL", "numpy", "cv2")
             if name not in sys.modules
