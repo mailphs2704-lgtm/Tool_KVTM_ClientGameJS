@@ -438,20 +438,35 @@ class EngineDriver(PCDriver):
             ) = values
             if magic != b"KCAP" or version != 3 or mapped_header_size < header_size:
                 raise RuntimeError("Shared capture header không hợp lệ")
-            if status != 2 or frame_id != expected_frame:
-                raise RuntimeError("Shared capture frame chưa hoàn tất hoặc đã thay đổi")
-            if (width, height, stride) != (
+            if status != 2 or frame_id < expected_frame:
+                raise RuntimeError(
+                    "Shared capture frame chưa hoàn tất hoặc cũ hơn phản hồi "
+                    f"(expected={expected_frame}, actual={frame_id}, status={status})"
+                )
+            # Another CAPTURE3 consumer for the same PID may publish a newer
+            # complete frame after this command returns. That frame is valid;
+            # require response dimensions only when it is the exact response.
+            if frame_id == expected_frame and (width, height, stride) != (
                 expected_width, expected_height, expected_stride
             ):
                 raise RuntimeError("Kích thước shared capture không khớp phản hồi")
-            if pixel_format != 2 or stride != width * 4 or buffer_size != stride * height:
+            if (
+                pixel_format != 2
+                or stride != width * 4
+                or buffer_size != stride * height
+                or buffer_size > 64 * 1024 * 1024
+            ):
                 raise RuntimeError("Định dạng shared capture không được hỗ trợ")
+            snapshot_key = (
+                version, mapped_header_size, width, height, stride,
+                pixel_format, buffer_size, frame_id, status,
+            )
             raw = ctypes.string_at(int(view) + mapped_header_size, buffer_size)
-            # The renderer can publish its next frame while Python copies the
-            # pixels. Accept the image only when the header is unchanged after
-            # the copy, otherwise retry CAPTURE against the newest frame.
+            # Seqlock-style verification: accept an exact or newer completed
+            # frame only if no header field changed while pixels were copied.
             verified = struct.unpack(header_format, ctypes.string_at(view, header_size))
-            if verified[8] != frame_id or verified[9] != 2:
+            verified_key = tuple(verified[1:10])
+            if verified_key != snapshot_key or verified[9] != 2:
                 raise RuntimeError("Shared capture frame thay đổi trong lúc sao chép")
             return raw, width, height
         finally:
