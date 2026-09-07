@@ -625,8 +625,18 @@ def main() -> int:
     require(multi, "def _stop_clean_auto_session", "Clean AUTO stop action missing")
     require(
         auto_multi_worker,
-        "image_runtime_ready=False",
-        "AUTO MULTI DEV must load image runtime inside its isolated worker",
+        "image_runtime_ready=True",
+        "AUTO MULTI DEV must reuse image modules prepared inside its isolated worker",
+    )
+    require(
+        auto_multi_worker,
+        'importlib.import_module("local_launcher")',
+        "AUTO MULTI DEV worker must use the proven AUTO image bootstrap",
+    )
+    require(
+        auto_multi_worker,
+        "adaptive_cv.install_adaptive_matching()",
+        "AUTO MULTI DEV worker must finish proven cv2 initialization",
     )
     require(
         auto_multi_worker,
