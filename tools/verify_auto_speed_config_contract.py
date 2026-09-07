@@ -10,6 +10,7 @@ ACTION_PATH = ROOT / "components/clientjs-auto/kvtm_automation/actions/planting.
 APPLE_SUPPLY_PATH = ROOT / "components/clientjs-auto/kvtm_automation/actions/apple_supply.py"
 AUTOMATION_PATH = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
 DEV_ENTRY_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
+AUTO_MULTI_WORKER_PATH = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 GUI_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 
 
@@ -36,6 +37,7 @@ def main() -> int:
     apple_supply = check_python(APPLE_SUPPLY_PATH)
     automation = check_python(AUTOMATION_PATH)
     dev = check_python(DEV_ENTRY_PATH)
+    worker = check_python(AUTO_MULTI_WORKER_PATH)
     gui = check_python(GUI_PATH)
 
     keys = (
