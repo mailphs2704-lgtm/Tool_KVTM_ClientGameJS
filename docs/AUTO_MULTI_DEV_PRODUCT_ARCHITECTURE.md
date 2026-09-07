@@ -134,4 +134,4 @@ Demo được thay bằng chuỗi 1-4-1, hậu kiểm từng lệnh có phản h
 
 ### Tính nguyên tử của CAPTURE3
 
-Một lần chụp V3 phải giữ cùng `_pipe_lock` từ lúc gửi `CAPTURE`, nhận `OK FRAME`, mở mapping cho đến khi sao chép và hậu kiểm header xong. Không được nhả khóa giữa phản hồi pipe và đọc pixels vì ảnh kế tiếp có thể đổi `frame_id/status`. Reader vẫn fail-close và không dùng HWND fallback.
+Một lần chụp V3 giữ cùng `_pipe_lock` từ lúc gửi `CAPTURE`, nhận `OK FRAME`, mở mapping cho đến khi sao chép và hậu kiểm header xong. Vì shared mapping thuộc PID nên một consumer CAPTURE3 khác vẫn có thể xuất bản frame mới hơn; reader được phép nhận frame hoàn tất có `frame_id >= expected_frame`, nhưng phải đối chiếu toàn bộ header trước và sau khi copy theo seqlock. Frame đang ghi, frame cũ hoặc header thay đổi trong lúc copy đều phải retry. Reader vẫn fail-close và không dùng HWND fallback.
