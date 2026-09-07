@@ -57,15 +57,15 @@ def main() -> int:
             "Floor navigation export missing")
     require(action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)",
             "Exact Auto Pro goUp(4) swipe missing")
-    require(action, "AUTO_PRO_GO_UP_3_POINT = (257, 191)",
-            "Exact Auto Pro goUp(3) point missing")
     require(action, "def reference_main_to_floor_6(self)",
-            "Auto Pro target-6 reference sequence missing")
+            "Auto Pro target-6 state machine missing")
     require(action, "duration=self.speed_config.plant_harvest_duration",
             "Auto Pro goUp(4) harvest-speed binding missing")
-    require(action, "mốc live kỳ vọng=tầng 3",
-            "Mode-4 live checkpoint missing")
-    require(action, "goUp(4) → goUp(3)",
+    require(action, "goUp(1) khởi tạo đã có phản hồi • cur=1",
+            "Target-6 initialization missing")
+    require(action, "goUp(4) đã có phản hồi • cur=5",
+            "Target-6 four-unit branch missing")
+    require(action, "goUp(1) → goUp(4) → goUp(1)",
             "Target-6 command order missing")
     require(action, "chờ người vận hành xác nhận tầng 6",
             "Reference demo must not claim an absolute-floor PASS")
@@ -74,7 +74,7 @@ def main() -> int:
 
     print("AUTO MULTI DEV FLOOR NAVIGATION STATIC CONTRACT VERIFIED")
     print("reference=auto_pro_goUp_1_and_exact_goUp_4")
-    print("movement=stable_one_floor_primitive_plus_goUp_4_then_goUp_3_target_6")
+    print("movement=stable_one_floor_primitive_plus_goUp_1_4_1_target_6")
     print("maximum_steps=5")
     print("pre_production_scan=fresh_frame_required")
     print("stable_planting=untouched")
