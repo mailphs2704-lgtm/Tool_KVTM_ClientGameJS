@@ -16,7 +16,7 @@ FILE_FUNCTIONS = (
     "Giới hạn mỗi yêu cầu trong tối đa năm tầng",
     "Chụp fresh frame trước và sau từng nhịp để phát hiện thao tác không phản hồi",
     "Chờ camera ổn định sau từng tầng trước khi module sản xuất quét máy",
-    "Lướt liên tục nhiều tầng bằng một gesture dài theo nhịp AUTO PRO",
+    "Phát lại nguyên nhánh goUp(4) của Auto Pro mà không tự nhận tầng",
 )
 
 
@@ -37,8 +37,10 @@ class FloorNavigationActions:
     VIEW_ZONE = (180, 170, 700, 720)
     MIN_FRAME_CHANGE = 1.0
     SETTLE_SECONDS = 0.65
-    GLIDE_UNIT_PIXELS = 100
-    MAX_GLIDE_STEPS = 6
+    AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)
+    AUTO_PRO_GO_UP_WAIT = 0.70
+    AUTO_PRO_POST_WAIT = 0.15
+    CLOSE_SIDE_POINT = (975, 316)
 
     def __init__(
         self,
@@ -106,40 +108,38 @@ class FloorNavigationActions:
             frame_change_scores=tuple(scores),
         )
 
-    def glide_up(self, steps: int = 6) -> FloorMoveResult:
-        """Move upward in one uninterrupted gesture; one 100px unit per floor."""
-        requested = int(steps)
-        if not 1 <= requested <= self.MAX_GLIDE_STEPS:
-            raise ValueError("glide steps phải nằm trong khoảng 1..6")
+    def reference_go_up_4(self) -> FloorMoveResult:
+        """Replay the exact Auto Pro goUp(4) branch; do not infer an absolute floor."""
         self.context.ensure_running()
-        x1, y1, _x2, _y2 = self.UP_SWIPE
-        endpoint = y1 + self.GLIDE_UNIT_PIXELS * requested
         before = self.vision.frame().copy()
+        self.vision.driver.click(*self.CLOSE_SIDE_POINT)
         self.vision.driver.swipe(
-            x1, y1, x1, endpoint,
-            duration=self.speed_config.floor_swipe_duration,
+            *self.AUTO_PRO_GO_UP_4_SWIPE,
+            duration=self.speed_config.plant_harvest_duration,
         )
-        self.waiter.sleep(self.SETTLE_SECONDS)
+        self.waiter.sleep(self.AUTO_PRO_GO_UP_WAIT)
+        self.waiter.sleep(self.AUTO_PRO_POST_WAIT)
         after = self.vision.frame().copy()
         change = self._frame_change(before, after)
         self.context.detail(
-            "AUTO floor glide | direction=UP | "
-            f"units={requested} | path=({x1},{y1})->({x1},{endpoint}) | "
-            f"duration={self.speed_config.floor_swipe_duration:.3f}s | "
-            f"frame_change={change:.2f}"
+            "AUTO PRO floor reference | command=goUp(4) | "
+            f"path={self.AUTO_PRO_GO_UP_4_SWIPE} | "
+            f"duration={self.speed_config.plant_harvest_duration:.3f}s | "
+            f"go_up_wait={self.AUTO_PRO_GO_UP_WAIT:.2f}s | "
+            f"post_wait={self.AUTO_PRO_POST_WAIT:.2f}s | frame_change={change:.2f}"
         )
         if change < self.MIN_FRAME_CHANGE:
             raise ScreenTimeout(
-                "Lướt tầng liên tục không tạo thay đổi hình ảnh; dừng demo"
+                "Lệnh tham chiếu Auto Pro goUp(4) không tạo thay đổi hình ảnh"
             )
         self.context.log(
-            "AUTO chuyển tầng • UP liên tục một gesture • "
-            f"{requested} đơn vị tầng đã có phản hồi hình ảnh"
+            "DEMO • đã gửi nguyên lệnh Auto Pro goUp(4) • "
+            "chờ người vận hành xác nhận tầng thực tế"
         )
         return FloorMoveResult(
-            direction="UP",
-            requested_steps=requested,
-            completed_steps=requested,
+            direction="AUTO_PRO_GO_UP_4",
+            requested_steps=4,
+            completed_steps=1,
             frame_change_scores=(change,),
         )
 
