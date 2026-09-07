@@ -5,9 +5,12 @@ import time
 from typing import Any
 
 from .actions import (
+    AppleJuiceProductionActions,
+    AppleSupplyActions,
     AutoVpRecognitionActions,
     BuyingActions,
     FloorNavigationActions,
+    FunctionOneNavigationActions,
     InventoryActions,
     NavigationActions,
     PopupActions,
@@ -115,6 +118,15 @@ class KVAutomation:
             context, self.vision, self.wait, self.speed_config
         )
         self.production = ProductionActions(
+            context, self.vision, self.wait, self.speed_config
+        )
+        self.apple_supply = AppleSupplyActions(
+            context, self.vision, self.wait, self.speed_config
+        )
+        self.function_one_navigation = FunctionOneNavigationActions(
+            context, self.vision, self.wait, self.speed_config
+        )
+        self.apple_juice_production = AppleJuiceProductionActions(
             context, self.vision, self.wait, self.speed_config
         )
         self.navigation = NavigationActions(

@@ -28,6 +28,7 @@ REQUIRED_ASSETS = (
     "list_friend",
     "lv_up",
     "next_gieo_trai",
+    "nuoc_tao",
     "o_trong",
     "quay_hang",
     "quay_hang_friend",

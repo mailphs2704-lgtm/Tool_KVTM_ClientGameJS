@@ -13,7 +13,7 @@ FILE_FUNCTIONS = (
     "Tìm một ô trống trong view quầy hiện tại",
     "Bấm chính xác nút kho thành phẩm có biểu tượng giỏ hàng",
     "Chờ và quét lại nhiều frame trước khi kết luận hết VP",
-    "Chọn luân phiên Táo sấy, Vải vàng và Tinh dầu hoa hồng",
+    "Chỉ chọn VP thuộc chức năng 1: Táo sấy và Vải vàng",
     "Bắt buộc xác nhận số lượng x10 trước khi đặt bán",
     "Bỏ qua loại còn dưới x10 và chuyển sang loại kế tiếp",
     "Hủy dialog có xác minh rồi tiếp tục trong cùng kho đang mở",
@@ -33,11 +33,10 @@ class AutoSaleAttempt:
 class AutoMainSellingActions:
     """Balanced exact-x10 AUTO sale, isolated from clear-stall accounting."""
 
-    ITEM_ORDER = ("tao_say", "vai_vang", "tinh_dau_hh")
+    ITEM_ORDER = ("tao_say", "vai_vang")
     SELECTED_ITEM_TEMPLATES = {
         "tao_say": "tao_say",
         "vai_vang": "vai_vang",
-        "tinh_dau_hh": "tinh_dau_hh",
     }
     SELECTED_ITEM_ZONE = (680, 240, 180, 180)
 
@@ -226,7 +225,7 @@ class AutoMainSellingActions:
         )
 
     def sell_next_allowed(self, *, storage_id: int = 2) -> AutoSaleAttempt:
-        """Check all three types in one open inventory before reporting stop."""
+        """Check both Function-1 types in one open inventory before reporting stop."""
         self.context.ensure_running()
         if int(storage_id) != 2:
             raise ValueError("AUTO Main chỉ bán VP từ kho thành phẩm số 2")

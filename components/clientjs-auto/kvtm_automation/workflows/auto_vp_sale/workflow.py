@@ -85,7 +85,7 @@ class AutoVpSaleWorkflow:
                     ):
                         depleted = True
                         self.context.log(
-                            "AUTO bán VP • cả ba VP không còn lựa chọn đúng loại và đủ x10; dừng treo"
+                            "AUTO bán VP • Táo sấy/Vải vàng không còn lựa chọn đúng loại và đủ x10; dừng treo"
                         )
                     else:
                         self.context.log(
@@ -105,8 +105,7 @@ class AutoVpSaleWorkflow:
         self.context.log(
             "AUTO bán VP • tổng kết x10 | "
             f"Táo sấy={sold_by_item['tao_say']} | "
-            f"Vải vàng={sold_by_item['vai_vang']} | "
-            f"Tinh dầu hoa hồng={sold_by_item['tinh_dau_hh']}"
+            f"Vải vàng={sold_by_item['vai_vang']}"
         )
         self.context.stage("auto-vp-sale-finished")
         return AutoVpSaleResult(
