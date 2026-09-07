@@ -601,6 +601,7 @@ foreach ($required in @(
     (Join-Path $ClientJsAutoSource "worker\bridge_v3_gesture_probe.py"),
     (Join-Path $ClientJsAutoSource "worker\speed_binding_probe.py"),
     (Join-Path $ClientJsAutoSource "worker\auto_worker.py"),
+    (Join-Path $ClientJsAutoSource "worker\auto_multi_dev_worker.py"),
     (Join-Path $ClientJsAutoSource "worker\clean_worker_support.py"),
     $ClearStallWorker,
     $ClearStallProbe,
