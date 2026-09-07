@@ -139,3 +139,7 @@ Một lần chụp V3 giữ cùng `_pipe_lock` từ lúc gửi `CAPTURE`, nhận
 ### Input không chiếm chuột
 
 `EngineDriver` phải override trực tiếp `click` và `swipe`, đồng thời thay `self.touch` bằng `EngineTouchProxy`. Cả bốn API `click`, `swipe`, `swipe_points`, `touch.down/move/up` chỉ được gửi qua INPUT4/BATCH_SWIPE trong DLL V3; cấm kế thừa đường Windows mouse/touch từ bất kỳ `PCDriver` resident nào.
+
+## Worker V3 độc lập cho Chức năng chính
+
+Từ mốc này, AUTO MULTI DEV không được dựng `KVAutomation` trong process GUI Multi resident. Mỗi profile chạy `components/clientjs-auto/worker/auto_multi_dev_worker.py` trong một process riêng; worker là chủ duy nhất của `EngineDriver V3`, image runtime và toàn bộ `AutoMainWorkflow`. GUI chỉ mở/dừng worker và chuyển tiếp JSON log/progress. Preview của đúng profile phải đóng và nhường CAPTURE3 trước khi worker khởi động. Việc nạp riêng `cv2/numpy/PIL` trong worker là chủ ý cách ly, thay thế quyết định reuse resident đối với riêng Chức năng chính AUTO MULTI DEV.
