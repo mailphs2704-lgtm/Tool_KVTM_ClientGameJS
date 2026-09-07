@@ -131,3 +131,7 @@ Demo được thay bằng chuỗi 1-4-1, hậu kiểm từng lệnh có phản h
 ### Tương thích runtime resident
 
 `engine_driver.EngineDriver` phải tự cung cấp `_trace` nhẹ và không dựa vào implementation của module tên chung `pc_driver` đã resident trong process. Không bật chụp ảnh trace theo từng input trong đường production vì lớp capture phụ này làm sai nhịp batch swipe. Log nghiệp vụ tiếp tục do AUTO MULTI DEV quản lý.
+
+### Tính nguyên tử của CAPTURE3
+
+Một lần chụp V3 phải giữ cùng `_pipe_lock` từ lúc gửi `CAPTURE`, nhận `OK FRAME`, mở mapping cho đến khi sao chép và hậu kiểm header xong. Không được nhả khóa giữa phản hồi pipe và đọc pixels vì ảnh kế tiếp có thể đổi `frame_id/status`. Reader vẫn fail-close và không dùng HWND fallback.
