@@ -483,7 +483,7 @@ class EngineDriver(PCDriver):
                 last_error = exc
                 message = str(exc)
                 transient = (
-                    "frame chưa hoàn tất hoặc đã thay đổi" in message
+                    "frame chưa hoàn tất hoặc cũ hơn phản hồi" in message
                     or "frame thay đổi trong lúc sao chép" in message
                 )
                 if not transient:
