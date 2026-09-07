@@ -4,11 +4,20 @@
 
 ## Nguyên tắc
 
+- `develop/multi-auto-dev` là nhánh phát triển chính của AUTO MULTI DEV.
 - Không sao chép hoặc viết lại logic sản xuất của AUTO PRO.
+- Không sửa wiring/business runtime AUTO PRO chính khi đang sửa AUTO MULTI DEV.
 - Multi định danh tài khoản bằng profile ID; PID chỉ là giá trị tạm.
 - Mỗi chức năng được khai báo trong `catalog/functions.json`.
 - Worker chỉ được gọi entry point đã được cho phép trong catalog.
 - AUTO LD nằm ngoài component này và không bị sửa đổi.
+
+## Vùng phát triển clean dùng chung
+
+- `shared_runtime/` là vùng kỹ thuật dùng chung cho `AUTO MULTI DEV` và `Dọn quầy` clean.
+- `shared_runtime/image_runtime.py` chỉ nạp third-party Pillow/OpenCV/NumPy từ packaged AUTO_PRO; không import `local_launcher` và không nạp business module AUTO PRO.
+- `AUTO MULTI DEV` vẫn bắt buộc kết nối qua `engine_driver.EngineDriver` và Bridge V3 (`CAPTURE3/INPUT4/BATCH_SWIPE/NO_LAYOUT`).
+- Các thay đổi Multi Dev được commit trực tiếp vào `develop/multi-auto-dev` để pull/build/live test; chỉ production AUTO PRO chính được giữ ngoài phạm vi sửa.
 
 ## Chức năng thử nghiệm hiện tại
 
