@@ -93,20 +93,22 @@ def main() -> int:
     require(workflow, "produce_9_dried_apples()", "Dried apple production step missing")
     require(auto_main, "AppleDryerWorkflow(self.auto).run", "Function one pipeline missing")
     require(dev, "PASS CHỨC NĂNG 1", "GUI result status missing")
-    require(dev, 'text="↟ Demo chính → tầng 6"', "Dedicated floor demo button missing")
+    require(dev, 'text="↟ Demo Auto Pro goUp(4)"', "Dedicated floor demo button missing")
     require(dev, "profile_id in self._clean_floor_demo_requested",
             "Floor demo request is not isolated per profile")
-    require(dev, "automation.floors.glide_up(6)",
-            "Main-to-floor-6 demo must execute one six-unit continuous glide")
+    require(dev, "automation.floors.reference_go_up_4()",
+            "Floor demo must replay the exact Auto Pro goUp(4) branch")
     require(dev, '"floor_demo_finished"', "Floor demo result path missing")
     require(automation, "self.floors = FloorNavigationActions(",
             "Resident floor navigation wiring missing")
-    require(floor_action, "GLIDE_UNIT_PIXELS = 100",
-            "Floor glide unit changed")
-    require(floor_action, "endpoint = y1 + self.GLIDE_UNIT_PIXELS * requested",
-            "Continuous floor glide endpoint missing")
-    require(floor_action, "frame_change_scores=(change,)",
-            "Floor glide must verify once after the complete gesture")
+    require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)",
+            "Exact Auto Pro goUp(4) geometry missing")
+    require(floor_action, "duration=self.speed_config.plant_harvest_duration",
+            "Auto Pro goUp(4) must use the harvest-speed equivalent")
+    require(floor_action, "AUTO_PRO_GO_UP_WAIT = 0.70",
+            "Auto Pro go_up_wait reference missing")
+    require(floor_action, "AUTO_PRO_POST_WAIT = 0.15",
+            "Auto Pro post-command wait missing")
 
     forbidden = (
         "clear_stall_probe_runtime",
