@@ -119,3 +119,11 @@ Live xác nhận từ màn hình chính, chuỗi mode 4 rồi mode 3 dừng ở 
 Đọc lại phần khởi tạo vòng target của Auto Pro cho thấy bước bắt buộc đã bị bỏ sót: `cur=0`; nếu `target>0`, gọi `goUp(1)` và đặt `cur=1`. Với `target=6`, vòng còn 5 nên gọi `goUp(4)` để thành `cur=5`; còn 1 nên gọi `goUp(1)` lần cuối. Chuỗi đúng theo state machine là `goUp(1) → goUp(4) → goUp(1)`.
 
 Demo được thay bằng chuỗi 1-4-1, hậu kiểm từng lệnh có phản hồi nhưng vẫn chỉ báo ĐÃ GỬI. Chỉ xác nhận trực tiếp của người vận hành mới nâng tầng 6 thành LIVE PASS.
+
+## Runtime DLL V3 bắt buộc
+
+- Luồng chính AUTO MULTI DEV chỉ được khởi tạo qua `engine_driver.EngineDriver` và hai binary `kvtm_loader_v3.exe`, `kvtm_bridge_v3.dll`.
+- PING phải có đủ `KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT`. Thiếu bất kỳ capability nào phải dừng rõ lỗi; không fallback im lặng về `CAPTURE1` hoặc HWND capture.
+- Các đường kéo nhiều điểm dùng một lệnh native `SWIPE` (`pipe_mode=single_batch`). Python không phát từng `MOVE` qua pipe vì sẽ tạo nhiều lớp xử lý và làm tốc độ trồng/thu thay đổi giữa đường.
+- Việc còn đóng gói DLL cũ phục vụ luồng ổn định khác không cho phép AUTO MULTI DEV chọn DLL cũ. Build gate `verify_multi_dev_bridge_v3_contract.py` bảo vệ ranh giới này.
+- Khi chạy đúng, log phải hiện rõ `kvtm_loader_v3.exe`, `kvtm_bridge_v3.dll`, PING `CAPTURE3 ... BATCH_SWIPE` và mode `cocos-dll-v3-batch-swipe-capture3`.
