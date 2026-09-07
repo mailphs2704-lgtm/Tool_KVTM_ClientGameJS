@@ -10,6 +10,13 @@
 - Worker chỉ được gọi entry point đã được cho phép trong catalog.
 - AUTO LD nằm ngoài component này và không bị sửa đổi.
 
+## Vùng phát triển clean dùng chung
+
+- `shared_runtime/` là vùng kỹ thuật dùng chung cho `AUTO MULTI DEV` và `Dọn quầy` clean.
+- `shared_runtime/image_runtime.py` chỉ nạp third-party Pillow/OpenCV/NumPy từ packaged AUTO_PRO; không import `local_launcher` và không nạp business module AUTO PRO.
+- `AUTO MULTI DEV` vẫn bắt buộc kết nối qua `engine_driver.EngineDriver` và Bridge V3 (`CAPTURE3/INPUT4/BATCH_SWIPE/NO_LAYOUT`).
+- Không áp thay đổi này lên AUTO PRO đang nối ở mục chức năng chính.
+
 ## Chức năng thử nghiệm hiện tại
 
 - `6 Tinh Dầu Hoa Hồng + 6 Vải Vàng + 8 Táo Sấy`
