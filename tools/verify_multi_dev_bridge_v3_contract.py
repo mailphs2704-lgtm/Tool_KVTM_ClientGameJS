@@ -41,9 +41,14 @@ def main() -> int:
     require(factory, 'driver._pipe("PING\\n", 1000)',
             "Strict V3 PING gate missing")
     for token in ("KVTM_BRIDGE_V3", "CAPTURE3", "INPUT4",
-                  "BATCH_SWIPE", "NO_LAYOUT"):
+                  "BATCH_SWIPE", "NO_LAYOUT", "CAPTURE3_SYNC2"):
         require(factory, token, f"Factory V3 capability gate missing: {token}")
         require(native, token, f"Native V3 capability missing: {token}")
+
+    require(factory, "ClientJS đang giữ Bridge V3 resident cũ",
+            "Stale resident Bridge V3 fail-closed message missing")
+    require(factory, '"CAPTURE3_SYNC2" in missing',
+            "Factory must reject pre-sync resident V3 binaries")
 
     if "CocosBridgeDriver(" in factory or "kvtm_bridge.dll" in factory:
         raise AssertionError("AUTO MULTI DEV still wires the legacy CAPTURE1 bridge")
@@ -149,9 +154,10 @@ def main() -> int:
             "Multi GUI thread must supervise a worker process")
 
     print("AUTO MULTI DEV BRIDGE V3 CONTRACT VERIFIED")
-    print("protocol=KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT")
+    print("protocol=KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT CAPTURE3_SYNC2")
     print("capture3_writer=status-first-seqlock")
     print("capture3_reader=dimension-handoff-retry")
+    print("resident_bridge=revision-gated")
     print("image_runtime=shared-clean local_launcher=false")
     print("legacy_capture1_fallback=false")
     return 0
