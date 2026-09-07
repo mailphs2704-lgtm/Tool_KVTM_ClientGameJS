@@ -530,3 +530,13 @@ Chỉ đưa thay đổi Workspace về nhánh tích hợp sau khi đạt đủ:
 - Không dùng VP/cây, giao diện máy, sao/cấp máy hoặc mây để nhận dạng vì tất cả đều thay đổi.
 - Không crop screenshot người dùng vào asset Multi Dev.
 - NEXT bắt buộc: forensic Auto Pro để tìm cơ chế xác định tầng thật; không tiếp tục suy đoán bằng pixel, `frame_change` hoặc template cảnh tổng hợp.
+
+
+## 2026-09-07 — Forensic bytecode Auto Pro goUp hoàn tất
+
+- Đọc trực tiếp `adb_controller.marshal`, code object `goUp` dòng 614.
+- `num_up` là mode, không phải count: mode1 swipe `(514,214)→(514,314)`; mode2 click `(257,416)`; mode3 click `(257,191)`; mode4 swipe `(387,69)→(387,918)`.
+- Swipe dùng `harvest_speed`; mỗi mode chờ `go_up_wait`; cuối hàm chờ thêm `0.15s`; trước nhánh click `(975,316)`.
+- `goUp` không vision-check tầng. `goDownLast` mới dùng `quay_hang/check_xuong` làm mốc màn hình chính. Không được coi `frame_change` là floor detector.
+- Demo chuyển sang phát lại nguyên `goUp(4)` và chỉ báo ĐÃ GỬI/chờ operator xác nhận; không tự ghi tầng 6 PASS.
+- NEXT LIVE: từ màn hình chính bấm demo, xác nhận tầng thực tế. Chưa ghép Nước táo/hàng cây thứ sáu.
