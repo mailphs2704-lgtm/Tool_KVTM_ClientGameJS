@@ -233,8 +233,14 @@ def main() -> int:
             "Worker must complete adaptive OpenCV initialization")
     require(worker, "image_runtime_ready=True",
             "Clean workflow must reuse worker-prepared image modules")
-    require(worker, "AutoMainWorkflow(automation).run()",
+    require(worker, "AutoMainWorkflow(",
             "Worker must own the complete main workflow")
+    require(worker, "function_id=function_id",
+            "Worker must bind the selected Function into AUTO Main")
+    require(worker, "sale_every_loops=sale_every",
+            "Worker must bind the recurring sale interval into AUTO Main")
+    require(worker, ").run()",
+            "Worker must execute the configured AUTO Main workflow")
     require(worker, "result_payload = result.to_dict()",
             "AUTO MULTI DEV result payload normalization missing")
     require(worker, 'result_payload.pop("profile_id", None)',
@@ -276,6 +282,7 @@ def main() -> int:
     print("bridge_owner=pid-mutex first-pipe-instance")
     print("resident_bridge=revision-gated")
     print("worker_result_emit=profile-id-normalized")
+    print("auto_main_wiring=selected-function recurring-sale-schedule")
     print("image_runtime=shared-clean local_launcher=false")
     print("legacy_capture1_fallback=false")
     return 0
