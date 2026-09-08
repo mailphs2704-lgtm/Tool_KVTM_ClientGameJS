@@ -107,6 +107,33 @@ Commit static contract:
 
 Static verifier hiện cấm hồi quy về `if changed != TREE_COUNT` hoặc `fail_close=true` cho hậu kiểm vùng nhìn thấy của Bông.
 
+## FIX transport — CAPTURE3 moving expected frame — Đã xong source, LIVE pending
+
+Live 11:49 ngày 2026-09-08 tái hiện lỗi transport **trong một run không có bằng chứng operator-stop trước lỗi**. PING đã trả đúng revision hiện tại:
+
+`OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP`
+
+Lỗi cuối là `expected=23, actual=12, status=2`. Source `EngineDriver` cũ retry transient stale-header bằng cách gọi lại toàn bộ `_capture_shared_bgra_once()`, nghĩa là mỗi retry lại phát **một CAPTURE mới** và tự tăng `expected_frame`. Cách đó biến một publication lag thành moving target và làm mất bằng chứng về một response cụ thể.
+
+AUTO MULTI DEV nay cài adapter riêng `worker/capture3_same_request.py`:
+
+- Mỗi screenshot chỉ phát **một** lệnh `CAPTURE` cho một `expected_frame` cố định.
+- Sau response, reader poll đúng lifetime-fixed mapping tối đa 30 lần x 10 ms cho **cùng expected frame**.
+- Không nhận `frame_id < expected_frame`.
+- Vẫn kiểm tra `status=2`, KCAP v3, dimensions/stride/pixel format/buffer size và seqlock-style header ổn định trước/sau copy pixels.
+- Không thêm HWND fallback, không nới stale-frame rule và không sửa native Bridge trong bước này.
+- Worker log thêm `DLL bridge V3: CAPTURE3 same-request wait ENABLED • stale frame vẫn bị từ chối` để xác nhận đúng build đã chạy.
+
+Commit adapter:
+
+`d2db0b4f63678307869456554ecf9bbaeecdd134` — `fix(auto-multi): wait on one capture response`
+
+Commit wiring worker:
+
+`cc13e2a89921b006d9f58e1efdcb0ddbac041be8` — `fix(auto-multi): install same-request capture wait`
+
+**Ý nghĩa live kế tiếp:** nếu lỗi biến mất, moving-target retry là nguyên nhân trực tiếp hoặc thành phần khuếch đại chính. Nếu lỗi vẫn xuất hiện, message mới phải giữ **một expected frame cố định** sau 30 lần đọc; khi đó có bằng chứng mạnh để chuyển sang điều tra native mapping/object identity thay vì tiếp tục tăng retry hoặc chấp nhận stale frame.
+
 ## Invariant an toàn
 
 - Không nới CAPTURE3.
@@ -122,11 +149,14 @@ Static verifier hiện cấm hồi quy về `if changed != TREE_COUNT` hoặc `f
 
 Không làm lại STEP 1 hoặc STEP 2.
 
-Bắt đầu từ **STEP 3: tầng 3-10 -> `goDown(1)` -> bắt đúng nút xuống tầng trong cửa sổ tồn tại ngắn -> click có template guard -> chờ animation -> 3 x `goDown(1)` -> exact main**.
+Trước STEP 3, **LIVE retest CAPTURE3 same-request wait** vì transport phải ổn định trước khi đánh giá startup navigation. Chạy qua Control Center `[1]`, sau đó `[2]`, và xác nhận log có dòng `CAPTURE3 same-request wait ENABLED`.
+
+Nếu CAPTURE3 ổn định, tiếp tục từ **STEP 3: tầng 3-10 -> `goDown(1)` -> bắt đúng nút xuống tầng trong cửa sổ tồn tại ngắn -> click có template guard -> chờ animation -> 3 x `goDown(1)` -> exact main**.
 
 Trước khi viết click của STEP 3, phải có bằng chứng đúng cho template/tọa độ/timing của nút xuống tầng. Nếu chưa có asset canonical thì ưu tiên recovery/reference hoặc live diagnostic, không đoán.
 
-Khi live retest bản hiện tại, ưu tiên hai checkpoint:
+Khi live retest bản hiện tại, ưu tiên ba checkpoint:
 
+- Log phải có `CAPTURE3 same-request wait ENABLED` ngay sau image bootstrap / protocol setup.
 - Startup tầng 1/2 phải có log `AUTO khởi điểm STEP 2` và kết thúc bằng exact main PASS.
 - Gieo Bông có thể log `changed_waypoint_regions=0/27`, nhưng không được dừng ở đó; pipeline phải tiếp tục sang điều hướng/sản xuất Vải vàng nếu các gate nghiệp vụ khác hợp lệ.
