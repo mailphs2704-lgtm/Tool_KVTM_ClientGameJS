@@ -1,162 +1,163 @@
 # AUTO MULTI DEV — Chuẩn hóa vị trí khởi điểm
 
-Tài liệu này là handoff bắt buộc cho chuỗi sửa startup camera. Mỗi yêu cầu của người dùng được làm thành một bước nhỏ; xong bước nào thì cập nhật trạng thái tại đây để cửa sổ làm việc tiếp theo không làm lệch luồng.
+Tài liệu này là handoff bắt buộc cho chuỗi sửa camera/transition của AUTO MULTI DEV. Luôn ưu tiên **quy tắc mới nhất** bên dưới nếu mâu thuẫn với ghi chú cũ.
 
-## Mục tiêu gốc
+## QUY TẮC MỚI NHẤT — 2026-09-08
 
-Mỗi lần bấm chạy AUTO MULTI DEV, camera phải được đưa về **màn hình chính của chính clone** trước khi bắt đầu chuỗi nghiệp vụ. Không được giả định camera đang ở tầng 1, tầng 2 hay màn hình chính.
+Người dùng xác nhận lỗi `STEP 2 đã gửi 1+3 goDown(1) nhưng chưa xác nhận được màn hình chính` là do **đặt exact-main gate sai chỗ**.
 
-Sau khi đã xác nhận đúng màn hình chính, chuỗi nghiệp vụ mới được phép tiếp tục. Transition từ màn hình chính lên mốc gieo là đúng **một** `goUp(1)` do action gieo hiện có sở hữu; không phát thêm một `goUp(1)` ở lớp session để tránh kéo hai lần.
+Quy tắc hiện hành:
 
-## Trạng thái từng dòng yêu cầu
+- Startup được phép **phân loại/chuẩn hóa camera**, nhưng không được dừng AUTO chỉ vì exact `is_own_main_screen()` không PASS sau chuỗi startup.
+- Exact-main fail-close chỉ đặt ở **transition nghiệp vụ giữa một lượt trồng cây và một lượt sản xuất VP, hoặc giữa sản xuất VP và lượt trồng kế tiếp**.
+- `frame_change` vẫn chỉ là diagnostic, không phải detector tầng/main.
+- Không hạ threshold, không click mù, không chấp nhận stale CAPTURE3.
 
-### STEP 1 — Đã xong
+Hai exact-main gate hiện được đặt đúng tại Function 1:
 
-**Trường hợp bắt đầu ngay tại màn hình chính.**
+1. Sau khi hoàn tất lượt trồng Táo tầng 6 và route `floor_6_to_main()`, trước khi đi lên tầng 2 để SX Nước táo.
+2. Sau khi SX đủ 9 Nước táo và route `floor_2_to_main()`, trước khi bắt đầu trồng 27 Bông.
 
-Quy tắc đã khóa:
+Các transition còn lại được hậu kiểm bằng gate nghiệp vụ của action đích (cây/máy/panel/vật phẩm), không ép exact-main ở startup.
 
-- Probe `is_own_main_screen()` ngay khi `GameSessionWorkflow` bắt đầu.
-- Nếu đúng màn hình chính: ghi stage `clean-session-start-main-detected`.
-- Không phát `goDown` nào.
-- Vẫn chạy `ensure_main_screen()` để giữ cơ chế đóng popup / xác minh home hiện tại.
-- Khi main đã được xác nhận, bàn giao cho pipeline hiện có.
-- Không đưa `goUp(1)` vào `GameSessionWorkflow`; `PlantingActions._open_seed_picker()` vẫn là chủ sở hữu duy nhất của nhịp `goUp(1)` trước gieo.
+## STEP 1 — Bắt đầu tại màn hình chính
 
-Commit runtime STEP 1:
+Trạng thái: **Đã xong, giữ làm routing hint chứ không làm fatal gate.**
+
+- `GameSessionWorkflow` vẫn probe `is_own_main_screen()` một lần để tránh kéo xuống nếu clone vốn đã ở main.
+- Nếu probe PASS: giữ nguyên camera, không `goDown`.
+- Probe này không tự quyết định toàn workflow PASS/FAIL.
+- `goUp(1)` trước lượt gieo vẫn do planting action sở hữu; session không phát thêm.
+
+Commit lịch sử STEP 1:
 
 `f33406931990ea50144a871c2a1878fcc67bc110` — `fix(auto-multi): lock main-screen startup anchor`
 
-### STEP 2 — Đã xong phần nhánh tầng thấp
+## STEP 2 — Bắt đầu tầng 1 hoặc tầng 2
 
-**Trường hợp bắt đầu ở tầng 1 hoặc tầng 2.**
+Trạng thái: **Đã sửa theo quy tắc mới.**
 
-Runtime hiện đã khóa đúng chuỗi tầng thấp:
+Chuỗi startup tầng thấp vẫn giữ:
 
-1. Nếu startup chưa xác nhận main, trước tiên cho luồng portal/popup hiện có một cửa sổ ngắn để vào game hoặc đóng blocker; không kéo tầng trên màn hình portal/loading.
-2. Khi vẫn là trạng thái game non-main, phát một `goDown(1)` bằng đúng geometry `(514,314) -> (514,214)`.
-3. Sau gesture lấy fresh CAPTURE3; `frame_change` chỉ ghi diagnostic, tuyệt đối không dùng để suy luận tầng/main.
-4. Phát tiếp **đúng 3 lần `goDown(1)`** để ép camera tầng 1/2 về đáy, kể cả khi đã chạm biên camera và hình gần như không đổi.
-5. Sau chuỗi `1 + 3`, bắt buộc gọi `is_own_main_screen()` trên fresh frame.
-6. Chỉ khi exact main classifier PASS mới bàn giao cho AUTO.
-7. Nếu chưa xác nhận main thì `ScreenTimeout` fail-close; không production tiếp.
+1. Nếu startup không thấy main, cho portal/popup route hiện có một cửa sổ ngắn để vào game/đóng blocker.
+2. Nếu vẫn chưa về main trong cửa sổ đó, phát `goDown(1)` bằng geometry `(514,314) -> (514,214)`.
+3. Lấy fresh CAPTURE3 sau gesture và ghi `frame_change` diagnostic.
+4. Phát thêm đúng **3 x `goDown(1)`**.
+5. Sau `1 + 3`, **không còn raise ScreenTimeout chỉ vì exact-main classifier FAIL**.
+6. Bàn giao sang lượt nghiệp vụ đầu tiên; gate exact state được kiểm ở transition nghiệp vụ sau đó.
 
-Commit runtime STEP 2:
+Runtime mới:
 
-`e97d409f175426dceeedb8ae0a51628b9481a0af` — `fix(auto-multi): normalize floor1-floor2 startup`
+`37ff439806735d73724f10b1ca328a4fcdfb9a97` — `fix(auto-multi): defer main gate to stage transitions`
 
-Commit static contract STEP 2:
+AppleDryer không còn gọi `ensure_main_screen()` lần hai ở đầu pass:
 
-`8074f815a8d5a4055ddcd6204c9f6c84cd6db565` — `test(auto-multi): lock step2 startup route`
+`a51d50fcfb9e9f18ad85663efa5739d20f2beefb` — `fix(auto-multi): remove duplicate startup main gate`
 
-**Giới hạn cố ý ở bản này:** nhánh nhận diện nút xuống tầng chưa được thêm. Vì vậy startup từ tầng 3-10 không được đoán là tầng thấp; nếu `1 + 3 goDown(1)` vẫn không về exact main thì worker dừng fail-close. Tách như vậy để STEP 3/4 có thể bổ sung detector/timing của nút xuống tầng dựa trên bằng chứng thật, không click mù.
+Exact-main gate chuyển sang Function 1 transitions:
 
-### STEP 3 — Chưa làm
+`cf600a243ec7673f65e9e5dbb41d36b655b0c2b4` — `fix(auto-multi): gate main only between business stages`
 
-**Trường hợp bắt đầu từ tầng 3 đến tầng 10.**
+Worker log cũng đã đổi để không báo sai `xác nhận màn hình chính` ngay sau session:
 
-Yêu cầu chính xác:
+`7c1e12ac0fbaf64a50f876f58ccb9b2221f5e5a4` — `fix(auto-multi): align session pass log with deferred gate`
 
-1. Thực hiện một `goDown(1)`.
-2. Sau gesture này nút xuống tầng sẽ xuất hiện trong thời gian ngắn.
-3. Chỉ click khi template nút xuống tầng thực sự được nhận diện trên fresh frame.
-4. Chờ camera/game hoàn tất animation chuyển xuống.
-5. Sau đó thực hiện tiếp **3 lần `goDown(1)`** để ép camera rời vùng mây / vị trí treo trung gian.
-6. Xác nhận `is_own_main_screen()`.
-7. Không xác nhận main thì fail-close.
+Static contract khóa quy tắc mới:
 
-Không được dùng `quay_hang` hay `cua_hang` thay cho nút xuống tầng: hai asset đó là icon/quầy cửa hàng, không phải nút chuyển tầng. Nếu clean asset chưa có template nút xuống tầng thì phải thu hồi đúng reference hoặc lấy live evidence rồi tạo asset canonical; không đoán tên, tọa độ hoặc threshold.
+`48a3d9f467a6afca693803830cfd0768a944a4ff` — `test(auto-multi): lock transition-only main gates`
 
-### STEP 4 — Chưa làm
+## STEP 3 — Startup tầng 3 đến tầng 10
 
-**Timing và nhận diện nút xuống tầng.**
+Trạng thái: **Chưa làm detector/click nút xuống tầng.**
 
-Đặc tính game đã được người dùng xác nhận:
+Yêu cầu đã xác nhận:
 
-- Nút xuống tầng **chỉ xuất hiện sau thao tác kéo tầng**.
-- Nút chỉ tồn tại vài giây rồi biến mất.
-- Detection phải bắt đầu ngay sau fresh frame hậu kiểm của `goDown(1)`.
-- Cần giới hạn cửa sổ tìm kiếm; không loop vô hạn.
-- Chỉ click template đã xác minh; không click tọa độ mù khi không có detection.
-- Sau click phải chờ animation settle rồi mới phát ba `goDown(1)` tiếp theo.
+1. Sau một `goDown(1)` ở tầng cao, nút xuống tầng xuất hiện trong thời gian ngắn.
+2. Chỉ click khi nhận diện đúng template nút trên fresh frame.
+3. Chờ animation chuyển tầng xong.
+4. Thực hiện thêm 3 x `goDown(1)` để thoát trạng thái camera/mây trung gian.
+5. Theo quy tắc mới, startup không fatal-gate exact main; chỉ ghi diagnostic và bàn giao nghiệp vụ.
+6. Exact-main fail-close chỉ dùng khi route này xuất hiện **giữa hai stage nghiệp vụ**.
 
-Timing cụ thể phải chốt bằng log/live evidence; không tự giảm threshold để ép PASS.
+Không được dùng `quay_hang`, `cua_hang` hoặc tọa độ đoán làm nút xuống tầng. Phải có asset/reference/live evidence đúng trước khi triển khai.
 
-## FIX riêng — Bông 27/27 false-negative — Đã xong source
+## STEP 4 — Timing nút xuống tầng
 
-Ảnh lỗi live cho thấy gesture gieo Bông thực tế đã chạy đủ nhưng hậu kiểm visible regions trả `0/27`, làm phát `ScreenTimeout`. Đây là gate sai vì hàng cây thứ 5 có thể nằm ngoài viewport sau gesture.
+Trạng thái: **Chưa làm.**
 
-Đã đối chiếu với logic gieo Táo ổn định: đường kéo 27 chậu là business action, còn `changed_waypoint_regions` chỉ là diagnostic `non_blocking=true`.
+- Nút chỉ xuất hiện sau thao tác kéo tầng.
+- Chỉ tồn tại vài giây rồi biến mất.
+- Detection bắt đầu ngay sau fresh frame hậu `goDown(1)`.
+- Search window phải bounded, không loop vô hạn.
+- Không hạ threshold để ép nhận diện.
 
-Runtime Bông hiện được sửa theo cùng mô hình:
+## FIX Bông 27/27 false-negative
 
-- Vẫn fail-close nếu thiếu canonical asset `cay_bong`.
-- Vẫn phải xác minh seed picker/chậu và nhận diện đúng hạt Bông trước gesture.
-- Vẫn dùng nguyên đường 27 chậu: `path = (seed.center,) + self.rose_path()[1:]`.
-- Sau gesture vẫn đo `changed_waypoint_regions` để log.
-- **Không còn yêu cầu visible `27/27` và không raise chỉ vì `0/27` hoặc thiếu vùng nhìn thấy.**
-- Trả kế toán `27` sau khi đường gieo native đã được gửi thành công; lỗi transport/stop/seed vẫn chặn như cũ.
+Trạng thái: **Đã sửa source.**
 
-Commit runtime:
+- Gesture/path 27 chậu là business action.
+- `changed_waypoint_regions` chỉ là diagnostic.
+- `0/27` hoặc thiếu hàng thứ 5 trong viewport không còn làm fail.
+- Asset/seed/transport/stop thật vẫn fail-close.
+
+Runtime:
 
 `32cfd192325172b2b3fb63a777adb37c2e4211c0` — `fix(auto-multi): make cotton visibility check advisory`
 
-Commit static contract:
+Static contract:
 
 `d93551c5ac4374befe8d79628f928661ce5341d7` — `test(auto-multi): align cotton postcheck contract`
 
-Static verifier hiện cấm hồi quy về `if changed != TREE_COUNT` hoặc `fail_close=true` cho hậu kiểm vùng nhìn thấy của Bông.
+## FIX CAPTURE3 moving expected frame
 
-## FIX transport — CAPTURE3 moving expected frame — Đã xong source, LIVE pending
+Trạng thái: **Source đã sửa; live checkpoint mới đã đi qua lỗi cũ.**
 
-Live 11:49 ngày 2026-09-08 tái hiện lỗi transport **trong một run không có bằng chứng operator-stop trước lỗi**. PING đã trả đúng revision hiện tại:
+Adapter same-request:
 
-`OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP`
+- Một screenshot phát đúng một `CAPTURE`.
+- Giữ `expected_frame` cố định và poll cùng mapping.
+- Không nhận stale frame.
+- Không HWND fallback.
 
-Lỗi cuối là `expected=23, actual=12, status=2`. Source `EngineDriver` cũ retry transient stale-header bằng cách gọi lại toàn bộ `_capture_shared_bgra_once()`, nghĩa là mỗi retry lại phát **một CAPTURE mới** và tự tăng `expected_frame`. Cách đó biến một publication lag thành moving target và làm mất bằng chứng về một response cụ thể.
-
-AUTO MULTI DEV nay cài adapter riêng `worker/capture3_same_request.py`:
-
-- Mỗi screenshot chỉ phát **một** lệnh `CAPTURE` cho một `expected_frame` cố định.
-- Sau response, reader poll đúng lifetime-fixed mapping tối đa 30 lần x 10 ms cho **cùng expected frame**.
-- Không nhận `frame_id < expected_frame`.
-- Vẫn kiểm tra `status=2`, KCAP v3, dimensions/stride/pixel format/buffer size và seqlock-style header ổn định trước/sau copy pixels.
-- Không thêm HWND fallback, không nới stale-frame rule và không sửa native Bridge trong bước này.
-- Worker log thêm `DLL bridge V3: CAPTURE3 same-request wait ENABLED • stale frame vẫn bị từ chối` để xác nhận đúng build đã chạy.
-
-Commit adapter:
+Commits:
 
 `d2db0b4f63678307869456554ecf9bbaeecdd134` — `fix(auto-multi): wait on one capture response`
 
-Commit wiring worker:
-
 `cc13e2a89921b006d9f58e1efdcb0ddbac041be8` — `fix(auto-multi): install same-request capture wait`
 
-**Ý nghĩa live kế tiếp:** nếu lỗi biến mất, moving-target retry là nguyên nhân trực tiếp hoặc thành phần khuếch đại chính. Nếu lỗi vẫn xuất hiện, message mới phải giữ **một expected frame cố định** sau 30 lần đọc; khi đó có bằng chứng mạnh để chuyển sang điều tra native mapping/object identity thay vì tiếp tục tăng retry hoặc chấp nhận stale frame.
+Live 12:01 đã có log `CAPTURE3 same-request wait ENABLED`, exact PING hiện hành và không tái hiện capture exception trước khi workflow dừng ở startup exact-main gate cũ. Chưa gọi transport FULL PASS cho tới khi chạy dài hơn qua pipeline.
 
 ## Invariant an toàn
 
 - Không nới CAPTURE3.
 - Không chấp nhận stale frame.
-- Mỗi gesture startup phải có fresh frame hậu kiểm.
-- Không gắn nhãn `main` chỉ dựa vào số lần kéo hoặc `frame_change`.
-- Chỉ `is_own_main_screen()` xác nhận được điểm khởi đầu cuối cùng.
-- Không đụng ổn định của sale / clear-stall khi đang sửa startup normalization.
-- AUTO PRO tiếp tục chỉ là reference, không gọi runtime sang AUTO PRO.
-- Không dùng asset cửa hàng thay cho nút xuống tầng.
+- Không HWND fallback trong AUTO MULTI DEV.
+- Mỗi gesture navigation vẫn lấy fresh frame diagnostic.
+- Không dùng `frame_change` để gắn nhãn tầng/main.
+- Exact-main fail-close chỉ nằm ở transition nghiệp vụ đã định nghĩa, không ở startup.
+- Không đụng Dọn quầy/sale/profile cho task này.
+- AUTO PRO chỉ là reference.
 
-## Điểm tiếp tục cho cửa sổ kế tiếp
+## Điểm tiếp tục cửa sổ kế tiếp
 
-Không làm lại STEP 1 hoặc STEP 2.
+Không khôi phục lại startup exact-main ScreenTimeout.
 
-Trước STEP 3, **LIVE retest CAPTURE3 same-request wait** vì transport phải ổn định trước khi đánh giá startup navigation. Chạy qua Control Center `[1]`, sau đó `[2]`, và xác nhận log có dòng `CAPTURE3 same-request wait ENABLED`.
+Live retest trước:
 
-Nếu CAPTURE3 ổn định, tiếp tục từ **STEP 3: tầng 3-10 -> `goDown(1)` -> bắt đúng nút xuống tầng trong cửa sổ tồn tại ngắn -> click có template guard -> chờ animation -> 3 x `goDown(1)` -> exact main**.
+1. Control Center `[1]`.
+2. `[2]` mở Multi DEV.
+3. Chạy một tài khoản liên tục.
 
-Trước khi viết click của STEP 3, phải có bằng chứng đúng cho template/tọa độ/timing của nút xuống tầng. Nếu chưa có asset canonical thì ưu tiên recovery/reference hoặc live diagnostic, không đoán.
+Kỳ vọng log startup nếu đi nhánh tầng thấp:
 
-Khi live retest bản hiện tại, ưu tiên ba checkpoint:
+- `AUTO khởi điểm STEP 2 • 1+3 goDown(1) hoàn tất • không gate main tại startup...`
+- Sau đó phải đi tiếp vào `AUTO Táo sấy` thay vì popup lỗi STEP 2.
 
-- Log phải có `CAPTURE3 same-request wait ENABLED` ngay sau image bootstrap / protocol setup.
-- Startup tầng 1/2 phải có log `AUTO khởi điểm STEP 2` và kết thúc bằng exact main PASS.
-- Gieo Bông có thể log `changed_waypoint_regions=0/27`, nhưng không được dừng ở đó; pipeline phải tiếp tục sang điều hướng/sản xuất Vải vàng nếu các gate nghiệp vụ khác hợp lệ.
+Hai checkpoint exact-main đúng chỗ cần theo dõi:
+
+- `AUTO transition check • sau trồng Táo tầng 6 → trước SX Nước táo • exact main PASS`
+- `AUTO transition check • sau SX Nước táo → trước trồng Bông • exact main PASS`
+
+Nếu một gate này fail, sửa **route chuyển tầng tương ứng**, không đưa check quay lại GameSession startup.
+
+Sau khi route hiện tại chạy ổn, tiếp tục STEP 3/4: thu hồi đúng asset/timing của nút xuống tầng cho startup tầng 3-10.
