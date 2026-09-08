@@ -117,6 +117,21 @@ def main() -> int:
         engine_driver = importlib.import_module("engine_driver")
         engine_driver._PROTOCOL_PREFIX = _REQUIRED_BRIDGE_PROTOCOL
 
+        # Keep CAPTURE3 fail-closed while avoiding a moving response target.
+        # One CAPTURE command now owns one expected frame id; transient shared
+        # publication lag is polled on that same fixed mapping instead of issuing
+        # another CAPTURE and advancing expected again.
+        from capture3_same_request import install_capture3_same_request_wait
+
+        install_capture3_same_request_wait(engine_driver)
+        emit(
+            "detail", workflow=WORKFLOW_NAME, profile_id=args.profile_id,
+            message=(
+                "DLL bridge V3: CAPTURE3 same-request wait ENABLED • "
+                "stale frame vẫn bị từ chối"
+            ),
+        )
+
         from kvtm_automation import AutomationContext, KVAutomation
         from kvtm_automation.errors import AutomationStopped
         from kvtm_automation.workflows.game_session import GameSessionWorkflow
