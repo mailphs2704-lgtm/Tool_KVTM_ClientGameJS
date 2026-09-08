@@ -8,6 +8,8 @@ import shutil
 import time
 import uuid
 
+import auto_builder_function1_manifest as function1_manifest
+
 
 __all__ = [
     "AutoBuilderPlanStore",
@@ -22,7 +24,8 @@ FILE_FUNCTIONS = (
     "Tạo plan AUTO Builder mặc định và Function tái sử dụng",
     "Đọc/ghi plan chính ở AppData bền qua build DEV",
     "Đọc/ghi thư viện Function riêng theo function_id",
-    "Seed Function 9 Táo sấy - 9 Vải vàng đã làm trước đó vào Load Function",
+    "Seed Function 9 Táo sấy - 9 Vải vàng với full execution manifest vào Load Function",
+    "Tách blueprint hiển thị khỏi runtime wrapper proven function_1",
     "Đóng gói Function đã lưu vào snapshot plan trước khi chạy",
     "Quản lý/liệt kê thư viện ảnh riêng của Multi DEV ngoài dist",
     "Liệt kê ảnh AUTO PRO và copy ảnh được chọn sang thư viện Multi DEV",
@@ -68,16 +71,9 @@ def _builtin_function_document(function_id: str) -> dict:
         "function_id": function_id,
         "name": "9 Táo sấy - 9 Vải vàng",
         "source_template_id": "builtin_function_1",
-        "steps": [
-            {
-                "id": new_step_id(),
-                "type": "function",
-                "function_id": "function_1",
-                "loops": 1,
-                "sale_after_each_loop": False,
-                "sale_timeout": 120.0,
-            }
-        ],
+        "manifest_version": function1_manifest.MANIFEST_VERSION,
+        "steps": function1_manifest.display_steps(new_step_id),
+        "runtime_steps": function1_manifest.runtime_steps(new_step_id),
     }
 
 
@@ -137,6 +133,18 @@ def _normalized_swipe_points(step: dict) -> list[list[int]]:
 
 def step_summary(step: dict) -> tuple[str, str]:
     step_type = str(step.get("type") or "")
+    if step_type.startswith("trace_"):
+        kind = step_type.removeprefix("trace_")
+        labels = {
+            "module": "MODULE",
+            "click": "CLICK",
+            "swipe": "SWIPE",
+            "wait": "WAIT",
+            "recognize": "NHẬN DIỆN",
+            "gate": "GATE / HẬU KIỂM",
+            "loop": "LOOP / NHÁNH",
+        }
+        return labels.get(kind, kind.upper()), str(step.get("detail") or "")
     if step_type == "enter_game_popup":
         return "MODULE", "Vào game + đóng popup"
     if step_type == "sell_function_vp":
@@ -236,7 +244,21 @@ class AutoBuilderPlanStore:
 
     def _seed_existing_function_one(self) -> None:
         path = self.functions_dir / f"{_BUILTIN_WRAPPER_ID}.json"
+        current = None
         if path.is_file():
+            try:
+                current = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                current = None
+        if (
+            isinstance(current, dict)
+            and current.get("source_template_id") == "builtin_function_1"
+            and int(current.get("manifest_version", 0) or 0) >= function1_manifest.MANIFEST_VERSION
+            and isinstance(current.get("steps"), list)
+            and len(current.get("steps") or []) > 1
+            and isinstance(current.get("runtime_steps"), list)
+            and current.get("runtime_steps")
+        ):
             return
         payload = _builtin_function_document(_BUILTIN_WRAPPER_ID)
         temporary = path.with_suffix(".json.tmp")
@@ -309,7 +331,15 @@ class AutoBuilderPlanStore:
 
     def bundle_plan(self, plan: dict) -> dict:
         payload = self._validate_document(plan, kind="plan")
-        functions = {item["function_id"]: item for item in self.list_functions()}
+        functions: dict[str, dict] = {}
+        for item in self.list_functions():
+            runtime_item = dict(item)
+            if runtime_item.get("source_template_id") == "builtin_function_1":
+                runtime_steps = runtime_item.get("runtime_steps")
+                if not isinstance(runtime_steps, list) or not runtime_steps:
+                    runtime_steps = function1_manifest.runtime_steps(new_step_id)
+                runtime_item["steps"] = list(runtime_steps)
+            functions[runtime_item["function_id"]] = runtime_item
         referenced = {
             str(step.get("function_id") or "")
             for step in payload["steps"]
