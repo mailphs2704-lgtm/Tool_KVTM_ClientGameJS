@@ -20,7 +20,7 @@ FILE_FUNCTIONS = (
     "Chỉ cho phép vào luồng Sửa máy khi hậu kiểm production đã đủ chính xác",
     "Giữ panel máy mở để bước Sửa máy tiếp theo không phải mở lại máy",
     "Chạy luồng live-pass ? → Sửa máy → đóng modal ngay từ panel sản xuất VP đang mở",
-    "Không đọc/OCR giá sửa máy vì số tiền thay đổi theo trạng thái máy",
+    "Không đọc giá sửa máy vì số tiền thay đổi theo trạng thái máy",
     "Hậu kiểm modal mở, vùng Độ bền/nút Sửa thay đổi và modal đóng",
     "Fail-close nếu hậu kiểm production hoặc phản hồi UI không khớp",
 )
@@ -62,7 +62,7 @@ class MachineRepairActions:
     REPAIR_BUTTON_POINT = (730, 596)
     CLOSE_MODAL_POINT = (652, 284)
 
-    # Geometry-only verification. No OCR and no dependency on a displayed cost.
+    # Geometry-only verification; no text/price recognition is used.
     MODAL_ZONE = (335, 270, 335, 455)
     DURABILITY_ZONE = (355, 565, 295, 55)
     REPAIR_BUTTON_ZONE = (650, 555, 145, 85)
