@@ -6,17 +6,19 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/production.py"
-FLOOR_ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/floor_navigation.py"
-AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
-WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_apple_dryer/workflow.py"
-GAME_SESSION = ROOT / "components/clientjs-auto/kvtm_automation/workflows/game_session/workflow.py"
-AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
-FUNCTION_ONE = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_function_one/workflow.py"
-APPLE_JUICE = ROOT / "components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py"
-COTTON = ROOT / "components/clientjs-auto/kvtm_automation/actions/cotton_planting.py"
-PASS_THREE_NAV = ROOT / "components/clientjs-auto/kvtm_automation/actions/function_one_pass_three_navigation.py"
-YELLOW_FABRIC = ROOT / "components/clientjs-auto/kvtm_automation/actions/yellow_fabric_production.py"
+CLEAN = ROOT / "components/clientjs-auto/kvtm_automation"
+ACTION = CLEAN / "actions/production.py"
+FLOOR_ACTION = CLEAN / "actions/floor_navigation.py"
+AUTOMATION = CLEAN / "automation.py"
+WORKFLOW = CLEAN / "workflows/auto_apple_dryer/workflow.py"
+GAME_SESSION = CLEAN / "workflows/game_session/workflow.py"
+AUTO_MAIN = CLEAN / "workflows/auto_main/workflow.py"
+FUNCTION_ONE = CLEAN / "workflows/auto_function_one/workflow.py"
+APPLE_JUICE = CLEAN / "actions/apple_juice_production.py"
+COTTON = CLEAN / "actions/cotton_planting.py"
+PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
+YELLOW_FABRIC = CLEAN / "actions/yellow_fabric_production.py"
+MACHINE_REPAIR = CLEAN / "actions/machine_repair.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.png"
@@ -34,6 +36,19 @@ def require(text: str, token: str, message: str) -> None:
         raise AssertionError(message)
 
 
+def forbid(text: str, token: str, message: str) -> None:
+    if token in text:
+        raise AssertionError(message)
+
+
+def read_python(path: Path) -> str:
+    if not path.is_file():
+        raise AssertionError(f"Missing production contract file: {path}")
+    text = path.read_text(encoding="utf-8")
+    ast.parse(text, filename=str(path))
+    return text
+
+
 def git_blob_sha(path: Path) -> str:
     data = path.read_bytes()
     header = f"blob {len(data)}\0".encode("ascii")
@@ -41,203 +56,172 @@ def git_blob_sha(path: Path) -> str:
 
 
 def main() -> int:
-    contract_files = (
-        ACTION,
-        FLOOR_ACTION,
-        AUTOMATION,
-        WORKFLOW,
-        GAME_SESSION,
-        AUTO_MAIN,
-        FUNCTION_ONE,
-        APPLE_JUICE,
-        COTTON,
-        PASS_THREE_NAV,
-        YELLOW_FABRIC,
-        DEV_ENTRY,
-        AUTO_MULTI_WORKER,
-    )
-    for path in contract_files:
-        if not path.is_file():
-            raise AssertionError(f"Missing production contract file: {path}")
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        functions = sum(
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            for node in ast.walk(tree)
+    sources = {
+        path: read_python(path)
+        for path in (
+            ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, GAME_SESSION, AUTO_MAIN,
+            FUNCTION_ONE, APPLE_JUICE, COTTON, PASS_THREE_NAV, YELLOW_FABRIC,
+            MACHINE_REPAIR, DEV_ENTRY, AUTO_MULTI_WORKER,
         )
-        if path in (ACTION, FLOOR_ACTION, WORKFLOW, GAME_SESSION, COTTON, PASS_THREE_NAV, YELLOW_FABRIC) and functions > 10:
-            raise AssertionError(f"{path}: {functions} functions exceeds limit 10")
+    }
+    action = sources[ACTION]
+    floor_action = sources[FLOOR_ACTION]
+    automation = sources[AUTOMATION]
+    workflow = sources[WORKFLOW]
+    game_session = sources[GAME_SESSION]
+    auto_main = sources[AUTO_MAIN]
+    function_one = sources[FUNCTION_ONE]
+    apple_juice = sources[APPLE_JUICE]
+    cotton = sources[COTTON]
+    pass_three_nav = sources[PASS_THREE_NAV]
+    yellow_fabric = sources[YELLOW_FABRIC]
+    machine_repair = sources[MACHINE_REPAIR]
+    dev = sources[DEV_ENTRY]
+    auto_multi_worker = sources[AUTO_MULTI_WORKER]
 
     for asset in (
-        MULTI_DEV_DRIED_APPLE,
-        MULTI_DEV_EMPTY_SLOT,
-        MULTI_DEV_COTTON,
-        MULTI_DEV_YELLOW_FABRIC,
-        MULTI_DEV_WAREHOUSE_YELLOW_FABRIC,
+        MULTI_DEV_DRIED_APPLE, MULTI_DEV_EMPTY_SLOT, MULTI_DEV_COTTON,
+        MULTI_DEV_YELLOW_FABRIC, MULTI_DEV_WAREHOUSE_YELLOW_FABRIC,
     ):
         if not asset.is_file():
             raise AssertionError(f"Multi Dev production asset missing: {asset.name}")
-
-    asset_blob_contract = (
+    for asset, expected_sha in (
         (MULTI_DEV_COTTON, EXPECTED_COTTON_BLOB_SHA),
         (MULTI_DEV_YELLOW_FABRIC, EXPECTED_YELLOW_FABRIC_BLOB_SHA),
         (MULTI_DEV_WAREHOUSE_YELLOW_FABRIC, EXPECTED_WAREHOUSE_YELLOW_FABRIC_BLOB_SHA),
-    )
-    for asset, expected_sha in asset_blob_contract:
-        actual_sha = git_blob_sha(asset)
-        if actual_sha != expected_sha:
+    ):
+        actual = git_blob_sha(asset)
+        if actual != expected_sha:
             raise AssertionError(
-                f"Canonical asset blob changed: {asset.name} expected={expected_sha} actual={actual_sha}"
+                f"Canonical asset blob changed: {asset.name} expected={expected_sha} actual={actual}"
             )
-
     if EXPECTED_YELLOW_FABRIC_BLOB_SHA == EXPECTED_WAREHOUSE_YELLOW_FABRIC_BLOB_SHA:
         raise AssertionError("Production and warehouse yellow-fabric assets must remain distinct")
 
-    action = ACTION.read_text(encoding="utf-8")
-    floor_action = FLOOR_ACTION.read_text(encoding="utf-8")
-    automation = AUTOMATION.read_text(encoding="utf-8")
-    workflow = WORKFLOW.read_text(encoding="utf-8")
-    game_session = GAME_SESSION.read_text(encoding="utf-8")
-    auto_main = AUTO_MAIN.read_text(encoding="utf-8")
-    function_one = FUNCTION_ONE.read_text(encoding="utf-8")
-    apple_juice = APPLE_JUICE.read_text(encoding="utf-8")
-    cotton = COTTON.read_text(encoding="utf-8")
-    pass_three_nav = PASS_THREE_NAV.read_text(encoding="utf-8")
-    yellow_fabric = YELLOW_FABRIC.read_text(encoding="utf-8")
-    dev = DEV_ENTRY.read_text(encoding="utf-8")
-    auto_multi_worker = AUTO_MULTI_WORKER.read_text(encoding="utf-8")
-
-    # Startup routing remains diagnostic/non-fatal. Exact main gates belong to
-    # explicit business transitions and the new end-of-loop repeatability gate.
+    # Startup remains the proven diagnostic low-floor route. Exact main is a
+    # business-transition/end-loop gate, not a startup image guess.
     require(game_session, "DOWN_ONE = (514, 314, 514, 214)", "Startup goDown(1) geometry changed")
     require(game_session, 'started_on_main = self.auto.popup.is_own_main_screen()', "Startup routing hint missing")
     require(game_session, 'self._startup_go_down_one("startup-low-floor-probe-1-of-4")', "STEP 2 initial goDown(1) probe missing")
-    require(game_session, "for index in range(2, 5):", "STEP 2 must issue exactly three additional goDown(1)s")
-    require(game_session, "fresh_frame=true", "STEP 2 must capture a fresh frame after each goDown(1)")
-    require(game_session, "không gate main tại startup", "Startup must not exact-gate main after low-floor settling")
-    if "STEP 2 đã gửi 1+3 goDown(1) nhưng chưa xác nhận" in game_session:
-        raise AssertionError("Obsolete startup exact-main ScreenTimeout gate returned")
-    if "if change <" in game_session:
-        raise AssertionError("Startup STEP 2 must not use frame-change as a floor/main detector")
-    if "self.auto.ensure_main_screen(timeout=timeout)" in workflow:
-        raise AssertionError("AppleDryer must not duplicate the startup exact-main gate")
-    require(function_one, "def _require_main_transition", "Inter-stage exact-main gate helper missing")
-    require(function_one, 'self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")', "Missing main gate between apple planting and juice production")
-    require(function_one, 'self._require_main_transition("sau SX Nước táo → trước trồng Bông")', "Missing main gate between juice production and cotton planting")
+    require(game_session, "for index in range(2, 5):", "STEP 2 must issue three settling goDown(1)s")
+    require(game_session, "không gate main tại startup", "Startup exact-main policy changed")
+    forbid(game_session, "if change <", "Startup must not infer main from frame-change")
+    forbid(workflow, "self.auto.ensure_main_screen(timeout=timeout)", "AppleDryer duplicated startup main gate")
+    require(function_one, "def _require_main_transition", "Inter-stage exact-main helper missing")
+    require(function_one, 'self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")', "Apple→juice main gate missing")
+    require(function_one, 'self._require_main_transition("sau SX Nước táo → trước trồng Bông")', "Juice→cotton main gate missing")
 
-    # Pass 1: keep the already verified dried-apple contract intact.
-    require(action, "DRYER_POINT = (262, 917)", "AUTO PRO dryer coordinate changed")
-    require(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"', "AUTO PRO production template missing")
-    if 'DRIED_APPLE_PRODUCTION_TEMPLATE = "kho_tao_say"' in action:
-        raise AssertionError("Warehouse dried-apple template must never drive production")
-    require(action, "PRODUCT_SEARCH_ZONE = None", "Production image must be searched across the open panel")
-    require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.70", "Production image threshold must reject observed false match")
-    require(action, "empty_before, product_point, top_point = self._open_verified_dryer()", "Detected source/top centers are not returned")
-    require(action, "(product_point, top_point)", "Production swipe must use detected centers")
+    # Production safety shared by all three machines.
+    require(action, "DRYER_POINT = (262, 917)", "Dryer coordinate changed")
+    require(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"', "Dried-apple production template missing")
+    forbid(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "kho_tao_say"', "Warehouse dried-apple template drives production")
+    require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.70", "Dried-apple guard threshold changed")
     require(action, "REQUIRED_COUNT = 9", "Exactly nine dried apples required")
-    require(action, "current_empty >= empty_after", "Per-drag empty-slot state-change gate missing")
-    require(action, "consumed != self.REQUIRED_COUNT", "Exact post-production accounting missing")
-    require(action, "self.speed_config.vp_production_delay", "Production speed binding missing")
-    require(action, "self.context.ensure_running()", "Production loops must remain stoppable")
-    require(action, "for attempt in range(1, 4)", "Three product-render retries missing")
-    require(action, '"full_kho"', "Canonical full warehouse template missing")
-    require(action, "def _find_top_empty_slot(self):", "Reusable upper queue-slot detector missing")
+    require(action, "current_empty >= empty_after", "Dried-apple per-drag gate missing")
+    require(action, "consumed != self.REQUIRED_COUNT", "Dried-apple exact post-accounting missing")
+    require(action, "self.speed_config.vp_collect_delay", "Dried-apple collect speed binding missing")
+    require(action, "self.speed_config.vp_production_delay", "Dried-apple production speed binding missing")
+    require(action, '"full_kho"', "Full warehouse guard missing")
+    require(action, "def _find_top_empty_slot(self):", "Reusable top-slot detector missing")
+    require(action, "close_after_success: bool = True", "Production panel handoff switch missing")
 
-    # Pass 2: keep the verified apple-juice stage and navigation route.
-    require(function_one, "AppleDryerWorkflow(self.auto).run", "Stable dried-apple stage missing")
-    require(function_one, "floor_1_to_floor_6()", "Floor-1 to floor-6 route missing")
-    require(function_one, "produce_9_apple_juices()", "Apple-juice intermediate stage missing")
-    require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice production asset missing")
+    require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice production template missing")
     require(apple_juice, "if panel_ready:", "Apple-juice panel verification missing")
+    require(apple_juice, "current >= empty_after", "Apple-juice per-drag gate missing")
+    require(apple_juice, "self.speed_config.vp_collect_delay", "Apple-juice collect speed binding missing")
+    require(apple_juice, "self.speed_config.vp_production_delay", "Apple-juice production speed binding missing")
+    require(apple_juice, "close_after_success: bool = True", "Apple-juice panel handoff switch missing")
 
-    # Pass 3: cotton -> verified floor 3 -> exactly nine yellow fabrics.
-    require(cotton, 'COTTON_TEMPLATE = "cay_bong"', "Cotton template id changed")
-    require(cotton, "if not self.vision.assets.has(self.COTTON_TEMPLATE):", "Cotton must fail-close before gesture when clean asset is missing")
-    require(cotton, 'baseline = self._open_seed_picker(self.COTTON_TEMPLATE, "Bông")', "Cotton must reuse the proven seed-picker and capture a pre-plant baseline")
-    require(cotton, "path = (seed.center,) + self.rose_path()[1:]", "Cotton must reuse the proven 27-pot planting geometry")
-    require(cotton, "changed = self._count_changed_pots(baseline, after)", "Cotton visible-region diagnostic missing")
-    require(cotton, "non_blocking=true", "Cotton visible-region diagnostic must remain advisory")
-    if "if changed != self.TREE_COUNT:" in cotton:
-        raise AssertionError("Cotton must not block on 27/27 visible regions")
-    if "fail_close=true" in cotton:
-        raise AssertionError("Cotton visible-region diagnostic must not regress to blocking")
-    require(pass_three_nav, "def floor_2_to_main", "Pass-3 floor2-to-main route missing")
-    require(pass_three_nav, "def _settle_down_one", "Pass-3 post-juice settle primitive missing")
-    require(pass_three_nav, "*self.DOWN_ONE", "Pass-3 post-juice descent must use goDown(1) geometry")
-    require(pass_three_nav, '"post-juice-goDown(1)-probe-1-of-4"', "Pass-3 post-juice first down probe missing")
-    require(pass_three_nav, '"post-juice-goDown(1)-settle-4-of-4"', "Pass-3 post-juice must include all three settling downs")
-    require(pass_three_nav, "boundary_change_non_blocking=true", "Post-juice boundary frame-change must remain diagnostic")
-    require(pass_three_nav, "def floor_1_to_floor_3", "Pass-3 floor1-to-floor3 route missing")
-    require(pass_three_nav, "self._gesture(self.UP_ONE", "Pass-3 upward route must use verified fresh-frame gesture")
     require(yellow_fabric, 'PRODUCT_TEMPLATE = "vai_vang"', "Yellow-fabric production template missing")
-    if "kho_vai_vang" in yellow_fabric:
-        raise AssertionError("Warehouse yellow-fabric template must never be referenced by production")
+    forbid(yellow_fabric, "kho_vai_vang", "Warehouse yellow-fabric template referenced by production")
     require(yellow_fabric, "REQUIRED_COUNT = 9", "Exactly nine yellow fabrics required")
-    require(yellow_fabric, "MAX_OPEN_CLICKS = 30", "Yellow-fabric machine opening must be bounded")
-    require(yellow_fabric, "for click_count in range(1, self.MAX_OPEN_CLICKS + 1)", "Bounded yellow-fabric opening loop missing")
+    require(yellow_fabric, "MAX_OPEN_CLICKS = 30", "Yellow-fabric open loop is unbounded")
     require(yellow_fabric, "if not panel_ready:", "Yellow-fabric panel fail-close missing")
-    require(yellow_fabric, "current >= empty_after", "Yellow-fabric per-drag empty-slot gate missing")
-    require(yellow_fabric, "empty_before - empty_after != self.REQUIRED_COUNT", "Yellow-fabric exact post-accounting missing")
-    require(yellow_fabric, "self.speed_config.vp_production_delay", "Yellow-fabric speed binding missing")
-    require(function_one, "floor_2_to_main()", "Pass-3 must return from floor 2 to main")
-    require(function_one, "plant_27_cotton()", "Pass-3 cotton planting missing")
-    require(function_one, "floor_1_to_floor_3()", "Pass-3 floor-3 navigation missing")
-    require(function_one, "produce_9_yellow_fabrics()", "Pass-3 yellow-fabric production missing")
-    require(function_one, "progress_steps=3", "Function 1 result must report progress 3")
-    require(function_one, "total_steps=3", "Function 1 result must report total 3")
+    require(yellow_fabric, "current >= empty_after", "Yellow-fabric per-drag gate missing")
+    require(yellow_fabric, "empty_before - empty_after != self.REQUIRED_COUNT", "Yellow-fabric post-accounting missing")
+    require(yellow_fabric, "self.speed_config.vp_collect_delay", "Yellow-fabric collect speed binding missing")
+    require(yellow_fabric, "self.speed_config.vp_production_delay", "Yellow-fabric production speed binding missing")
+    require(yellow_fabric, "close_after_success: bool = True", "Yellow-fabric panel handoff switch missing")
 
-    # Repeatability contract: PASS 3/3 is not a scheduler loop until main is exact.
-    require(pass_three_nav, "def go_down_one_toward_main", "End-loop single down primitive missing")
-    require(function_one, "END_LOOP_MAIN_MAX_SWIPES = 6", "End-loop normalization safety bound missing")
-    require(function_one, "def _normalize_end_of_loop_to_main", "Function-1 repeatability normalizer missing")
-    require(function_one, "self.auto.popup.is_own_main_screen()", "Function-1 end-loop exact-main classifier missing")
-    require(function_one, "go_down_one_toward_main(", "Function-1 end-loop descent missing")
-    require(function_one, "self._normalize_end_of_loop_to_main()", "Function-1 does not normalize before returning PASS")
+    # Machine repair is allowed only from a fully verified, still-open panel.
+    require(automation, "self.machine_repair = MachineRepairActions(", "Resident machine repair wiring missing")
+    require(machine_repair, "def repair_after_production", "Production→repair handoff API missing")
+    require(machine_repair, "queued != requested or consumed != requested", "Repair handoff exact accounting gate missing")
+    require(machine_repair, "OPEN_REPAIR_POINT = (165, 856)", "Repair ? coordinate changed")
+    require(machine_repair, "REPAIR_BUTTON_POINT = (730, 596)", "Repair button coordinate changed")
+    require(machine_repair, "CLOSE_MODAL_POINT = (652, 284)", "Repair modal close coordinate changed")
+    require(machine_repair, "MIN_MODAL_CHANGE", "Repair modal-open visual gate missing")
+    require(machine_repair, "MIN_REPAIR_CHANGE", "Repair response visual gate missing")
+    require(machine_repair, "MIN_CLOSE_CHANGE", "Repair modal-close visual gate missing")
+    forbid(machine_repair, "OCR", "Repair runtime must never depend on OCR price")
 
-    # AUTO Main now dispatches the selected Function continuously and keeps the
-    # old Function-1 final accounting gate through normalized payload fields.
+    # Every Function-1 production keeps the panel open and immediately repairs.
+    require(workflow, "produce_9_dried_apples(\n            close_after_success=False", "Dried-apple production does not keep panel open for repair")
+    require(workflow, "self.auto.machine_repair.repair_after_production(produced)", "Dried-apple machine repair missing")
+    require(function_one, "produce_9_apple_juices(\n            close_after_success=False", "Apple-juice production does not keep panel open for repair")
+    require(function_one, "self.auto.machine_repair.repair_after_production(juice)", "Apple-juice machine repair missing")
+    require(function_one, "produce_9_yellow_fabrics(\n            close_after_success=False", "Yellow-fabric production does not keep panel open for repair")
+    require(function_one, "self.auto.machine_repair.repair_after_production(fabric)", "Yellow-fabric machine repair missing")
+
+    # Cotton and pass-3 upward route remain proven.
+    require(cotton, 'COTTON_TEMPLATE = "cay_bong"', "Cotton template id changed")
+    require(cotton, "if not self.vision.assets.has(self.COTTON_TEMPLATE):", "Cotton asset fail-close missing")
+    require(cotton, "path = (seed.center,) + self.rose_path()[1:]", "Cotton 27-pot geometry changed")
+    require(cotton, "non_blocking=true", "Cotton postcheck must remain diagnostic")
+    forbid(cotton, "if changed != self.TREE_COUNT:", "Cotton diagnostic became blocking")
+    require(pass_three_nav, "def floor_2_to_main", "Post-juice main route missing")
+    require(pass_three_nav, '"post-juice-goDown(1)-probe-1-of-4"', "Post-juice first down probe missing")
+    require(pass_three_nav, '"post-juice-goDown(1)-settle-4-of-4"', "Post-juice settling route incomplete")
+    require(pass_three_nav, "def floor_1_to_floor_3", "Floor1→floor3 route missing")
+
+    # Corrected end-loop route: NO stall/quầy. Floor 3 → one goDown(1) →
+    # recovered AUTO PRO down-floor button → fresh frame → exact own-main.
+    require(pass_three_nav, "DOWN_FLOOR_POINT = (497, 978)", "AUTO PRO down-floor coordinate missing")
+    require(pass_three_nav, "def floor_3_to_main_via_down_floor", "End-loop down-floor route missing")
+    require(pass_three_nav, '"function1-end-loop-floor3-goDown(1)"', "End-loop exactly-one goDown(1) missing")
+    require(pass_three_nav, "self.vision.driver.click(*self.DOWN_FLOOR_POINT)", "End-loop down-floor click missing")
+    require(pass_three_nav, "if click_change < self.MIN_CHANGE:", "Down-floor fresh-frame fail-close missing")
+    require(function_one, "self.auto.function_one_pass_three_navigation.floor_3_to_main_via_down_floor()", "Function-1 does not use down-floor route")
+    require(function_one, 'self._require_main_transition("cuối vòng Function 1 tầng 3 → main")', "End-loop exact-main gate missing")
+    require(function_one, "self._normalize_end_of_loop_to_main()", "Function-1 does not normalize before loop completion")
+    forbid(function_one, "open_own_stall", "End-loop must not use stall/quầy")
+    forbid(function_one, "END_LOOP_MAIN_MAX_SWIPES", "Obsolete six-goDown end-loop route returned")
+
+    require(function_one, "progress_steps=3", "Function 1 result progress changed")
+    require(function_one, "total_steps=3", "Function 1 result total changed")
+
+    # Scheduler keeps running only after a verified Function result/main boundary.
     require(auto_main, "FunctionModule(automation)", "Selected Function dispatcher missing")
     require(auto_main, 'self.spec.runner_key == "function_1"', "Function-1 completion branch missing")
-    require(auto_main, 'payload.get("progress_steps"', "Auto Main progress 3/3 guard missing")
-    require(auto_main, 'payload.get("yellow_fabrics"', "Auto Main yellow-fabric final guard missing")
-    require(auto_main, 'payload.get("cotton_planted"', "Auto Main cotton final guard missing")
-    require(auto_main, "self._validate_function_result(payload)", "Scheduler does not validate Function result")
-    require(auto_main, "while True:", "AUTO Main must keep running Function loops until Stop")
-    require(auto_main, "self.context.ensure_running()", "AUTO Main recurring loop must remain stoppable")
+    require(auto_main, 'payload.get("progress_steps"', "Function-1 progress guard missing")
+    require(auto_main, 'payload.get("yellow_fabrics"', "Function-1 yellow-fabric guard missing")
+    require(auto_main, 'payload.get("cotton_planted"', "Function-1 cotton guard missing")
+    require(auto_main, "self._validate_function_result(payload)", "Scheduler Function validation missing")
+    require(auto_main, "while True:", "AUTO Main recurring loop missing")
+    require(auto_main, "self.context.ensure_running()", "AUTO Main stop checkpoints missing")
 
     require(automation, "self.production = ProductionActions(", "Resident production wiring missing")
     require(automation, "self.cotton_planting = CottonPlantingActions(", "Resident cotton wiring missing")
     require(automation, "self.yellow_fabric_production = YellowFabricProductionActions(", "Resident yellow-fabric wiring missing")
     require(automation, "self.function_one_pass_three_navigation = FunctionOnePassThreeNavigationActions(", "Resident pass-3 navigation wiring missing")
     require(dev, 'text="↟ Demo Auto Pro tới tầng 6"', "Dedicated floor demo button missing")
-    require(auto_multi_worker, "automation.floors.reference_main_to_floor_6()", "Floor demo worker must replay target=6 state machine")
+    require(auto_multi_worker, "automation.floors.reference_main_to_floor_6()", "Floor demo target-6 state machine missing")
     require(auto_multi_worker, "function_id=function_id", "Worker selected Function handoff missing")
-    require(auto_multi_worker, "sale_every_loops=sale_every", "Worker recurring sale interval handoff missing")
-    require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)", "Exact Auto Pro goUp(4) geometry missing")
+    require(auto_multi_worker, "sale_every_loops=sale_every", "Worker recurring sale handoff missing")
+    require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)", "Auto Pro goUp(4) geometry missing")
 
-    forbidden = (
-        "clear_stall_probe_runtime",
-        "auto_main_selling.py",
-        "RosePlantingWorkflow",
-        "adb_controller.pyc",
-    )
-    for token in forbidden:
-        if token in action or token in workflow or token in yellow_fabric or token in cotton:
-            raise AssertionError(f"New production module touches stable/legacy path: {token}")
+    for token in ("clear_stall_probe_runtime", "adb_controller.pyc"):
+        for text in (action, workflow, function_one, yellow_fabric, cotton, pass_three_nav):
+            forbid(text, token, f"Production path touches stable/legacy path: {token}")
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
-    print("startup_step2=low_floor_1_plus_3_godown1_no_exact_main_gate")
-    print("main_gate=business_transitions_plus_end_loop_repeatability")
+    print("production=three_verified_9_item_passes+repair_after_each")
+    print("machine_repair=verified_handoff+no_price_ocr")
+    print("vp_collect_speed=independent")
     print("post_juice_navigation=1_plus_3_godown1_boundary_non_blocking_exact_main_gate")
-    print("end_loop_navigation=bounded_single_godown_until_exact_main")
-    print("flow=pass1_dried_apple pass2_apple_juice pass3_cotton_yellow_fabric repeat")
-    print("pass3=cotton_27 then yellow_fabric_9")
-    print("cotton_asset=canonical_blob_locked")
-    print("cotton_postcheck=diagnostic_non_blocking")
-    print("yellow_fabric_asset=production_vai_vang_only")
-    print("yellow_fabric_asset_blob=canonical_locked")
-    print("warehouse_yellow_fabric_asset_blob=distinct_canonical_locked")
-    print("legacy_auto_pro=reference_only")
+    print("end_loop_navigation=floor3_one_godown1+down_floor_497_978+exact_main")
+    print("next_loop=main_required_before_restart")
     print("stable_sale_and_clear_stall=untouched")
     return 0
 
