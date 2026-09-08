@@ -45,13 +45,16 @@ This file is a mandatory first-read for every AI session that works on this repo
 ## 6. AUTO Builder ordering contract
 
 - `TỰ TẠO AUTO` is a DEV-only visual Scheduler layered onto the existing Multi DEV UI. Keep its controls/styles synchronized with the Multi DEV tab strip and existing ttk styles; do not invent a separate visual theme.
-- The authoritative current Builder continuation state is `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`; detailed architecture and live-test plan are in `docs/AUTO_MULTI_DEV_AUTO_BUILDER_HANDOFF.md`.
+- The authoritative current Builder continuation state is `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`; follow the feature-specific handoff named there before changing Builder.
 - `Vào game + đóng popup`, `Bán VP theo Function`, and each `Function` are independent callable modules. A module must not secretly insert another business module before/after itself.
 - Builder execution order is exactly the operator-visible step order. Do not silently prepend `GameSessionWorkflow` in Builder mode.
 - VP sale policy belongs to Function metadata. The Scheduler supplies the Function id; the sale module sells only the VP explicitly allowed for that Function and keeps exact-x10/post-selection verification.
 - A Function block may have a loop count. `sale_after_each_loop=true` means the Scheduler calls the separate sale module after each completed Function loop; the Function implementation itself must not absorb or hide that sale operation.
+- The previously completed built-in Function 1 must be available in `Load Function` as **`9 Táo sấy - 9 Vải vàng`** through a wrapper that calls the proven built-in implementation. Do not reconstruct it into guessed click/swipe JSON just to make it editable.
+- A Builder `Swipe` may contain an ordered path of 2 or more points. Runtime must execute that path as **one** native `driver.swipe_points(...)` / `BATCH_SWIPE` gesture. Do not split the path into independent swipe actions that lift/restart input between segments.
+- Recognition-image source order is explicit: option 1 is the persistent **Multi DEV image library**; option 2 is the packaged **AUTO PRO image catalog**. Selecting an AUTO PRO image must copy/dedupe it into the Multi DEV library and the Builder step must use the copied library path thereafter.
 - If a Function ends at a camera state from which the sale module cannot prove the main screen, fail closed. Do not invent an unverified floor route just to make a configured loop continue.
-- Builder plans and user-selected recognition images are persistent user data and must survive normal Control Center `[1]` rebuilds.
+- Builder plans, saved Functions, and recognition images are persistent user data and must survive normal Control Center `[1]` rebuilds.
 - Builder must reuse the isolated AUTO MULTI DEV worker, stop relay, busy/profile ownership rules, strict Bridge V3 transport, and no-HWND-fallback policy. It must not call Dọn quầy runtime.
 
 When these rules conflict with an older handoff note, follow the user's latest explicit instruction and update the coordination documentation accordingly.
