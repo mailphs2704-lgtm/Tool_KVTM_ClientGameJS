@@ -193,7 +193,10 @@ def main() -> int:
             f"check cây={speed.crop_check_interval:.3f}s"
         )
         GameSessionWorkflow(automation).run(timeout=args.timeout)
-        log("PASS | vào game, đóng popup, xác nhận màn hình chính")
+        log(
+            "PASS | vào game/đóng popup và chuẩn bị startup route; "
+            "exact-main gate chỉ chạy ở transition nghiệp vụ"
+        )
 
         if args.mode == "floor-demo":
             context.stage("floor-demo-1-to-6-start")
