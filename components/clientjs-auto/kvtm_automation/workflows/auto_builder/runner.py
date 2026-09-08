@@ -13,19 +13,21 @@ from .modules import EnterGamePopupModule, FunctionModule, SellFunctionVpModule
 
 __all__ = ["AutoBuilderResult", "AutoBuilderRunner", "validate_plan"]
 FILE_FUNCTIONS = (
-    "Validate plan AUTO Builder trước khi chạy",
+    "Validate plan AUTO Builder và thư viện Function trước khi chạy",
     "Chạy module vào game/đóng popup theo đúng vị trí trong plan",
     "Chạy module bán VP độc lập theo Function",
-    "Chạy Function theo số vòng và gọi lại module bán sau mỗi vòng khi bật",
+    "Chạy Function có sẵn theo vòng lặp và callback sale rõ ràng",
+    "Chạy Function tự tạo lồng nhau theo đúng block operator lưu",
     "Chạy block nhận diện ảnh người dùng",
     "Chạy click/swipe/wait theo thứ tự người dùng sắp",
-    "Fail-close khi block hoặc tham số không hợp lệ",
+    "Fail-close khi block/tham số/function graph không hợp lệ",
 )
 
 _SUPPORTED_STEP_TYPES = {
     "enter_game_popup",
     "sell_function_vp",
     "function",
+    "call_saved_function",
     "recognize_image",
     "click",
     "swipe",
@@ -57,6 +59,52 @@ class AutoBuilderResult:
         }
 
 
+def _normalize_steps(
+    raw_steps: Any,
+    *,
+    scope: str,
+    saved_function_ids: set[str],
+) -> list[dict[str, Any]]:
+    if not isinstance(raw_steps, list):
+        raise ValueError(f"{scope}: steps phải là list")
+    steps: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, raw in enumerate(raw_steps, start=1):
+        if not isinstance(raw, dict):
+            raise ValueError(f"{scope}: bước {index} không phải object")
+        step = dict(raw)
+        step_type = str(step.get("type") or "").strip()
+        if step_type not in _SUPPORTED_STEP_TYPES:
+            raise ValueError(f"{scope}: bước {index} có type chưa hỗ trợ: {step_type!r}")
+        step_id = str(step.get("id") or f"step-{index}").strip()
+        if not step_id or step_id in seen_ids:
+            raise ValueError(f"{scope}: trùng/rỗng id bước Builder: {step_id!r}")
+        seen_ids.add(step_id)
+        step["id"] = step_id
+        step["type"] = step_type
+        if step_type in {"sell_function_vp", "function"}:
+            get_function_spec(str(step.get("function_id") or "function_1"))
+        if step_type in {"function", "call_saved_function"}:
+            loops = int(step.get("loops", 1) or 1)
+            if loops < 1 or loops > 999:
+                raise ValueError(f"{scope}/{step_id}: loops phải trong 1..999")
+            step["loops"] = loops
+            step["sale_after_each_loop"] = bool(step.get("sale_after_each_loop", False))
+        if step_type == "call_saved_function":
+            function_id = str(step.get("function_id") or "").strip()
+            if not function_id or function_id not in saved_function_ids:
+                raise ValueError(
+                    f"{scope}/{step_id}: Function tự tạo không tồn tại: {function_id!r}"
+                )
+            step["function_id"] = function_id
+            sale_function_id = str(step.get("sale_function_id") or "function_1")
+            if step["sale_after_each_loop"]:
+                get_function_spec(sale_function_id)
+            step["sale_function_id"] = sale_function_id
+        steps.append(step)
+    return steps
+
+
 def validate_plan(plan: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(plan, dict):
         raise ValueError("AUTO Builder plan phải là object")
@@ -64,49 +112,83 @@ def validate_plan(plan: dict[str, Any]) -> dict[str, Any]:
     if version != 1:
         raise ValueError(f"AUTO Builder chưa hỗ trợ plan version={version}")
     name = str(plan.get("name") or "AUTO tự tạo").strip() or "AUTO tự tạo"
-    raw_steps = plan.get("steps")
-    if not isinstance(raw_steps, list) or not raw_steps:
+
+    raw_functions = plan.get("saved_functions") or {}
+    if not isinstance(raw_functions, dict):
+        raise ValueError("saved_functions phải là object")
+    saved_function_ids = {str(key) for key in raw_functions}
+    saved_functions: dict[str, dict[str, Any]] = {}
+    for function_id, raw_function in raw_functions.items():
+        if not isinstance(raw_function, dict):
+            raise ValueError(f"Function {function_id}: document không hợp lệ")
+        embedded_id = str(raw_function.get("function_id") or function_id).strip()
+        if embedded_id != str(function_id):
+            raise ValueError(
+                f"Function key/id không khớp: {function_id!r} != {embedded_id!r}"
+            )
+        function_name = str(raw_function.get("name") or embedded_id).strip() or embedded_id
+        saved_functions[embedded_id] = {
+            "version": 1,
+            "kind": "function",
+            "function_id": embedded_id,
+            "name": function_name,
+            "steps": _normalize_steps(
+                raw_function.get("steps"),
+                scope=f"Function {function_name}",
+                saved_function_ids=saved_function_ids,
+            ),
+        }
+
+    steps = _normalize_steps(
+        plan.get("steps"), scope=f"Plan {name}", saved_function_ids=saved_function_ids
+    )
+    if not steps:
         raise ValueError("AUTO Builder cần ít nhất một bước")
-    steps: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-    for index, raw in enumerate(raw_steps, start=1):
-        if not isinstance(raw, dict):
-            raise ValueError(f"Bước {index} không phải object")
-        step = dict(raw)
-        step_type = str(step.get("type") or "").strip()
-        if step_type not in _SUPPORTED_STEP_TYPES:
-            raise ValueError(f"Bước {index} có type chưa hỗ trợ: {step_type!r}")
-        step_id = str(step.get("id") or f"step-{index}").strip()
-        if not step_id or step_id in seen_ids:
-            raise ValueError(f"Trùng/rỗng id bước Builder: {step_id!r}")
-        seen_ids.add(step_id)
-        step["id"] = step_id
-        step["type"] = step_type
-        if step_type in {"sell_function_vp", "function"}:
-            get_function_spec(str(step.get("function_id") or "function_1"))
-        if step_type == "function":
-            loops = int(step.get("loops", 1) or 1)
-            if loops < 1 or loops > 999:
-                raise ValueError(f"Bước {step_id}: loops phải trong 1..999")
-            step["loops"] = loops
-            step["sale_after_each_loop"] = bool(step.get("sale_after_each_loop", False))
-        steps.append(step)
-    return {"version": 1, "name": name, "steps": steps}
+
+    # Reject recursive Function graphs before touching the game. A reusable
+    # Function may call another reusable Function, but cycles are never allowed.
+    graph = {
+        function_id: {
+            str(step.get("function_id"))
+            for step in function["steps"]
+            if step["type"] == "call_saved_function"
+        }
+        for function_id, function in saved_functions.items()
+    }
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(function_id: str) -> None:
+        if function_id in visited:
+            return
+        if function_id in visiting:
+            raise ValueError(f"Function tự tạo bị vòng gọi đệ quy: {function_id}")
+        visiting.add(function_id)
+        for dependency in graph.get(function_id, set()):
+            visit(dependency)
+        visiting.remove(function_id)
+        visited.add(function_id)
+
+    for function_id in graph:
+        visit(function_id)
+
+    return {
+        "version": 1,
+        "kind": "plan",
+        "name": name,
+        "steps": steps,
+        "saved_functions": saved_functions,
+    }
 
 
 class AutoBuilderRunner:
-    """Execute exactly the block order defined by the operator.
-
-    No business module is implicitly inserted at plan start. In particular,
-    ``Vào game + đóng popup`` only runs when an ``enter_game_popup`` block is
-    present. Function loop callbacks to sale happen only when the Function block
-    explicitly has ``sale_after_each_loop=true``.
-    """
+    """Execute exactly the operator-visible Builder plan/function graph."""
 
     def __init__(self, automation: KVAutomation, plan: dict[str, Any]) -> None:
         self.auto = automation
         self.context = automation.context
         self.plan = validate_plan(plan)
+        self.saved_functions = self.plan["saved_functions"]
         self.enter_game = EnterGamePopupModule(automation)
         self.sale = SellFunctionVpModule(automation)
         self.function = FunctionModule(automation)
@@ -126,7 +208,36 @@ class AutoBuilderRunner:
             raise ValueError(f"Zone Builder ngoài vùng hợp lệ: {zone!r}")
         return zone
 
-    def _run_action(self, step: dict[str, Any]) -> str | None:
+    def _run_saved_function(self, step: dict[str, Any], call_stack: tuple[str, ...]) -> None:
+        function_id = str(step["function_id"])
+        function = self.saved_functions[function_id]
+        loops = int(step.get("loops", 1))
+        for loop_index in range(1, loops + 1):
+            self.context.ensure_running()
+            self.context.log(
+                f"AUTO Builder • Function tự tạo {function['name']} • "
+                f"vòng {loop_index}/{loops} START"
+            )
+            self._run_sequence(
+                function["steps"],
+                scope=f"Function {function['name']}",
+                call_stack=call_stack + (function_id,),
+                terminal_is_local=True,
+            )
+            self.function_loops[function_id] = self.function_loops.get(function_id, 0) + 1
+            if bool(step.get("sale_after_each_loop", False)):
+                sale_function_id = str(step.get("sale_function_id") or "function_1")
+                self.context.log(
+                    f"AUTO Builder • {function['name']} vòng {loop_index}/{loops} xong • "
+                    f"gọi module Bán VP {sale_function_id}"
+                )
+                self.sale.run(
+                    function_id=sale_function_id,
+                    timeout=float(step.get("sale_timeout", 120.0)),
+                )
+                self.sale_calls[sale_function_id] = self.sale_calls.get(sale_function_id, 0) + 1
+
+    def _run_action(self, step: dict[str, Any], call_stack: tuple[str, ...]) -> str | None:
         step_type = step["type"]
         if step_type == "enter_game_popup":
             self.enter_game.run(timeout=float(step.get("timeout", 180.0)))
@@ -149,15 +260,16 @@ class AutoBuilderRunner:
                         f"AUTO Builder • {function_id} vòng {loop_index}/{loops} xong • "
                         "gọi module Bán VP theo Function"
                     )
-                    # This is intentionally a real independent module call. If
-                    # the completed Function left the camera somewhere that the
-                    # sale module cannot prove as main, sale fails closed rather
-                    # than inventing a hidden floor route.
                     self.sale.run(
                         function_id=function_id,
                         timeout=float(step.get("sale_timeout", 120.0)),
                     )
                     self.sale_calls[function_id] = self.sale_calls.get(function_id, 0) + 1
+        elif step_type == "call_saved_function":
+            function_id = str(step["function_id"])
+            if function_id in call_stack:
+                raise RuntimeError(f"Function recursion runtime bị chặn: {function_id}")
+            self._run_saved_function(step, call_stack)
         elif step_type == "recognize_image":
             raw_template = str(step.get("template_path") or "").strip()
             if not raw_template:
@@ -200,25 +312,44 @@ class AutoBuilderRunner:
             raise ValueError(f"Block Builder chưa hỗ trợ: {step_type}")
         return None
 
+    def _run_sequence(
+        self,
+        steps: list[dict[str, Any]],
+        *,
+        scope: str,
+        call_stack: tuple[str, ...],
+        terminal_is_local: bool,
+    ) -> tuple[int, str | None]:
+        completed = 0
+        terminal = None
+        for index, step in enumerate(steps, start=1):
+            self.context.ensure_running()
+            self.context.stage(f"auto-builder-{scope}-{index}-{step['type']}")
+            self.context.log(
+                f"AUTO Builder • {scope} • bước {index}/{len(steps)} • {step['type']}"
+            )
+            terminal = self._run_action(step, call_stack)
+            completed = index
+            if terminal == "pass":
+                if terminal_is_local:
+                    self.context.log(f"AUTO Builder • {scope} • Kết thúc PASS cục bộ")
+                break
+        return completed, terminal
+
     def run(self) -> AutoBuilderResult:
         steps = self.plan["steps"]
         self.context.stage("auto-builder-start")
         self.context.log(
-            f"AUTO Builder START • plan={self.plan['name']} • {len(steps)} bước"
+            f"AUTO Builder START • plan={self.plan['name']} • {len(steps)} bước • "
+            f"saved_functions={len(self.saved_functions)}"
         )
-        completed = 0
-        outcome = "completed"
-        for index, step in enumerate(steps, start=1):
-            self.context.ensure_running()
-            self.context.stage(f"auto-builder-step-{index}-{step['type']}")
-            self.context.log(
-                f"AUTO Builder • bước {index}/{len(steps)} • {step['type']}"
-            )
-            terminal = self._run_action(step)
-            completed = index
-            if terminal == "pass":
-                outcome = "pass"
-                break
+        completed, terminal = self._run_sequence(
+            steps,
+            scope="plan-main",
+            call_stack=(),
+            terminal_is_local=False,
+        )
+        outcome = "pass" if terminal == "pass" else "completed"
         self.context.stage("auto-builder-finished")
         self.context.log(
             f"AUTO Builder FINISHED • plan={self.plan['name']} • {completed}/{len(steps)} bước"
