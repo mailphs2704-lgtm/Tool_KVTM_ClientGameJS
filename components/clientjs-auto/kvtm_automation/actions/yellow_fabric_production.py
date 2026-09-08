@@ -112,7 +112,9 @@ class YellowFabricProductionActions:
         )
         return empty, product.center, top.center
 
-    def produce_9_yellow_fabrics(self) -> ProductionResult:
+    def produce_9_yellow_fabrics(
+        self, *, close_after_success: bool = True
+    ) -> ProductionResult:
         empty_before, product_point, top_point = self._open_verified()
         empty_after = empty_before
 
@@ -149,9 +151,15 @@ class YellowFabricProductionActions:
                 f"AUTO Vải vàng • đã xác minh xếp {ordinal}/9 • ô trống còn={current}"
             )
 
-        self._close_panel()
         if empty_before - empty_after != self.REQUIRED_COUNT:
+            self._close_panel()
             raise ScreenTimeout("Hậu kiểm Vải vàng không đạt đúng 9/9 ô")
+        if close_after_success:
+            self._close_panel()
+        else:
+            self.context.log(
+                "AUTO Vải vàng • giữ panel mở để bàn giao sang Sửa máy"
+            )
 
         self.context.log("AUTO sản xuất Vải vàng hoàn tất • đã xác minh đủ 9/9 ô")
         return ProductionResult(
