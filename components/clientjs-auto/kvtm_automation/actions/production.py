@@ -220,7 +220,9 @@ class ProductionActions:
         )
         return empty, product.center, top_slot.center
 
-    def produce_9_dried_apples(self) -> ProductionResult:
+    def produce_9_dried_apples(
+        self, *, close_after_success: bool = True
+    ) -> ProductionResult:
         empty_before, product_point, top_point = self._open_verified_dryer()
         empty_after = empty_before
         queued = 0
@@ -260,11 +262,17 @@ class ProductionActions:
             )
 
         consumed = max(0, empty_before - empty_after)
-        self.vision.driver.click(*self.CLOSE_POINT)
         if consumed != self.REQUIRED_COUNT:
+            self.vision.driver.click(*self.CLOSE_POINT)
             raise ScreenTimeout(
                 "Hậu kiểm máy sấy không đúng 9 ô thay đổi: "
                 f"trước={empty_before}, sau={empty_after}, xác minh={consumed}/9"
+            )
+        if close_after_success:
+            self.vision.driver.click(*self.CLOSE_POINT)
+        else:
+            self.context.log(
+                "AUTO sản xuất Táo sấy • giữ panel mở để bàn giao sang Sửa máy"
             )
         self.context.log(
             "AUTO sản xuất Táo sấy hoàn tất • đã xác minh đủ 9/9 ô"
