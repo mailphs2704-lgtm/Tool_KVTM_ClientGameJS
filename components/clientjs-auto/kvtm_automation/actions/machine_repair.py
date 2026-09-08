@@ -12,16 +12,17 @@ from .production import ProductionResult
 __all__ = [
     "MachineRepairActions",
     "MachineRepairHandoff",
+    "MachineRepairResult",
     "MachineRepairTestResult",
 ]
 FILE_FUNCTIONS = (
     "Nhận bàn giao từ panel máy đang mở sau khi đã kéo đủ số lượng VP",
     "Chỉ cho phép vào luồng Sửa máy khi hậu kiểm production đã đủ chính xác",
     "Giữ panel máy mở để bước Sửa máy tiếp theo không phải mở lại máy",
-    "Test riêng luồng ? → Sửa máy → đóng modal ngay từ panel sản xuất VP đang mở",
+    "Chạy luồng live-pass ? → Sửa máy → đóng modal ngay từ panel sản xuất VP đang mở",
     "Không đọc/OCR giá sửa máy vì số tiền thay đổi theo trạng thái máy",
-    "Hậu kiểm modal mở, vùng Độ bền thay đổi và modal đóng trước khi báo PASS",
-    "Fail-close về logic nếu số lượng/hậu kiểm không khớp, không thao tác mù",
+    "Hậu kiểm modal mở, vùng Độ bền/nút Sửa thay đổi và modal đóng",
+    "Fail-close nếu hậu kiểm production hoặc phản hồi UI không khớp",
 )
 
 
@@ -33,30 +34,35 @@ class MachineRepairHandoff:
 
 
 @dataclass(frozen=True)
-class MachineRepairTestResult:
+class MachineRepairResult:
     modal_open_change: float
     durability_change: float
     repair_button_change: float
     modal_close_change: float
 
 
-class MachineRepairActions:
-    """Machine repair actions isolated from the proven production workflows.
+# Compatibility alias for the short-lived DEV test block. The visible test
+# button is removed after live PASS; keeping this alias avoids breaking an old
+# saved Builder plan if one still exists in AppData.
+MachineRepairTestResult = MachineRepairResult
 
-    Runtime integration for Function 2 still starts from a verified production
-    handoff. The DEV test below is intentionally narrower: the operator places
-    ClientJS at an already-open production panel and the module tests only the
-    repair UI sequence supplied from live screenshots.
+
+class MachineRepairActions:
+    """Verified machine repair transaction used by Function 2 production passes.
+
+    The caller can either start directly from an already-open production panel
+    or pass a verified ``ProductionResult``. The production handoff is accepted
+    only when queued/requested/slot-delta all agree. The repair price is never
+    read because it legitimately changes between machines and runs.
     """
 
-    # Logical ClientJS coordinates are 0..1000. These points come from the
-    # supplied 1000x1000 live screenshots, not from the variable repair price.
+    # Logical ClientJS coordinates are 0..1000. These points were live-tested on
+    # the supplied 1000x1000 ClientJS screenshots; none depends on repair price.
     OPEN_REPAIR_POINT = (165, 856)
     REPAIR_BUTTON_POINT = (730, 596)
     CLOSE_MODAL_POINT = (652, 284)
 
-    # Geometry-only verification. No OCR and no dependency on a displayed cost
-    # such as 37, because that value legitimately changes between machines/runs.
+    # Geometry-only verification. No OCR and no dependency on a displayed cost.
     MODAL_ZONE = (335, 270, 335, 455)
     DURABILITY_ZONE = (355, 565, 295, 55)
     REPAIR_BUTTON_ZONE = (650, 555, 145, 85)
@@ -93,21 +99,13 @@ class MachineRepairActions:
             abs(before_roi.astype("float32") - after_roi.astype("float32")).mean()
         )
 
-    def test_from_open_production_panel(self) -> MachineRepairTestResult:
-        """DEV-only test beginning exactly at an already-open production panel.
-
-        Sequence:
-        1. Click the circled ? repair entry on the production panel.
-        2. Require a strong center-modal screen change.
-        3. Click the fixed repair-button area; never inspect the numeric price.
-        4. Require the durability/button region to change.
-        5. Close the repair modal with its red X and require the modal to vanish.
-        """
+    def repair_open_production_panel(self) -> MachineRepairResult:
+        """Repair the current machine starting at an already-open production panel."""
         self.context.ensure_running()
-        self.context.stage("auto-machine-repair-test-start")
+        self.context.stage("auto-machine-repair-start")
         self.context.log(
-            "TEST Sửa máy • bắt đầu tại panel sản xuất VP đang mở • "
-            "không chạy production, không đọc giá sửa"
+            "AUTO Sửa máy • bắt đầu tại panel sản xuất VP đang mở • "
+            "không đọc giá sửa"
         )
 
         panel_frame = self.vision.frame()
@@ -119,12 +117,12 @@ class MachineRepairActions:
         )
         if modal_open_change < self.MIN_MODAL_CHANGE:
             raise ScreenTimeout(
-                "TEST Sửa máy: bấm ? nhưng chưa xác minh được modal Sửa máy mở "
+                "Sửa máy: bấm ? nhưng chưa xác minh được modal Sửa máy mở "
                 f"(change={modal_open_change:.2f})"
             )
 
         self.context.log(
-            "TEST Sửa máy • modal đã mở • "
+            "AUTO Sửa máy • modal đã mở • "
             f"screen_change={modal_open_change:.2f}"
         )
         modal_opened = True
@@ -141,14 +139,14 @@ class MachineRepairActions:
             )
             if max(durability_change, repair_button_change) < self.MIN_REPAIR_CHANGE:
                 raise ScreenTimeout(
-                    "TEST Sửa máy: đã bấm vùng nút Sửa nhưng UI không thay đổi; "
+                    "Sửa máy: đã bấm vùng nút Sửa nhưng UI không thay đổi; "
                     "không xác nhận đã sửa "
                     f"(durability={durability_change:.2f}, "
                     f"button={repair_button_change:.2f})"
                 )
 
             self.context.log(
-                "TEST Sửa máy • nút Sửa đã phản hồi • "
+                "AUTO Sửa máy • nút Sửa đã phản hồi • "
                 f"độ_bền_change={durability_change:.2f} • "
                 f"button_change={repair_button_change:.2f}"
             )
@@ -162,20 +160,20 @@ class MachineRepairActions:
             )
             if modal_close_change < self.MIN_CLOSE_CHANGE:
                 raise ScreenTimeout(
-                    "TEST Sửa máy: bấm X nhưng chưa xác minh modal đã đóng "
+                    "Sửa máy: bấm X nhưng chưa xác minh modal đã đóng "
                     f"(change={modal_close_change:.2f})"
                 )
             modal_opened = False
 
-            result = MachineRepairTestResult(
+            result = MachineRepairResult(
                 modal_open_change=modal_open_change,
                 durability_change=durability_change,
                 repair_button_change=repair_button_change,
                 modal_close_change=modal_close_change,
             )
-            self.context.stage("auto-machine-repair-test-pass")
+            self.context.stage("auto-machine-repair-finished")
             self.context.log(
-                "PASS | TEST Sửa máy • ? → Sửa → X hoàn tất • "
+                "AUTO Sửa máy hoàn tất • ? → Sửa → X • "
                 "giá hiển thị không được dùng làm điều kiện"
             )
             return result
@@ -205,10 +203,24 @@ class MachineRepairActions:
         self.context.stage("auto-machine-repair-handoff-ready")
         self.context.log(
             "AUTO Sửa máy • production đã đủ và panel vẫn mở • "
-            f"item={result.item_id} • số lượng={queued} • chờ bước vào Sửa máy"
+            f"item={result.item_id} • số lượng={queued}"
         )
         return MachineRepairHandoff(
             item_id=str(result.item_id),
             queued_count=queued,
             panel_open=True,
         )
+
+    def repair_after_production(self, result: ProductionResult) -> MachineRepairResult:
+        """Validate the production handoff, then repair the still-open machine."""
+        handoff = self.begin_from_open_panel(result)
+        repaired = self.repair_open_production_panel()
+        self.context.log(
+            "AUTO Sửa máy • hoàn tất sau production • "
+            f"item={handoff.item_id} • số lượng={handoff.queued_count}"
+        )
+        return repaired
+
+    def test_from_open_production_panel(self) -> MachineRepairResult:
+        """Backward-compatible DEV-plan alias; the visible test button was removed."""
+        return self.repair_open_production_panel()
