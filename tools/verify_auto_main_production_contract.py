@@ -106,16 +106,23 @@ def main() -> int:
     dev = DEV_ENTRY.read_text(encoding="utf-8")
     auto_multi_worker = AUTO_MULTI_WORKER.read_text(encoding="utf-8")
 
-    # Startup normalization STEP 1 + STEP 2.
+    # Startup routing remains diagnostic/non-fatal. Exact main gates now belong
+    # only to explicit business transitions between planting/production stages.
     require(game_session, "DOWN_ONE = (514, 314, 514, 214)", "Startup goDown(1) geometry changed")
-    require(game_session, 'started_on_main = self.auto.popup.is_own_main_screen()', "Startup exact-main probe missing")
+    require(game_session, 'started_on_main = self.auto.popup.is_own_main_screen()', "Startup routing hint missing")
     require(game_session, 'self._startup_go_down_one("startup-low-floor-probe-1-of-4")', "STEP 2 initial goDown(1) probe missing")
     require(game_session, "for index in range(2, 5):", "STEP 2 must issue exactly three additional goDown(1)s")
     require(game_session, "fresh_frame=true", "STEP 2 must capture a fresh frame after each goDown(1)")
-    require(game_session, "if not self.auto.popup.is_own_main_screen():", "STEP 2 exact main-screen final gate missing")
-    require(game_session, "STEP 3 nút xuống tầng", "Higher-floor startup must remain fail-closed until STEP 3")
+    require(game_session, "không gate main tại startup", "Startup must not exact-gate main after low-floor settling")
+    if "STEP 2 đã gửi 1+3 goDown(1) nhưng chưa xác nhận" in game_session:
+        raise AssertionError("Obsolete startup exact-main ScreenTimeout gate returned")
     if "if change <" in game_session:
         raise AssertionError("Startup STEP 2 must not use frame-change as a floor/main detector")
+    if "self.auto.ensure_main_screen(timeout=timeout)" in workflow:
+        raise AssertionError("AppleDryer must not duplicate the startup exact-main gate")
+    require(function_one, "def _require_main_transition", "Inter-stage exact-main gate helper missing")
+    require(function_one, 'self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")', "Missing main gate between apple planting and juice production")
+    require(function_one, 'self._require_main_transition("sau SX Nước táo → trước trồng Bông")', "Missing main gate between juice production and cotton planting")
 
     # Pass 1: keep the already verified dried-apple contract intact.
     require(action, "DRYER_POINT = (262, 917)", "AUTO PRO dryer coordinate changed")
@@ -203,8 +210,8 @@ def main() -> int:
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
-    print("startup_step2=low_floor_1_plus_3_godown1_main_confirmed")
-    print("startup_higher_floor=fail_closed_pending_step3")
+    print("startup_step2=low_floor_1_plus_3_godown1_no_exact_main_gate")
+    print("main_gate=business_transitions_only")
     print("flow=pass1_dried_apple pass2_apple_juice pass3_cotton_yellow_fabric")
     print("pass3=cotton_27 then yellow_fabric_9")
     print("cotton_asset=canonical_blob_locked")
