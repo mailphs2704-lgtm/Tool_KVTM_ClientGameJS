@@ -31,6 +31,7 @@ class ClientJSDriverFactory:
         "NO_LAYOUT",
         "CAPTURE3_SYNC2",
         "CAPTURE3_FIXEDMAP",
+        "CAPTURE3_WRITERMAP2",
     )
 
     def __init__(self, component_root: Path, auto_root: Path) -> None:
@@ -89,14 +90,18 @@ class ClientJSDriverFactory:
                 close_pipe()
             if (
                 "KVTM_BRIDGE_V3" in response
-                and (
-                    "CAPTURE3_SYNC2" in missing
-                    or "CAPTURE3_FIXEDMAP" in missing
+                and any(
+                    token in missing
+                    for token in (
+                        "CAPTURE3_SYNC2",
+                        "CAPTURE3_FIXEDMAP",
+                        "CAPTURE3_WRITERMAP2",
+                    )
                 )
             ):
                 raise RuntimeError(
                     "ClientJS đang giữ Bridge V3 resident cũ "
-                    "(thiếu CAPTURE3_SYNC2/CAPTURE3_FIXEDMAP). "
+                    "(thiếu CAPTURE3_SYNC2/CAPTURE3_FIXEDMAP/CAPTURE3_WRITERMAP2). "
                     "DLL đã inject không thể thay nóng; hãy đóng/mở lại đúng ClientJS "
                     "sau khi build runtime DEV rồi chạy AUTO MULTI DEV lại."
                 )
@@ -109,10 +114,10 @@ class ClientJSDriverFactory:
             logger(f"DLL bridge V3: PING sẵn sàng -> {response}")
             logger(
                 "DLL bridge V3: transport sẵn sàng; "
-                "mode=cocos-dll-v3-batch-swipe-capture3"
+                "mode=cocos-dll-v3-batch-swipe-capture3-writermap2"
             )
         return DriverBundle(
             driver=driver,
             bridge_root=root / "bin",
-            mode="cocos-dll-v3-batch-swipe-capture3",
+            mode="cocos-dll-v3-batch-swipe-capture3-writermap2",
         )
