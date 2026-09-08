@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 import time
 
 from ...automation import KVAutomation
+from ...errors import ScreenTimeout
 from ..auto_apple_dryer import AppleDryerWorkflow
 
 
@@ -12,6 +13,7 @@ FILE_FUNCTIONS = (
     "Chạy phần Táo sấy đã live-pass",
     "Chờ chín, thu hoạch và gieo lại ba mươi Táo tầng 1-5",
     "Đi từ tầng 1 lên tầng 6 rồi xử lý đúng hàng dưới cùng",
+    "Chỉ exact-check main sau transition giữa lượt trồng/sản xuất",
     "Về màn hình chính, lên tầng 2 và sản xuất chín Nước táo",
     "Về màn hình chính, gieo 27 Bông rồi lên tầng 3 sản xuất chín Vải vàng",
     "Chỉ PASS 3/3 sau khi hậu kiểm đủ chín Vải vàng",
@@ -43,6 +45,18 @@ class FunctionOneWorkflow:
         self.auto = automation
         self.context = automation.context
 
+    def _require_main_transition(self, label: str) -> None:
+        """Exact main gate only after an explicit business floor transition."""
+        self.context.ensure_running()
+        if not self.auto.popup.is_own_main_screen():
+            raise ScreenTimeout(
+                f"Điều hướng {label} đã kết thúc nhưng chưa xác nhận màn hình chính; "
+                "dừng trước lượt trồng/sản xuất kế tiếp"
+            )
+        self.context.log(
+            f"AUTO transition check • {label} • exact main PASS"
+        )
+
     def run(self) -> FunctionOneResult:
         started = time.monotonic()
         self.context.stage("auto-function-1-optional-check")
@@ -62,6 +76,7 @@ class FunctionOneWorkflow:
         self.context.stage("auto-apple-floor-6-replanted")
 
         self.auto.function_one_navigation.floor_6_to_main()
+        self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")
         self.auto.function_one_navigation.main_to_floor_2()
         juice = self.auto.apple_juice_production.produce_9_apple_juices()
         self.context.stage("auto-function-1-progress-2-of-3")
@@ -71,6 +86,7 @@ class FunctionOneWorkflow:
         )
 
         self.auto.function_one_pass_three_navigation.floor_2_to_main()
+        self._require_main_transition("sau SX Nước táo → trước trồng Bông")
         cotton = self.auto.cotton_planting.plant_27_cotton()
         self.context.ensure_running()
         self.context.stage("auto-function-1-cotton-27-planted")
