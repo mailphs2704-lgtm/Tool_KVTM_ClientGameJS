@@ -30,7 +30,7 @@ FILE_FUNCTIONS = (
     "Khóa module nghiệp vụ độc lập và Function metadata",
     "Khóa Function tự tạo nhiều tab/load/save/call graph + Function 1 full source view",
     "Khóa Function 1 load hiển thị module/click/swipe đúng thứ tự nhưng runtime vẫn proven wrapper",
-    "Khóa Function 1 source view có boundary về main để runtime có thể lặp an toàn",
+    "Khóa Function 1 source view có Sửa máy sau từng production + down-floor exact-main boundary",
     "Khóa Swipe nhiều điểm liên tục qua native swipe_points/BATCH_SWIPE",
     "Khóa thư viện ảnh Multi DEV và import AUTO PRO vào thư viện",
     "Khóa custom image/click/swipe/wait fail-close",
@@ -146,7 +146,7 @@ def main() -> int:
     require(model, '"type": "enter_game_popup"', "Default plan enter-game block missing")
     require(model, '"type": "sell_function_vp"', "Default plan sale module missing")
 
-    require(function1_manifest, "MANIFEST_VERSION = 4",
+    require(function1_manifest, "MANIFEST_VERSION = 5",
             "Function-1 execution manifest version is not current")
     require(function1_manifest, 'return {"id": new_step_id(), "type": f"trace_{kind}"',
             "Function-1 manifest rows are not typed for ordered UI display")
@@ -159,8 +159,12 @@ def main() -> int:
         "FunctionOnePassThreeNavigationActions.floor_2_to_main",
         "CottonPlantingActions.plant_27_cotton",
         "YellowFabricProductionActions.produce_9_yellow_fabrics",
+        "MachineRepairActions.repair_after_production",
+        "vp_collect_delay",
         "FunctionOneWorkflow._normalize_end_of_loop_to_main",
-        "Tối đa 6 nhịp goDown(1); sau từng nhịp kiểm tra exact main",
+        "FunctionOnePassThreeNavigationActions.floor_3_to_main_via_down_floor",
+        "Nút xuống tầng AUTO PRO goDownLast • (497,978)",
+        "is_own_main_screen() exact PASS",
         "main-ready",
         "goUp(1) • (514,214) → (514,314)",
         "Máy Vải vàng tầng 3 • (262,917)",
@@ -168,6 +172,8 @@ def main() -> int:
         '"function_id": "function_1"',
     ):
         require(function1_manifest, token, f"Function-1 full source view missing token: {token}")
+    forbid(function1_manifest, "Tối đa 6 nhịp goDown(1)",
+           "Obsolete six-goDown Function-1 end-loop manifest returned")
 
     require(ui, 'inspection_only = bool(',
             "Built-in Function full view is not marked inspection-only")
@@ -287,7 +293,7 @@ def main() -> int:
     print("AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED")
     print("ui=multi-dev-native-style-multi-tab-function-editor")
     print("functions=create-save-load-call-nested-no-recursion+builtin-function1-full-source-view")
-    print("function1_load=full-module-click-swipe-recognize-order+repeatable-main-boundary+proven-runtime-wrapper")
+    print("function1_load=full-module-click-swipe-recognize-order+repair-after-each+down-floor-main-boundary+proven-runtime-wrapper")
     print("gesture_picker=multi-segment-opengl-drag-to-logical-1000-no-hwnd-fallback")
     print("swipe_runtime=one-native-swipe-points-batch")
     print("image_library=multi-dev-primary-auto-pro-import-only")
