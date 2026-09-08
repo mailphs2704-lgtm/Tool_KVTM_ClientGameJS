@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from verify_auto_builder_contract import main as verify_auto_builder_contract
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/auto_main_selling.py"
@@ -18,10 +20,11 @@ AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worke
 
 FILE_FUNCTIONS = (
     "Đọc và parse các file AUTO Main bắt buộc",
-    "Khóa đúng hai VP của chức năng 1",
+    "Khóa đúng hai VP mặc định của chức năng 1",
     "Khóa thứ tự thu vàng, treo VP và hai swipe",
     "Khóa xác minh giao dịch trước khi ghi nhận",
     "Khóa wiring isolated worker và nút bán riêng",
+    "Chạy thêm static contract AUTO Builder",
     "Cấm phụ thuộc pyc và gọi workflow Dọn quầy",
 )
 
@@ -68,8 +71,12 @@ def main() -> int:
     require(
         action,
         'ITEM_ORDER = ("tao_say", "vai_vang")',
-        "Function-1 two-item round-robin order missing",
+        "Function-1 two-item round-robin default order missing",
     )
+    require(action, "item_order: tuple[str, ...] | None = None",
+            "Function-specific sale policy input missing")
+    require(action, "self.ITEM_ORDER = requested",
+            "Function-specific sale order not installed per action instance")
     require(action, "self._next_item_index", "Round-robin cursor missing")
     require(action, "SELECTED_ITEM_TEMPLATES", "Post-selection item map missing")
     require(action, "SELECTED_ITEM_ZONE", "Post-selection item verification zone missing")
@@ -108,7 +115,7 @@ def main() -> int:
     require(
         action,
         'for checked_count in range(1, len(self.ITEM_ORDER) + 1):',
-        "Both Function-1 items must be checked in the same inventory operation",
+        "Every Function-allowed item must be checked in the same inventory operation",
     )
     if action.count("self.selling._find_empty_slot()") != 2:
         raise AssertionError(
@@ -131,6 +138,9 @@ def main() -> int:
     require(workflow, "attempt = self.sale.sell_next_allowed", "Per-view sale missing")
     require(workflow, "self.auto.stall.next_view()", "Two-swipe next-view step missing")
     require(workflow, "sold_by_item[attempt.item_id] += 1", "Per-item accounting missing")
+    require(workflow, 'function_id: str = "function_1"', "Sale callable Function identity missing")
+    require(workflow, "allowed_item_ids: tuple[str, ...] | None = None",
+            "Sale callable Function VP policy missing")
     require(
         workflow,
         '"NO_SAFE_EXACT_TEN_ITEMS"',
@@ -162,10 +172,14 @@ def main() -> int:
         forbid(text, "clear_stall_probe_runtime", "AUTO Main sale must not call Dọn quầy runtime")
         require(text, "FILE_FUNCTIONS", "Every new AUTO Main module needs FILE_FUNCTIONS")
 
+    if verify_auto_builder_contract() != 0:
+        raise AssertionError("AUTO Builder static contract failed")
+
     print("AUTO MULTI DEV VP SALE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
     print("flow=collect_gold_round_robin_exact_x10_two_swipes_repeat")
-    print("allowed_items=tao_say,vai_vang")
+    print("allowed_items=function_bound_default_tao_say,vai_vang")
+    print("auto_builder=verified")
     print("clear_stall_runtime=untouched")
     return 0
 
