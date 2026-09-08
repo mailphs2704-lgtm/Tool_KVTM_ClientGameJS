@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..errors import ScreenTimeout
 from .function_one_navigation import FunctionOneNavigationActions, NavigationEvidence
 
 
@@ -8,12 +9,19 @@ FILE_FUNCTIONS = (
     "Đưa camera từ máy Nước táo tầng 2 về màn hình chính bằng 1+3 nhịp goDown(1)",
     "Cho phép các nhịp settle chạm biên có frame_change thấp nhưng vẫn lấy fresh frame",
     "Sau khi gieo Bông, đi từ mốc tầng 1 lên tầng 3 bằng hai nhịp goUp(1)",
-    "Cung cấp một nhịp goDown(1) công khai để workflow normalize cuối vòng bằng exact-main gate",
+    "Cuối vòng tầng 3: goDown(1) rồi click nút xuống tầng AUTO PRO (497,978)",
+    "Hậu kiểm click xuống tầng bằng frame-change; workflow exact-main là gate cuối",
 )
 
 
 class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
     """Only the routes introduced by Function 1 pass 3."""
+
+    # AUTO PRO goDownLast recovered bytecode: after goDown and check_xuong,
+    # driver.click(497, 978). The clean asset set does not contain check_xuong,
+    # so this recovered coordinate is never treated as a blind PASS: fresh-frame
+    # change is required here and the caller must exact-check own main afterwards.
+    DOWN_FLOOR_POINT = (497, 978)
 
     def _settle_down_one(self, label: str) -> float:
         """Send one goDown(1) and record fresh-frame change without boundary fail.
@@ -41,8 +49,45 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         return change
 
     def go_down_one_toward_main(self, label: str) -> float:
-        """Public single-step primitive for bounded exact-main normalization."""
+        """Public single-step primitive for controlled downward navigation."""
         return self._settle_down_one(label)
+
+    def floor_3_to_main_via_down_floor(self) -> NavigationEvidence:
+        """Run the operator-confirmed end-loop route from floor 3 to main.
+
+        Sequence is exactly one goDown(1), then the recovered AUTO PRO down-floor
+        button at (497,978). Since check_xuong is absent from the clean asset set,
+        the button click must create a meaningful fresh-frame change. The workflow
+        performs the stronger exact own-main gate immediately after this method.
+        """
+        swipe_change = self._settle_down_one(
+            "function1-end-loop-floor3-goDown(1)"
+        )
+        self.context.ensure_running()
+        before_click = self.vision.frame().copy()
+        self.vision.driver.click(*self.DOWN_FLOOR_POINT)
+        self.waiter.sleep(0.70)
+        after_click = self.vision.frame().copy()
+        click_change = self._change(before_click, after_click)
+        self.context.detail(
+            "AUTO route | gesture=function1-end-loop-click-down-floor | "
+            f"point={self.DOWN_FLOOR_POINT} | frame_change={click_change:.2f} | "
+            "fresh_frame=true | source=AUTO_PRO_goDownLast"
+        )
+        if click_change < self.MIN_CHANGE:
+            raise ScreenTimeout(
+                "Cuối vòng Function 1: click nút xuống tầng (497,978) "
+                f"không tạo thay đổi hình ảnh (change={click_change:.2f}); "
+                "dừng trước vòng kế tiếp"
+            )
+        self.context.log(
+            "AUTO điều hướng • cuối vòng tầng 3 → goDown(1) → "
+            "click xuống tầng (497,978) đã có phản hồi"
+        )
+        return NavigationEvidence(
+            "floor3-to-main-via-down-floor",
+            (swipe_change, click_change),
+        )
 
     def floor_2_to_main(self) -> NavigationEvidence:
         """Normalize the post-juice camera all the way to main before cotton.
