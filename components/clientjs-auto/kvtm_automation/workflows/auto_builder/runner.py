@@ -8,7 +8,12 @@ from ...automation import KVAutomation
 from ...errors import ScreenTimeout
 from .catalog import get_function_spec
 from .image_match import match_custom_template
-from .modules import EnterGamePopupModule, FunctionModule, SellFunctionVpModule
+from .modules import (
+    EnterGamePopupModule,
+    FunctionModule,
+    MachineRepairTestModule,
+    SellFunctionVpModule,
+)
 
 
 __all__ = ["AutoBuilderResult", "AutoBuilderRunner", "validate_plan"]
@@ -18,6 +23,7 @@ FILE_FUNCTIONS = (
     "Chạy module bán VP độc lập theo Function",
     "Chạy Function có sẵn theo vòng lặp và callback sale rõ ràng",
     "Chạy Function tự tạo lồng nhau theo đúng block operator lưu",
+    "Chạy riêng TEST Sửa máy từ panel sản xuất VP đang mở",
     "Chạy block nhận diện ảnh người dùng",
     "Validate và chạy Swipe nhiều điểm bằng native swipe_points/BATCH_SWIPE",
     "Chạy click/wait theo thứ tự người dùng sắp",
@@ -29,6 +35,7 @@ _SUPPORTED_STEP_TYPES = {
     "sell_function_vp",
     "function",
     "call_saved_function",
+    "machine_repair_test",
     "recognize_image",
     "click",
     "swipe",
@@ -233,6 +240,7 @@ class AutoBuilderRunner:
         self.enter_game = EnterGamePopupModule(automation)
         self.sale = SellFunctionVpModule(automation)
         self.function = FunctionModule(automation)
+        self.machine_repair_test = MachineRepairTestModule(automation)
         self.function_loops: dict[str, int] = {}
         self.sale_calls: dict[str, int] = {}
 
@@ -311,6 +319,8 @@ class AutoBuilderRunner:
             if function_id in call_stack:
                 raise RuntimeError(f"Function recursion runtime bị chặn: {function_id}")
             self._run_saved_function(step, call_stack)
+        elif step_type == "machine_repair_test":
+            self.machine_repair_test.run()
         elif step_type == "recognize_image":
             raw_template = str(step.get("template_path") or "").strip()
             if not raw_template:
