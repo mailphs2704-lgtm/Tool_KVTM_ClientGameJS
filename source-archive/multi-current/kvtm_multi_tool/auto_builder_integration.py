@@ -13,6 +13,7 @@ FILE_FUNCTIONS = (
     "Khởi chạy Builder qua lifecycle/ownership hiện có của AUTO MULTI DEV",
     "Ẩn tab Thiết kế cũ khỏi hàng chức năng của Multi DEV",
     "Thay khối mô tả AUTO MULTI DEV bằng menu chọn Function + số vòng giữa hai lần bán",
+    "Bổ sung Tốc độ thu VP vào đúng cửa sổ Cấu hình tốc độ hiện có",
     "Đưa Log hành động + Log chi tiết xuống hàng riêng dưới nút AUTO MULTI DEV",
     "Ghi cấu hình Function AUTO Main theo từng run mà không thay Bridge/capture ownership",
     "Hiển thị kết quả Builder mà không thay đổi handler AUTO chính",
@@ -26,10 +27,39 @@ _AUTO_MAIN_FUNCTION_OPTIONS = (
 )
 
 
+def _install_vp_collect_speed_control(core) -> None:
+    """Extend the native Multi DEV speed dialog with one clean-only timing.
+
+    This integration module is installed before the app instance is constructed,
+    so the normal settings loader/dialog/collector all see the fifth key without
+    duplicating any GUI or inventing a second configuration store.
+    """
+    core.DEFAULT_AUTO_TUNING.setdefault("vp_collect_delay", 0.30)
+    keys = tuple(getattr(core, "MULTI_DEV_TUNING_KEYS", ()))
+    if "vp_collect_delay" not in keys:
+        # Keep collect adjacent to production in the native configuration dialog.
+        try:
+            index = keys.index("vp_production_delay")
+        except ValueError:
+            keys = keys + ("vp_collect_delay",)
+        else:
+            keys = keys[:index] + ("vp_collect_delay",) + keys[index:]
+        core.MULTI_DEV_TUNING_KEYS = keys
+    core.AUTO_TUNING_SPECS["vp_collect_delay"] = (
+        "Thu VP (giây/click)", 0.05, 5.0, False
+    )
+    core.AUTO_LEGACY_TUNING_KEYS = tuple(
+        key for key in core.DEFAULT_AUTO_TUNING
+        if key not in core.MULTI_DEV_TUNING_KEYS
+    )
+
+
 def install_auto_builder_integration(app_class, core) -> None:
     """Add Builder and the verified AUTO Main controls to Multi DEV."""
     if getattr(app_class, "_kvtm_auto_builder_installed", False):
         return
+
+    _install_vp_collect_speed_control(core)
 
     original_build = app_class._build_auto_panel
     original_start_clean_session = app_class._start_clean_auto_session
