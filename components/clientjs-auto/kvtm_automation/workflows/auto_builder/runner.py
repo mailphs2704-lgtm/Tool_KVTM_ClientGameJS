@@ -19,7 +19,8 @@ FILE_FUNCTIONS = (
     "Chạy Function có sẵn theo vòng lặp và callback sale rõ ràng",
     "Chạy Function tự tạo lồng nhau theo đúng block operator lưu",
     "Chạy block nhận diện ảnh người dùng",
-    "Chạy click/swipe/wait theo thứ tự người dùng sắp",
+    "Validate và chạy Swipe nhiều điểm bằng native swipe_points/BATCH_SWIPE",
+    "Chạy click/wait theo thứ tự người dùng sắp",
     "Fail-close khi block/tham số/function graph không hợp lệ",
 )
 
@@ -57,6 +58,37 @@ class AutoBuilderResult:
             "sale_calls": dict(self.sale_calls),
             "outcome": self.outcome,
         }
+
+
+def _normalize_swipe_points(step: dict[str, Any], *, scope: str, step_id: str) -> list[list[int]]:
+    raw = step.get("points")
+    if raw in (None, "", []):
+        raw = [
+            [step.get("x1", -1), step.get("y1", -1)],
+            [step.get("x2", -1), step.get("y2", -1)],
+        ]
+    if not isinstance(raw, (list, tuple)) or len(raw) < 2:
+        raise ValueError(f"{scope}/{step_id}: Swipe phải có ít nhất 2 điểm")
+    points: list[list[int]] = []
+    for point_index, item in enumerate(raw, start=1):
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            raise ValueError(
+                f"{scope}/{step_id}: điểm Swipe {point_index} phải có đúng x,y"
+            )
+        try:
+            x, y = int(item[0]), int(item[1])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{scope}/{step_id}: điểm Swipe {point_index} không phải số"
+            ) from exc
+        if not (0 <= x <= 1000 and 0 <= y <= 1000):
+            raise ValueError(
+                f"{scope}/{step_id}: điểm Swipe ngoài vùng 0..1000: {(x, y)}"
+            )
+        points.append([x, y])
+    if all(points[index] == points[index - 1] for index in range(1, len(points))):
+        raise ValueError(f"{scope}/{step_id}: đường Swipe không có chuyển động")
+    return points
 
 
 def _normalize_steps(
@@ -101,6 +133,17 @@ def _normalize_steps(
             if step["sale_after_each_loop"]:
                 get_function_spec(sale_function_id)
             step["sale_function_id"] = sale_function_id
+        if step_type == "swipe":
+            points = _normalize_swipe_points(step, scope=scope, step_id=step_id)
+            duration = float(step.get("duration", 0.35))
+            if duration <= 0 or duration > 10.0:
+                raise ValueError(
+                    f"{scope}/{step_id}: thời lượng Swipe ngoài 0..10s: {duration}"
+                )
+            step["points"] = points
+            step["x1"], step["y1"] = points[0]
+            step["x2"], step["y2"] = points[-1]
+            step["duration"] = duration
         steps.append(step)
     return steps
 
@@ -145,8 +188,6 @@ def validate_plan(plan: dict[str, Any]) -> dict[str, Any]:
     if not steps:
         raise ValueError("AUTO Builder cần ít nhất một bước")
 
-    # Reject recursive Function graphs before touching the game. A reusable
-    # Function may call another reusable Function, but cycles are never allowed.
     graph = {
         function_id: {
             str(step.get("function_id"))
@@ -290,15 +331,15 @@ class AutoBuilderRunner:
                 raise ValueError(f"Click Builder ngoài vùng 0..1000: {(x, y)}")
             self.auto.driver.click(x, y)
         elif step_type == "swipe":
-            values = tuple(int(step.get(key, -1)) for key in ("x1", "y1", "x2", "y2"))
-            if any(value < 0 or value > 1000 for value in values):
-                raise ValueError(f"Swipe Builder ngoài vùng 0..1000: {values}")
+            points = [tuple(map(int, point)) for point in step["points"]]
             duration = float(
                 step.get("duration", self.auto.speed_config.floor_swipe_duration)
             )
-            if duration <= 0 or duration > 10.0:
-                raise ValueError(f"Thời lượng Swipe Builder ngoài 0..10s: {duration}")
-            self.auto.driver.swipe(*values, duration=duration)
+            self.context.log(
+                f"AUTO Builder • Swipe nhiều điểm • points={len(points)} • "
+                f"segments={len(points) - 1} • duration={duration:.3f}s"
+            )
+            self.auto.driver.swipe_points(points, duration=duration)
         elif step_type == "wait":
             seconds = float(step.get("seconds", 0.5))
             if seconds < 0 or seconds > 300:
