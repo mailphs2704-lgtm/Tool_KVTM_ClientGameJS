@@ -6,9 +6,10 @@ from typing import Mapping
 
 __all__ = ["AutoSpeedConfig"]
 FILE_FUNCTIONS = (
-    "Đọc bốn tốc độ độc lập của AUTO MULTI DEV từ cấu hình giao diện",
+    "Đọc năm tốc độ độc lập của AUTO MULTI DEV từ cấu hình giao diện",
+    "Tách riêng tốc độ click thu VP khỏi tốc độ kéo/xếp VP sản xuất",
     "Giới hạn giá trị để tránh swipe/click quá nhanh hoặc quá chậm",
-    "Xuất cấu hình đã chuẩn hóa cho log và module sản xuất VP sau này",
+    "Xuất cấu hình đã chuẩn hóa cho worker và các module nghiệp vụ",
 )
 
 
@@ -18,6 +19,7 @@ class AutoSpeedConfig:
 
     floor_swipe_duration: float = 0.35
     plant_harvest_duration: float = 0.035
+    vp_collect_delay: float = 0.30
     vp_production_delay: float = 0.40
     crop_check_interval: float = 0.30
 
@@ -39,6 +41,9 @@ class AutoSpeedConfig:
             plant_harvest_duration=bounded(
                 "plant_harvest_duration", cls.plant_harvest_duration, 0.01, 3.0
             ),
+            vp_collect_delay=bounded(
+                "vp_collect_delay", cls.vp_collect_delay, 0.05, 5.0
+            ),
             vp_production_delay=bounded(
                 "vp_production_delay", cls.vp_production_delay, 0.05, 10.0
             ),
@@ -51,6 +56,7 @@ class AutoSpeedConfig:
         return {
             "floor_swipe_duration": self.floor_swipe_duration,
             "plant_harvest_duration": self.plant_harvest_duration,
+            "vp_collect_delay": self.vp_collect_delay,
             "vp_production_delay": self.vp_production_delay,
             "crop_check_interval": self.crop_check_interval,
         }
