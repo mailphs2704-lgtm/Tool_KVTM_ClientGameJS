@@ -23,24 +23,33 @@ Quy tắc đã khóa:
 - Khi main đã được xác nhận, bàn giao cho pipeline hiện có.
 - Không đưa `goUp(1)` vào `GameSessionWorkflow`; `PlantingActions._open_seed_picker()` vẫn là chủ sở hữu duy nhất của nhịp `goUp(1)` trước gieo.
 
-Commit runtime của STEP 1:
+Commit runtime STEP 1:
 
 `f33406931990ea50144a871c2a1878fcc67bc110` — `fix(auto-multi): lock main-screen startup anchor`
 
-### STEP 2 — Chưa làm
+### STEP 2 — Đã xong phần nhánh tầng thấp
 
 **Trường hợp bắt đầu ở tầng 1 hoặc tầng 2.**
 
-Yêu cầu chính xác:
+Runtime hiện đã khóa đúng chuỗi tầng thấp:
 
-1. Thực hiện một `goDown(1)`.
-2. Quan sát cửa sổ ngắn của nút xuống tầng.
-3. Nếu **không xuất hiện nút xuống tầng**, coi đây là nhánh tầng thấp.
-4. Thực hiện tiếp **3 lần `goDown(1)`** để chắc chắn camera đã kéo hết về màn hình chính, kể cả trường hợp camera bị lệch/kẹt.
-5. Sau các gesture phải xác nhận lại `is_own_main_screen()` trên fresh frame.
-6. Không xác nhận main thì fail-close; không tiếp tục production.
+1. Nếu startup chưa xác nhận main, trước tiên cho luồng portal/popup hiện có một cửa sổ ngắn để vào game hoặc đóng blocker; không kéo tầng trên màn hình portal/loading.
+2. Khi vẫn là trạng thái game non-main, phát một `goDown(1)` bằng đúng geometry `(514,314) -> (514,214)`.
+3. Sau gesture lấy fresh CAPTURE3; `frame_change` chỉ ghi diagnostic, tuyệt đối không dùng để suy luận tầng/main.
+4. Phát tiếp **đúng 3 lần `goDown(1)`** để ép camera tầng 1/2 về đáy, kể cả khi đã chạm biên camera và hình gần như không đổi.
+5. Sau chuỗi `1 + 3`, bắt buộc gọi `is_own_main_screen()` trên fresh frame.
+6. Chỉ khi exact main classifier PASS mới bàn giao cho AUTO.
+7. Nếu chưa xác nhận main thì `ScreenTimeout` fail-close; không production tiếp.
 
-Không được suy ra rằng một `goDown(1)` từ tầng 1 là đã về main.
+Commit runtime STEP 2:
+
+`e97d409f175426dceeedb8ae0a51628b9481a0af` — `fix(auto-multi): normalize floor1-floor2 startup`
+
+Commit static contract STEP 2:
+
+`8074f815a8d5a4055ddcd6204c9f6c84cd6db565` — `test(auto-multi): lock step2 startup route`
+
+**Giới hạn cố ý ở bản này:** nhánh nhận diện nút xuống tầng chưa được thêm. Vì vậy startup từ tầng 3-10 không được đoán là tầng thấp; nếu `1 + 3 goDown(1)` vẫn không về exact main thì worker dừng fail-close. Tách như vậy để STEP 3/4 có thể bổ sung detector/timing của nút xuống tầng dựa trên bằng chứng thật, không click mù.
 
 ### STEP 3 — Chưa làm
 
@@ -56,6 +65,8 @@ Yêu cầu chính xác:
 6. Xác nhận `is_own_main_screen()`.
 7. Không xác nhận main thì fail-close.
 
+Không được dùng `quay_hang` hay `cua_hang` thay cho nút xuống tầng: hai asset đó là icon/quầy cửa hàng, không phải nút chuyển tầng. Nếu clean asset chưa có template nút xuống tầng thì phải thu hồi đúng reference hoặc lấy live evidence rồi tạo asset canonical; không đoán tên, tọa độ hoặc threshold.
+
 ### STEP 4 — Chưa làm
 
 **Timing và nhận diện nút xuống tầng.**
@@ -69,26 +80,53 @@ Yêu cầu chính xác:
 - Chỉ click template đã xác minh; không click tọa độ mù khi không có detection.
 - Sau click phải chờ animation settle rồi mới phát ba `goDown(1)` tiếp theo.
 
-Timing cụ thể sẽ được chốt bằng log/live evidence ở STEP 4, không đoán trước trong STEP 1-3.
+Timing cụ thể phải chốt bằng log/live evidence; không tự giảm threshold để ép PASS.
+
+## FIX riêng — Bông 27/27 false-negative — Đã xong source
+
+Ảnh lỗi live cho thấy gesture gieo Bông thực tế đã chạy đủ nhưng hậu kiểm visible regions trả `0/27`, làm phát `ScreenTimeout`. Đây là gate sai vì hàng cây thứ 5 có thể nằm ngoài viewport sau gesture.
+
+Đã đối chiếu với logic gieo Táo ổn định: đường kéo 27 chậu là business action, còn `changed_waypoint_regions` chỉ là diagnostic `non_blocking=true`.
+
+Runtime Bông hiện được sửa theo cùng mô hình:
+
+- Vẫn fail-close nếu thiếu canonical asset `cay_bong`.
+- Vẫn phải xác minh seed picker/chậu và nhận diện đúng hạt Bông trước gesture.
+- Vẫn dùng nguyên đường 27 chậu: `path = (seed.center,) + self.rose_path()[1:]`.
+- Sau gesture vẫn đo `changed_waypoint_regions` để log.
+- **Không còn yêu cầu visible `27/27` và không raise chỉ vì `0/27` hoặc thiếu vùng nhìn thấy.**
+- Trả kế toán `27` sau khi đường gieo native đã được gửi thành công; lỗi transport/stop/seed vẫn chặn như cũ.
+
+Commit runtime:
+
+`32cfd192325172b2b3fb63a777adb37c2e4211c0` — `fix(auto-multi): make cotton visibility check advisory`
+
+Commit static contract:
+
+`d93551c5ac4374befe8d79628f928661ce5341d7` — `test(auto-multi): align cotton postcheck contract`
+
+Static verifier hiện cấm hồi quy về `if changed != TREE_COUNT` hoặc `fail_close=true` cho hậu kiểm vùng nhìn thấy của Bông.
 
 ## Invariant an toàn
 
 - Không nới CAPTURE3.
 - Không chấp nhận stale frame.
-- Mỗi gesture phải có hậu kiểm fresh frame.
-- Không gắn nhãn `main` chỉ dựa vào số lần kéo.
+- Mỗi gesture startup phải có fresh frame hậu kiểm.
+- Không gắn nhãn `main` chỉ dựa vào số lần kéo hoặc `frame_change`.
 - Chỉ `is_own_main_screen()` xác nhận được điểm khởi đầu cuối cùng.
 - Không đụng ổn định của sale / clear-stall khi đang sửa startup normalization.
 - AUTO PRO tiếp tục chỉ là reference, không gọi runtime sang AUTO PRO.
-
-## Vấn đề riêng đang chờ sau startup normalization
-
-PASS 3 Cây bông đang có hợp đồng hậu kiểm cũ đòi đủ `27/27` vùng chậu thay đổi. Người dùng đã xác nhận hàng cây thứ 5 có thể bị khuất camera, vì vậy **27/27 visible regions không thể là gate PASS bắt buộc**. Việc này phải sửa riêng sau khi hoàn tất STEP 1-4; không trộn vào startup recovery để tránh khó truy nguyên regression.
+- Không dùng asset cửa hàng thay cho nút xuống tầng.
 
 ## Điểm tiếp tục cho cửa sổ kế tiếp
 
-Nếu STEP 1 đã có commit ở trên, **không làm lại STEP 1**.
+Không làm lại STEP 1 hoặc STEP 2.
 
-Bắt đầu từ **STEP 2: tầng 1/2 → một `goDown(1)` → nếu không thấy nút xuống tầng thì thêm 3 `goDown(1)` → fresh-frame xác nhận màn hình chính**.
+Bắt đầu từ **STEP 3: tầng 3-10 -> `goDown(1)` -> bắt đúng nút xuống tầng trong cửa sổ tồn tại ngắn -> click có template guard -> chờ animation -> 3 x `goDown(1)` -> exact main**.
 
-Chỉ khi STEP 2 hoàn tất mới cập nhật tài liệu này thành `STEP 2 — Đã xong`, ghi commit và chuyển sang STEP 3.
+Trước khi viết click của STEP 3, phải có bằng chứng đúng cho template/tọa độ/timing của nút xuống tầng. Nếu chưa có asset canonical thì ưu tiên recovery/reference hoặc live diagnostic, không đoán.
+
+Khi live retest bản hiện tại, ưu tiên hai checkpoint:
+
+- Startup tầng 1/2 phải có log `AUTO khởi điểm STEP 2` và kết thúc bằng exact main PASS.
+- Gieo Bông có thể log `changed_waypoint_regions=0/27`, nhưng không được dừng ở đó; pipeline phải tiếp tục sang điều hướng/sản xuất Vải vàng nếu các gate nghiệp vụ khác hợp lệ.
