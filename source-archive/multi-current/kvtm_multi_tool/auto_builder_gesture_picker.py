@@ -10,6 +10,7 @@ import time
 __all__ = ["pick_swipe_on_game"]
 FILE_FUNCTIONS = (
     "Chọn đúng một ClientJS đang chạy từ selection của Multi DEV",
+    "Cấu hình Win32 GDI pointer-safe cho Python x64",
     "Hiển thị fresh OpenGL shared capture không dùng HWND fallback",
     "Ánh xạ kéo chuột trên preview về tọa độ logic 0..1000",
     "Vẽ preview đường swipe và trả start/end cho Builder",
@@ -41,6 +42,41 @@ def _selected_running_profile(app, core):
     return profile_id, profile or {}, int(process.pid)
 
 
+def _configure_gdi(core) -> None:
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+    user32.GetDC.argtypes = [wintypes.HWND]
+    user32.GetDC.restype = wintypes.HANDLE
+    user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HANDLE]
+    user32.ReleaseDC.restype = ctypes.c_int
+    gdi32.SetStretchBltMode.argtypes = [wintypes.HANDLE, ctypes.c_int]
+    gdi32.SetStretchBltMode.restype = ctypes.c_int
+    gdi32.StretchDIBits.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        wintypes.LPVOID, ctypes.POINTER(core.BITMAPINFO),
+        wintypes.UINT, wintypes.DWORD,
+    ]
+    gdi32.StretchDIBits.restype = ctypes.c_int
+    gdi32.CreatePen.argtypes = [ctypes.c_int, ctypes.c_int, wintypes.DWORD]
+    gdi32.CreatePen.restype = wintypes.HANDLE
+    gdi32.SelectObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    gdi32.SelectObject.restype = wintypes.HANDLE
+    gdi32.DeleteObject.argtypes = [wintypes.HANDLE]
+    gdi32.DeleteObject.restype = wintypes.BOOL
+    gdi32.MoveToEx.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_int, ctypes.c_void_p,
+    ]
+    gdi32.MoveToEx.restype = wintypes.BOOL
+    gdi32.LineTo.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_int]
+    gdi32.LineTo.restype = wintypes.BOOL
+    gdi32.Ellipse.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ]
+    gdi32.Ellipse.restype = wintypes.BOOL
+
+
 class _SwipePickerWindow:
     def __init__(self, app, core, parent, profile_id: str, profile: dict, pid: int, initial):
         self.app = app
@@ -57,6 +93,7 @@ class _SwipePickerWindow:
         self._drag_start = None
         self._drag_current = None
         self._initial = initial
+        _configure_gdi(core)
 
         tk, ttk = core.tk, core.ttk
         win = tk.Toplevel(parent or app)
@@ -117,8 +154,8 @@ class _SwipePickerWindow:
         while not self._stop.is_set():
             started = time.monotonic()
             try:
-                # Deliberately no capture_bgra/HWND fallback. The picker must
-                # show the same OpenGL-rendered ClientJS surface used by Multi.
+                # Deliberately no HWND fallback. This visual picker reads only
+                # the existing OpenGL shared surface while no AUTO worker owns it.
                 raw, width, height = self.core.capture_shared_bgra(
                     self.pid, timeout_ms=2000
                 )
