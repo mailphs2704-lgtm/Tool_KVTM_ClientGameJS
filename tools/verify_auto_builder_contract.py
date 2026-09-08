@@ -17,6 +17,7 @@ WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 SALE_ACTION = CLEAN / "actions/auto_main_selling.py"
 SALE_WORKFLOW = CLEAN / "workflows/auto_vp_sale/workflow.py"
 MODEL = MULTI / "auto_builder_model.py"
+FUNCTION1_MANIFEST = MULTI / "auto_builder_function1_manifest.py"
 DIALOGS = MULTI / "auto_builder_step_dialogs.py"
 GESTURE = MULTI / "auto_builder_gesture_picker.py"
 UI = MULTI / "auto_builder_ui.py"
@@ -27,7 +28,8 @@ CORE_GUI = MULTI / "kvtm_multi.py"
 FILE_FUNCTIONS = (
     "Parse toàn bộ module Builder bắt buộc",
     "Khóa module nghiệp vụ độc lập và Function metadata",
-    "Khóa Function tự tạo nhiều tab/load/save/call graph + Function 1 cũ load được",
+    "Khóa Function tự tạo nhiều tab/load/save/call graph + Function 1 full source view",
+    "Khóa Function 1 load hiển thị module/click/swipe đúng thứ tự nhưng runtime vẫn proven wrapper",
     "Khóa Swipe nhiều điểm liên tục qua native swipe_points/BATCH_SWIPE",
     "Khóa thư viện ảnh Multi DEV và import AUTO PRO vào thư viện",
     "Khóa custom image/click/swipe/wait fail-close",
@@ -64,6 +66,7 @@ def main() -> int:
     sale_action = read(SALE_ACTION)
     sale_workflow = read(SALE_WORKFLOW)
     model = read(MODEL)
+    function1_manifest = read(FUNCTION1_MANIFEST)
     dialogs = read(DIALOGS)
     gesture = read(GESTURE)
     ui = read(UI)
@@ -107,6 +110,7 @@ def main() -> int:
     require(image_match, "cv2.matchTemplate", "Custom recognition matcher missing")
     require(runner, "raise ScreenTimeout", "Recognition failure is not fail-closed")
 
+    # Reusable Function library + prior built-in Function exposed in Load Function.
     require(model, 'self.functions_dir = self.root / "functions"',
             "Persistent Function library missing")
     require(model, "def save_function", "Builder cannot save reusable Functions")
@@ -117,13 +121,60 @@ def main() -> int:
             "Prior Function-1 stable load-library id missing")
     require(model, '"name": "9 Táo sấy - 9 Vải vàng"',
             "Prior 9 Táo sấy - 9 Vải vàng Function is not exposed")
+    require(model, "import auto_builder_function1_manifest as function1_manifest",
+            "Function-1 full execution manifest is not wired into Builder model")
+    require(model, '"steps": function1_manifest.display_steps(new_step_id)',
+            "Load Function 1 does not expose full display steps")
+    require(model, '"runtime_steps": function1_manifest.runtime_steps(new_step_id)',
+            "Function-1 proven runtime wrapper is not separated from display blueprint")
+    require(model, 'runtime_item.get("source_template_id") == "builtin_function_1"',
+            "Bundle does not recognize built-in Function-1 inspection documents")
+    require(model, 'runtime_item["steps"] = list(runtime_steps)',
+            "Bundle does not replace inspection rows with proven runtime steps")
     require(model, "def _seed_existing_function_one", "Prior Function seed hook missing")
     require(model, "self._seed_existing_function_one()", "Prior Function is not seeded on store startup")
+    require(model, 'current.get("manifest_version", 0)',
+            "Existing one-row Function seed is not migrated to the current full manifest")
+    require(model, 'step_type.startswith("trace_")',
+            "Function-1 inspection row summaries missing")
+    require(model, '"click": "CLICK"', "Function-1 inspection CLICK label missing")
+    require(model, '"swipe": "SWIPE"', "Function-1 inspection SWIPE label missing")
+    require(model, '"module": "MODULE"', "Function-1 inspection MODULE label missing")
     require(model, '"function_id": "function_1"',
             "Prior Function wrapper is not bound to proven built-in Function 1")
     require(model, '"type": "enter_game_popup"', "Default plan enter-game block missing")
     require(model, '"type": "sell_function_vp"', "Default plan sale module missing")
 
+    require(function1_manifest, "MANIFEST_VERSION = 3",
+            "Function-1 execution manifest version is not current")
+    require(function1_manifest, 'return {"id": new_step_id(), "type": f"trace_{kind}"',
+            "Function-1 manifest rows are not typed for ordered UI display")
+    for token in (
+        "PlantingActions.plant_27_apples",
+        "ProductionActions.produce_9_dried_apples",
+        "AppleSupplyActions.harvest_and_replant_five_floors",
+        "FunctionOneNavigationActions.floor_6_to_main",
+        "AppleJuiceProductionActions.produce_9_apple_juices",
+        "FunctionOnePassThreeNavigationActions.floor_2_to_main",
+        "CottonPlantingActions.plant_27_cotton",
+        "YellowFabricProductionActions.produce_9_yellow_fabrics",
+        "goUp(1) • (514,214) → (514,314)",
+        "Máy Vải vàng tầng 3 • (262,917)",
+        "def runtime_steps",
+        '"function_id": "function_1"',
+    ):
+        require(function1_manifest, token, f"Function-1 full source view missing token: {token}")
+
+    require(ui, 'inspection_only = bool(',
+            "Built-in Function full view is not marked inspection-only")
+    require(ui, 'text="FULL SOURCE VIEW • chỉ đọc • runtime vẫn gọi proven function_1"',
+            "Built-in Function full view does not explain read-only proven runtime behavior")
+    require(ui, 'if not inspection_only:',
+            "Built-in inspection view does not suppress normal edit controls")
+    require(ui, 'if document.get("inspection_only"):',
+            "Built-in inspection document is not guarded from edits/saves")
+
+    # Recognition images: Multi DEV library is first-class; AUTO PRO is import-only.
     require(model, 'self.image_library_dir = self.root / "image-library"',
             "Persistent Multi DEV image library missing")
     require(model, "def list_library_images", "Multi DEV image library cannot be listed")
@@ -143,12 +194,13 @@ def main() -> int:
     require(dialogs, 'step["image_source"] = source',
             "Recognition step does not record source provenance")
 
+    # Swipe v1.2 is one ordered multi-point gesture, not N independent swipes.
     require(dialogs, "pick_swipe_on_game", "Swipe dialog is not wired to live picker")
     require(dialogs, 'step_type == "call_saved_function"',
             "Saved Function call configuration missing")
     require(dialogs, "Kéo trực tiếp nhiều đoạn trên màn hình game", "Multi-segment live Swipe prompt missing")
     require(dialogs, 'step["points"] = points', "Swipe dialog does not persist ordered points")
-    require(dialogs, "x,y; x,y; x,y ...", "Manual multi-point Swipe fallback missing")
+    require(dialogs, '"x,y; x,y; x,y ..."', "Manual multi-point Swipe fallback missing")
 
     require(gesture, "self.core.capture_shared_bgra(",
             "Gesture picker must use OpenGL shared capture")
@@ -207,6 +259,8 @@ def main() -> int:
     require(ui, "def run_document", "Independent Function test runner UI missing")
     require(ui, "self.store.bundle_plan", "UI must bundle saved Functions before worker launch")
 
+    # Canvas.create_window returns an integer item id. Builder must attach its
+    # native tab to the real tab_bar widget, never to that integer id.
     require(core_gui, "self.auto_tabs_window = self.auto_tabs_canvas.create_window(",
             "Core tab-strip canvas item contract changed")
     require(ui, 'anchor = app.auto_tab_buttons.get("multi_dev")',
@@ -234,14 +288,18 @@ def main() -> int:
             "Builder does not reuse Multi DEV ownership/busy gates")
     require(host, "install_auto_builder_integration(", "Multi DEV host does not install Builder")
 
-    for text in (catalog, modules, runner, image_match, model, dialogs, gesture, ui, integration):
+    for text in (
+        catalog, modules, runner, image_match, model, function1_manifest,
+        dialogs, gesture, ui, integration,
+    ):
         forbid(text, "clear_stall_probe_runtime", "Builder must not call Dọn quầy runtime")
         forbid(text, ".pyc", "Builder must not execute legacy business pyc")
         require(text, "FILE_FUNCTIONS", "Every Builder module must document FILE_FUNCTIONS")
 
     print("AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED")
     print("ui=multi-dev-native-style-multi-tab-function-editor")
-    print("functions=create-save-load-call-nested-no-recursion+builtin-function1-loadable")
+    print("functions=create-save-load-call-nested-no-recursion+builtin-function1-full-source-view")
+    print("function1_load=full-module-click-swipe-recognize-order+proven-runtime-wrapper")
     print("gesture_picker=multi-segment-opengl-drag-to-logical-1000-no-hwnd-fallback")
     print("swipe_runtime=one-native-swipe-points-batch")
     print("recognition_library=multi-dev-first-auto-pro-copy-in")
