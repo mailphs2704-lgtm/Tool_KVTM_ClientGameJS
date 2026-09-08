@@ -106,8 +106,8 @@ def main() -> int:
     dev = DEV_ENTRY.read_text(encoding="utf-8")
     auto_multi_worker = AUTO_MULTI_WORKER.read_text(encoding="utf-8")
 
-    # Startup routing remains diagnostic/non-fatal. Exact main gates now belong
-    # only to explicit business transitions between planting/production stages.
+    # Startup routing remains diagnostic/non-fatal. Exact main gates belong to
+    # explicit business transitions and the new end-of-loop repeatability gate.
     require(game_session, "DOWN_ONE = (514, 314, 514, 214)", "Startup goDown(1) geometry changed")
     require(game_session, 'started_on_main = self.auto.popup.is_own_main_screen()', "Startup routing hint missing")
     require(game_session, 'self._startup_go_down_one("startup-low-floor-probe-1-of-4")', "STEP 2 initial goDown(1) probe missing")
@@ -170,9 +170,7 @@ def main() -> int:
     require(pass_three_nav, "self._gesture(self.UP_ONE", "Pass-3 upward route must use verified fresh-frame gesture")
     require(yellow_fabric, 'PRODUCT_TEMPLATE = "vai_vang"', "Yellow-fabric production template missing")
     if "kho_vai_vang" in yellow_fabric:
-        raise AssertionError(
-            "Warehouse yellow-fabric template must never be referenced by production"
-        )
+        raise AssertionError("Warehouse yellow-fabric template must never be referenced by production")
     require(yellow_fabric, "REQUIRED_COUNT = 9", "Exactly nine yellow fabrics required")
     require(yellow_fabric, "MAX_OPEN_CLICKS = 30", "Yellow-fabric machine opening must be bounded")
     require(yellow_fabric, "for click_count in range(1, self.MAX_OPEN_CLICKS + 1)", "Bounded yellow-fabric opening loop missing")
@@ -187,19 +185,33 @@ def main() -> int:
     require(function_one, "progress_steps=3", "Function 1 result must report progress 3")
     require(function_one, "total_steps=3", "Function 1 result must report total 3")
 
-    require(auto_main, "function_one.progress_steps != 3", "Auto Main PASS 3/3 guard missing")
-    require(auto_main, "function_one.yellow_fabrics != 9", "Auto Main yellow-fabric final guard missing")
-    require(auto_main, "function_one.cotton_planted != 27", "Auto Main cotton final guard missing")
-    require(auto_main, "production_ready=True", "Auto Main must be ready only after PASS 3/3")
-    require(auto_main, '"auto-main-function-1-pass-3-of-3"', "Auto Main final stage marker missing")
+    # Repeatability contract: PASS 3/3 is not a scheduler loop until main is exact.
+    require(pass_three_nav, "def go_down_one_toward_main", "End-loop single down primitive missing")
+    require(function_one, "END_LOOP_MAIN_MAX_SWIPES = 6", "End-loop normalization safety bound missing")
+    require(function_one, "def _normalize_end_of_loop_to_main", "Function-1 repeatability normalizer missing")
+    require(function_one, "self.auto.popup.is_own_main_screen()", "Function-1 end-loop exact-main classifier missing")
+    require(function_one, "go_down_one_toward_main(", "Function-1 end-loop descent missing")
+    require(function_one, "self._normalize_end_of_loop_to_main()", "Function-1 does not normalize before returning PASS")
+
+    # AUTO Main now dispatches the selected Function continuously and keeps the
+    # old Function-1 final accounting gate through normalized payload fields.
+    require(auto_main, "FunctionModule(automation)", "Selected Function dispatcher missing")
+    require(auto_main, 'self.spec.runner_key == "function_1"', "Function-1 completion branch missing")
+    require(auto_main, 'payload.get("progress_steps"', "Auto Main progress 3/3 guard missing")
+    require(auto_main, 'payload.get("yellow_fabrics"', "Auto Main yellow-fabric final guard missing")
+    require(auto_main, 'payload.get("cotton_planted"', "Auto Main cotton final guard missing")
+    require(auto_main, "self._validate_function_result(payload)", "Scheduler does not validate Function result")
+    require(auto_main, "while True:", "AUTO Main must keep running Function loops until Stop")
+    require(auto_main, "self.context.ensure_running()", "AUTO Main recurring loop must remain stoppable")
 
     require(automation, "self.production = ProductionActions(", "Resident production wiring missing")
     require(automation, "self.cotton_planting = CottonPlantingActions(", "Resident cotton wiring missing")
     require(automation, "self.yellow_fabric_production = YellowFabricProductionActions(", "Resident yellow-fabric wiring missing")
     require(automation, "self.function_one_pass_three_navigation = FunctionOnePassThreeNavigationActions(", "Resident pass-3 navigation wiring missing")
-    require(auto_main, "FunctionOneWorkflow(self.auto).run", "Function one pipeline missing")
     require(dev, 'text="↟ Demo Auto Pro tới tầng 6"', "Dedicated floor demo button missing")
     require(auto_multi_worker, "automation.floors.reference_main_to_floor_6()", "Floor demo worker must replay target=6 state machine")
+    require(auto_multi_worker, "function_id=function_id", "Worker selected Function handoff missing")
+    require(auto_multi_worker, "sale_every_loops=sale_every", "Worker recurring sale interval handoff missing")
     require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)", "Exact Auto Pro goUp(4) geometry missing")
 
     forbidden = (
@@ -215,9 +227,10 @@ def main() -> int:
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
     print("startup_step2=low_floor_1_plus_3_godown1_no_exact_main_gate")
-    print("main_gate=business_transitions_only")
+    print("main_gate=business_transitions_plus_end_loop_repeatability")
     print("post_juice_navigation=1_plus_3_godown1_boundary_non_blocking_exact_main_gate")
-    print("flow=pass1_dried_apple pass2_apple_juice pass3_cotton_yellow_fabric")
+    print("end_loop_navigation=bounded_single_godown_until_exact_main")
+    print("flow=pass1_dried_apple pass2_apple_juice pass3_cotton_yellow_fabric repeat")
     print("pass3=cotton_27 then yellow_fabric_9")
     print("cotton_asset=canonical_blob_locked")
     print("cotton_postcheck=diagnostic_non_blocking")
