@@ -117,6 +117,15 @@ def main() -> int:
 
         print("[KVTM DEV] Resident host: importing Multi UI AFTER runtime READY...", flush=True)
         import kvtm_multi_dev_entry
+        from auto_builder_integration import install_auto_builder_integration
+
+        # Builder is DEV-only and is layered onto MultiDevApp after import. This
+        # keeps the shared kvtm_multi.py production UI untouched while reusing its
+        # exact ttk styles/tab strip/lifecycle.
+        install_auto_builder_integration(
+            kvtm_multi_dev_entry.MultiDevApp,
+            kvtm_multi_dev_entry.core,
+        )
 
         _configure_dpi()
         app = kvtm_multi_dev_entry.MultiDevApp()
