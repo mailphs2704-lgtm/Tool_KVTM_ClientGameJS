@@ -12,7 +12,9 @@ FILE_FUNCTIONS = (
     "Hiển thị editor nhiều tab theo đúng style Multi DEV",
     "Tạo và mở đồng thời nhiều Function tự tạo",
     "Load/save Function đã có trong thư viện AppData",
-    "Thêm/sửa/xóa/đổi thứ tự block trong từng tab",
+    "Load Function 1 cũ thành full source view module/click/swipe theo đúng thứ tự",
+    "Khóa chỉnh sửa blueprint built-in để không giả vờ thay đổi runtime proven workflow",
+    "Thêm/sửa/xóa/đổi thứ tự block trong từng tab tự tạo",
     "Chèn block gọi Function đã lưu vào plan/function khác",
     "Lưu/nạp plan chính và chạy snapshot đã bundle Function",
     "Chạy thử riêng tab Function mà không tự chèn module ẩn",
@@ -172,6 +174,9 @@ class AutoBuilderUI:
                 return
 
         core = self.core
+        inspection_only = bool(
+            kind == "function" and data.get("source_template_id") == "builtin_function_1"
+        )
         frame = core.ttk.Frame(self.notebook, padding=(10, 8), style="App.TFrame")
         tab_title = "QUY TRÌNH CHÍNH" if kind == "plan" else str(data.get("name") or "Function")
         self.notebook.add(frame, text=tab_title)
@@ -184,6 +189,7 @@ class AutoBuilderUI:
             "frame": frame,
             "tree": None,
             "name_var": name_var,
+            "inspection_only": inspection_only,
         }
         self.documents[tab_id] = document
 
@@ -194,15 +200,22 @@ class AutoBuilderUI:
             text="Tên quy trình:" if kind == "plan" else "Tên Function:",
             style="Key.TLabel",
         ).pack(side="left")
-        core.ttk.Entry(header, textvariable=name_var, width=42).pack(
-            side="left", padx=(8, 12)
-        )
+        name_entry = core.ttk.Entry(header, textvariable=name_var, width=42)
+        name_entry.pack(side="left", padx=(8, 12))
+        if inspection_only:
+            name_entry.configure(state="readonly")
         if kind == "function":
             core.ttk.Label(
                 header,
                 text=f"ID: {data.get('function_id')}",
                 style="AutoValue.TLabel",
             ).pack(side="left")
+            if inspection_only:
+                core.ttk.Label(
+                    header,
+                    text="FULL SOURCE VIEW • chỉ đọc • runtime vẫn gọi proven function_1",
+                    style="AutoValue.TLabel",
+                ).pack(side="left", padx=(14, 0))
         else:
             core.ttk.Label(
                 header,
@@ -228,58 +241,69 @@ class AutoBuilderUI:
         scrollbar = core.ttk.Scrollbar(content, orient="vertical", command=tree.yview)
         scrollbar.pack(side="left", fill="y")
         tree.configure(yscrollcommand=scrollbar.set)
-        tree.bind("<Double-1>", lambda _event, tid=tab_id: self.modify_step("edit", tid))
+        if not inspection_only:
+            tree.bind("<Double-1>", lambda _event, tid=tab_id: self.modify_step("edit", tid))
 
         tools = core.ttk.Frame(content, padding=(10, 0), style="App.TFrame")
         tools.pack(side="right", fill="y")
-        add_button = core.ttk.Button(
-            tools, text="＋ Thêm bước", width=22, style="Action.TButton"
-        )
-        add_button.pack(fill="x", pady=(0, 8))
-        menu = core.tk.Menu(self.window, tearoff=False)
-        for label, step_type in (
-            ("MODULE • Vào game + đóng popup", "enter_game_popup"),
-            ("MODULE • Bán VP theo Function", "sell_function_vp"),
-            ("FUNCTION CÓ SẴN • Function 1", "function"),
-            ("FUNCTION TỰ TẠO • Gọi Function đã lưu", "call_saved_function"),
-            ("NHẬN DIỆN • Chọn ảnh", "recognize_image"),
-            ("CLICK", "click"),
-            ("SWIPE • kéo trực tiếp trên game", "swipe"),
-            ("WAIT", "wait"),
-            ("KẾT THÚC PASS", "finish_pass"),
-            ("KẾT THÚC FAIL", "finish_fail"),
-        ):
-            menu.add_command(
-                label=label,
-                command=lambda kind0=step_type, tid=tab_id: self.add_step(kind0, tid),
+        if not inspection_only:
+            add_button = core.ttk.Button(
+                tools, text="＋ Thêm bước", width=22, style="Action.TButton"
             )
-
-        def show_add_menu() -> None:
-            try:
-                menu.tk_popup(
-                    add_button.winfo_rootx(),
-                    add_button.winfo_rooty() + add_button.winfo_height(),
+            add_button.pack(fill="x", pady=(0, 8))
+            menu = core.tk.Menu(self.window, tearoff=False)
+            for label, step_type in (
+                ("MODULE • Vào game + đóng popup", "enter_game_popup"),
+                ("MODULE • Bán VP theo Function", "sell_function_vp"),
+                ("FUNCTION CÓ SẴN • Function 1", "function"),
+                ("FUNCTION TỰ TẠO • Gọi Function đã lưu", "call_saved_function"),
+                ("NHẬN DIỆN • Chọn ảnh", "recognize_image"),
+                ("CLICK", "click"),
+                ("SWIPE • kéo trực tiếp trên game", "swipe"),
+                ("WAIT", "wait"),
+                ("KẾT THÚC PASS", "finish_pass"),
+                ("KẾT THÚC FAIL", "finish_fail"),
+            ):
+                menu.add_command(
+                    label=label,
+                    command=lambda kind0=step_type, tid=tab_id: self.add_step(kind0, tid),
                 )
-            finally:
-                menu.grab_release()
 
-        add_button.configure(command=show_add_menu)
-        for text, action in (
-            ("✎ Sửa bước", "edit"),
-            ("↑ Đưa lên", "up"),
-            ("↓ Đưa xuống", "down"),
-            ("✕ Xóa", "delete"),
-        ):
+            def show_add_menu() -> None:
+                try:
+                    menu.tk_popup(
+                        add_button.winfo_rootx(),
+                        add_button.winfo_rooty() + add_button.winfo_height(),
+                    )
+                finally:
+                    menu.grab_release()
+
+            add_button.configure(command=show_add_menu)
+            for text, action in (
+                ("✎ Sửa bước", "edit"),
+                ("↑ Đưa lên", "up"),
+                ("↓ Đưa xuống", "down"),
+                ("✕ Xóa", "delete"),
+            ):
+                core.ttk.Button(
+                    tools, text=text, width=22, style="Action.TButton",
+                    command=lambda op=action, tid=tab_id: self.modify_step(op, tid),
+                ).pack(fill="x", pady=(0, 8))
+            core.ttk.Separator(tools, orient="horizontal").pack(fill="x", pady=(4, 10))
             core.ttk.Button(
-                tools, text=text, width=22, style="Action.TButton",
-                command=lambda op=action, tid=tab_id: self.modify_step(op, tid),
+                tools, text="💾 Lưu tab", width=22,
+                style="AutoStart.TButton",
+                command=lambda tid=tab_id: self.save_document(tid),
             ).pack(fill="x", pady=(0, 8))
-        core.ttk.Separator(tools, orient="horizontal").pack(fill="x", pady=(4, 10))
-        core.ttk.Button(
-            tools, text="💾 Lưu tab", width=22,
-            style="AutoStart.TButton",
-            command=lambda tid=tab_id: self.save_document(tid),
-        ).pack(fill="x", pady=(0, 8))
+        else:
+            core.ttk.Label(
+                tools,
+                text="VIEW FULL\nMODULE / CLICK / SWIPE\nWAIT / NHẬN DIỆN\nGATE / LOOP",
+                style="AutoValue.TLabel",
+                justify="left",
+            ).pack(anchor="w", pady=(0, 12))
+            core.ttk.Separator(tools, orient="horizontal").pack(fill="x", pady=(4, 10))
+
         core.ttk.Button(
             tools, text="▶ Chạy tab", width=22,
             style="AutoStart.TButton",
@@ -369,6 +393,8 @@ class AutoBuilderUI:
         document = self.documents.get(tab_id)
         if document is None:
             return
+        if document.get("inspection_only"):
+            return
         step = configure_step(
             self.core, self.store, self.window,
             {"id": model.new_step_id(), "type": step_type}, app=self.app,
@@ -387,6 +413,14 @@ class AutoBuilderUI:
         tab_id = str(tab_id or self.current_tab_id() or "")
         document = self.documents.get(tab_id)
         if document is None:
+            return
+        if document.get("inspection_only"):
+            self.core.messagebox.showinfo(
+                self.core.APP_NAME,
+                "Function built-in đang ở FULL SOURCE VIEW chỉ đọc. "
+                "Các dòng này phản ánh workflow proven hiện tại, không phải block JSON giả lập.",
+                parent=self.window,
+            )
             return
         tree = document["tree"]
         selected = tree.selection()
@@ -429,6 +463,8 @@ class AutoBuilderUI:
         document = self.documents.get(str(tab_id))
         if document is None:
             return False
+        if document.get("inspection_only"):
+            return True
         data = document["data"]
         data["name"] = document["name_var"].get().strip()
         if not data["name"]:
