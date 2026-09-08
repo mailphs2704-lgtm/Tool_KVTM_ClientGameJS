@@ -35,10 +35,22 @@ This file is a mandatory first-read for every AI session that works on this repo
 ## 5. Current AUTO MULTI DEV transport contract
 
 - Main AUTO MULTI DEV worker is isolated and uses Bridge V3.
-- Keep the strict protocol/revision contract required by the current source: `CAPTURE3`, `INPUT4`, `BATCH_SWIPE`, `NO_LAYOUT`, `CAPTURE3_SYNC2`, `CAPTURE3_FIXEDMAP`, and `CAPTURE3_WRITERMAP2`.
+- Keep the strict protocol/revision contract required by the current source: `CAPTURE3`, `INPUT4`, `BATCH_SWIPE`, `NO_LAYOUT`, `CAPTURE3_SYNC2`, `CAPTURE3_FIXEDMAP`, `CAPTURE3_WRITERMAP2`, and `CAPTURE3_WRITERMSG1`.
 - `CAPTURE3_WRITERMAP2` is mandatory after the 2026-09-08 live evidence where one frame id had different coherent dimensions in the pipe response and PID-only shared mapping. Multi Dev must use `CAPTUREW`, receive the native writer id, and open only `Local\\KVTM-CaptureV3-{pid}-{writer_id}` for that request.
+- `CAPTURE3_WRITERMSG1` is mandatory after live evidence where the current pipe writer returned success with `writer_id=0`. `CAPTUREW` must dispatch to the render thread through the registered message unique to that PID + writer id; do not regress it to the shared `WM_APP` capture message.
 - Do not regress Multi Dev to the legacy PID-only `CAPTURE` mapping. Legacy `CAPTURE` remains native compatibility only for other packaged consumers.
 - Do not accept an older/newer frame from another request merely because it is complete. Multi Dev WRITERMAP2 binds one `CAPTUREW` to one writer and one exact expected frame.
 - Do not reintroduce HWND capture fallback into AUTO MULTI DEV main flow without explicit evidence and approval.
+
+## 6. AUTO Builder ordering contract
+
+- `TỰ TẠO AUTO` is a DEV-only visual Scheduler layered onto the existing Multi DEV UI. Keep its controls/styles synchronized with the Multi DEV tab strip and existing ttk styles; do not invent a separate visual theme.
+- `Vào game + đóng popup`, `Bán VP theo Function`, and each `Function` are independent callable modules. A module must not secretly insert another business module before/after itself.
+- Builder execution order is exactly the operator-visible step order. Do not silently prepend `GameSessionWorkflow` in Builder mode.
+- VP sale policy belongs to Function metadata. The Scheduler supplies the Function id; the sale module sells only the VP explicitly allowed for that Function and keeps exact-x10/post-selection verification.
+- A Function block may have a loop count. `sale_after_each_loop=true` means the Scheduler calls the separate sale module after each completed Function loop; the Function implementation itself must not absorb or hide that sale operation.
+- If a Function ends at a camera state from which the sale module cannot prove the main screen, fail closed. Do not invent an unverified floor route just to make a configured loop continue.
+- Builder plans and user-selected recognition images are persistent user data and must survive normal Control Center `[1]` rebuilds.
+- Builder must reuse the isolated AUTO MULTI DEV worker, stop relay, busy/profile ownership rules, strict Bridge V3 transport, and no-HWND-fallback policy. It must not call Dọn quầy runtime.
 
 When these rules conflict with an older handoff note, follow the user's latest explicit instruction and update the coordination documentation accordingly.
