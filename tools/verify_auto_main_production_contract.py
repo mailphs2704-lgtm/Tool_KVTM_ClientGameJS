@@ -98,7 +98,11 @@ def main() -> int:
     # Pass 3: cotton -> verified floor 3 -> exactly nine yellow fabrics.
     require(cotton, 'COTTON_TEMPLATE = "cay_bong"', "Cotton template id changed")
     require(cotton, "if not self.vision.assets.has(self.COTTON_TEMPLATE):", "Cotton must fail-close before gesture when clean asset is missing")
-    require(cotton, "return self._plant_27(self.COTTON_TEMPLATE, \"Bông\")", "Cotton must reuse the proven 27-pot planting path")
+    require(cotton, 'baseline = self._open_seed_picker(self.COTTON_TEMPLATE, "Bông")', "Cotton must reuse the proven seed-picker and capture a pre-plant baseline")
+    require(cotton, "path = (seed.center,) + self.rose_path()[1:]", "Cotton must reuse the proven 27-pot planting geometry")
+    require(cotton, "changed = self._count_changed_pots(baseline, after)", "Cotton post-gesture pot verification missing")
+    require(cotton, "if changed != self.TREE_COUNT:", "Cotton must fail-close unless all 27 pot regions are verified")
+    require(cotton, "fail_close=true", "Cotton diagnostic must be blocking, not advisory")
     require(pass_three_nav, "def floor_2_to_main", "Pass-3 floor2-to-main route missing")
     require(pass_three_nav, "self._gesture(self.DOWN_ONE", "Pass-3 downward route must use verified fresh-frame gesture")
     require(pass_three_nav, "def floor_1_to_floor_3", "Pass-3 floor1-to-floor3 route missing")
@@ -148,6 +152,7 @@ def main() -> int:
     print("flow=pass1_dried_apple pass2_apple_juice pass3_cotton_yellow_fabric")
     print("pass3=cotton_27 then yellow_fabric_9")
     print("cotton_asset=runtime_fail_close_if_missing")
+    print("cotton_postcheck=27_of_27_required")
     print("legacy_auto_pro=reference_only")
     print("stable_sale_and_clear_stall=untouched")
     return 0
