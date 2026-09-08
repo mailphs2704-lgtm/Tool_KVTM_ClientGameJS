@@ -15,7 +15,8 @@ FILE_FUNCTIONS = (
     "Bán đúng VP thuộc Function ngay sau bước vào game/đóng popup",
     "Chạy Function hoàn chỉnh liên tục cho tới khi operator bấm Dừng",
     "Sau lần bán đầu, chỉ bán lại khi đã hoàn thành đủ số vòng cấu hình",
-    "Giữ stop-check trước từng vòng Function và từng lượt bán",
+    "Cho phép chờ riêng giữa hai vòng Function; không áp vào thao tác khác",
+    "Giữ stop-check trước từng vòng Function, từng lượt bán và trong thời gian chờ",
     "Fail-close nếu Function chưa có runner runtime hoàn chỉnh",
 )
 
@@ -44,8 +45,9 @@ class AutoMainWorkflow:
 
         enter game + close popup -> sale #1 -> Function loops -> periodic sales
 
-    ``sale_every_loops`` controls only sales #2..N. For example, value=3 means
-    sale #2 after Function loops 1-3, sale #3 after loops 4-6, and so on.
+    ``sale_every_loops`` controls only sales #2..N. ``function_loop_delay_seconds``
+    is applied only between completed Function loops; it never delays the first
+    loop and is skipped after the final loop of a bounded run.
     """
 
     def __init__(
@@ -54,6 +56,7 @@ class AutoMainWorkflow:
         *,
         function_id: str = "function_1",
         sale_every_loops: int = 1,
+        function_loop_delay_seconds: float = 0.0,
         max_function_loops: int | None = None,
     ) -> None:
         self.auto = automation
@@ -62,6 +65,9 @@ class AutoMainWorkflow:
         self.sale_every_loops = int(sale_every_loops)
         if not 1 <= self.sale_every_loops <= 999:
             raise ValueError("sale_every_loops phải trong khoảng 1..999")
+        self.function_loop_delay_seconds = float(function_loop_delay_seconds)
+        if not 0.0 <= self.function_loop_delay_seconds <= 3600.0:
+            raise ValueError("function_loop_delay_seconds phải trong khoảng 0..3600")
         self.max_function_loops = (
             None if max_function_loops is None else int(max_function_loops)
         )
@@ -86,9 +92,6 @@ class AutoMainWorkflow:
                     "Function 1 trả kết quả không đạt hợp đồng PASS 3/3"
                 )
             return
-        # A catalog entry is not enough to make a Function runnable. Every new
-        # Function must add its explicit completion contract here before the GUI
-        # is allowed to expose it.
         raise RuntimeError(
             f"Function chưa có completion gate AUTO Main: {self.spec.function_id}"
         )
@@ -115,16 +118,30 @@ class AutoMainWorkflow:
             f"thu_vàng={sale.collected_gold_slots}"
         )
 
+    def _wait_before_next_function_loop(self) -> None:
+        delay = self.function_loop_delay_seconds
+        if delay <= 0.0:
+            return
+        self.context.ensure_running()
+        self.context.stage(
+            f"auto-main-{self.spec.function_id}-between-loop-wait"
+        )
+        self.context.log(
+            f"AUTO MULTI DEV • {self.spec.label} • chờ {delay:.3f}s "
+            "trước vòng Function tiếp theo"
+        )
+        self.auto.wait.sleep(delay)
+
     def run(self) -> AutoMainResult:
         started = time.monotonic()
         self.context.stage("auto-main-pipeline-start")
         self.context.log(
             "AUTO MULTI DEV • Function đã chọn: "
             f"{self.spec.label} • bán lần 1 ngay sau vào game/đóng popup • "
-            f"các lần sau mỗi {self.sale_every_loops} vòng"
+            f"các lần sau mỗi {self.sale_every_loops} vòng • "
+            f"chờ giữa vòng Function={self.function_loop_delay_seconds:.3f}s"
         )
 
-        # Mandatory sale #1 after the worker's GameSessionWorkflow.
         self._sale_once(ordinal=1)
         loops_since_sale = 0
 
@@ -170,3 +187,5 @@ class AutoMainWorkflow:
                     collected_gold_slots=self.collected_gold_slots,
                     elapsed_seconds=round(time.monotonic() - started, 3),
                 )
+
+            self._wait_before_next_function_loop()
