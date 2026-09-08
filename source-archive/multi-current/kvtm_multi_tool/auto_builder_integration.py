@@ -12,30 +12,40 @@ FILE_FUNCTIONS = (
     "Đưa plan Builder vào đúng worker run bằng marker riêng trong work-dir",
     "Khởi chạy Builder qua lifecycle/ownership hiện có của AUTO MULTI DEV",
     "Ẩn tab Thiết kế cũ khỏi hàng chức năng của Multi DEV",
+    "Thay khối mô tả AUTO MULTI DEV bằng menu chọn Function + số vòng giữa hai lần bán",
     "Đưa Log hành động + Log chi tiết xuống hàng riêng dưới nút AUTO MULTI DEV",
+    "Ghi cấu hình Function AUTO Main theo từng run mà không thay Bridge/capture ownership",
     "Hiển thị kết quả Builder mà không thay đổi handler AUTO chính",
+)
+
+# Only fully wired runtime Functions are exposed here. Function 2 will be added
+# when its production workflow is complete; this prevents an operator from
+# selecting a partially implemented Function.
+_AUTO_MAIN_FUNCTION_OPTIONS = (
+    ("function_1", "9 Táo sấy - 9 Vải vàng"),
 )
 
 
 def install_auto_builder_integration(app_class, core) -> None:
-    """Add Builder to MultiDevApp through narrow wrappers around DEV-only hooks.
-
-    This deliberately avoids duplicating ClientJS lifecycle/CAPTURE3 ownership.
-    The normal DEV launcher still creates the worker, logs, stop relay and busy
-    gates. Builder only drops an explicit plan marker into that unique run's work
-    directory before the worker starts.
-    """
+    """Add Builder and the verified AUTO Main controls to Multi DEV."""
     if getattr(app_class, "_kvtm_auto_builder_installed", False):
         return
 
     original_build = app_class._build_auto_panel
+    original_start_clean_session = app_class._start_clean_auto_session
     original_run_thread = app_class._run_clean_main_thread
     original_finish = app_class._finish_clean_main
 
+    def _select_auto_multi_dev_function(self, function_id: str) -> None:
+        options = dict(_AUTO_MAIN_FUNCTION_OPTIONS)
+        if function_id not in options:
+            return
+        self._auto_multi_dev_selected_function_id = function_id
+        self.auto_multi_dev_function_label.set(options[function_id])
+
     def _apply_requested_dev_layout(self) -> None:
         # The real legacy Designer key in kvtm_multi.py is clear_stall_designer.
-        # Keep the widget registered for compatibility with _show_auto_tab, but
-        # remove it from the visible tab strip only.
+        # Keep its frame registered for compatibility, but remove its visible tab.
         tab_buttons = getattr(self, "auto_tab_buttons", {})
         designer_button = tab_buttons.get("clear_stall_designer")
         if designer_button is not None:
@@ -56,58 +66,186 @@ def install_auto_builder_integration(app_class, core) -> None:
         ):
             return
 
-        # All five original buttons are children of one clean_actions frame.
-        # Never pack_forget that frame: doing so hides Start/Speed/Stop too.
-        # Hide only the two old log buttons, then recreate the same commands in a
-        # dedicated row directly below clean_actions. Tk widgets cannot be safely
-        # reparented after construction.
         clean_actions = start_button.master
-        if action_log.master is not clean_actions or detail_log.master is not clean_actions:
-            return
-        try:
-            action_log.pack_forget()
-            detail_log.pack_forget()
 
-            log_row = core.ttk.Frame(multi_dev_tab, style="Detail.TFrame")
-            log_row.pack(fill="x", padx=8, pady=(6, 0), after=clean_actions)
-
-            self.auto_multi_dev_action_log_button = core.ttk.Button(
-                log_row,
-                text="≡ Log hành động",
-                width=18,
-                style="Action.TButton",
-                command=lambda: self._open_clean_main_log("action"),
-            )
-            self.auto_multi_dev_action_log_button.pack(side="left", padx=(0, 8))
-
-            self.auto_multi_dev_detail_log_button = core.ttk.Button(
-                log_row,
-                text="⌕ Log chi tiết",
-                width=18,
-                style="Action.TButton",
-                command=lambda: self._open_clean_main_log("detail"),
-            )
-            self.auto_multi_dev_detail_log_button.pack(side="left")
-
-            refresh_tabs = getattr(self, "_refresh_auto_tab_scroll", None)
-            if callable(refresh_tabs):
-                self.after_idle(refresh_tabs)
-        except Exception:
-            # Fail visibly safe: restore the original log buttons if creating the
-            # second row fails. Start/Speed/Stop were never removed.
+        # Remove the old AUTO MULTI DEV header/separator/three-column description.
+        # We locate them structurally: every packed sibling before clean_actions is
+        # presentation-only in the original panel. The action row itself is kept.
+        for child in list(multi_dev_tab.winfo_children()):
+            if child is clean_actions:
+                break
             try:
-                action_log.pack(side="left", padx=(0, 8))
-                detail_log.pack(side="left")
-                self.auto_multi_dev_action_log_button = action_log
-                self.auto_multi_dev_detail_log_button = detail_log
+                child.destroy()
             except Exception:
                 pass
+
+        controls = core.ttk.Frame(multi_dev_tab, style="Detail.TFrame")
+        controls.pack(fill="x", padx=8, pady=(4, 2), before=clean_actions)
+        controls.columnconfigure(0, weight=3)
+        controls.columnconfigure(1, weight=2)
+        controls.columnconfigure(2, weight=4)
+
+        function_box = core.ttk.Frame(controls, style="Detail.TFrame")
+        function_box.grid(row=0, column=0, sticky="ew", padx=(0, 18))
+        core.ttk.Label(
+            function_box, text="CHỨC NĂNG", style="AutoKey.TLabel"
+        ).pack(anchor="w")
+
+        default_id, default_label = _AUTO_MAIN_FUNCTION_OPTIONS[0]
+        self._auto_multi_dev_selected_function_id = default_id
+        self.auto_multi_dev_function_label = core.tk.StringVar(value=default_label)
+        self.auto_multi_dev_function_button = core.tk.Menubutton(
+            function_box,
+            textvariable=self.auto_multi_dev_function_label,
+            background="#ffffff",
+            foreground="#263653",
+            activebackground="#e8f1ff",
+            activeforeground="#1768c4",
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=1,
+            highlightbackground="#c7d3e3",
+            highlightcolor="#2f80ed",
+            font=("Segoe UI Semibold", 10),
+            anchor="w",
+            cursor="hand2",
+            padx=11,
+            pady=7,
+            indicatoron=True,
+        )
+        function_menu = core.tk.Menu(
+            self.auto_multi_dev_function_button,
+            tearoff=False,
+            background="#ffffff",
+            foreground="#263653",
+            activebackground="#2f80ed",
+            activeforeground="#ffffff",
+            relief="flat",
+            borderwidth=1,
+            font=("Segoe UI", 10),
+        )
+        for function_id, label in _AUTO_MAIN_FUNCTION_OPTIONS:
+            function_menu.add_command(
+                label=label,
+                command=lambda selected=function_id: self._select_auto_multi_dev_function(selected),
+            )
+        self.auto_multi_dev_function_button.configure(menu=function_menu)
+        self.auto_multi_dev_function_button.pack(fill="x", pady=(4, 0))
+
+        sale_box = core.ttk.Frame(controls, style="Detail.TFrame")
+        sale_box.grid(row=0, column=1, sticky="ew", padx=(0, 18))
+        core.ttk.Label(
+            sale_box, text="SỐ VÒNG GIỮA 2 LẦN BÁN", style="AutoKey.TLabel"
+        ).pack(anchor="w")
+        self.auto_multi_dev_sale_every_loops = core.tk.IntVar(value=1)
+        self.auto_multi_dev_sale_every_spin = core.ttk.Spinbox(
+            sale_box,
+            from_=1,
+            to=999,
+            width=10,
+            textvariable=self.auto_multi_dev_sale_every_loops,
+        )
+        self.auto_multi_dev_sale_every_spin.pack(anchor="w", pady=(6, 0))
+
+        note_box = core.ttk.Frame(controls, style="Detail.TFrame")
+        note_box.grid(row=0, column=2, sticky="ew")
+        core.ttk.Label(
+            note_box,
+            text=(
+                "Bắt buộc: vào game + đóng popup → bán VP lần 1 → chạy Function. "
+                "Từ lần bán 2 trở đi, đủ số vòng đã nhập mới bán tiếp."
+            ),
+            style="AutoValue.TLabel",
+            anchor="w",
+            justify="left",
+            wraplength=390,
+        ).pack(fill="x", pady=(17, 0))
+
+        start_button.configure(command=self._start_configured_auto_main)
+
+        # All five original buttons are children of clean_actions. Keep
+        # Start/Speed/Stop there; move only the two log controls to a second row.
+        if action_log.master is clean_actions and detail_log.master is clean_actions:
+            try:
+                action_log.pack_forget()
+                detail_log.pack_forget()
+                log_row = core.ttk.Frame(multi_dev_tab, style="Detail.TFrame")
+                log_row.pack(fill="x", padx=8, pady=(6, 0), after=clean_actions)
+                self.auto_multi_dev_action_log_button = core.ttk.Button(
+                    log_row,
+                    text="≡ Log hành động",
+                    width=18,
+                    style="Action.TButton",
+                    command=lambda: self._open_clean_main_log("action"),
+                )
+                self.auto_multi_dev_action_log_button.pack(side="left", padx=(0, 8))
+                self.auto_multi_dev_detail_log_button = core.ttk.Button(
+                    log_row,
+                    text="⌕ Log chi tiết",
+                    width=18,
+                    style="Action.TButton",
+                    command=lambda: self._open_clean_main_log("detail"),
+                )
+                self.auto_multi_dev_detail_log_button.pack(side="left")
+            except Exception:
+                try:
+                    action_log.pack(side="left", padx=(0, 8))
+                    detail_log.pack(side="left")
+                    self.auto_multi_dev_action_log_button = action_log
+                    self.auto_multi_dev_detail_log_button = detail_log
+                except Exception:
+                    pass
+
+        refresh_tabs = getattr(self, "_refresh_auto_tab_scroll", None)
+        if callable(refresh_tabs):
+            self.after_idle(refresh_tabs)
 
     def build_auto_panel(self) -> None:
         original_build(self)
         self._auto_builder_pending_plans: dict[str, dict] = {}
+        self._auto_main_pending_config: dict[str, dict] = {}
         _apply_requested_dev_layout(self)
         install_auto_builder_tab(self, core)
+
+    def start_configured_auto_main(self) -> None:
+        selected = list(map(str, self.selected_ids()))
+        if not selected:
+            core.messagebox.showinfo(
+                core.APP_NAME, "Hãy chọn ít nhất một tài khoản để chạy AUTO MULTI DEV."
+            )
+            return
+
+        function_id = str(
+            getattr(self, "_auto_multi_dev_selected_function_id", "function_1")
+        )
+        valid_ids = {item[0] for item in _AUTO_MAIN_FUNCTION_OPTIONS}
+        if function_id not in valid_ids:
+            core.messagebox.showerror(core.APP_NAME, "Chức năng AUTO MULTI DEV chưa hợp lệ.")
+            return
+        try:
+            sale_every = int(self.auto_multi_dev_sale_every_loops.get())
+        except (TypeError, ValueError, core.tk.TclError):
+            sale_every = 0
+        if not 1 <= sale_every <= 999:
+            core.messagebox.showerror(
+                core.APP_NAME, "Số vòng giữa 2 lần bán phải trong khoảng 1..999."
+            )
+            return
+        self.auto_multi_dev_sale_every_loops.set(sale_every)
+
+        config = {
+            "version": 1,
+            "function_id": function_id,
+            "sale_every_loops": sale_every,
+        }
+        for profile_id in selected:
+            self._auto_main_pending_config[profile_id] = dict(config)
+
+        label = dict(_AUTO_MAIN_FUNCTION_OPTIONS)[function_id]
+        self.note.set(
+            f"AUTO MULTI DEV • {label} • bán lại sau mỗi {sale_every} vòng"
+        )
+        original_start_clean_session(self)
 
     def run_clean_main_thread(self, *args, **kwargs) -> None:
         profile_id = str(args[0] if args else kwargs.get("profile_id") or "")
@@ -120,6 +258,15 @@ def install_auto_builder_integration(app_class, core) -> None:
                 json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
+        else:
+            config = self._auto_main_pending_config.pop(profile_id, None)
+            if config is not None:
+                work_dir.mkdir(parents=True, exist_ok=True)
+                marker = work_dir / "auto-main-config.json"
+                marker.write_text(
+                    json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
         return original_run_thread(self, *args, **kwargs)
 
     def finish_clean_main(self, profile_id: str, outcome: str, payload: dict) -> None:
@@ -149,8 +296,6 @@ def install_auto_builder_integration(app_class, core) -> None:
                 core.APP_NAME, "Hãy chọn ít nhất một tài khoản để chạy AUTO Builder."
             )
             return
-        # JSON roundtrip freezes one serializable snapshot per launch. The editor
-        # may continue changing afterwards without mutating a running worker plan.
         try:
             frozen = json.loads(json.dumps(plan, ensure_ascii=False))
         except (TypeError, ValueError) as exc:
@@ -191,4 +336,6 @@ def install_auto_builder_integration(app_class, core) -> None:
     app_class._run_clean_main_thread = run_clean_main_thread
     app_class._finish_clean_main = finish_clean_main
     app_class._start_auto_builder_plan = start_auto_builder_plan
+    app_class._select_auto_multi_dev_function = _select_auto_multi_dev_function
+    app_class._start_configured_auto_main = start_configured_auto_main
     app_class._kvtm_auto_builder_installed = True
