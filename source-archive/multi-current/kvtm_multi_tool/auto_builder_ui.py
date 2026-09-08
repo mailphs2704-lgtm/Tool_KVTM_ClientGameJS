@@ -9,7 +9,7 @@ FILE_FUNCTIONS = (
     "Gắn tab TỰ TẠO AUTO vào thanh tab Multi DEV",
     "Hiển thị editor theo đúng style hiện tại của Multi DEV",
     "Thêm/sửa/xóa/đổi thứ tự block",
-    "Lưu/nạp plan trong data-dev",
+    "Lưu/nạp plan ở AppData bền qua build DEV",
     "Gửi plan đã lưu sang isolated AUTO MULTI DEV worker",
 )
 
@@ -34,37 +34,26 @@ class AutoBuilderUI:
         frame.place_forget()
         app.auto_feature_tabs["auto_builder"] = frame
 
-        # Match the existing flat Multi DEV tab strip exactly. Do not create a
-        # second visual language for Builder.
         button = core.tk.Button(
-            app.auto_tabs_window,
-            text="TỰ TẠO AUTO",
-            relief="flat",
-            borderwidth=0,
-            highlightthickness=0,
-            background="#e8eef7",
-            foreground="#263653",
-            activebackground="#dce8f8",
-            activeforeground="#1768c4",
-            font=("Segoe UI Semibold", 9),
-            cursor="hand2",
-            padx=6,
-            pady=7,
+            app.auto_tabs_window, text="TỰ TẠO AUTO", relief="flat",
+            borderwidth=0, highlightthickness=0,
+            background="#e8eef7", foreground="#263653",
+            activebackground="#dce8f8", activeforeground="#1768c4",
+            font=("Segoe UI Semibold", 9), cursor="hand2", padx=6, pady=7,
             command=lambda: app._show_auto_tab("auto_builder"),
         )
-        anchor = app.auto_tab_buttons.get("multi_dev")
-        button.pack(side="left", fill="y", padx=(3, 0), after=anchor)
+        button.pack(
+            side="left", fill="y", padx=(3, 0),
+            after=app.auto_tab_buttons.get("multi_dev"),
+        )
         app.auto_tab_buttons["auto_builder"] = button
 
         header = core.ttk.Frame(frame, style="Detail.TFrame")
         header.pack(fill="x", padx=8, pady=(4, 0))
-        core.ttk.Label(
-            header, text="TỰ TẠO AUTO", style="AutoKey.TLabel"
-        ).pack(side="left")
+        core.ttk.Label(header, text="TỰ TẠO AUTO", style="AutoKey.TLabel").pack(side="left")
         self.status_var = core.tk.StringVar()
         core.ttk.Label(
-            header, textvariable=self.status_var,
-            style="AutoValue.TLabel", anchor="e",
+            header, textvariable=self.status_var, style="AutoValue.TLabel", anchor="e",
         ).pack(side="right", fill="x", expand=True, padx=(18, 0))
         core.ttk.Separator(frame, orient="horizontal").pack(
             fill="x", padx=8, pady=(7, 9)
@@ -120,14 +109,17 @@ class AutoBuilderUI:
         win.geometry("980x620")
         win.minsize(820, 520)
         win.configure(background="#f3f6fa")
-        win.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "window", None), win.destroy()))
 
+        def close_window() -> None:
+            self.window = None
+            self.tree = None
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", close_window)
         top = core.ttk.Frame(win, padding=(12, 10), style="App.TFrame")
         top.pack(fill="x")
         core.ttk.Label(top, text="Tên quy trình:", style="Key.TLabel").pack(side="left")
-        self.name_var = core.tk.StringVar(
-            value=str(self.plan.get("name") or "AUTO tự tạo 1")
-        )
+        self.name_var = core.tk.StringVar(value=str(self.plan.get("name") or "AUTO tự tạo 1"))
         core.ttk.Entry(top, textvariable=self.name_var, width=42).pack(
             side="left", padx=(8, 12)
         )
@@ -139,16 +131,12 @@ class AutoBuilderUI:
         content = core.ttk.Frame(win, padding=(12, 4), style="App.TFrame")
         content.pack(fill="both", expand=True)
         tree = core.ttk.Treeview(
-            content,
-            columns=("index", "kind", "detail"),
-            show="headings",
-            style="Queue.Treeview",
-            selectmode="browse",
+            content, columns=("index", "kind", "detail"), show="headings",
+            style="Queue.Treeview", selectmode="browse",
         )
         self.tree = tree
-        tree.heading("index", text="#")
-        tree.heading("kind", text="LOẠI")
-        tree.heading("detail", text="CẤU HÌNH / THỨ TỰ")
+        for key, label in (("index", "#"), ("kind", "LOẠI"), ("detail", "CẤU HÌNH / THỨ TỰ")):
+            tree.heading(key, text=label)
         tree.column("index", width=48, anchor="center", stretch=False)
         tree.column("kind", width=120, anchor="w", stretch=False)
         tree.column("detail", width=620, anchor="w")
@@ -160,9 +148,7 @@ class AutoBuilderUI:
 
         tools = core.ttk.Frame(content, padding=(10, 0), style="App.TFrame")
         tools.pack(side="right", fill="y")
-        add_button = core.ttk.Button(
-            tools, text="＋ Thêm bước", width=20, style="Action.TButton"
-        )
+        add_button = core.ttk.Button(tools, text="＋ Thêm bước", width=20, style="Action.TButton")
         add_button.pack(fill="x", pady=(0, 8))
         menu = core.tk.Menu(win, tearoff=False)
         for label, step_type in (
@@ -170,39 +156,27 @@ class AutoBuilderUI:
             ("MODULE • Bán VP theo Function", "sell_function_vp"),
             ("FUNCTION • Function 1", "function"),
             ("NHẬN DIỆN • Chọn ảnh", "recognize_image"),
-            ("CLICK", "click"),
-            ("SWIPE", "swipe"),
-            ("WAIT", "wait"),
-            ("KẾT THÚC PASS", "finish_pass"),
-            ("KẾT THÚC FAIL", "finish_fail"),
+            ("CLICK", "click"), ("SWIPE", "swipe"), ("WAIT", "wait"),
+            ("KẾT THÚC PASS", "finish_pass"), ("KẾT THÚC FAIL", "finish_fail"),
         ):
-            menu.add_command(
-                label=label, command=lambda kind=step_type: self.add_step(kind)
-            )
+            menu.add_command(label=label, command=lambda kind=step_type: self.add_step(kind))
 
         def show_add_menu() -> None:
             try:
-                menu.tk_popup(
-                    add_button.winfo_rootx(),
-                    add_button.winfo_rooty() + add_button.winfo_height(),
-                )
+                menu.tk_popup(add_button.winfo_rootx(), add_button.winfo_rooty() + add_button.winfo_height())
             finally:
                 menu.grab_release()
 
         add_button.configure(command=show_add_menu)
         for text, action in (
-            ("✎ Sửa bước", "edit"),
-            ("↑ Đưa lên", "up"),
-            ("↓ Đưa xuống", "down"),
-            ("✕ Xóa", "delete"),
+            ("✎ Sửa bước", "edit"), ("↑ Đưa lên", "up"),
+            ("↓ Đưa xuống", "down"), ("✕ Xóa", "delete"),
         ):
             core.ttk.Button(
                 tools, text=text, width=20, style="Action.TButton",
                 command=lambda op=action: self.modify_step(op),
             ).pack(fill="x", pady=(0, 8))
-        core.ttk.Separator(tools, orient="horizontal").pack(
-            fill="x", pady=(4, 10)
-        )
+        core.ttk.Separator(tools, orient="horizontal").pack(fill="x", pady=(4, 10))
         core.ttk.Button(
             tools, text="💾 Lưu quy trình", width=20,
             style="AutoStart.TButton", command=self.save_plan,
@@ -233,9 +207,7 @@ class AutoBuilderUI:
 
     def add_step(self, step_type: str) -> None:
         step = configure_step(
-            self.core,
-            self.store,
-            self.window,
+            self.core, self.store, self.window,
             {"id": model.new_step_id(), "type": step_type},
         )
         if step is None:
@@ -252,22 +224,15 @@ class AutoBuilderUI:
             return
         selected = self.tree.selection()
         if not selected:
-            self.core.messagebox.showinfo(
-                self.core.APP_NAME, "Hãy chọn một bước trong quy trình."
-            )
+            self.core.messagebox.showinfo(self.core.APP_NAME, "Hãy chọn một bước trong quy trình.")
             return
         step_id = selected[0]
         steps = self.plan.setdefault("steps", [])
-        index = next(
-            (i for i, step in enumerate(steps) if str(step.get("id")) == step_id),
-            -1,
-        )
+        index = next((i for i, step in enumerate(steps) if str(step.get("id")) == step_id), -1)
         if index < 0:
             return
         if action == "edit":
-            updated = configure_step(
-                self.core, self.store, self.window, dict(steps[index])
-            )
+            updated = configure_step(self.core, self.store, self.window, dict(steps[index]))
             if updated is None:
                 return
             steps[index] = updated
@@ -276,9 +241,7 @@ class AutoBuilderUI:
         elif action == "down" and index + 1 < len(steps):
             steps[index + 1], steps[index] = steps[index], steps[index + 1]
         elif action == "delete":
-            if not self.core.messagebox.askyesno(
-                self.core.APP_NAME, "Xóa bước đang chọn?", parent=self.window
-            ):
+            if not self.core.messagebox.askyesno(self.core.APP_NAME, "Xóa bước đang chọn?", parent=self.window):
                 return
             steps.pop(index)
         self.store.save(self.plan)
@@ -291,9 +254,7 @@ class AutoBuilderUI:
         if self.name_var is not None:
             self.plan["name"] = self.name_var.get().strip() or "AUTO tự tạo 1"
         if not self.plan.get("steps"):
-            self.core.messagebox.showerror(
-                self.core.APP_NAME, "Quy trình phải có ít nhất một bước."
-            )
+            self.core.messagebox.showerror(self.core.APP_NAME, "Quy trình phải có ít nhất một bước.")
             return False
         self.store.save(self.plan)
         self._refresh_status()
@@ -309,8 +270,6 @@ class AutoBuilderUI:
     def run_plan(self) -> None:
         if not self.save_plan():
             return
-        # JSON roundtrip/copy happens in the app before starting each worker, so
-        # editor mutations after pressing Run cannot alter an active plan.
         self.app._start_auto_builder_plan(dict(self.plan))
 
     def _refresh_status(self) -> None:
@@ -318,9 +277,7 @@ class AutoBuilderUI:
             return
         name = str(self.plan.get("name") or "AUTO tự tạo 1")
         count = len(self.plan.get("steps") or [])
-        self.status_var.set(
-            f"{name} • {count} bước • lưu trong data-dev/auto-builder"
-        )
+        self.status_var.set(f"{name} • {count} bước • lưu bền qua build DEV")
 
 
 def install_auto_builder_tab(app, core) -> AutoBuilderUI:
