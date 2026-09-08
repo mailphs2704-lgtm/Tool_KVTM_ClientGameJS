@@ -13,7 +13,7 @@ FILE_FUNCTIONS = (
     "Tìm một ô trống trong view quầy hiện tại",
     "Bấm chính xác nút kho thành phẩm có biểu tượng giỏ hàng",
     "Chờ và quét lại nhiều frame trước khi kết luận hết VP",
-    "Chỉ chọn VP thuộc chức năng 1: Táo sấy và Vải vàng",
+    "Chỉ chọn VP được Function hiện tại cho phép",
     "Bắt buộc xác nhận số lượng x10 trước khi đặt bán",
     "Bỏ qua loại còn dưới x10 và chuyển sang loại kế tiếp",
     "Hủy dialog có xác minh rồi tiếp tục trong cùng kho đang mở",
@@ -31,7 +31,12 @@ class AutoSaleAttempt:
 
 
 class AutoMainSellingActions:
-    """Balanced exact-x10 AUTO sale, isolated from clear-stall accounting."""
+    """Balanced exact-x10 AUTO sale, isolated from clear-stall accounting.
+
+    ``ITEM_ORDER`` remains the proven Function-1 default. AUTO Builder may pass
+    an explicit order from the Function catalog, but it cannot introduce an item
+    that this action does not know how to post-verify in the sale dialog.
+    """
 
     ITEM_ORDER = ("tao_say", "vai_vang")
     SELECTED_ITEM_TEMPLATES = {
@@ -44,10 +49,26 @@ class AutoMainSellingActions:
         self,
         selling: SellingActions,
         recognition: AutoVpRecognitionActions,
+        *,
+        item_order: tuple[str, ...] | None = None,
     ) -> None:
         self.selling = selling
         self.recognition = recognition
         self.context = selling.context
+        requested = tuple(item_order or type(self).ITEM_ORDER)
+        if not requested:
+            raise ValueError("AUTO bán VP cần ít nhất một VP được Function cho phép")
+        unsupported = [
+            item_id for item_id in requested
+            if item_id not in self.SELECTED_ITEM_TEMPLATES
+        ]
+        if unsupported:
+            raise ValueError(
+                "AUTO bán VP chưa có hậu kiểm an toàn cho: " + ", ".join(unsupported)
+            )
+        # Instance-level order lets the Builder bind sale policy to one Function
+        # without changing the stable Function-1 class default above.
+        self.ITEM_ORDER = requested
         self._next_item_index = 0
         self._insufficient_item_ids: set[str] = set()
         self._unsafe_item_ids: set[str] = set()
@@ -225,7 +246,7 @@ class AutoMainSellingActions:
         )
 
     def sell_next_allowed(self, *, storage_id: int = 2) -> AutoSaleAttempt:
-        """Check both Function-1 types in one open inventory before reporting stop."""
+        """Check every Function-allowed type in one inventory operation."""
         self.context.ensure_running()
         if int(storage_id) != 2:
             raise ValueError("AUTO Main chỉ bán VP từ kho thành phẩm số 2")
@@ -253,7 +274,7 @@ class AutoMainSellingActions:
                 return AutoSaleAttempt(status="NO_SAFE_EXACT_TEN_ITEMS")
 
             self.context.log(
-                f"AUTO bán VP • kiểm tra {checked_count}/3 • "
+                f"AUTO bán VP • kiểm tra {checked_count}/{len(self.ITEM_ORDER)} • "
                 f"chọn {selected.label} • score={selected.score:.3f}"
             )
             placement = self._place_exact_ten(selected)
