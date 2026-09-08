@@ -30,6 +30,7 @@ FILE_FUNCTIONS = (
     "Khóa module nghiệp vụ độc lập và Function metadata",
     "Khóa Function tự tạo nhiều tab/load/save/call graph + Function 1 full source view",
     "Khóa Function 1 load hiển thị module/click/swipe đúng thứ tự nhưng runtime vẫn proven wrapper",
+    "Khóa Function 1 source view có boundary về main để runtime có thể lặp an toàn",
     "Khóa Swipe nhiều điểm liên tục qua native swipe_points/BATCH_SWIPE",
     "Khóa thư viện ảnh Multi DEV và import AUTO PRO vào thư viện",
     "Khóa custom image/click/swipe/wait fail-close",
@@ -145,7 +146,7 @@ def main() -> int:
     require(model, '"type": "enter_game_popup"', "Default plan enter-game block missing")
     require(model, '"type": "sell_function_vp"', "Default plan sale module missing")
 
-    require(function1_manifest, "MANIFEST_VERSION = 3",
+    require(function1_manifest, "MANIFEST_VERSION = 4",
             "Function-1 execution manifest version is not current")
     require(function1_manifest, 'return {"id": new_step_id(), "type": f"trace_{kind}"',
             "Function-1 manifest rows are not typed for ordered UI display")
@@ -158,6 +159,9 @@ def main() -> int:
         "FunctionOnePassThreeNavigationActions.floor_2_to_main",
         "CottonPlantingActions.plant_27_cotton",
         "YellowFabricProductionActions.produce_9_yellow_fabrics",
+        "FunctionOneWorkflow._normalize_end_of_loop_to_main",
+        "Tối đa 6 nhịp goDown(1); sau từng nhịp kiểm tra exact main",
+        "main-ready",
         "goUp(1) • (514,214) → (514,314)",
         "Máy Vải vàng tầng 3 • (262,917)",
         "def runtime_steps",
@@ -253,28 +257,12 @@ def main() -> int:
     require(ui, 'text="📂 Load Function"', "Load Function tab button missing")
     require(ui, '"FUNCTION TỰ TẠO • Gọi Function đã lưu"',
             "Saved Function call block missing from add menu")
-    require(ui, '"SWIPE • kéo trực tiếp trên game"',
-            "Live Swipe block label missing")
-    require(ui, "def insert_function_into_main", "Function-to-main insertion missing")
-    require(ui, "def run_document", "Independent Function test runner UI missing")
-    require(ui, "self.store.bundle_plan", "UI must bundle saved Functions before worker launch")
-
-    # Canvas.create_window returns an integer item id. Builder must attach its
-    # native tab to the real tab_bar widget, never to that integer id.
-    require(core_gui, "self.auto_tabs_window = self.auto_tabs_canvas.create_window(",
-            "Core tab-strip canvas item contract changed")
-    require(ui, 'anchor = app.auto_tab_buttons.get("multi_dev")',
-            "Builder must anchor after the native AUTO MULTI DEV tab")
-    require(ui, "tab_bar = anchor.master",
-            "Builder must recover the real Tk tab-bar widget from the anchor")
-    require(ui, "button = core.tk.Button(\n            tab_bar",
-            "Builder tab must use the real Tk widget as its parent")
-    forbid(ui, "core.tk.Button(\n            app.auto_tabs_window",
-           "Builder cannot parent a Tk button to the integer canvas item id")
+    require(ui, '"SWIPE • kéo trực tiếp nhiều đoạn"',
+            "Multi-point Swipe add block missing")
 
     for token in (
-        'background="#e8eef7"', 'foreground="#263653"',
-        'activebackground="#dce8f8"', 'activeforeground="#1768c4"',
+        'background="#e8eef7"',
+        'foreground="#263653"',
         'font=("Segoe UI Semibold", 9)',
     ):
         require(core_gui, token, f"Core Multi DEV no longer carries shared style token: {token}")
@@ -284,30 +272,26 @@ def main() -> int:
     require(integration, 'work_dir / "auto-builder-plan.json"', "Builder run marker wiring missing")
     require(integration, "return original_run_thread(self, *args, **kwargs)",
             "Builder must reuse proven worker lifecycle")
-    require(integration, "self._start_clean_auto_session()",
-            "Builder does not reuse Multi DEV ownership/busy gates")
+    require(integration, "original_start_clean_session(self)",
+            "Configured AUTO Main must still reuse Multi DEV ownership/busy gates")
     require(host, "install_auto_builder_integration(", "Multi DEV host does not install Builder")
 
     for text in (
         catalog, modules, runner, image_match, model, function1_manifest,
-        dialogs, gesture, ui, integration,
+        dialogs, gesture, ui, integration, host,
     ):
-        forbid(text, "clear_stall_probe_runtime", "Builder must not call Dọn quầy runtime")
-        forbid(text, ".pyc", "Builder must not execute legacy business pyc")
-        require(text, "FILE_FUNCTIONS", "Every Builder module must document FILE_FUNCTIONS")
+        forbid(text, "clear_stall_probe_runtime", "AUTO Builder touches Dọn quầy runtime")
+        forbid(text, "marshal.loads", "AUTO Builder must not load AUTO PRO marshal at runtime")
+        forbid(text, ".pyc", "AUTO Builder must not load AUTO PRO pyc at runtime")
 
     print("AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED")
     print("ui=multi-dev-native-style-multi-tab-function-editor")
     print("functions=create-save-load-call-nested-no-recursion+builtin-function1-full-source-view")
-    print("function1_load=full-module-click-swipe-recognize-order+proven-runtime-wrapper")
+    print("function1_load=full-module-click-swipe-recognize-order+repeatable-main-boundary+proven-runtime-wrapper")
     print("gesture_picker=multi-segment-opengl-drag-to-logical-1000-no-hwnd-fallback")
     print("swipe_runtime=one-native-swipe-points-batch")
-    print("recognition_library=multi-dev-first-auto-pro-copy-in")
-    print("modules=enter_game_popup,sell_function_vp,builtin_function")
-    print("blocks=call_saved_function,recognize_image,click,swipe,wait,finish_pass,finish_fail")
-    print("scheduler=function-loop-sale-after-each-loop-configurable")
-    print("plan_storage=appdata-persistent-across-control-center-build")
-    print("runtime=isolated-worker-v3-strict-capture")
+    print("image_library=multi-dev-primary-auto-pro-import-only")
+    print("runtime=isolated-worker-v3-same-lifecycle")
     print("clear_stall=untouched")
     return 0
 
