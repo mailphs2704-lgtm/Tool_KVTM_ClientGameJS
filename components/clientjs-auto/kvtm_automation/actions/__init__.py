@@ -7,6 +7,7 @@ from .function_one_navigation import FunctionOneNavigationActions, NavigationEvi
 from .function_one_pass_three_navigation import FunctionOnePassThreeNavigationActions
 from .inventory import InventoryActions
 from .item_recognition import AutoVpRecognitionActions, AutoVpSpec, VpRecognition
+from .machine_repair import MachineRepairActions, MachineRepairHandoff
 from .navigation import NavigationActions
 from .popup import PopupActions
 from .planting import PlantingActions
@@ -29,6 +30,8 @@ __all__ = [
     "AutoVpRecognitionActions",
     "AutoVpSpec",
     "VpRecognition",
+    "MachineRepairActions",
+    "MachineRepairHandoff",
     "NavigationActions",
     "PopupActions",
     "PlantingActions",
