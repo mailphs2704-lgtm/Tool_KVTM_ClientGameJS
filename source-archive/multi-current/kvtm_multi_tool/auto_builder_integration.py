@@ -11,6 +11,7 @@ FILE_FUNCTIONS = (
     "Gắn Builder UI sau khi panel Multi DEV gốc được tạo",
     "Đưa plan Builder vào đúng worker run bằng marker riêng trong work-dir",
     "Khởi chạy Builder qua lifecycle/ownership hiện có của AUTO MULTI DEV",
+    "Thêm nút DEV test riêng Sửa máy bắt đầu ngay tại panel sản xuất VP đang mở",
     "Hiển thị kết quả Builder mà không thay đổi handler AUTO chính",
 )
 
@@ -34,6 +35,21 @@ def install_auto_builder_integration(app_class, core) -> None:
         original_build(self)
         self._auto_builder_pending_plans: dict[str, dict] = {}
         install_auto_builder_tab(self, core)
+
+        # DEV-only one-click test. The operator must already have the production
+        # VP panel open in ClientJS. No GameSession/production/Function prefix is
+        # injected; the generated Builder plan contains only machine_repair_test.
+        clean_actions = self.auto_multi_dev_stop_button.master
+        self.auto_multi_dev_machine_repair_test_button = core.ttk.Button(
+            clean_actions,
+            text="🛠 TEST Sửa máy",
+            width=17,
+            style="AutoStart.TButton",
+            command=self._start_machine_repair_test,
+        )
+        self.auto_multi_dev_machine_repair_test_button.pack(
+            side="left", padx=(0, 8), before=self.auto_multi_dev_stop_button
+        )
 
     def run_clean_main_thread(self, *args, **kwargs) -> None:
         profile_id = str(args[0] if args else kwargs.get("profile_id") or "")
@@ -113,8 +129,32 @@ def install_auto_builder_integration(app_class, core) -> None:
             if controller is not None and controller.status_var is not None:
                 controller.status_var.set(status)
 
+    def start_machine_repair_test(self) -> None:
+        """Run only repair UI actions; current ClientJS panel is the precondition."""
+        plan = {
+            "version": 1,
+            "kind": "plan",
+            "name": "TEST Sửa máy từ panel VP đang mở",
+            "saved_functions": {},
+            "steps": [
+                {
+                    "id": "machine-repair-test",
+                    "type": "machine_repair_test",
+                },
+                {
+                    "id": "machine-repair-pass",
+                    "type": "finish_pass",
+                },
+            ],
+        }
+        self.note.set(
+            "TEST Sửa máy: giữ ClientJS tại panel sản xuất VP đang mở rồi chạy nút test"
+        )
+        self._start_auto_builder_plan(plan)
+
     app_class._build_auto_panel = build_auto_panel
     app_class._run_clean_main_thread = run_clean_main_thread
     app_class._finish_clean_main = finish_clean_main
     app_class._start_auto_builder_plan = start_auto_builder_plan
+    app_class._start_machine_repair_test = start_machine_repair_test
     app_class._kvtm_auto_builder_installed = True
