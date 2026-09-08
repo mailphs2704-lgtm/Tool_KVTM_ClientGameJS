@@ -102,6 +102,39 @@ def _load_builder_plan(args) -> tuple[str, dict | None]:
     return effective_mode, plan
 
 
+def _load_auto_main_config(args, effective_mode: str) -> dict:
+    """Load one GUI-selected Function schedule for this isolated run."""
+    default = {
+        "version": 1,
+        "function_id": "function_1",
+        "sale_every_loops": 1,
+    }
+    if effective_mode != "main":
+        return default
+    marker = Path(args.work_dir).resolve() / "auto-main-config.json"
+    if not marker.is_file():
+        return default
+    try:
+        raw = json.loads(marker.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"AUTO Main config JSON lỗi: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError("AUTO Main config phải là object")
+    if int(raw.get("version", 1) or 1) != 1:
+        raise ValueError("AUTO Main config version chưa hỗ trợ")
+    function_id = str(raw.get("function_id") or "function_1").strip()
+    sale_every = int(raw.get("sale_every_loops", 1) or 1)
+    if not function_id:
+        raise ValueError("AUTO Main config thiếu function_id")
+    if not 1 <= sale_every <= 999:
+        raise ValueError("AUTO Main sale_every_loops phải trong 1..999")
+    return {
+        "version": 1,
+        "function_id": function_id,
+        "sale_every_loops": sale_every,
+    }
+
+
 def main() -> int:
     configure_utf8_stdio()
     args = _parser().parse_args()
@@ -110,6 +143,7 @@ def main() -> int:
         if not isinstance(speed_values, dict):
             raise ValueError("speed-json phải là object")
         effective_mode, builder_plan = _load_builder_plan(args)
+        auto_main_config = _load_auto_main_config(args, effective_mode)
     except (json.JSONDecodeError, ValueError) as exc:
         emit(
             "worker_error", workflow=WORKFLOW_NAME,
@@ -222,10 +256,10 @@ def main() -> int:
             )
             return 0
 
+        # Mandatory prefix for every normal AUTO MULTI DEV Function.
         GameSessionWorkflow(automation).run(timeout=args.timeout)
         log(
-            "PASS | vào game/đóng popup và chuẩn bị startup route; "
-            "exact-main gate chỉ chạy ở transition nghiệp vụ"
+            "PASS | vào game/đóng popup • chuẩn bị chạy Function đã chọn và bán VP theo Function"
         )
 
         if effective_mode == "floor-demo":
@@ -241,7 +275,18 @@ def main() -> int:
             return 0
 
         from kvtm_automation.workflows.auto_main import AutoMainWorkflow
-        result = AutoMainWorkflow(automation).run()
+
+        function_id = str(auto_main_config["function_id"])
+        sale_every = int(auto_main_config["sale_every_loops"])
+        log(
+            "AUTO MULTI DEV schedule • "
+            f"function_id={function_id} • bán lại sau mỗi {sale_every} vòng"
+        )
+        result = AutoMainWorkflow(
+            automation,
+            function_id=function_id,
+            sale_every_loops=sale_every,
+        ).run()
         result_payload = result.to_dict()
         result_payload.pop("profile_id", None)
         emit(
