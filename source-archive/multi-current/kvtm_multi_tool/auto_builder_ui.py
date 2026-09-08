@@ -34,8 +34,16 @@ class AutoBuilderUI:
         frame.place_forget()
         app.auto_feature_tabs["auto_builder"] = frame
 
+        # ``auto_tabs_window`` is the integer canvas-item id returned by
+        # Canvas.create_window(), not a Tk parent widget. Reuse the actual tab
+        # bar widget through the already-created AUTO MULTI DEV button so the
+        # Builder tab is a sibling of every native Multi DEV tab.
+        anchor = app.auto_tab_buttons.get("multi_dev")
+        if anchor is None or not hasattr(anchor, "master"):
+            raise RuntimeError("Không tìm thấy tab AUTO MULTI DEV để gắn TỰ TẠO AUTO")
+        tab_bar = anchor.master
         button = core.tk.Button(
-            app.auto_tabs_window, text="TỰ TẠO AUTO", relief="flat",
+            tab_bar, text="TỰ TẠO AUTO", relief="flat",
             borderwidth=0, highlightthickness=0,
             background="#e8eef7", foreground="#263653",
             activebackground="#dce8f8", activeforeground="#1768c4",
@@ -44,7 +52,7 @@ class AutoBuilderUI:
         )
         button.pack(
             side="left", fill="y", padx=(3, 0),
-            after=app.auto_tab_buttons.get("multi_dev"),
+            after=anchor,
         )
         app.auto_tab_buttons["auto_builder"] = button
 
