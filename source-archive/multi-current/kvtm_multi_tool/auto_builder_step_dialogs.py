@@ -1,16 +1,50 @@
 from __future__ import annotations
 
+from auto_builder_gesture_picker import pick_swipe_on_game
+
 
 __all__ = ["configure_step"]
 FILE_FUNCTIONS = (
-    "Cấu hình module Vào game/Bán VP/Function",
+    "Cấu hình module Vào game/Bán VP/Function có sẵn",
+    "Chọn Function tự tạo đã lưu và vòng lặp",
     "Chọn ảnh nhận diện và vùng tìm",
-    "Cấu hình Click/Swipe/Wait",
+    "Cấu hình Click/Swipe/Wait với Swipe kéo trực tiếp trên game",
     "Cấu hình block kết thúc PASS/FAIL",
 )
 
 
-def configure_step(core, store, parent, step: dict) -> dict | None:
+def _choose_saved_function(core, store, parent, initial_id: str = "") -> dict | None:
+    functions = store.list_functions()
+    if not functions:
+        core.messagebox.showinfo(
+            core.APP_NAME,
+            "Chưa có Function tự tạo nào. Hãy bấm ‘＋ Function mới’ trong Builder trước.",
+            parent=parent,
+        )
+        return None
+    lines = [
+        f"{index}. {item['name']}  [{item['function_id']}]"
+        for index, item in enumerate(functions, start=1)
+    ]
+    initial_index = 1
+    for index, item in enumerate(functions, start=1):
+        if item["function_id"] == initial_id:
+            initial_index = index
+            break
+    choice = core.simpledialog.askinteger(
+        "Chọn Function đã lưu",
+        "Chọn số Function:\n\n" + "\n".join(lines),
+        initialvalue=initial_index,
+        minvalue=1,
+        maxvalue=len(functions),
+        parent=parent,
+    )
+    if choice is None:
+        return None
+    return functions[int(choice) - 1]
+
+
+def configure_step(core, store, parent, step: dict, app=None) -> dict | None:
     """Edit one Builder block with native Multi DEV dialogs."""
     step_type = str(step.get("type") or "")
     try:
@@ -58,6 +92,33 @@ def configure_step(core, store, parent, step: dict) -> dict | None:
                 parent=parent,
             ))
             step["sale_timeout"] = 120.0
+        elif step_type == "call_saved_function":
+            chosen = _choose_saved_function(
+                core, store, parent, str(step.get("function_id") or "")
+            )
+            if chosen is None:
+                return None
+            loops = core.simpledialog.askinteger(
+                "Function tự tạo",
+                f"Số vòng chạy {chosen['name']}:",
+                initialvalue=int(step.get("loops", 1) or 1),
+                minvalue=1,
+                maxvalue=999,
+                parent=parent,
+            )
+            if loops is None:
+                return None
+            step["function_id"] = chosen["function_id"]
+            step["function_name"] = chosen["name"]
+            step["loops"] = int(loops)
+            sale_after = core.messagebox.askyesno(
+                "Function tự tạo",
+                "Sau MỖI vòng Function này, gọi module Bán VP theo Function 1?",
+                parent=parent,
+            )
+            step["sale_after_each_loop"] = bool(sale_after)
+            step["sale_function_id"] = "function_1"
+            step["sale_timeout"] = float(step.get("sale_timeout", 120.0))
         elif step_type == "recognize_image":
             chosen = core.filedialog.askopenfilename(
                 parent=parent,
@@ -119,19 +180,39 @@ def configure_step(core, store, parent, step: dict) -> dict | None:
                     return None
                 step[key] = int(value)
         elif step_type == "swipe":
-            defaults = {"x1": 500, "y1": 700, "x2": 500, "y2": 300}
-            for key in ("x1", "y1", "x2", "y2"):
-                value = core.simpledialog.askinteger(
-                    "Swipe",
-                    f"{key.upper()} (0..1000):",
-                    initialvalue=int(step.get(key, defaults[key])),
-                    minvalue=0,
-                    maxvalue=1000,
-                    parent=parent,
+            initial = tuple(
+                int(step.get(key, default))
+                for key, default in (
+                    ("x1", 500), ("y1", 700), ("x2", 500), ("y2", 300)
                 )
-                if value is None:
+            )
+            picked = None
+            if app is not None and core.messagebox.askyesno(
+                "Swipe",
+                "Kéo trực tiếp trên màn hình game để lấy điểm Swipe?\n\n"
+                "Chọn đúng 1 tài khoản đang Online trước khi bấm Có.",
+                parent=parent,
+            ):
+                picked = pick_swipe_on_game(app, core, parent=parent, initial=initial)
+                if picked is None:
                     return None
-                step[key] = int(value)
+            values = picked or initial
+            if picked is None:
+                manual: list[int] = []
+                for key, value0 in zip(("x1", "y1", "x2", "y2"), values):
+                    value = core.simpledialog.askinteger(
+                        "Swipe",
+                        f"{key.upper()} (0..1000):",
+                        initialvalue=int(value0),
+                        minvalue=0,
+                        maxvalue=1000,
+                        parent=parent,
+                    )
+                    if value is None:
+                        return None
+                    manual.append(int(value))
+                values = tuple(manual)
+            step["x1"], step["y1"], step["x2"], step["y2"] = map(int, values)
             duration = core.simpledialog.askfloat(
                 "Swipe",
                 "Thời lượng swipe (giây):",
