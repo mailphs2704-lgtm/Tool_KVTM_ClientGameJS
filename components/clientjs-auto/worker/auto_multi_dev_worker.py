@@ -233,6 +233,7 @@ def main() -> int:
             "Tốc độ MULTI DEV | "
             f"kéo tầng={speed.floor_swipe_duration:.3f}s | "
             f"trồng/thu={speed.plant_harvest_duration:.3f}s | "
+            f"thu VP={speed.vp_collect_delay:.3f}s | "
             f"sản xuất VP={speed.vp_production_delay:.3f}s | "
             f"check cây={speed.crop_check_interval:.3f}s"
         )
