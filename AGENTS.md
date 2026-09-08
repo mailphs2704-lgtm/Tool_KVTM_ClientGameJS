@@ -1,6 +1,6 @@
 # KVTM AI Working Rules
 
-This file is a mandatory first-read for every AI session that works on this repository. Also read `AI_COORDINATION.md` before changing code.
+This file is a mandatory first-read for every AI session that works on this repository. Also read `AI_COORDINATION.md` before changing code. For AUTO/Multi continuation, also read `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`; when that handoff points to a feature-specific document, read that document before changing the feature.
 
 ## 1. Authoritative user update/build workflow
 
@@ -45,6 +45,7 @@ This file is a mandatory first-read for every AI session that works on this repo
 ## 6. AUTO Builder ordering contract
 
 - `TỰ TẠO AUTO` is a DEV-only visual Scheduler layered onto the existing Multi DEV UI. Keep its controls/styles synchronized with the Multi DEV tab strip and existing ttk styles; do not invent a separate visual theme.
+- The authoritative current Builder continuation state is `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`; detailed architecture and live-test plan are in `docs/AUTO_MULTI_DEV_AUTO_BUILDER_HANDOFF.md`.
 - `Vào game + đóng popup`, `Bán VP theo Function`, and each `Function` are independent callable modules. A module must not secretly insert another business module before/after itself.
 - Builder execution order is exactly the operator-visible step order. Do not silently prepend `GameSessionWorkflow` in Builder mode.
 - VP sale policy belongs to Function metadata. The Scheduler supplies the Function id; the sale module sells only the VP explicitly allowed for that Function and keeps exact-x10/post-selection verification.
