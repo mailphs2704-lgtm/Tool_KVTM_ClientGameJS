@@ -12,7 +12,7 @@ FILE_FUNCTIONS = (
     "Đưa plan Builder vào đúng worker run bằng marker riêng trong work-dir",
     "Khởi chạy Builder qua lifecycle/ownership hiện có của AUTO MULTI DEV",
     "Ẩn tab Thiết kế cũ khỏi hàng chức năng của Multi DEV",
-    "Giữ hai nút log ở hàng riêng ngay dưới hàng Bắt đầu AUTO MULTI DEV",
+    "Đưa Log hành động + Log chi tiết xuống hàng riêng dưới nút AUTO MULTI DEV",
     "Hiển thị kết quả Builder mà không thay đổi handler AUTO chính",
 )
 
@@ -20,10 +20,10 @@ FILE_FUNCTIONS = (
 def install_auto_builder_integration(app_class, core) -> None:
     """Add Builder to MultiDevApp through narrow wrappers around DEV-only hooks.
 
-    This deliberately avoids editing ``kvtm_multi.py`` and avoids duplicating
-    ClientJS lifecycle/CAPTURE3 ownership. The normal DEV launcher still creates
-    the worker, logs, stop relay and busy gates. Builder only drops an explicit
-    plan marker into that unique run's work directory before the worker starts.
+    This deliberately avoids duplicating ClientJS lifecycle/CAPTURE3 ownership.
+    The normal DEV launcher still creates the worker, logs, stop relay and busy
+    gates. Builder only drops an explicit plan marker into that unique run's work
+    directory before the worker starts.
     """
     if getattr(app_class, "_kvtm_auto_builder_installed", False):
         return
@@ -33,44 +33,75 @@ def install_auto_builder_integration(app_class, core) -> None:
     original_finish = app_class._finish_clean_main
 
     def _apply_requested_dev_layout(self) -> None:
-        # The old Designer remains in source for compatibility, but is no longer
-        # exposed as a feature tab. Removing both the button and frame entry also
-        # prevents later tab refresh code from selecting a hidden Designer view.
+        # The real legacy Designer key in kvtm_multi.py is clear_stall_designer.
+        # Keep the widget registered for compatibility with _show_auto_tab, but
+        # remove it from the visible tab strip only.
         tab_buttons = getattr(self, "auto_tab_buttons", {})
-        designer_button = tab_buttons.pop("designer", None)
+        designer_button = tab_buttons.get("clear_stall_designer")
         if designer_button is not None:
             try:
-                designer_button.destroy()
+                designer_button.pack_forget()
             except Exception:
                 pass
 
-        feature_tabs = getattr(self, "auto_feature_tabs", {})
-        designer_frame = feature_tabs.pop("designer", None)
-        if designer_frame is not None:
-            try:
-                designer_frame.place_forget()
-            except Exception:
-                pass
-
-        # Keep the existing log buttons/commands, only make their row placement
-        # explicit: the Log hành động + Log chi tiết row sits immediately below
-        # the AUTO MULTI DEV action row that contains the Start button.
         start_button = getattr(self, "auto_multi_dev_start_button", None)
         action_log = getattr(self, "auto_multi_dev_action_log_button", None)
         detail_log = getattr(self, "auto_multi_dev_detail_log_button", None)
-        if start_button is None or action_log is None or detail_log is None:
+        multi_dev_tab = getattr(self, "auto_feature_tabs", {}).get("multi_dev")
+        if (
+            start_button is None
+            or action_log is None
+            or detail_log is None
+            or multi_dev_tab is None
+        ):
             return
-        log_row = action_log.master
-        action_row = start_button.master
-        if detail_log.master is not log_row or log_row.master is not action_row.master:
+
+        # All five original buttons are children of one clean_actions frame.
+        # Never pack_forget that frame: doing so hides Start/Speed/Stop too.
+        # Hide only the two old log buttons, then recreate the same commands in a
+        # dedicated row directly below clean_actions. Tk widgets cannot be safely
+        # reparented after construction.
+        clean_actions = start_button.master
+        if action_log.master is not clean_actions or detail_log.master is not clean_actions:
             return
         try:
-            log_row.pack_forget()
-            log_row.pack(fill="x", pady=(6, 0), after=action_row)
+            action_log.pack_forget()
+            detail_log.pack_forget()
+
+            log_row = core.ttk.Frame(multi_dev_tab, style="Detail.TFrame")
+            log_row.pack(fill="x", padx=8, pady=(6, 0), after=clean_actions)
+
+            self.auto_multi_dev_action_log_button = core.ttk.Button(
+                log_row,
+                text="≡ Log hành động",
+                width=18,
+                style="Action.TButton",
+                command=lambda: self._open_clean_main_log("action"),
+            )
+            self.auto_multi_dev_action_log_button.pack(side="left", padx=(0, 8))
+
+            self.auto_multi_dev_detail_log_button = core.ttk.Button(
+                log_row,
+                text="⌕ Log chi tiết",
+                width=18,
+                style="Action.TButton",
+                command=lambda: self._open_clean_main_log("detail"),
+            )
+            self.auto_multi_dev_detail_log_button.pack(side="left")
+
+            refresh_tabs = getattr(self, "_refresh_auto_tab_scroll", None)
+            if callable(refresh_tabs):
+                self.after_idle(refresh_tabs)
         except Exception:
-            # Layout cleanup must never prevent Multi DEV from starting. The
-            # buttons keep their original parent/commands if Tk rejects repack.
-            pass
+            # Fail visibly safe: restore the original log buttons if creating the
+            # second row fails. Start/Speed/Stop were never removed.
+            try:
+                action_log.pack(side="left", padx=(0, 8))
+                detail_log.pack(side="left")
+                self.auto_multi_dev_action_log_button = action_log
+                self.auto_multi_dev_detail_log_button = detail_log
+            except Exception:
+                pass
 
     def build_auto_panel(self) -> None:
         original_build(self)
