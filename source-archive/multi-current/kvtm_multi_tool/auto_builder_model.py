@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,8 +11,10 @@ import uuid
 
 __all__ = [
     "AutoBuilderPlanStore",
+    "builtin_function_templates",
     "default_plan",
     "new_function",
+    "new_function_from_builtin",
     "new_step_id",
     "step_summary",
 ]
@@ -19,12 +22,14 @@ FILE_FUNCTIONS = (
     "Tạo plan AUTO Builder mặc định và Function tái sử dụng",
     "Đọc/ghi plan chính ở AppData bền qua build DEV",
     "Đọc/ghi thư viện Function riêng theo function_id",
-    "Liệt kê/load Function đã lưu cho editor nhiều tab",
+    "Expose template Function 1 đã làm trước đó để Load Function",
     "Đóng gói Function đã lưu vào snapshot plan trước khi chạy",
-    "Di chuyển dữ liệu Builder cũ từ data-dev nếu có",
-    "Sao chép ảnh nhận diện người dùng vào vùng dữ liệu Builder",
+    "Quản lý thư viện ảnh riêng của Multi DEV ngoài dist",
+    "Copy ảnh được chọn từ AUTO PRO sang thư viện ảnh Multi DEV",
     "Tạo mô tả ngắn của bước cho giao diện Multi DEV",
 )
+
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
 
 def new_step_id() -> str:
@@ -43,6 +48,46 @@ def new_function(name: str = "Function mới") -> dict:
         "name": str(name or "Function mới").strip() or "Function mới",
         "steps": [],
     }
+
+
+def builtin_function_templates() -> list[dict]:
+    """Return editable wrappers around already-proven built-in business Functions.
+
+    The built-in implementation itself stays in Python. Loading one of these
+    creates a custom Function document containing one explicit built-in Function
+    block; it does not attempt to decompile/rewrite proven business code into
+    guessed click/swipe JSON.
+    """
+    return [
+        {
+            "template_id": "builtin_function_1",
+            "name": "9 Táo sấy - 9 Vải vàng",
+            "description": "Function 1 có sẵn: Táo sấy / Nước táo / Vải vàng",
+        }
+    ]
+
+
+def new_function_from_builtin(template_id: str) -> dict:
+    key = str(template_id or "").strip()
+    template = next(
+        (item for item in builtin_function_templates() if item["template_id"] == key),
+        None,
+    )
+    if template is None:
+        raise KeyError(f"Built-in Function template chưa hỗ trợ: {key}")
+    function = new_function(template["name"])
+    function["source_template_id"] = key
+    function["steps"] = [
+        {
+            "id": new_step_id(),
+            "type": "function",
+            "function_id": "function_1",
+            "loops": 1,
+            "sale_after_each_loop": False,
+            "sale_timeout": 120.0,
+        }
+    ]
+    return function
 
 
 def default_plan() -> dict:
@@ -70,6 +115,27 @@ def default_plan() -> dict:
     }
 
 
+def _normalized_swipe_points(step: dict) -> list[list[int]]:
+    raw = step.get("points")
+    points: list[list[int]] = []
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                try:
+                    points.append([int(item[0]), int(item[1])])
+                except (TypeError, ValueError):
+                    pass
+    if len(points) >= 2:
+        return points
+    try:
+        return [
+            [int(step.get("x1", 500)), int(step.get("y1", 700))],
+            [int(step.get("x2", 500)), int(step.get("y2", 300))],
+        ]
+    except (TypeError, ValueError):
+        return []
+
+
 def step_summary(step: dict) -> tuple[str, str]:
     step_type = str(step.get("type") or "")
     if step_type == "enter_game_popup":
@@ -78,9 +144,8 @@ def step_summary(step: dict) -> tuple[str, str]:
         return "MODULE", f"Bán VP • {step.get('function_id', 'function_1')}"
     if step_type == "function":
         suffix = " • bán VP sau mỗi vòng" if step.get("sale_after_each_loop") else ""
-        return "FUNCTION", (
-            f"{step.get('function_id', 'function_1')} × {int(step.get('loops', 1) or 1)}{suffix}"
-        )
+        name = "9 Táo sấy - 9 Vải vàng" if step.get("function_id") == "function_1" else str(step.get("function_id", "Function"))
+        return "FUNCTION", f"{name} × {int(step.get('loops', 1) or 1)}{suffix}"
     if step_type == "call_saved_function":
         suffix = ""
         if step.get("sale_after_each_loop"):
@@ -91,14 +156,22 @@ def step_summary(step: dict) -> tuple[str, str]:
         )
     if step_type == "recognize_image":
         name = Path(str(step.get("template_path") or "ảnh")).name
-        return "NHẬN DIỆN", f"{name} • threshold={float(step.get('threshold', 0.8)):.2f}"
+        source = str(step.get("image_source") or "multi_library")
+        source_label = "Multi DEV" if source == "multi_library" else "AUTO PRO→Multi"
+        return "NHẬN DIỆN", (
+            f"{name} • {source_label} • threshold={float(step.get('threshold', 0.8)):.2f}"
+        )
     if step_type == "click":
         return "CLICK", f"({step.get('x')}, {step.get('y')})"
     if step_type == "swipe":
-        return "SWIPE", (
-            f"({step.get('x1')},{step.get('y1')}) → ({step.get('x2')},{step.get('y2')}) "
-            f"• {float(step.get('duration', 0.35)):.2f}s"
-        )
+        points = _normalized_swipe_points(step)
+        if len(points) >= 2:
+            return "SWIPE", (
+                f"{len(points)} điểm / {len(points) - 1} đoạn • "
+                f"{points[0][0]},{points[0][1]} → {points[-1][0]},{points[-1][1]} • "
+                f"{float(step.get('duration', 0.35)):.2f}s"
+            )
+        return "SWIPE", "Chưa có đường kéo hợp lệ"
     if step_type == "wait":
         return "WAIT", f"{float(step.get('seconds', 0.5)):.2f}s"
     if step_type == "finish_pass":
@@ -109,7 +182,7 @@ def step_summary(step: dict) -> tuple[str, str]:
 
 
 class AutoBuilderPlanStore:
-    """Persistent DEV-only Builder plan, functions and assets outside ``dist``."""
+    """Persistent DEV-only Builder plan, functions and image library outside ``dist``."""
 
     def __init__(self, app_dir: Path) -> None:
         legacy_root = Path(app_dir).resolve() / "auto-builder"
@@ -123,10 +196,14 @@ class AutoBuilderPlanStore:
                 pass
         self.plan_path = self.root / "current-plan.json"
         self.functions_dir = self.root / "functions"
+        # ``assets`` remains for backward compatibility with v1/v1.1 plans.
         self.assets_dir = self.root / "assets"
+        self.image_library_dir = self.root / "image-library"
         self.root.mkdir(parents=True, exist_ok=True)
         self.functions_dir.mkdir(parents=True, exist_ok=True)
         self.assets_dir.mkdir(parents=True, exist_ok=True)
+        self.image_library_dir.mkdir(parents=True, exist_ok=True)
+        self._migrate_legacy_assets_to_image_library()
 
     @staticmethod
     def _validate_document(data: dict, *, kind: str) -> dict:
@@ -145,6 +222,27 @@ class AutoBuilderPlanStore:
             result["function_id"] = function_id
         result["steps"] = list(result.get("steps") or [])
         return result
+
+    @staticmethod
+    def _is_image(path: Path) -> bool:
+        return path.is_file() and path.suffix.lower() in _IMAGE_SUFFIXES
+
+    @staticmethod
+    def _under(path: Path, root: Path) -> bool:
+        try:
+            path.resolve().relative_to(root.resolve())
+            return True
+        except ValueError:
+            return False
+
+    def _migrate_legacy_assets_to_image_library(self) -> None:
+        for path in self.assets_dir.iterdir():
+            if not self._is_image(path):
+                continue
+            try:
+                self._copy_image_to_library(path)
+            except OSError:
+                continue
 
     def load(self) -> dict:
         if not self.plan_path.is_file():
@@ -208,10 +306,7 @@ class AutoBuilderPlanStore:
 
     def bundle_plan(self, plan: dict) -> dict:
         payload = self._validate_document(plan, kind="plan")
-        functions = {
-            item["function_id"]: item
-            for item in self.list_functions()
-        }
+        functions = {item["function_id"]: item for item in self.list_functions()}
         referenced = {
             str(step.get("function_id") or "")
             for step in payload["steps"]
@@ -223,13 +318,47 @@ class AutoBuilderPlanStore:
         payload["saved_functions"] = functions
         return payload
 
-    def import_asset(self, source: str | Path) -> Path:
+    def list_library_images(self) -> list[Path]:
+        return sorted(
+            (path.resolve() for path in self.image_library_dir.iterdir() if self._is_image(path)),
+            key=lambda item: item.name.lower(),
+        )
+
+    def use_library_image(self, source: str | Path) -> Path:
         path = Path(source).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(path)
-        suffix = path.suffix.lower()
-        if suffix not in {".png", ".jpg", ".jpeg", ".bmp", ".webp"}:
+        if not self._is_image(path):
+            raise ValueError("Ảnh thư viện Multi DEV không hợp lệ")
+        if not self._under(path, self.image_library_dir):
+            raise ValueError("Chỉ được chọn ảnh nằm trong thư viện Multi DEV")
+        return path
+
+    @staticmethod
+    def resolve_auto_pro_root(tool_dir: str | Path) -> Path:
+        tool = Path(tool_dir).expanduser().resolve()
+        candidate = tool.parent / "AUTO_PRO"
+        if not candidate.is_dir():
+            raise FileNotFoundError(
+                f"Không tìm thấy thư mục AUTO_PRO cùng package Multi DEV: {candidate}"
+            )
+        return candidate
+
+    def _copy_image_to_library(self, source: str | Path) -> Path:
+        path = Path(source).expanduser().resolve()
+        if not self._is_image(path):
             raise ValueError("Ảnh Builder phải là PNG/JPG/JPEG/BMP/WEBP")
-        target = self.assets_dir / f"{uuid.uuid4().hex[:10]}-{path.name}"
-        shutil.copy2(path, target)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+        target = self.image_library_dir / f"{digest}-{path.name}"
+        if not target.is_file():
+            shutil.copy2(path, target)
         return target.resolve()
+
+    def import_auto_pro_image(self, source: str | Path, auto_pro_root: str | Path) -> Path:
+        path = Path(source).expanduser().resolve()
+        root = Path(auto_pro_root).expanduser().resolve()
+        if not self._under(path, root):
+            raise ValueError("Ảnh đã chọn không nằm trong mục ảnh AUTO PRO")
+        return self._copy_image_to_library(path)
+
+    def import_asset(self, source: str | Path) -> Path:
+        """Backward-compatible alias: all new imports land in Multi image library."""
+        return self._copy_image_to_library(source)
