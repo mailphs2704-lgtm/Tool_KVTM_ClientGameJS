@@ -15,6 +15,8 @@ constexpr wchar_t kWindowProperty[] = L"KVTM_BRIDGE_V3_CAPTURE_INPUT_ONLY";
 constexpr DWORD kCaptureVersion = 3;
 constexpr DWORD kPixelFormatBgra8TopDown = 2;
 constexpr DWORD kMaxCaptureBytes = 64u * 1024u * 1024u;
+constexpr DWORD kCaptureModeLegacy = 0;
+constexpr DWORD kCaptureModeWriterMap = 1;
 constexpr unsigned int GL_FRONT_VALUE = 0x0404;
 constexpr unsigned int GL_BACK_VALUE = 0x0405;
 constexpr unsigned int GL_PACK_ALIGNMENT_VALUE = 0x0D05;
@@ -35,6 +37,8 @@ struct CaptureCommand {
     DWORD width;
     DWORD height;
     DWORD stride;
+    DWORD mapping_mode;
+    ULONGLONG writer_id;
 };
 struct CaptureHeader {
     char magic[4];
@@ -75,6 +79,44 @@ GlPixelStorei g_gl_pixel_store_i = nullptr;
 HANDLE g_capture_mapping = nullptr;
 CaptureHeader* g_capture_header = nullptr;
 volatile LONG g_capture_frame = 0;
+HANDLE g_writer_capture_mapping = nullptr;
+CaptureHeader* g_writer_capture_header = nullptr;
+volatile LONG g_writer_capture_frame = 0;
+HANDLE g_bridge_owner = nullptr;
+ULONGLONG g_writer_id = 0;
+
+void initialize_writer_id() {
+    LARGE_INTEGER counter{};
+    QueryPerformanceCounter(&counter);
+    const ULONGLONG pid = static_cast<ULONGLONG>(GetCurrentProcessId());
+    const ULONGLONG tid = static_cast<ULONGLONG>(GetCurrentThreadId());
+    const ULONGLONG module = static_cast<ULONGLONG>(
+        reinterpret_cast<ULONG_PTR>(g_self));
+    g_writer_id =
+        static_cast<ULONGLONG>(counter.QuadPart) ^
+        (GetTickCount64() << 7) ^
+        (pid << 32) ^
+        (tid << 17) ^
+        (module << 3);
+    if (!g_writer_id) g_writer_id = (pid << 32) | 1u;
+}
+
+bool claim_bridge_owner() {
+    wchar_t name[96]{};
+    swprintf_s(
+        name, L"Local\\KVTM-BridgeV3-Owner-%lu", GetCurrentProcessId());
+    SetLastError(ERROR_SUCCESS);
+    HANDLE handle = CreateMutexW(nullptr, FALSE, name);
+    const DWORD error = GetLastError();
+    if (!handle) return false;
+    if (error == ERROR_ALREADY_EXISTS) {
+        CloseHandle(handle);
+        SetLastError(ERROR_ALREADY_EXISTS);
+        return false;
+    }
+    g_bridge_owner = handle;
+    return true;
+}
 
 bool same_process_window(HWND hwnd) {
     DWORD pid = 0;
@@ -121,49 +163,86 @@ bool resolve_opengl() {
     return g_gl_read_pixels && g_gl_get_error && g_gl_read_buffer && g_gl_pixel_store_i;
 }
 
-bool ensure_capture_mapping(DWORD pixel_bytes) {
-    if (pixel_bytes > kMaxCaptureBytes) {
-        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+bool ensure_capture_mapping(
+    DWORD pixel_bytes,
+    DWORD mapping_mode,
+    CaptureHeader** header_out,
+    volatile LONG** frame_out) {
+    if (!header_out || !frame_out || pixel_bytes > kMaxCaptureBytes) {
+        SetLastError(pixel_bytes > kMaxCaptureBytes
+            ? ERROR_NOT_ENOUGH_MEMORY : ERROR_INVALID_PARAMETER);
         return false;
     }
-    // CAPTURE3_FIXEDMAP: create one section object for the whole lifetime of
-    // this ClientJS process. Never resize/recreate a named mapping when the
-    // client area changes, because an external reader can keep the old section
-    // alive under the same name and split writer/reader frame counters.
-    if (g_capture_header && g_capture_mapping) return true;
-    if (g_capture_header || g_capture_mapping) {
+    if (mapping_mode != kCaptureModeLegacy &&
+        mapping_mode != kCaptureModeWriterMap) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    HANDLE* mapping_slot = mapping_mode == kCaptureModeWriterMap
+        ? &g_writer_capture_mapping : &g_capture_mapping;
+    CaptureHeader** header_slot = mapping_mode == kCaptureModeWriterMap
+        ? &g_writer_capture_header : &g_capture_header;
+    volatile LONG* frame_slot = mapping_mode == kCaptureModeWriterMap
+        ? &g_writer_capture_frame : &g_capture_frame;
+
+    // Both mappings are fixed at the maximum capacity for the lifetime of the
+    // writer. WRITERMAP2 additionally gives the Multi Dev reader a generation-
+    // specific name so a PID-only mapping from another writer can never satisfy
+    // the same frame id with different dimensions.
+    if (*header_slot && *mapping_slot) {
+        *header_out = *header_slot;
+        *frame_out = frame_slot;
+        return true;
+    }
+    if (*header_slot || *mapping_slot) {
         SetLastError(ERROR_INVALID_HANDLE);
         return false;
     }
 
-    wchar_t name[96]{};
-    swprintf_s(name, L"Local\\KVTM-CaptureV3-%lu", GetCurrentProcessId());
+    wchar_t name[128]{};
+    if (mapping_mode == kCaptureModeWriterMap) {
+        swprintf_s(
+            name, L"Local\\KVTM-CaptureV3-%lu-%016llX",
+            GetCurrentProcessId(),
+            static_cast<unsigned long long>(g_writer_id));
+    } else {
+        swprintf_s(
+            name, L"Local\\KVTM-CaptureV3-%lu", GetCurrentProcessId());
+    }
+
     SetLastError(ERROR_SUCCESS);
-    g_capture_mapping = CreateFileMappingW(
+    *mapping_slot = CreateFileMappingW(
         INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0,
         kCaptureMappingBytes, name);
-    if (!g_capture_mapping) return false;
+    if (!*mapping_slot) return false;
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        CloseHandle(g_capture_mapping);
-        g_capture_mapping = nullptr;
+        CloseHandle(*mapping_slot);
+        *mapping_slot = nullptr;
         SetLastError(ERROR_ALREADY_EXISTS);
         return false;
     }
-    g_capture_header = static_cast<CaptureHeader*>(
+    *header_slot = static_cast<CaptureHeader*>(
         MapViewOfFile(
-            g_capture_mapping, FILE_MAP_ALL_ACCESS, 0, 0,
+            *mapping_slot, FILE_MAP_ALL_ACCESS, 0, 0,
             kCaptureMappingBytes));
-    if (!g_capture_header) {
-        CloseHandle(g_capture_mapping);
-        g_capture_mapping = nullptr;
+    if (!*header_slot) {
+        CloseHandle(*mapping_slot);
+        *mapping_slot = nullptr;
         return false;
     }
-    ZeroMemory(g_capture_header, sizeof(CaptureHeader));
+    ZeroMemory(*header_slot, sizeof(CaptureHeader));
+    *header_out = *header_slot;
+    *frame_out = frame_slot;
     return true;
 }
 
 LONG dispatch_capture(CaptureCommand* command) {
     if (!command || !g_window || !resolve_opengl()) return ERROR_PROC_NOT_FOUND;
+    if (command->mapping_mode != kCaptureModeLegacy &&
+        command->mapping_mode != kCaptureModeWriterMap)
+        return ERROR_INVALID_PARAMETER;
+
     RECT client{};
     if (!GetClientRect(g_window, &client)) return GetLastError();
     const DWORD width = static_cast<DWORD>(client.right - client.left);
@@ -173,9 +252,13 @@ LONG dispatch_capture(CaptureCommand* command) {
     if (bytes64 > kMaxCaptureBytes) return ERROR_NOT_ENOUGH_MEMORY;
     const DWORD stride = width * 4u;
     const DWORD pixel_bytes = static_cast<DWORD>(bytes64);
-    if (!ensure_capture_mapping(pixel_bytes)) return GetLastError();
 
-    CaptureHeader* header = g_capture_header;
+    CaptureHeader* header = nullptr;
+    volatile LONG* frame_counter = nullptr;
+    if (!ensure_capture_mapping(
+            pixel_bytes, command->mapping_mode, &header, &frame_counter))
+        return GetLastError();
+
     // The in-progress marker is the writer lock for CAPTURE3. Publish it before
     // changing any metadata so a reader can never observe old frame_id/status=2
     // together with width/height/stride from the next frame.
@@ -209,6 +292,7 @@ LONG dispatch_capture(CaptureCommand* command) {
     }
     if (gl_error != 0) {
         header->status = 3;
+        MemoryBarrier();
         return ERROR_READ_FAULT;
     }
 
@@ -227,15 +311,19 @@ LONG dispatch_capture(CaptureCommand* command) {
         }
     }
 
-    const DWORD frame = static_cast<DWORD>(InterlockedIncrement(&g_capture_frame));
+    const DWORD frame = static_cast<DWORD>(InterlockedIncrement(frame_counter));
     header->frame_id = frame;
     header->timestamp_ms = GetTickCount64();
     MemoryBarrier();
     header->status = 2;
+    MemoryBarrier();
+
     command->frame_id = frame;
     command->width = width;
     command->height = height;
     command->stride = stride;
+    command->writer_id = command->mapping_mode == kCaptureModeWriterMap
+        ? g_writer_id : 0;
     return ERROR_SUCCESS;
 }
 
@@ -283,7 +371,13 @@ bool attach_window() {
     g_previous_proc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(
         g_window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(bridge_window_proc)));
     if (!g_previous_proc && GetLastError() != ERROR_SUCCESS) return false;
-    SetPropW(g_window, kWindowProperty, g_self);
+    if (!SetPropW(g_window, kWindowProperty, g_self)) {
+        SetWindowLongPtrW(
+            g_window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_previous_proc));
+        g_previous_proc = nullptr;
+        return false;
+    }
+    if (GetPropW(g_window, kWindowProperty) != g_self) return false;
     return true;
 }
 
@@ -377,34 +471,69 @@ LONG dispatch_gesture(const GestureCommand& gesture, DWORD& actual_ms, DWORD& mo
 }
 
 DWORD WINAPI pipe_thread(void*) {
-    if (!attach_window() || !resolve_cocos()) return 1;
+    if (!claim_bridge_owner()) return 1;
+    if (!attach_window() || !resolve_cocos()) return 2;
+
     wchar_t pipe_name[128]{};
     swprintf_s(pipe_name, L"\\\\.\\pipe\\KVTM-CocosV3-%lu", GetCurrentProcessId());
-    HANDLE pipe = INVALID_HANDLE_VALUE;
+    HANDLE pipe = CreateNamedPipeW(
+        pipe_name,
+        PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+        1, 4096, 4096, 0, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE) return 3;
+
     for (;;) {
-        if (pipe == INVALID_HANDLE_VALUE) {
-            pipe = CreateNamedPipeW(pipe_name, PIPE_ACCESS_DUPLEX,
-                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-                1, 4096, 4096, 0, nullptr);
-            if (pipe == INVALID_HANDLE_VALUE) { Sleep(100); continue; }
-        }
-        BOOL connected = ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
+        BOOL connected = ConnectNamedPipe(pipe, nullptr) ||
+            GetLastError() == ERROR_PIPE_CONNECTED;
         if (connected) {
             // Keep one connection alive. SWIPE batches the complete AUTO PRO
             // polyline so transport overhead cannot distort per-segment timing.
             for (;;) {
-                char input[4096]{}; DWORD read = 0;
+                char input[4096]{};
+                DWORD read = 0;
                 if (!ReadFile(pipe, input, sizeof(input) - 1, &read, nullptr) || !read)
                     break;
                 input[read] = 0;
                 const char* response = "ERR PARSE\n";
-                char output[64]{};
+                char output[192]{};
+
                 if (std::strncmp(input, "PING", 4) == 0) {
-                    // CAPTURE3_FIXEDMAP identifies the lifetime-fixed named
-                    // section. Multi Dev rejects resident pre-fixed-map DLLs.
-                    response = "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP\n";
-                } else if (std::strncmp(input, "CAPTURE", 7) == 0) {
+                    sprintf_s(
+                        output,
+                        "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
+                        "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP "
+                        "CAPTURE3_WRITERMAP2 %016llX\n",
+                        static_cast<unsigned long long>(g_writer_id));
+                    response = output;
+                } else if (std::strncmp(input, "CAPTUREW", 8) == 0) {
                     CaptureCommand command{};
+                    command.mapping_mode = kCaptureModeWriterMap;
+                    SendMessageW(
+                        g_window, WM_KVTM_CAPTURE, 0,
+                        reinterpret_cast<LPARAM>(&command));
+                    if (command.result == ERROR_SUCCESS &&
+                        command.writer_id == g_writer_id) {
+                        sprintf_s(
+                            output, "OK FRAMEW %lu %lu %lu %lu %016llX\n",
+                            command.frame_id, command.width,
+                            command.height, command.stride,
+                            static_cast<unsigned long long>(command.writer_id));
+                    } else if (command.result == ERROR_SUCCESS) {
+                        sprintf_s(
+                            output, "ERR WRITER %016llX %016llX\n",
+                            static_cast<unsigned long long>(g_writer_id),
+                            static_cast<unsigned long long>(command.writer_id));
+                    } else {
+                        sprintf_s(output, "ERR %ld\n", command.result);
+                    }
+                    response = output;
+                } else if (std::strncmp(input, "CAPTURE", 7) == 0) {
+                    // Preserve the legacy PID-only CAPTURE command for other
+                    // packaged consumers. AUTO MULTI DEV exclusively uses
+                    // CAPTUREW + the writer-generation mapping above.
+                    CaptureCommand command{};
+                    command.mapping_mode = kCaptureModeLegacy;
                     SendMessageW(
                         g_window, WM_KVTM_CAPTURE, 0,
                         reinterpret_cast<LPARAM>(&command));
@@ -435,11 +564,17 @@ DWORD WINAPI pipe_thread(void*) {
                 } else {
                     TouchCommand command{};
                     if (parse_command(input, command)) {
-                        SendMessageW(g_window, WM_KVTM_TOUCH, 0, reinterpret_cast<LPARAM>(&command));
-                        sprintf_s(output, command.result == ERROR_SUCCESS ? "OK\n" : "ERR %ld\n", command.result);
+                        SendMessageW(
+                            g_window, WM_KVTM_TOUCH, 0,
+                            reinterpret_cast<LPARAM>(&command));
+                        sprintf_s(
+                            output,
+                            command.result == ERROR_SUCCESS ? "OK\n" : "ERR %ld\n",
+                            command.result);
                         response = output;
                     }
                 }
+
                 DWORD written = 0;
                 if (!WriteFile(
                         pipe, response, static_cast<DWORD>(std::strlen(response)),
@@ -466,6 +601,7 @@ extern "C" __declspec(dllexport) BOOL WINAPI KvtmBridgeInstall(HWND hwnd) {
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         g_self = instance;
+        initialize_writer_id();
         DisableThreadLibraryCalls(instance);
         HANDLE thread = CreateThread(nullptr, 0, pipe_thread, nullptr, 0, nullptr);
         if (thread) CloseHandle(thread);
