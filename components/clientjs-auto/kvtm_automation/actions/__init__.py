@@ -15,6 +15,11 @@ from .production import ProductionActions, ProductionResult
 from .selling import SellingActions
 from .stall import StallActions
 from .yellow_fabric_production import YellowFabricProductionActions
+from .production_busy_wait import install_production_busy_wait
+
+# Install only after all three production classes are imported. The guard wraps
+# their verified open transactions and retries only known machine-busy states.
+install_production_busy_wait()
 
 __all__ = [
     "AppleJuiceProductionActions",
