@@ -19,7 +19,8 @@ from clean_worker_support import (
 WORKFLOW_NAME = "auto_multi_dev_main"
 _REQUIRED_BRIDGE_PROTOCOL = (
     "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
-    "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2"
+    "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2 "
+    "CAPTURE3_WRITERMSG1"
 )
 
 
@@ -111,9 +112,9 @@ def main() -> int:
 
         install_component_path()
         # Multi Dev requires the exact current native revision. WRITERMAP2 binds
-        # every CAPTUREW response to the unique shared mapping owned by the same
-        # injected writer, preventing a PID-only mapping from being confused with
-        # another resident/generation when dimensions or frame counters overlap.
+        # CAPTUREW to a writer-specific mapping; WRITERMSG1 also binds the
+        # render-thread window dispatch to that writer so an older subclass proc
+        # using the legacy WM_APP capture id cannot consume the new command.
         engine_driver = importlib.import_module("engine_driver")
         engine_driver._PROTOCOL_PREFIX = _REQUIRED_BRIDGE_PROTOCOL
 
@@ -123,8 +124,9 @@ def main() -> int:
         emit(
             "detail", workflow=WORKFLOW_NAME, profile_id=args.profile_id,
             message=(
-                "DLL bridge V3: CAPTURE3 WRITERMAP2 ENABLED • "
-                "mỗi CAPTUREW khóa đúng writer mapping • stale frame vẫn bị từ chối"
+                "DLL bridge V3: CAPTURE3 WRITERMAP2+WRITERMSG1 ENABLED • "
+                "mỗi CAPTUREW khóa đúng writer mapping + dispatch • "
+                "stale frame vẫn bị từ chối"
             ),
         )
 
