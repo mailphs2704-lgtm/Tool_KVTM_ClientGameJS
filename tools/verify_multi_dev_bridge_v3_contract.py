@@ -135,6 +135,10 @@ def main() -> int:
     require(worker, 'runtime="isolated-process"',
             "AUTO MULTI DEV worker isolation marker missing")
     require(worker, 'bridge="V3"', "AUTO MULTI DEV worker V3 marker missing")
+    require(worker, '"NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP"',
+            "Worker must require the synchronized fixed-map bridge revision")
+    require(worker, "engine_driver._PROTOCOL_PREFIX = _REQUIRED_BRIDGE_PROTOCOL",
+            "Worker must install the strict resident Bridge V3 revision gate")
     require(worker, "from shared_runtime.image_runtime import install_binary_dependencies",
             "Worker must use the shared clean image runtime")
     require(worker, "install_binary_dependencies(root, logger=bootstrap_log)",
