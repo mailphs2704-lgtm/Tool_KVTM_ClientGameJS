@@ -11,7 +11,8 @@ FILE_FUNCTIONS = (
     "Gắn Builder UI sau khi panel Multi DEV gốc được tạo",
     "Đưa plan Builder vào đúng worker run bằng marker riêng trong work-dir",
     "Khởi chạy Builder qua lifecycle/ownership hiện có của AUTO MULTI DEV",
-    "Thêm nút DEV test riêng Sửa máy bắt đầu ngay tại panel sản xuất VP đang mở",
+    "Ẩn tab Thiết kế cũ khỏi hàng chức năng của Multi DEV",
+    "Giữ hai nút log ở hàng riêng ngay dưới hàng Bắt đầu AUTO MULTI DEV",
     "Hiển thị kết quả Builder mà không thay đổi handler AUTO chính",
 )
 
@@ -31,25 +32,51 @@ def install_auto_builder_integration(app_class, core) -> None:
     original_run_thread = app_class._run_clean_main_thread
     original_finish = app_class._finish_clean_main
 
+    def _apply_requested_dev_layout(self) -> None:
+        # The old Designer remains in source for compatibility, but is no longer
+        # exposed as a feature tab. Removing both the button and frame entry also
+        # prevents later tab refresh code from selecting a hidden Designer view.
+        tab_buttons = getattr(self, "auto_tab_buttons", {})
+        designer_button = tab_buttons.pop("designer", None)
+        if designer_button is not None:
+            try:
+                designer_button.destroy()
+            except Exception:
+                pass
+
+        feature_tabs = getattr(self, "auto_feature_tabs", {})
+        designer_frame = feature_tabs.pop("designer", None)
+        if designer_frame is not None:
+            try:
+                designer_frame.place_forget()
+            except Exception:
+                pass
+
+        # Keep the existing log buttons/commands, only make their row placement
+        # explicit: the Log hành động + Log chi tiết row sits immediately below
+        # the AUTO MULTI DEV action row that contains the Start button.
+        start_button = getattr(self, "auto_multi_dev_start_button", None)
+        action_log = getattr(self, "auto_multi_dev_action_log_button", None)
+        detail_log = getattr(self, "auto_multi_dev_detail_log_button", None)
+        if start_button is None or action_log is None or detail_log is None:
+            return
+        log_row = action_log.master
+        action_row = start_button.master
+        if detail_log.master is not log_row or log_row.master is not action_row.master:
+            return
+        try:
+            log_row.pack_forget()
+            log_row.pack(fill="x", pady=(6, 0), after=action_row)
+        except Exception:
+            # Layout cleanup must never prevent Multi DEV from starting. The
+            # buttons keep their original parent/commands if Tk rejects repack.
+            pass
+
     def build_auto_panel(self) -> None:
         original_build(self)
         self._auto_builder_pending_plans: dict[str, dict] = {}
+        _apply_requested_dev_layout(self)
         install_auto_builder_tab(self, core)
-
-        # DEV-only one-click test. The operator must already have the production
-        # VP panel open in ClientJS. No GameSession/production/Function prefix is
-        # injected; the generated Builder plan contains only machine_repair_test.
-        clean_actions = self.auto_multi_dev_stop_button.master
-        self.auto_multi_dev_machine_repair_test_button = core.ttk.Button(
-            clean_actions,
-            text="🛠 TEST Sửa máy",
-            width=17,
-            style="AutoStart.TButton",
-            command=self._start_machine_repair_test,
-        )
-        self.auto_multi_dev_machine_repair_test_button.pack(
-            side="left", padx=(0, 8), before=self.auto_multi_dev_stop_button
-        )
 
     def run_clean_main_thread(self, *args, **kwargs) -> None:
         profile_id = str(args[0] if args else kwargs.get("profile_id") or "")
@@ -129,32 +156,8 @@ def install_auto_builder_integration(app_class, core) -> None:
             if controller is not None and controller.status_var is not None:
                 controller.status_var.set(status)
 
-    def start_machine_repair_test(self) -> None:
-        """Run only repair UI actions; current ClientJS panel is the precondition."""
-        plan = {
-            "version": 1,
-            "kind": "plan",
-            "name": "TEST Sửa máy từ panel VP đang mở",
-            "saved_functions": {},
-            "steps": [
-                {
-                    "id": "machine-repair-test",
-                    "type": "machine_repair_test",
-                },
-                {
-                    "id": "machine-repair-pass",
-                    "type": "finish_pass",
-                },
-            ],
-        }
-        self.note.set(
-            "TEST Sửa máy: giữ ClientJS tại panel sản xuất VP đang mở rồi chạy nút test"
-        )
-        self._start_auto_builder_plan(plan)
-
     app_class._build_auto_panel = build_auto_panel
     app_class._run_clean_main_thread = run_clean_main_thread
     app_class._finish_clean_main = finish_clean_main
     app_class._start_auto_builder_plan = start_auto_builder_plan
-    app_class._start_machine_repair_test = start_machine_repair_test
     app_class._kvtm_auto_builder_installed = True
