@@ -8,7 +8,7 @@ from ...automation import KVAutomation
 
 __all__ = ["AppleDryerResult", "AppleDryerWorkflow"]
 FILE_FUNCTIONS = (
-    "Đưa clone về màn hình farm sạch",
+    "Nhận camera startup đã được GameSession bàn giao, không gate main lần hai",
     "Trồng đúng 27 cây Táo bằng action mới",
     "Giữ mốc tầng 1 và xác minh đúng máy sấy",
     "Xếp đúng chín Táo sấy rồi trả kế toán",
@@ -36,7 +36,12 @@ class AppleDryerWorkflow:
     def run(self, timeout: float = 120.0) -> AppleDryerResult:
         started = time.monotonic()
         self.context.stage("auto-apple-dryer-start")
-        self.auto.ensure_main_screen(timeout=timeout)
+        # Startup state classification belongs to GameSession. Do not re-run an
+        # exact-main gate here: the current contract checks exact state only
+        # after explicit inter-stage floor transitions.
+        self.context.log(
+            "AUTO Táo sấy • nhận startup route từ session • không check main lặp lại"
+        )
         planted = self.auto.planting.plant_27_apples()
         self.context.ensure_running()
         self.context.stage("auto-apple-plant-finished")
