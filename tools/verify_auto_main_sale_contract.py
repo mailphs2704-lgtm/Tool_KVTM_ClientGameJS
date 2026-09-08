@@ -14,16 +14,20 @@ WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_vp_sa
 INIT = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/__init__.py"
 RECOGNITION = ROOT / "components/clientjs-auto/kvtm_automation/actions/item_recognition.py"
 CORE_GUI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
+INTEGRATION = ROOT / "source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
 AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
+CATALOG = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_builder/catalog.py"
 
 FILE_FUNCTIONS = (
     "Đọc và parse các file AUTO Main bắt buộc",
-    "Khóa đúng hai VP mặc định của chức năng 1",
+    "Khóa đúng VP mặc định của Function 1 và sale policy theo Function catalog",
     "Khóa thứ tự thu vàng, treo VP và hai swipe",
     "Khóa xác minh giao dịch trước khi ghi nhận",
-    "Khóa wiring isolated worker và nút bán riêng",
+    "Khóa GUI chọn Function + số vòng giữa hai lần bán",
+    "Khóa vào game/đóng popup trước sale lần 1 và Function loop",
+    "Khóa sale lần 2..N chỉ sau đủ số vòng cấu hình",
     "Chạy thêm static contract AUTO Builder",
     "Cấm phụ thuộc pyc và gọi workflow Dọn quầy",
 )
@@ -54,9 +58,11 @@ def main() -> int:
     read(INIT)
     recognition = read(RECOGNITION)
     gui = read(CORE_GUI)
+    integration = read(INTEGRATION)
     entry = read(DEV_ENTRY)
     auto_main = read(AUTO_MAIN)
     auto_multi_worker = read(AUTO_MULTI_WORKER)
+    catalog = read(CATALOG)
 
     for token in ('"tao_say"', '"vai_vang"', '"tinh_dau_hh"'):
         require(recognition, token, f"Missing allowed AUTO VP: {token}")
@@ -85,53 +91,26 @@ def main() -> int:
     require(action, '"sl10"', "Exact x10 quantity gate missing")
     require(action, "threshold=0.95", "Exact-ten threshold must reject 1..9")
     require(action, "quantity_passes >= 2", "Exact-ten result must be stable on two frames")
-    require(
-        action,
-        "for quantity_attempt in range(1, 4):",
-        "Bounded x10 render retries missing",
-    )
+    require(action, "for quantity_attempt in range(1, 4):",
+            "Bounded x10 render retries missing")
     require(action, "if quantity_passes < 2:", "Below-x10 branch missing")
     require(action, "def _cancel_selected_item", "Verified dialog cancel missing")
-    require(
-        action,
-        "zone=(930, 0, 70, 70)",
-        "Visible top-right dialog close gate missing",
-    )
-    require(
-        action,
-        "if inventory_open is None:",
-        "Closed-inventory recovery branch missing",
-    )
-    require(
-        action,
-        "if not self.selling._find_empty_slot():",
-        "Inventory picker recovery gate missing",
-    )
-    require(
-        action,
-        '"Không hủy và khôi phục được kho bán VP; dừng trước khi thao tác tiếp"',
-        "Unsafe cancel recovery stop missing",
-    )
-    require(
-        action,
-        'for checked_count in range(1, len(self.ITEM_ORDER) + 1):',
-        "Every Function-allowed item must be checked in the same inventory operation",
-    )
+    require(action, "zone=(930, 0, 70, 70)", "Visible top-right dialog close gate missing")
+    require(action, "if inventory_open is None:", "Closed-inventory recovery branch missing")
+    require(action, "if not self.selling._find_empty_slot():", "Inventory picker recovery gate missing")
+    require(action, '"Không hủy và khôi phục được kho bán VP; dừng trước khi thao tác tiếp"',
+            "Unsafe cancel recovery stop missing")
+    require(action, 'for checked_count in range(1, len(self.ITEM_ORDER) + 1):',
+            "Every Function-allowed item must be checked in the same inventory operation")
     if action.count("self.selling._find_empty_slot()") != 2:
         raise AssertionError(
             "Empty-slot calls must be limited to initial selection plus verified recovery"
         )
-    require(
-        action,
-        "self._insufficient_item_ids.add(selected.item_id)",
-        "Insufficient item exclusion missing",
-    )
+    require(action, "self._insufficient_item_ids.add(selected.item_id)",
+            "Insufficient item exclusion missing")
     require(action, "_mean_difference(before, after)", "Screen-change verification missing")
-    forbid(
-        action,
-        "self.selling._finish_batch_from_match(",
-        "AUTO Main exact-x10 flow must not use Dọn quầy placement wording/policy",
-    )
+    forbid(action, "self.selling._finish_batch_from_match(",
+           "AUTO Main exact-x10 flow must not use Dọn quầy placement wording/policy")
     require(action, 'status="NO_ALLOWED_ITEM"', "No-item safe stop missing")
 
     require(workflow, "collect_own_stall_gold(maximum=8)", "Gold-before-sale order missing")
@@ -141,29 +120,66 @@ def main() -> int:
     require(workflow, 'function_id: str = "function_1"', "Sale callable Function identity missing")
     require(workflow, "allowed_item_ids: tuple[str, ...] | None = None",
             "Sale callable Function VP policy missing")
-    require(
-        workflow,
-        '"NO_SAFE_EXACT_TEN_ITEMS"',
-        "Wrong-item/all-short workflow stop missing",
-    )
+    require(workflow, '"NO_SAFE_EXACT_TEN_ITEMS"', "Wrong-item/all-short workflow stop missing")
     require(workflow, '"AUTO bán VP • tổng kết x10 | "', "Per-item summary log missing")
     require(workflow, "finally:", "Own-stall cleanup guard missing")
     require(workflow, "self.auto.stall.close_own_stall()", "Own-stall close missing")
     if workflow.index("collected += self.auto.stall.collect_own_stall_gold") > workflow.index("attempt = self.sale.sell_next_allowed"):
         raise AssertionError("AUTO Main must collect gold before listing VP")
 
+    # GUI contract: only complete Functions are exposed; sale interval is explicit.
     require(gui, 'text="▶ Bắt đầu AUTO MULTI DEV"', "Consolidated AUTO Multi DEV start button missing")
     require(gui, 'text="⚙ Cấu hình tốc độ"', "AUTO Multi DEV speed settings button missing")
     if "▶ Bán VP AUTO" in gui:
         raise AssertionError("Passed standalone VP sale button must stay removed")
-    require(auto_main, "AutoVpSaleWorkflow(self.auto).run",
-            "Consolidated start must execute the stable sale workflow")
-    require(auto_multi_worker, "AutoMainWorkflow(automation).run",
-            "Consolidated isolated-worker workflow wiring missing")
-    require(auto_multi_worker, 'outcome="auto_main_ready"',
-            "Worker AUTO Main result marker missing")
-    require(entry, 'worker_root / "auto_multi_dev_worker.py"',
-            "GUI isolated-worker launch wiring missing")
+    require(integration, '_AUTO_MAIN_FUNCTION_OPTIONS = (', "AUTO Main Function menu source missing")
+    require(integration, '("function_1", "9 Táo sấy - 9 Vải vàng")',
+            "Verified Function 1 is not exposed in AUTO Main menu")
+    require(integration, 'text="CHỨC NĂNG"', "AUTO Main Function menu label missing")
+    require(integration, 'text="SỐ VÒNG GIỮA 2 LẦN BÁN"', "AUTO Main sale interval input missing")
+    require(integration, 'start_button.configure(command=self._start_configured_auto_main)',
+            "AUTO Main Start button is not bound to selected Function config")
+    require(integration, 'work_dir / "auto-main-config.json"',
+            "Per-run AUTO Main config marker missing")
+    require(integration, '"function_id": function_id', "GUI does not persist selected Function id")
+    require(integration, '"sale_every_loops": sale_every', "GUI does not persist sale interval")
+    require(integration, 'designer_button = tab_buttons.get("clear_stall_designer")',
+            "Legacy Designer tab is not hidden by its real key")
+
+    # Function catalog + recurring scheduler contract.
+    require(catalog, '"function_1": FunctionSpec(', "Function-1 catalog entry missing")
+    require(catalog, 'sale_item_ids=("tao_say", "vai_vang")',
+            "Function-1 sale ownership missing")
+    require(auto_main, "get_function_spec(function_id)",
+            "AUTO Main does not resolve selected Function through catalog")
+    require(auto_main, "FunctionModule(automation)", "AUTO Main Function dispatcher missing")
+    require(auto_main, "sale_every_loops: int = 1", "AUTO Main sale interval input missing")
+    require(auto_main, "self._sale_once(ordinal=1)", "Mandatory sale #1 missing")
+    require(auto_main, "while True:", "AUTO Main is not continuous until Stop")
+    require(auto_main, "loops_since_sale += 1", "Function loop accounting missing")
+    require(auto_main, "if loops_since_sale >= self.sale_every_loops:",
+            "Sale #2..N is not gated by configured Function loop count")
+    require(auto_main, "allowed_item_ids=self.spec.sale_item_ids",
+            "AUTO Main sale is not bound to selected Function VP policy")
+    require(auto_main, "self.context.ensure_running()", "AUTO Main stop checkpoints missing")
+    require(auto_main, 'self.spec.runner_key == "function_1"',
+            "Function-1 completion contract missing")
+
+    # Worker must own the mandatory enter-game/close-popup prefix before AUTO Main.
+    require(auto_multi_worker, 'marker = Path(args.work_dir).resolve() / "auto-main-config.json"',
+            "Worker AUTO Main per-run config loader missing")
+    require(auto_multi_worker, 'function_id = str(auto_main_config["function_id"])',
+            "Worker does not load selected Function")
+    require(auto_multi_worker, 'sale_every = int(auto_main_config["sale_every_loops"])',
+            "Worker does not load sale interval")
+    require(auto_multi_worker, "GameSessionWorkflow(automation).run(timeout=args.timeout)",
+            "Mandatory enter-game/close-popup prefix missing")
+    require(auto_multi_worker, "AutoMainWorkflow(\n            automation,\n            function_id=function_id,\n            sale_every_loops=sale_every,",
+            "Worker does not pass selected Function schedule to AUTO Main")
+    if auto_multi_worker.index("GameSessionWorkflow(automation).run(timeout=args.timeout)") > auto_multi_worker.index("from kvtm_automation.workflows.auto_main import AutoMainWorkflow"):
+        raise AssertionError("AUTO Main Function must enter game/close popup before scheduler starts")
+    require(auto_multi_worker, 'outcome="auto_main_ready"', "Worker AUTO Main result marker missing")
+    require(entry, 'worker_root / "auto_multi_dev_worker.py"', "GUI isolated-worker launch wiring missing")
     require(entry, 'outcome = str(event.pop("outcome", "auto_main_ready"))',
             "GUI AUTO Main result handling missing")
 
@@ -177,8 +193,9 @@ def main() -> int:
 
     print("AUTO MULTI DEV VP SALE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
-    print("flow=collect_gold_round_robin_exact_x10_two_swipes_repeat")
-    print("allowed_items=function_bound_default_tao_say,vai_vang")
+    print("flow=game-session+sale1+selected-function-loop+sale-every-n-loops")
+    print("function_select=verified-complete-functions-only")
+    print("allowed_items=function-bound-catalog")
     print("auto_builder=verified")
     print("clear_stall_runtime=untouched")
     return 0
