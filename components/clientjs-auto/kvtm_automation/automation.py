@@ -14,6 +14,7 @@ from .actions import (
     FunctionOneNavigationActions,
     FunctionOnePassThreeNavigationActions,
     InventoryActions,
+    MachineRepairActions,
     NavigationActions,
     PopupActions,
     PlantingActions,
@@ -124,6 +125,9 @@ class KVAutomation:
         )
         self.production = ProductionActions(
             context, self.vision, self.wait, self.speed_config
+        )
+        self.machine_repair = MachineRepairActions(
+            context, self.vision, self.wait
         )
         self.apple_supply = AppleSupplyActions(
             context, self.vision, self.wait, self.speed_config
