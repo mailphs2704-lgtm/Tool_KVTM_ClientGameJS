@@ -8,7 +8,7 @@ Cập nhật: 2026-09-08 15:17 +07
 
 - Branch: `develop/multi-auto-dev`.
 - AUTO Builder implementation baseline: `6f2d7543840a946186289b978f528133f70ea455`.
-- Commit `b44625e190154c088e143cbd16d24cd81d3671c6` chỉ cập nhật tài liệu bàn giao, không thay runtime business logic.
+- Tất cả commit sau implementation baseline tới và gồm handoff hiện tại chỉ cập nhật tài liệu/quy tắc đọc handoff; runtime business implementation vẫn lấy mốc `6f2d754...` làm baseline để đối chiếu.
 - Feature hiện tại: `TỰ TẠO AUTO v1`.
 - Status: `SOURCE_STATIC_READY / WINDOWS_LIVE_PENDING`.
 - Không được gọi Builder runtime PASS trước khi có Windows live evidence.
@@ -94,3 +94,7 @@ Function 1 hiện kết thúc sau sản xuất Vải vàng ở khu vực tầng 
 2. `AI_COORDINATION.md`
 3. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`
 4. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_HANDOFF.md`
+
+## Phiên hiện tại dừng ở đâu
+
+Không viết thêm runtime code trong cửa sổ hiện tại. Handoff đã khóa để tránh mất ngữ cảnh do quá lượt. Phiên kế tiếp phải bắt đầu bằng đọc bốn file trên, kiểm tra branch HEAD, rồi chờ evidence từ Control Center `[1]` trước khi sửa tiếp.
