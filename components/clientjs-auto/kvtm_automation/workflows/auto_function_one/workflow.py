@@ -13,7 +13,8 @@ FILE_FUNCTIONS = (
     "Chờ chín, thu hoạch và gieo lại ba mươi Táo tầng 1-5",
     "Đi từ tầng 1 lên tầng 6 rồi xử lý đúng hàng dưới cùng",
     "Về màn hình chính, lên tầng 2 và sản xuất chín Nước táo",
-    "Chỉ trả tiến độ tạm 2/3; chưa tuyên bố hoàn thành chức năng",
+    "Về màn hình chính, gieo 27 Bông rồi lên tầng 3 sản xuất chín Vải vàng",
+    "Chỉ PASS 3/3 sau khi hậu kiểm đủ chín Vải vàng",
 )
 
 
@@ -25,6 +26,8 @@ class FunctionOneResult:
     replanted_floor_6: int
     dried_apples: int
     apple_juices: int
+    cotton_planted: int
+    yellow_fabrics: int
     progress_steps: int
     total_steps: int
     elapsed_seconds: float
@@ -34,7 +37,7 @@ class FunctionOneResult:
 
 
 class FunctionOneWorkflow:
-    """Function 1: 9 dried apples + 9 yellow fabrics; stop at juice 2/3."""
+    """Function 1: verified 9 dried apples + supply chain + 9 yellow fabrics."""
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
@@ -64,8 +67,26 @@ class FunctionOneWorkflow:
         self.context.stage("auto-function-1-progress-2-of-3")
         self.context.log(
             "AUTO chức năng 1 • TẠM PASS 2/3 • đủ 9 Táo sấy + 9 Nước táo; "
-            "chưa hoàn thành cho đến khi sản xuất đủ 9 Vải vàng"
+            "bắt đầu chuỗi Bông → Vải vàng"
         )
+
+        self.auto.function_one_pass_three_navigation.floor_2_to_main()
+        cotton = self.auto.cotton_planting.plant_27_cotton()
+        self.context.ensure_running()
+        self.context.stage("auto-function-1-cotton-27-planted")
+        self.context.log(
+            "AUTO chức năng 1 • đã gieo 27 Bông • tầng 1-4 đủ 24 chậu + 3 chậu tầng 5"
+        )
+
+        self.auto.function_one_pass_three_navigation.floor_1_to_floor_3()
+        fabric = self.auto.yellow_fabric_production.produce_9_yellow_fabrics()
+        self.context.ensure_running()
+        self.context.stage("auto-function-1-progress-3-of-3")
+        self.context.log(
+            "AUTO chức năng 1 • PASS 3/3 • đủ 9 Táo sấy + 9 Nước táo + "
+            "27 Bông đã gieo + 9 Vải vàng đã xác minh"
+        )
+
         return FunctionOneResult(
             profile_id=self.context.profile_id,
             first_plant_count=dried.planted_count,
@@ -73,7 +94,9 @@ class FunctionOneWorkflow:
             replanted_floor_6=floor_6,
             dried_apples=dried.produced_count,
             apple_juices=juice.queued_count,
-            progress_steps=2,
+            cotton_planted=cotton,
+            yellow_fabrics=fabric.queued_count,
+            progress_steps=3,
             total_steps=3,
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
