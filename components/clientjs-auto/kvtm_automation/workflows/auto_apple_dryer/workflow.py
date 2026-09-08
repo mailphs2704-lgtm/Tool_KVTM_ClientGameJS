@@ -11,7 +11,8 @@ FILE_FUNCTIONS = (
     "Nhận camera startup đã được GameSession bàn giao, không gate main lần hai",
     "Trồng đúng 27 cây Táo bằng action mới",
     "Giữ mốc tầng 1 và xác minh đúng máy sấy",
-    "Xếp đúng chín Táo sấy rồi trả kế toán",
+    "Xếp đúng chín Táo sấy rồi giữ panel mở",
+    "Sau hậu kiểm 9/9, gọi module Sửa máy live-pass trước khi rời máy",
 )
 
 
@@ -46,9 +47,17 @@ class AppleDryerWorkflow:
         self.context.ensure_running()
         self.context.stage("auto-apple-plant-finished")
 
-        produced = self.auto.production.produce_9_dried_apples()
+        produced = self.auto.production.produce_9_dried_apples(
+            close_after_success=False
+        )
         self.context.ensure_running()
         self.context.stage("auto-dried-apple-production-finished")
+        self.auto.machine_repair.repair_after_production(produced)
+        self.context.ensure_running()
+        self.context.stage("auto-dried-apple-machine-repaired")
+        self.context.log(
+            "AUTO Táo sấy • sản xuất 9/9 + Sửa máy PASS"
+        )
         return AppleDryerResult(
             profile_id=self.context.profile_id,
             planted_count=planted,
