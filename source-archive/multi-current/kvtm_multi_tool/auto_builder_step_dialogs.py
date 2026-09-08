@@ -8,7 +8,7 @@ from auto_builder_gesture_picker import pick_swipe_on_game
 __all__ = ["configure_step"]
 FILE_FUNCTIONS = (
     "Cấu hình module Vào game/Bán VP/Function có sẵn",
-    "Chọn Function tự tạo đã lưu và vòng lặp",
+    "Chọn Function tự tạo đã lưu, số vòng và thời gian chờ giữa các vòng",
     "Chọn ảnh từ thư viện Multi DEV hoặc mục ảnh AUTO PRO",
     "Tự copy ảnh AUTO PRO được chọn vào thư viện Multi DEV",
     "Cấu hình Swipe nhiều điểm bằng kéo trực tiếp trên game hoặc nhập polyline",
@@ -277,8 +277,18 @@ def configure_step(core, store, parent, step: dict, app=None) -> dict | None:
             )
             if loops is None:
                 return None
+            loop_delay = core.simpledialog.askfloat(
+                "9 Táo sấy - 9 Vải vàng",
+                "Thời gian chờ GIỮA các vòng Function (giây):\n"
+                "Chỉ áp dụng khi Số vòng > 1; không chờ sau vòng cuối.",
+                initialvalue=float(step.get("loop_delay_seconds", 0.0) or 0.0),
+                minvalue=0.0, maxvalue=3600.0, parent=parent,
+            )
+            if loop_delay is None:
+                return None
             step["function_id"] = "function_1"
             step["loops"] = int(loops)
+            step["loop_delay_seconds"] = float(loop_delay)
             step["sale_after_each_loop"] = bool(core.messagebox.askyesno(
                 "Function 1", "Sau MỖI vòng hoàn tất, gọi module Bán VP theo Function 1?",
                 parent=parent,
@@ -297,9 +307,19 @@ def configure_step(core, store, parent, step: dict, app=None) -> dict | None:
             )
             if loops is None:
                 return None
+            loop_delay = core.simpledialog.askfloat(
+                "Function tự tạo",
+                f"Thời gian chờ GIỮA các vòng {chosen['name']} (giây):\n"
+                "Không chờ sau vòng cuối.",
+                initialvalue=float(step.get("loop_delay_seconds", 0.0) or 0.0),
+                minvalue=0.0, maxvalue=3600.0, parent=parent,
+            )
+            if loop_delay is None:
+                return None
             step["function_id"] = chosen["function_id"]
             step["function_name"] = chosen["name"]
             step["loops"] = int(loops)
+            step["loop_delay_seconds"] = float(loop_delay)
             step["sale_after_each_loop"] = bool(core.messagebox.askyesno(
                 "Function tự tạo",
                 "Sau MỖI vòng Function này, gọi module Bán VP theo Function 1?",
