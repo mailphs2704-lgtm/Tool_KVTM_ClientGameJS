@@ -32,6 +32,26 @@ Commits:
 - `6bf99ce238b46277ecbd2cee67662472e70b94db` — normalize post-juice descent before cotton.
 - `d9d42e4c3f957ca24e7d4ae5049a43978d7ba41b` — allow boundary settling after juice.
 
+## Build verifier incident — Đã sửa
+
+Lần build Control Center `[1]` đầu tiên sau thay đổi route đã dừng ở `verify_auto_main_production_contract.py` với lỗi:
+
+`AssertionError: Pass-3 downward route must use verified fresh-frame gesture`
+
+Nguyên nhân không phải runtime route sai. Verifier cũ vẫn bắt chuỗi implementation cũ `self._gesture(self.DOWN_ONE`, trong khi route mới cố ý chuyển downward normalization sang `_settle_down_one()` để các nhịp chạm biên không false-fail vì `frame_change` thấp.
+
+Verifier nay khóa đúng contract mới:
+
+- bắt buộc có `_settle_down_one`;
+- bắt buộc dùng `DOWN_ONE` geometry;
+- bắt buộc có nhãn probe `1-of-4` và settle cuối `4-of-4`;
+- bắt buộc log `boundary_change_non_blocking=true`;
+- upward route Bông -> Vải vàng vẫn tiếp tục dùng `_gesture(self.UP_ONE)` fail-closed như trước.
+
+Commit sửa verifier:
+
+- `e3f4f6695bf0c0406e954701859149993e7d7db0` — `test(auto-multi): align post-juice navigation verifier`.
+
 ## Chưa chốt live
 
 Chưa gọi PASS cho route này cho tới khi live log chứng minh thứ tự:
