@@ -108,6 +108,7 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         "version": 1,
         "function_id": "function_1",
         "sale_every_loops": 1,
+        "function_loop_delay_seconds": 0.0,
     }
     if effective_mode != "main":
         return default
@@ -124,14 +125,18 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         raise ValueError("AUTO Main config version chưa hỗ trợ")
     function_id = str(raw.get("function_id") or "function_1").strip()
     sale_every = int(raw.get("sale_every_loops", 1) or 1)
+    loop_delay = float(raw.get("function_loop_delay_seconds", 0.0) or 0.0)
     if not function_id:
         raise ValueError("AUTO Main config thiếu function_id")
     if not 1 <= sale_every <= 999:
         raise ValueError("AUTO Main sale_every_loops phải trong 1..999")
+    if not 0.0 <= loop_delay <= 3600.0:
+        raise ValueError("AUTO Main function_loop_delay_seconds phải trong 0..3600")
     return {
         "version": 1,
         "function_id": function_id,
         "sale_every_loops": sale_every,
+        "function_loop_delay_seconds": loop_delay,
     }
 
 
@@ -238,8 +243,6 @@ def main() -> int:
             f"check cây={speed.crop_check_interval:.3f}s"
         )
 
-        # Builder owns exact block order. There is no hidden GameSession prefix:
-        # entering the game/closing popups runs only when that block exists.
         if effective_mode == "builder":
             from kvtm_automation.workflows.auto_builder import AutoBuilderRunner
 
@@ -257,7 +260,6 @@ def main() -> int:
             )
             return 0
 
-        # Mandatory prefix for every normal AUTO MULTI DEV Function.
         GameSessionWorkflow(automation).run(timeout=args.timeout)
         log(
             "PASS | vào game/đóng popup • chuẩn bị chạy Function đã chọn và bán VP theo Function"
@@ -279,14 +281,17 @@ def main() -> int:
 
         function_id = str(auto_main_config["function_id"])
         sale_every = int(auto_main_config["sale_every_loops"])
+        loop_delay = float(auto_main_config["function_loop_delay_seconds"])
         log(
             "AUTO MULTI DEV schedule • "
-            f"function_id={function_id} • bán lại sau mỗi {sale_every} vòng"
+            f"function_id={function_id} • bán lại sau mỗi {sale_every} vòng • "
+            f"chờ giữa vòng Function={loop_delay:.3f}s"
         )
         result = AutoMainWorkflow(
             automation,
             function_id=function_id,
             sale_every_loops=sale_every,
+            function_loop_delay_seconds=loop_delay,
         ).run()
         result_payload = result.to_dict()
         result_payload.pop("profile_id", None)
