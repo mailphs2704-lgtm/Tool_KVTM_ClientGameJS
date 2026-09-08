@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 import auto_builder_model as model
 from auto_builder_step_dialogs import configure_step
 
@@ -7,10 +9,13 @@ from auto_builder_step_dialogs import configure_step
 __all__ = ["install_auto_builder_tab", "AutoBuilderUI"]
 FILE_FUNCTIONS = (
     "Gắn tab TỰ TẠO AUTO vào thanh tab Multi DEV",
-    "Hiển thị editor theo đúng style hiện tại của Multi DEV",
-    "Thêm/sửa/xóa/đổi thứ tự block",
-    "Lưu/nạp plan ở AppData bền qua build DEV",
-    "Gửi plan đã lưu sang isolated AUTO MULTI DEV worker",
+    "Hiển thị editor nhiều tab theo đúng style Multi DEV",
+    "Tạo và mở đồng thời nhiều Function tự tạo",
+    "Load/save Function đã có trong thư viện AppData",
+    "Thêm/sửa/xóa/đổi thứ tự block trong từng tab",
+    "Chèn block gọi Function đã lưu vào plan/function khác",
+    "Lưu/nạp plan chính và chạy snapshot đã bundle Function",
+    "Chạy thử riêng tab Function mà không tự chèn module ẩn",
 )
 
 
@@ -21,8 +26,8 @@ class AutoBuilderUI:
         self.store = model.AutoBuilderPlanStore(core.APP_DIR)
         self.plan = self.store.load()
         self.window = None
-        self.tree = None
-        self.name_var = None
+        self.notebook = None
+        self.documents: dict[str, dict] = {}
         self.status_var = None
         self._build_tab()
 
@@ -34,10 +39,8 @@ class AutoBuilderUI:
         frame.place_forget()
         app.auto_feature_tabs["auto_builder"] = frame
 
-        # ``auto_tabs_window`` is the integer canvas-item id returned by
-        # Canvas.create_window(), not a Tk parent widget. Reuse the actual tab
-        # bar widget through the already-created AUTO MULTI DEV button so the
-        # Builder tab is a sibling of every native Multi DEV tab.
+        # Canvas.create_window returns an integer item id. The real Tk parent is
+        # the master of an existing native tab button.
         anchor = app.auto_tab_buttons.get("multi_dev")
         if anchor is None or not hasattr(anchor, "master"):
             raise RuntimeError("Không tìm thấy tab AUTO MULTI DEV để gắn TỰ TẠO AUTO")
@@ -50,10 +53,7 @@ class AutoBuilderUI:
             font=("Segoe UI Semibold", 9), cursor="hand2", padx=6, pady=7,
             command=lambda: app._show_auto_tab("auto_builder"),
         )
-        button.pack(
-            side="left", fill="y", padx=(3, 0),
-            after=anchor,
-        )
+        button.pack(side="left", fill="y", padx=(3, 0), after=anchor)
         app.auto_tab_buttons["auto_builder"] = button
 
         header = core.ttk.Frame(frame, style="Detail.TFrame")
@@ -74,15 +74,15 @@ class AutoBuilderUI:
         )
         core.ttk.Label(
             body,
-            text="Module riêng • Function vòng lặp • thứ tự danh sách = thứ tự chạy",
+            text="Plan chính + nhiều tab Function • thứ tự block = thứ tự chạy",
             style="AutoValue.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(5, 0))
-        core.ttk.Label(body, text="Block có sẵn", style="AutoKey.TLabel").grid(
+        core.ttk.Label(body, text="Thao tác trực quan", style="AutoKey.TLabel").grid(
             row=0, column=1, sticky="w", padx=(30, 0)
         )
         core.ttk.Label(
             body,
-            text="Vào game • Bán VP Function • Function 1 • Nhận diện • Click • Swipe • Wait",
+            text="Swipe kéo trực tiếp trên game • ảnh nhận diện • click • wait",
             style="AutoValue.TLabel",
         ).grid(row=1, column=1, sticky="w", padx=(30, 0), pady=(5, 0))
         body.columnconfigure(0, weight=1)
@@ -95,8 +95,8 @@ class AutoBuilderUI:
             style="Action.TButton", command=self.open_editor,
         ).pack(side="left", padx=(0, 8))
         core.ttk.Button(
-            actions, text="▶ Chạy quy trình đã lưu", width=26,
-            style="AutoStart.TButton", command=self.run_plan,
+            actions, text="▶ Chạy quy trình chính", width=24,
+            style="AutoStart.TButton", command=self.run_main_plan,
         ).pack(side="left", padx=(0, 8))
         core.ttk.Button(
             actions, text="↻ Nạp lại plan", width=18,
@@ -113,98 +113,249 @@ class AutoBuilderUI:
             return
         win = core.tk.Toplevel(self.app)
         self.window = win
+        self.documents = {}
         win.title("KVTM Multi DEV - Tự tạo AUTO")
-        win.geometry("980x620")
-        win.minsize(820, 520)
+        win.geometry("1120x700")
+        win.minsize(900, 560)
         win.configure(background="#f3f6fa")
 
         def close_window() -> None:
             self.window = None
-            self.tree = None
+            self.notebook = None
+            self.documents = {}
             win.destroy()
 
         win.protocol("WM_DELETE_WINDOW", close_window)
-        top = core.ttk.Frame(win, padding=(12, 10), style="App.TFrame")
-        top.pack(fill="x")
-        core.ttk.Label(top, text="Tên quy trình:", style="Key.TLabel").pack(side="left")
-        self.name_var = core.tk.StringVar(value=str(self.plan.get("name") or "AUTO tự tạo 1"))
-        core.ttk.Entry(top, textvariable=self.name_var, width=42).pack(
+
+        toolbar = core.ttk.Frame(win, padding=(12, 10), style="App.TFrame")
+        toolbar.pack(fill="x")
+        core.ttk.Label(
+            toolbar, text="AUTO Builder", style="Key.TLabel"
+        ).pack(side="left", padx=(0, 14))
+        core.ttk.Button(
+            toolbar, text="＋ Function mới", width=18,
+            style="Action.TButton", command=self.new_function_tab,
+        ).pack(side="left", padx=(0, 8))
+        core.ttk.Button(
+            toolbar, text="📂 Load Function", width=18,
+            style="Action.TButton", command=self.load_function_tab,
+        ).pack(side="left", padx=(0, 8))
+        core.ttk.Button(
+            toolbar, text="💾 Lưu tab hiện tại", width=19,
+            style="Action.TButton", command=self.save_current_document,
+        ).pack(side="left", padx=(0, 8))
+        core.ttk.Button(
+            toolbar, text="▶ Chạy tab hiện tại", width=20,
+            style="AutoStart.TButton", command=self.run_current_document,
+        ).pack(side="left")
+        core.ttk.Label(
+            toolbar,
+            text="Có thể mở nhiều Function cùng lúc; mỗi tab lưu độc lập",
+            style="AutoValue.TLabel",
+        ).pack(side="right")
+
+        self.notebook = core.ttk.Notebook(win)
+        self.notebook.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self._open_document(self.plan, kind="plan", select=True)
+
+    def _open_document(self, data: dict, *, kind: str, select: bool = True) -> None:
+        if self.notebook is None:
+            return
+        key = (
+            "plan:main" if kind == "plan"
+            else f"function:{str(data.get('function_id') or '')}"
+        )
+        for tab_id, document in self.documents.items():
+            if document["key"] == key:
+                if select:
+                    self.notebook.select(tab_id)
+                return
+
+        core = self.core
+        frame = core.ttk.Frame(self.notebook, padding=(10, 8), style="App.TFrame")
+        tab_title = "QUY TRÌNH CHÍNH" if kind == "plan" else str(data.get("name") or "Function")
+        self.notebook.add(frame, text=tab_title)
+        tab_id = str(frame)
+        name_var = core.tk.StringVar(value=str(data.get("name") or tab_title))
+        document = {
+            "key": key,
+            "kind": kind,
+            "data": copy.deepcopy(data),
+            "frame": frame,
+            "tree": None,
+            "name_var": name_var,
+        }
+        self.documents[tab_id] = document
+
+        header = core.ttk.Frame(frame, style="App.TFrame")
+        header.pack(fill="x", pady=(0, 8))
+        core.ttk.Label(
+            header,
+            text="Tên quy trình:" if kind == "plan" else "Tên Function:",
+            style="Key.TLabel",
+        ).pack(side="left")
+        core.ttk.Entry(header, textvariable=name_var, width=42).pack(
             side="left", padx=(8, 12)
         )
-        core.ttk.Label(
-            top, text="Thứ tự trong danh sách = thứ tự thực thi",
-            style="AutoValue.TLabel",
-        ).pack(side="left")
+        if kind == "function":
+            core.ttk.Label(
+                header,
+                text=f"ID: {data.get('function_id')}",
+                style="AutoValue.TLabel",
+            ).pack(side="left")
+        else:
+            core.ttk.Label(
+                header,
+                text="Function tự tạo được gọi bằng block riêng trong plan",
+                style="AutoValue.TLabel",
+            ).pack(side="left")
 
-        content = core.ttk.Frame(win, padding=(12, 4), style="App.TFrame")
+        content = core.ttk.Frame(frame, style="App.TFrame")
         content.pack(fill="both", expand=True)
         tree = core.ttk.Treeview(
             content, columns=("index", "kind", "detail"), show="headings",
             style="Queue.Treeview", selectmode="browse",
         )
-        self.tree = tree
-        for key, label in (("index", "#"), ("kind", "LOẠI"), ("detail", "CẤU HÌNH / THỨ TỰ")):
-            tree.heading(key, text=label)
+        document["tree"] = tree
+        for column, label in (
+            ("index", "#"), ("kind", "LOẠI"), ("detail", "CẤU HÌNH / THỨ TỰ")
+        ):
+            tree.heading(column, text=label)
         tree.column("index", width=48, anchor="center", stretch=False)
-        tree.column("kind", width=120, anchor="w", stretch=False)
-        tree.column("detail", width=620, anchor="w")
+        tree.column("kind", width=150, anchor="w", stretch=False)
+        tree.column("detail", width=670, anchor="w")
         tree.pack(side="left", fill="both", expand=True)
-        scroll = core.ttk.Scrollbar(content, orient="vertical", command=tree.yview)
-        scroll.pack(side="left", fill="y")
-        tree.configure(yscrollcommand=scroll.set)
-        tree.bind("<Double-1>", lambda _event: self.modify_step("edit"))
+        scrollbar = core.ttk.Scrollbar(content, orient="vertical", command=tree.yview)
+        scrollbar.pack(side="left", fill="y")
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.bind("<Double-1>", lambda _event, tid=tab_id: self.modify_step("edit", tid))
 
         tools = core.ttk.Frame(content, padding=(10, 0), style="App.TFrame")
         tools.pack(side="right", fill="y")
-        add_button = core.ttk.Button(tools, text="＋ Thêm bước", width=20, style="Action.TButton")
+        add_button = core.ttk.Button(
+            tools, text="＋ Thêm bước", width=22, style="Action.TButton"
+        )
         add_button.pack(fill="x", pady=(0, 8))
-        menu = core.tk.Menu(win, tearoff=False)
+        menu = core.tk.Menu(self.window, tearoff=False)
         for label, step_type in (
             ("MODULE • Vào game + đóng popup", "enter_game_popup"),
             ("MODULE • Bán VP theo Function", "sell_function_vp"),
-            ("FUNCTION • Function 1", "function"),
+            ("FUNCTION CÓ SẴN • Function 1", "function"),
+            ("FUNCTION TỰ TẠO • Gọi Function đã lưu", "call_saved_function"),
             ("NHẬN DIỆN • Chọn ảnh", "recognize_image"),
-            ("CLICK", "click"), ("SWIPE", "swipe"), ("WAIT", "wait"),
-            ("KẾT THÚC PASS", "finish_pass"), ("KẾT THÚC FAIL", "finish_fail"),
+            ("CLICK", "click"),
+            ("SWIPE • kéo trực tiếp trên game", "swipe"),
+            ("WAIT", "wait"),
+            ("KẾT THÚC PASS", "finish_pass"),
+            ("KẾT THÚC FAIL", "finish_fail"),
         ):
-            menu.add_command(label=label, command=lambda kind=step_type: self.add_step(kind))
+            menu.add_command(
+                label=label,
+                command=lambda kind0=step_type, tid=tab_id: self.add_step(kind0, tid),
+            )
 
         def show_add_menu() -> None:
             try:
-                menu.tk_popup(add_button.winfo_rootx(), add_button.winfo_rooty() + add_button.winfo_height())
+                menu.tk_popup(
+                    add_button.winfo_rootx(),
+                    add_button.winfo_rooty() + add_button.winfo_height(),
+                )
             finally:
                 menu.grab_release()
 
         add_button.configure(command=show_add_menu)
         for text, action in (
-            ("✎ Sửa bước", "edit"), ("↑ Đưa lên", "up"),
-            ("↓ Đưa xuống", "down"), ("✕ Xóa", "delete"),
+            ("✎ Sửa bước", "edit"),
+            ("↑ Đưa lên", "up"),
+            ("↓ Đưa xuống", "down"),
+            ("✕ Xóa", "delete"),
         ):
             core.ttk.Button(
-                tools, text=text, width=20, style="Action.TButton",
-                command=lambda op=action: self.modify_step(op),
+                tools, text=text, width=22, style="Action.TButton",
+                command=lambda op=action, tid=tab_id: self.modify_step(op, tid),
             ).pack(fill="x", pady=(0, 8))
         core.ttk.Separator(tools, orient="horizontal").pack(fill="x", pady=(4, 10))
         core.ttk.Button(
-            tools, text="💾 Lưu quy trình", width=20,
-            style="AutoStart.TButton", command=self.save_plan,
+            tools, text="💾 Lưu tab", width=22,
+            style="AutoStart.TButton",
+            command=lambda tid=tab_id: self.save_document(tid),
         ).pack(fill="x", pady=(0, 8))
         core.ttk.Button(
-            tools, text="▶ Lưu + chạy", width=20,
-            style="AutoStart.TButton", command=self.run_plan,
+            tools, text="▶ Chạy tab", width=22,
+            style="AutoStart.TButton",
+            command=lambda tid=tab_id: self.run_document(tid),
         ).pack(fill="x", pady=(0, 8))
-        self.refresh_editor()
+        if kind == "function":
+            core.ttk.Button(
+                tools, text="＋ Chèn vào plan chính", width=22,
+                style="Action.TButton",
+                command=lambda tid=tab_id: self.insert_function_into_main(tid),
+            ).pack(fill="x", pady=(0, 8))
+            core.ttk.Button(
+                tools, text="✕ Đóng tab Function", width=22,
+                style="Action.TButton",
+                command=lambda tid=tab_id: self.close_function_tab(tid),
+            ).pack(fill="x")
 
-    def refresh_editor(self) -> None:
+        self.refresh_document(tab_id)
+        if select:
+            self.notebook.select(frame)
+
+    def current_tab_id(self) -> str | None:
+        if self.notebook is None:
+            return None
+        selected = self.notebook.select()
+        return str(selected) if selected else None
+
+    def new_function_tab(self) -> None:
+        if self.window is None:
+            self.open_editor()
+            return
+        name = self.core.simpledialog.askstring(
+            "Tạo Function mới", "Tên Function:", initialvalue="Function mới",
+            parent=self.window,
+        )
+        if name is None:
+            return
+        function = model.new_function(name)
+        self.store.save_function(function)
+        self._open_document(function, kind="function", select=True)
         self._refresh_status()
-        tree = self.tree
+
+    def load_function_tab(self) -> None:
+        if self.window is None:
+            self.open_editor()
+            return
+        functions = self.store.list_functions()
+        if not functions:
+            self.core.messagebox.showinfo(
+                self.core.APP_NAME, "Chưa có Function tự tạo đã lưu.", parent=self.window
+            )
+            return
+        prompt = "Chọn số Function cần mở:\n\n" + "\n".join(
+            f"{index}. {item['name']}  [{item['function_id']}]"
+            for index, item in enumerate(functions, start=1)
+        )
+        choice = self.core.simpledialog.askinteger(
+            "Load Function", prompt, initialvalue=1,
+            minvalue=1, maxvalue=len(functions), parent=self.window,
+        )
+        if choice is None:
+            return
+        self._open_document(functions[int(choice) - 1], kind="function", select=True)
+
+    def refresh_document(self, tab_id: str) -> None:
+        document = self.documents.get(str(tab_id))
+        if document is None:
+            return
+        tree = document["tree"]
         if tree is None or not tree.winfo_exists():
             return
         selected = tree.selection()
         selected_id = selected[0] if selected else ""
         for item in tree.get_children():
             tree.delete(item)
-        for index, step in enumerate(self.plan.get("steps") or [], start=1):
+        for index, step in enumerate(document["data"].get("steps") or [], start=1):
             kind, detail = model.step_summary(step)
             item_id = str(step.get("id") or model.new_step_id())
             step["id"] = item_id
@@ -213,34 +364,48 @@ class AutoBuilderUI:
             tree.selection_set(selected_id)
             tree.see(selected_id)
 
-    def add_step(self, step_type: str) -> None:
+    def add_step(self, step_type: str, tab_id: str | None = None) -> None:
+        tab_id = str(tab_id or self.current_tab_id() or "")
+        document = self.documents.get(tab_id)
+        if document is None:
+            return
         step = configure_step(
             self.core, self.store, self.window,
-            {"id": model.new_step_id(), "type": step_type},
+            {"id": model.new_step_id(), "type": step_type}, app=self.app,
         )
         if step is None:
             return
-        self.plan.setdefault("steps", []).append(step)
-        self.store.save(self.plan)
-        self.refresh_editor()
-        if self.tree is not None and self.tree.exists(step["id"]):
-            self.tree.selection_set(step["id"])
-            self.tree.see(step["id"])
+        document["data"].setdefault("steps", []).append(step)
+        self.save_document(tab_id, quiet=True)
+        self.refresh_document(tab_id)
+        tree = document["tree"]
+        if tree.exists(step["id"]):
+            tree.selection_set(step["id"])
+            tree.see(step["id"])
 
-    def modify_step(self, action: str) -> None:
-        if self.tree is None:
+    def modify_step(self, action: str, tab_id: str | None = None) -> None:
+        tab_id = str(tab_id or self.current_tab_id() or "")
+        document = self.documents.get(tab_id)
+        if document is None:
             return
-        selected = self.tree.selection()
+        tree = document["tree"]
+        selected = tree.selection()
         if not selected:
-            self.core.messagebox.showinfo(self.core.APP_NAME, "Hãy chọn một bước trong quy trình.")
+            self.core.messagebox.showinfo(
+                self.core.APP_NAME, "Hãy chọn một bước trong tab hiện tại.", parent=self.window
+            )
             return
         step_id = selected[0]
-        steps = self.plan.setdefault("steps", [])
-        index = next((i for i, step in enumerate(steps) if str(step.get("id")) == step_id), -1)
+        steps = document["data"].setdefault("steps", [])
+        index = next(
+            (i for i, step in enumerate(steps) if str(step.get("id")) == step_id), -1
+        )
         if index < 0:
             return
         if action == "edit":
-            updated = configure_step(self.core, self.store, self.window, dict(steps[index]))
+            updated = configure_step(
+                self.core, self.store, self.window, dict(steps[index]), app=self.app,
+            )
             if updated is None:
                 return
             steps[index] = updated
@@ -249,43 +414,184 @@ class AutoBuilderUI:
         elif action == "down" and index + 1 < len(steps):
             steps[index + 1], steps[index] = steps[index], steps[index + 1]
         elif action == "delete":
-            if not self.core.messagebox.askyesno(self.core.APP_NAME, "Xóa bước đang chọn?", parent=self.window):
+            if not self.core.messagebox.askyesno(
+                self.core.APP_NAME, "Xóa bước đang chọn?", parent=self.window
+            ):
                 return
             steps.pop(index)
-        self.store.save(self.plan)
-        self.refresh_editor()
-        if self.tree is not None and self.tree.exists(step_id):
-            self.tree.selection_set(step_id)
-            self.tree.see(step_id)
+        self.save_document(tab_id, quiet=True)
+        self.refresh_document(tab_id)
+        if tree.exists(step_id):
+            tree.selection_set(step_id)
+            tree.see(step_id)
 
-    def save_plan(self) -> bool:
-        if self.name_var is not None:
-            self.plan["name"] = self.name_var.get().strip() or "AUTO tự tạo 1"
-        if not self.plan.get("steps"):
-            self.core.messagebox.showerror(self.core.APP_NAME, "Quy trình phải có ít nhất một bước.")
+    def save_document(self, tab_id: str, quiet: bool = False) -> bool:
+        document = self.documents.get(str(tab_id))
+        if document is None:
             return False
-        self.store.save(self.plan)
+        data = document["data"]
+        data["name"] = document["name_var"].get().strip()
+        if not data["name"]:
+            self.core.messagebox.showerror(
+                self.core.APP_NAME, "Tên tab không được rỗng.", parent=self.window
+            )
+            return False
+        try:
+            if document["kind"] == "plan":
+                self.store.save(data)
+                self.plan = copy.deepcopy(data)
+                title = "QUY TRÌNH CHÍNH"
+            else:
+                self.store.save_function(data)
+                title = data["name"]
+            if self.notebook is not None:
+                self.notebook.tab(document["frame"], text=title)
+        except Exception as exc:
+            self.core.messagebox.showerror(
+                self.core.APP_NAME, f"Không lưu được Builder tab:\n{exc}", parent=self.window
+            )
+            return False
+        if not quiet:
+            self.app.note.set(f"AUTO Builder đã lưu: {data['name']}")
         self._refresh_status()
-        self.app.note.set(f"AUTO Builder đã lưu: {self.store.plan_path}")
         return True
+
+    def save_current_document(self) -> None:
+        tab_id = self.current_tab_id()
+        if tab_id:
+            self.save_document(tab_id)
+
+    def save_all_open_documents(self) -> bool:
+        for tab_id in tuple(self.documents):
+            if not self.save_document(tab_id, quiet=True):
+                return False
+        return True
+
+    def insert_function_into_main(self, function_tab_id: str) -> None:
+        function_document = self.documents.get(str(function_tab_id))
+        if function_document is None or function_document["kind"] != "function":
+            return
+        if not self.save_document(function_tab_id, quiet=True):
+            return
+        main_id = next(
+            (tab_id for tab_id, doc in self.documents.items() if doc["kind"] == "plan"),
+            None,
+        )
+        if main_id is None:
+            return
+        function = function_document["data"]
+        step = {
+            "id": model.new_step_id(),
+            "type": "call_saved_function",
+            "function_id": function["function_id"],
+            "function_name": function["name"],
+            "loops": 1,
+            "sale_after_each_loop": False,
+            "sale_function_id": "function_1",
+            "sale_timeout": 120.0,
+        }
+        main = self.documents[main_id]
+        main["data"].setdefault("steps", []).append(step)
+        self.save_document(main_id, quiet=True)
+        self.refresh_document(main_id)
+        self.notebook.select(main["frame"])
+
+    def close_function_tab(self, tab_id: str) -> None:
+        document = self.documents.get(str(tab_id))
+        if document is None or document["kind"] != "function":
+            return
+        if not self.save_document(tab_id, quiet=True):
+            return
+        if self.notebook is not None:
+            self.notebook.forget(document["frame"])
+        self.documents.pop(str(tab_id), None)
+
+    def run_document(self, tab_id: str) -> None:
+        document = self.documents.get(str(tab_id))
+        if document is None:
+            return
+        if not self.save_all_open_documents():
+            return
+        if document["kind"] == "plan":
+            self.run_main_plan()
+            return
+        function = document["data"]
+        if not function.get("steps"):
+            self.core.messagebox.showerror(
+                self.core.APP_NAME, "Function hiện tại chưa có bước nào.", parent=self.window
+            )
+            return
+        test_plan = {
+            "version": 1,
+            "kind": "plan",
+            "name": f"TEST • {function['name']}",
+            "steps": [{
+                "id": model.new_step_id(),
+                "type": "call_saved_function",
+                "function_id": function["function_id"],
+                "function_name": function["name"],
+                "loops": 1,
+                "sale_after_each_loop": False,
+            }],
+        }
+        try:
+            bundled = self.store.bundle_plan(test_plan)
+        except Exception as exc:
+            self.core.messagebox.showerror(
+                self.core.APP_NAME, f"Không đóng gói được Function:\n{exc}", parent=self.window
+            )
+            return
+        self.app._start_auto_builder_plan(bundled)
+
+    def run_current_document(self) -> None:
+        tab_id = self.current_tab_id()
+        if tab_id:
+            self.run_document(tab_id)
+        else:
+            self.run_main_plan()
+
+    def run_main_plan(self) -> None:
+        if self.window is not None and self.window.winfo_exists():
+            if not self.save_all_open_documents():
+                return
+        else:
+            self.plan = self.store.load()
+        if not self.plan.get("steps"):
+            self.core.messagebox.showerror(
+                self.core.APP_NAME, "Quy trình chính phải có ít nhất một bước."
+            )
+            return
+        try:
+            bundled = self.store.bundle_plan(self.plan)
+        except Exception as exc:
+            self.core.messagebox.showerror(
+                self.core.APP_NAME, f"Không đóng gói được AUTO Builder:\n{exc}"
+            )
+            return
+        self.app._start_auto_builder_plan(bundled)
 
     def reload_plan(self) -> None:
         self.plan = self.store.load()
-        if self.name_var is not None:
-            self.name_var.set(str(self.plan.get("name") or "AUTO tự tạo 1"))
-        self.refresh_editor()
-
-    def run_plan(self) -> None:
-        if not self.save_plan():
-            return
-        self.app._start_auto_builder_plan(dict(self.plan))
+        if self.window is not None and self.window.winfo_exists():
+            main_id = next(
+                (tab_id for tab_id, doc in self.documents.items() if doc["kind"] == "plan"),
+                None,
+            )
+            if main_id is not None:
+                self.documents[main_id]["data"] = copy.deepcopy(self.plan)
+                self.documents[main_id]["name_var"].set(self.plan["name"])
+                self.refresh_document(main_id)
+        self._refresh_status()
 
     def _refresh_status(self) -> None:
         if self.status_var is None:
             return
-        name = str(self.plan.get("name") or "AUTO tự tạo 1")
-        count = len(self.plan.get("steps") or [])
-        self.status_var.set(f"{name} • {count} bước • lưu bền qua build DEV")
+        plan = self.store.load()
+        functions = self.store.list_functions()
+        self.status_var.set(
+            f"{plan['name']} • {len(plan.get('steps') or [])} bước • "
+            f"{len(functions)} Function đã lưu"
+        )
 
 
 def install_auto_builder_tab(app, core) -> AutoBuilderUI:
