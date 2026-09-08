@@ -257,8 +257,8 @@ def main() -> int:
     require(ui, 'text="📂 Load Function"', "Load Function tab button missing")
     require(ui, '"FUNCTION TỰ TẠO • Gọi Function đã lưu"',
             "Saved Function call block missing from add menu")
-    require(ui, '"SWIPE • kéo trực tiếp nhiều đoạn"',
-            "Multi-point Swipe add block missing")
+    require(ui, '"SWIPE • kéo trực tiếp trên game"',
+            "Swipe add block missing")
 
     for token in (
         'background="#e8eef7"',
