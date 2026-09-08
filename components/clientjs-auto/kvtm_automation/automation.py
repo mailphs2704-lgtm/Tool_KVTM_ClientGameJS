@@ -9,8 +9,10 @@ from .actions import (
     AppleSupplyActions,
     AutoVpRecognitionActions,
     BuyingActions,
+    CottonPlantingActions,
     FloorNavigationActions,
     FunctionOneNavigationActions,
+    FunctionOnePassThreeNavigationActions,
     InventoryActions,
     NavigationActions,
     PopupActions,
@@ -18,6 +20,7 @@ from .actions import (
     ProductionActions,
     SellingActions,
     StallActions,
+    YellowFabricProductionActions,
 )
 from .context import AutomationContext
 from .runtime.assets import AssetLibrary
@@ -40,7 +43,6 @@ def _load_image_runtime(context: AutomationContext) -> float:
     context.log("Thư viện ảnh: cold-load đồng bộ trên worker main thread")
     install_binary_dependencies(context.auto_root, logger=context.log)
     return time.monotonic() - started
-
 
 
 class KVAutomation:
@@ -114,6 +116,9 @@ class KVAutomation:
         self.planting = PlantingActions(
             context, self.vision, self.wait, self.speed_config
         )
+        self.cotton_planting = CottonPlantingActions(
+            context, self.vision, self.wait, self.speed_config
+        )
         self.floors = FloorNavigationActions(
             context, self.vision, self.wait, self.speed_config
         )
@@ -126,7 +131,13 @@ class KVAutomation:
         self.function_one_navigation = FunctionOneNavigationActions(
             context, self.vision, self.wait, self.speed_config
         )
+        self.function_one_pass_three_navigation = FunctionOnePassThreeNavigationActions(
+            context, self.vision, self.wait, self.speed_config
+        )
         self.apple_juice_production = AppleJuiceProductionActions(
+            context, self.vision, self.wait, self.speed_config
+        )
+        self.yellow_fabric_production = YellowFabricProductionActions(
             context, self.vision, self.wait, self.speed_config
         )
         self.navigation = NavigationActions(
