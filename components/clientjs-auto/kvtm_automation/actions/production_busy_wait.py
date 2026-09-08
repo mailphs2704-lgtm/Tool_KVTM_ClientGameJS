@@ -40,10 +40,11 @@ def _probe_product_after_reopen(owner, *, point: tuple[int, int], template: str)
         scales=(0.75, 0.90, 1.00, 1.10, 1.25),
         click=False,
     )
-    if product is None:
-        return False
+    # The previous transaction had already closed the verified panel. This
+    # one-shot probe reopens only to decide busy-vs-wrong-panel; always close it
+    # again before either retrying or propagating FAIL.
     owner.vision.driver.click(*owner.CLOSE_POINT)
-    return True
+    return product is not None
 
 
 def _dried_busy(owner, exc: ScreenTimeout) -> bool:
