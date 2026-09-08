@@ -4,65 +4,64 @@ Cập nhật: 2026-09-08
 
 Đây là handoff ngắn cho phiên AI kế tiếp. Tài liệu chi tiết mới nhất:
 
-`docs/AUTO_MULTI_DEV_AUTO_BUILDER_V12_HANDOFF.md`
+`docs/AUTO_MULTI_DEV_AUTO_BUILDER_V13_HANDOFF.md`
 
 ## Trạng thái hiện tại
 
 - Branch: `develop/multi-auto-dev`.
-- Baseline trước Builder v1.2: `22a676c25d274d767d494091230a9e883b37a9be`.
-- Feature: `TỰ TẠO AUTO v1.2`.
+- Feature hiện tại: `TỰ TẠO AUTO v1.3`.
 - Status: `SOURCE IMPLEMENTED / STATIC CONTRACT UPDATED / WINDOWS LIVE PENDING`.
 - Không gọi runtime PASS trước khi operator build + live test trên Windows.
 
-## Những gì v1.2 vừa thêm
+## Sửa nghĩa Load Function theo yêu cầu mới nhất
 
-### 1. Swipe nhiều điểm / nhiều đoạn
+`📂 Load Function` không được chỉ mở một wrapper 1 dòng.
 
-Builder Swipe không còn giới hạn 2 điểm. Step lưu ordered `points=[[x,y], ...]` với tối thiểu 2 điểm.
-
-Live picker cho phép kéo nhiều lần để thêm đoạn vào cùng đường, hiển thị toàn polyline, có `Undo đoạn cuối` và `Xóa đường`.
-
-Runtime phải thực thi **một** `driver.swipe_points(points, duration=...)` để Bridge V3 chạy native BATCH_SWIPE; không chia thành nhiều swipe rời.
-
-### 2. Nhận diện ảnh có đúng hai nguồn
-
-Nguồn 1:
-
-`1 • Thư viện Multi DEV`
-
-Thư viện persistent:
-
-`%APPDATA%\KVTM Multi DEV\auto-builder\image-library`
-
-Nguồn 2:
-
-`2 • Ảnh AUTO PRO`
-
-AUTO PRO được resolve từ package sibling của `Multi`. Khi chọn ảnh AUTO PRO, Builder bắt buộc copy/dedupe ảnh đó sang `image-library` và step sử dụng bản copy trong thư viện Multi DEV. Nếu thư viện Multi đang trống, UI báo và chuyển sang catalog AUTO PRO.
-
-### 3. Load được Function đã làm trước đó
-
-Store tự seed wrapper persistent:
-
-`builtin_function_1_existing`
-
-Tên:
+Function đã làm trước đó:
 
 `9 Táo sấy - 9 Vải vàng`
 
-Wrapper chỉ gọi proven built-in `function_1`; không biến/đoán lại Function 1 thành gesture JSON. `list_functions()` đặt wrapper này lên đầu để `📂 Load Function` thấy ngay.
+phải show đầy đủ ordered execution blueprint gồm:
 
-## Những gì v1.1 vẫn giữ
+- MODULE;
+- CLICK;
+- SWIPE;
+- WAIT;
+- NHẬN DIỆN;
+- GATE / HẬU KIỂM;
+- LOOP / NHÁNH.
 
-- editor `ttk.Notebook` nhiều tab;
-- `QUY TRÌNH CHÍNH`;
-- `＋ Function mới`;
-- `📂 Load Function`;
-- saved Function library persistent;
-- `call_saved_function` + nested Function;
-- recursion guard trước khi thao tác game;
-- mỗi tab Save / Run riêng;
-- single-worker/single-capture-owner trên cùng profile.
+Full manifest hiện nằm tại:
+
+`source-archive/multi-current/kvtm_multi_tool/auto_builder_function1_manifest.py`
+
+UI render Function built-in thành:
+
+`FULL SOURCE VIEW • chỉ đọc • runtime vẫn gọi proven function_1`
+
+Blueprint hiển thị không thay business runtime. Khi bundle plan, document built-in được thay `steps` bằng `runtime_steps` là wrapper proven `function_1` trước khi worker validate/run.
+
+File AppData seed cũ chỉ có 1 row FUNCTION được tự refresh theo `manifest_version`; operator không cần xóa AppData thủ công.
+
+## Những gì v1.2 vẫn giữ
+
+### Swipe nhiều điểm / nhiều đoạn
+
+- Step lưu ordered `points=[[x,y], ...]`, tối thiểu 2 điểm.
+- Live picker kéo nhiều lần, có Undo/Xóa đường.
+- Runtime dùng một `driver.swipe_points(points, duration=...)` / native BATCH_SWIPE.
+- Không chia thành nhiều swipe rời.
+
+### Nhận diện ảnh đúng hai nguồn
+
+1. `1 • Thư viện Multi DEV`
+2. `2 • Ảnh AUTO PRO`
+
+Ảnh AUTO PRO được copy/dedupe vào:
+
+`%APPDATA%\KVTM Multi DEV\auto-builder\image-library`
+
+Step recognition sau import dùng bản copy Multi DEV, không phụ thuộc trực tiếp AUTO PRO.
 
 ## Transport bắt buộc giữ nguyên
 
@@ -73,7 +72,7 @@ Wrapper chỉ gọi proven built-in `function_1`; không biến/đoán lại Fun
 - exact same-request capture;
 - không stale frame;
 - không HWND fallback trong AUTO runtime;
-- live gesture picker cũng chỉ dùng OpenGL shared capture;
+- live gesture picker chỉ dùng OpenGL shared capture;
 - một owner/profile.
 
 ## Không được đụng
@@ -85,7 +84,7 @@ Wrapper chỉ gọi proven built-in `function_1`; không biến/đoán lại Fun
 - không hạ threshold hoặc thêm click mù;
 - không tự phát minh route tầng chưa live-prove;
 - không đổi multi-point Swipe thành nhiều swipe rời;
-- không để step recognition phụ thuộc trực tiếp file AUTO PRO sau import.
+- không để recognition phụ thuộc trực tiếp file AUTO PRO sau import.
 
 ## NEXT duy nhất
 
@@ -99,10 +98,11 @@ Build phải có:
 
 `AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED`
 
-và các dòng v1.2:
+và các dòng:
 
 - `ui=multi-dev-native-style-multi-tab-function-editor`
-- `functions=create-save-load-call-nested-no-recursion+builtin-function1-loadable`
+- `functions=create-save-load-call-nested-no-recursion+builtin-function1-full-source-view`
+- `function1_load=full-module-click-swipe-recognize-order+proven-runtime-wrapper`
 - `gesture_picker=multi-segment-opengl-drag-to-logical-1000-no-hwnd-fallback`
 - `swipe_runtime=one-native-swipe-points-batch`
 - `recognition_library=multi-dev-first-auto-pro-copy-in`
@@ -112,21 +112,21 @@ Sau `[1]` PASS mới `[2]`.
 ## Thứ tự live test tiếp theo
 
 1. Multi DEV mở bình thường.
-2. `TỰ TẠO AUTO` → `📂 Load Function` → phải thấy `9 Táo sấy - 9 Vải vàng`.
-3. Swipe live: tạo tối thiểu 3 điểm/2 đoạn, thử Undo, thêm lại đoạn, bấm `Dùng Swipe này`; row phải hiện số điểm/số đoạn.
-4. Recognition: chọn nguồn 1; nếu chưa có ảnh thì chuyển nguồn 2; chọn ảnh AUTO PRO và xác nhận copy; mở lại recognition nguồn 1 để thấy ảnh vừa copy.
-5. Runtime test Swipe nhỏ, an toàn; log phải có `Swipe nhiều điểm • points=... • segments=...`.
-6. Chỉ khi plumbing v1.2 PASS mới dùng Function tự tạo/path nhiều đoạn cho sản xuất thật.
+2. `TỰ TẠO AUTO` → `📂 Load Function` → chọn `9 Táo sấy - 9 Vải vàng`.
+3. Tab không còn chỉ một row FUNCTION.
+4. Phải thấy nhiều row MODULE/CLICK/SWIPE/WAIT/NHẬN DIỆN/GATE/LOOP đúng thứ tự.
+5. Header phải có `FULL SOURCE VIEW • chỉ đọc • runtime vẫn gọi proven function_1`.
+6. Sau đó mới tiếp tục test Swipe multi-point và recognition library của v1.2.
 
 ## Blocker nghiệp vụ vẫn còn
 
-Built-in Function 1 kết thúc sau SX Vải vàng ở khu vực tầng 3. Route `tầng 3 → main` trước sale-after-loop chưa live-prove đầy đủ. Builder v1.2 không tự giải quyết/đoán route này.
+Built-in Function 1 kết thúc sau SX Vải vàng ở khu vực tầng 3. Route `tầng 3 → main` trước sale-after-loop chưa live-prove đầy đủ. Builder không tự giải quyết/đoán route này.
 
 ## Read-first cho phiên AI kế tiếp
 
 1. `AGENTS.md`
 2. `AI_COORDINATION.md`
 3. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`
-4. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_V12_HANDOFF.md`
-5. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_V11_HANDOFF.md` chỉ để xem lịch sử v1.1.
-6. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_HANDOFF.md` chỉ để xem lịch sử v1.
+4. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_V13_HANDOFF.md`
+5. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_V12_HANDOFF.md` chỉ để xem lịch sử v1.2.
+6. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_V11_HANDOFF.md` chỉ để xem lịch sử v1.1.
