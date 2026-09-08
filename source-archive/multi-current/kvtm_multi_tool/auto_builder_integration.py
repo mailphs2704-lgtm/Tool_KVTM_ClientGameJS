@@ -13,31 +13,23 @@ FILE_FUNCTIONS = (
     "Khởi chạy Builder qua lifecycle/ownership hiện có của AUTO MULTI DEV",
     "Ẩn tab Thiết kế cũ khỏi hàng chức năng của Multi DEV",
     "Thay khối mô tả AUTO MULTI DEV bằng menu chọn Function + số vòng giữa hai lần bán",
+    "Hiển thị trực tiếp thời gian chờ giữa các vòng Function trên AUTO MULTI DEV",
     "Bổ sung Tốc độ thu VP vào đúng cửa sổ Cấu hình tốc độ hiện có",
     "Đưa Log hành động + Log chi tiết xuống hàng riêng dưới nút AUTO MULTI DEV",
     "Ghi cấu hình Function AUTO Main theo từng run mà không thay Bridge/capture ownership",
     "Hiển thị kết quả Builder mà không thay đổi handler AUTO chính",
 )
 
-# Only fully wired runtime Functions are exposed here. Function 2 will be added
-# when its production workflow is complete; this prevents an operator from
-# selecting a partially implemented Function.
 _AUTO_MAIN_FUNCTION_OPTIONS = (
     ("function_1", "9 Táo sấy - 9 Vải vàng"),
 )
 
 
 def _install_vp_collect_speed_control(core) -> None:
-    """Extend the native Multi DEV speed dialog with one clean-only timing.
-
-    This integration module is installed before the app instance is constructed,
-    so the normal settings loader/dialog/collector all see the fifth key without
-    duplicating any GUI or inventing a second configuration store.
-    """
+    """Extend the native Multi DEV speed dialog with one clean-only timing."""
     core.DEFAULT_AUTO_TUNING.setdefault("vp_collect_delay", 0.30)
     keys = tuple(getattr(core, "MULTI_DEV_TUNING_KEYS", ()))
     if "vp_collect_delay" not in keys:
-        # Keep collect adjacent to production in the native configuration dialog.
         try:
             index = keys.index("vp_production_delay")
         except ValueError:
@@ -74,8 +66,6 @@ def install_auto_builder_integration(app_class, core) -> None:
         self.auto_multi_dev_function_label.set(options[function_id])
 
     def _apply_requested_dev_layout(self) -> None:
-        # The real legacy Designer key in kvtm_multi.py is clear_stall_designer.
-        # Keep its frame registered for compatibility, but remove its visible tab.
         tab_buttons = getattr(self, "auto_tab_buttons", {})
         designer_button = tab_buttons.get("clear_stall_designer")
         if designer_button is not None:
@@ -98,9 +88,6 @@ def install_auto_builder_integration(app_class, core) -> None:
 
         clean_actions = start_button.master
 
-        # Remove the old AUTO MULTI DEV header/separator/three-column description.
-        # We locate them structurally: every packed sibling before clean_actions is
-        # presentation-only in the original panel. The action row itself is kept.
         for child in list(multi_dev_tab.winfo_children()):
             if child is clean_actions:
                 break
@@ -113,10 +100,11 @@ def install_auto_builder_integration(app_class, core) -> None:
         controls.pack(fill="x", padx=8, pady=(4, 2), before=clean_actions)
         controls.columnconfigure(0, weight=3)
         controls.columnconfigure(1, weight=2)
-        controls.columnconfigure(2, weight=4)
+        controls.columnconfigure(2, weight=2)
+        controls.columnconfigure(3, weight=3)
 
         function_box = core.ttk.Frame(controls, style="Detail.TFrame")
-        function_box.grid(row=0, column=0, sticky="ew", padx=(0, 18))
+        function_box.grid(row=0, column=0, sticky="ew", padx=(0, 14))
         core.ttk.Label(
             function_box, text="CHỨC NĂNG", style="AutoKey.TLabel"
         ).pack(anchor="w")
@@ -163,7 +151,7 @@ def install_auto_builder_integration(app_class, core) -> None:
         self.auto_multi_dev_function_button.pack(fill="x", pady=(4, 0))
 
         sale_box = core.ttk.Frame(controls, style="Detail.TFrame")
-        sale_box.grid(row=0, column=1, sticky="ew", padx=(0, 18))
+        sale_box.grid(row=0, column=1, sticky="ew", padx=(0, 14))
         core.ttk.Label(
             sale_box, text="SỐ VÒNG GIỮA 2 LẦN BÁN", style="AutoKey.TLabel"
         ).pack(anchor="w")
@@ -177,24 +165,40 @@ def install_auto_builder_integration(app_class, core) -> None:
         )
         self.auto_multi_dev_sale_every_spin.pack(anchor="w", pady=(6, 0))
 
+        delay_box = core.ttk.Frame(controls, style="Detail.TFrame")
+        delay_box.grid(row=0, column=2, sticky="ew", padx=(0, 14))
+        core.ttk.Label(
+            delay_box,
+            text="CHỜ GIỮA VÒNG FUNCTION (GIÂY)",
+            style="AutoKey.TLabel",
+        ).pack(anchor="w")
+        self.auto_multi_dev_function_loop_delay = core.tk.DoubleVar(value=0.0)
+        self.auto_multi_dev_function_loop_delay_spin = core.ttk.Spinbox(
+            delay_box,
+            from_=0.0,
+            to=3600.0,
+            increment=1.0,
+            width=10,
+            textvariable=self.auto_multi_dev_function_loop_delay,
+        )
+        self.auto_multi_dev_function_loop_delay_spin.pack(anchor="w", pady=(6, 0))
+
         note_box = core.ttk.Frame(controls, style="Detail.TFrame")
-        note_box.grid(row=0, column=2, sticky="ew")
+        note_box.grid(row=0, column=3, sticky="ew")
         core.ttk.Label(
             note_box,
             text=(
-                "Bắt buộc: vào game + đóng popup → bán VP lần 1 → chạy Function. "
-                "Từ lần bán 2 trở đi, đủ số vòng đã nhập mới bán tiếp."
+                "Vào game + đóng popup → bán VP lần 1 → chạy Function. "
+                "Ô chờ chỉ áp dụng giữa hai vòng Function; không tác động thao tác khác."
             ),
             style="AutoValue.TLabel",
             anchor="w",
             justify="left",
-            wraplength=390,
+            wraplength=310,
         ).pack(fill="x", pady=(17, 0))
 
         start_button.configure(command=self._start_configured_auto_main)
 
-        # All five original buttons are children of clean_actions. Keep
-        # Start/Speed/Stop there; move only the two log controls to a second row.
         if action_log.master is clean_actions and detail_log.master is clean_actions:
             try:
                 action_log.pack_forget()
@@ -263,17 +267,31 @@ def install_auto_builder_integration(app_class, core) -> None:
             return
         self.auto_multi_dev_sale_every_loops.set(sale_every)
 
+        try:
+            loop_delay = float(self.auto_multi_dev_function_loop_delay.get())
+        except (TypeError, ValueError, core.tk.TclError):
+            loop_delay = -1.0
+        if not 0.0 <= loop_delay <= 3600.0:
+            core.messagebox.showerror(
+                core.APP_NAME,
+                "Thời gian chờ giữa vòng Function phải trong khoảng 0..3600 giây.",
+            )
+            return
+        self.auto_multi_dev_function_loop_delay.set(loop_delay)
+
         config = {
             "version": 1,
             "function_id": function_id,
             "sale_every_loops": sale_every,
+            "function_loop_delay_seconds": loop_delay,
         }
         for profile_id in selected:
             self._auto_main_pending_config[profile_id] = dict(config)
 
         label = dict(_AUTO_MAIN_FUNCTION_OPTIONS)[function_id]
         self.note.set(
-            f"AUTO MULTI DEV • {label} • bán lại sau mỗi {sale_every} vòng"
+            f"AUTO MULTI DEV • {label} • bán lại sau {sale_every} vòng • "
+            f"chờ giữa vòng {loop_delay:g}s"
         )
         original_start_clean_session(self)
 
