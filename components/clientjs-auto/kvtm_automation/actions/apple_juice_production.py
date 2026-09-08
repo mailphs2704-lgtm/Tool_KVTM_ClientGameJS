@@ -82,7 +82,9 @@ class AppleJuiceProductionActions:
         )
         return empty, product.center, top.center
 
-    def produce_9_apple_juices(self) -> ProductionResult:
+    def produce_9_apple_juices(
+        self, *, close_after_success: bool = True
+    ) -> ProductionResult:
         empty_before, product_point, top_point = self._open_verified()
         empty_after = empty_before
         for ordinal in range(1, self.REQUIRED_COUNT + 1):
@@ -100,9 +102,15 @@ class AppleJuiceProductionActions:
             self.context.log(
                 f"AUTO Nước táo • đã xác minh xếp {ordinal}/9 • ô trống còn={current}"
             )
-        self.vision.driver.click(*self.CLOSE_POINT)
         if empty_before - empty_after != self.REQUIRED_COUNT:
+            self.vision.driver.click(*self.CLOSE_POINT)
             raise ScreenTimeout("Hậu kiểm Nước táo không đạt đúng 9/9 ô")
+        if close_after_success:
+            self.vision.driver.click(*self.CLOSE_POINT)
+        else:
+            self.context.log(
+                "AUTO Nước táo • giữ panel mở để bàn giao sang Sửa máy"
+            )
         self.context.log("AUTO sản xuất Nước táo hoàn tất • đã xác minh đủ 9/9 ô")
         return ProductionResult(
             item_id=self.PRODUCT_TEMPLATE, requested_count=9, queued_count=9,
