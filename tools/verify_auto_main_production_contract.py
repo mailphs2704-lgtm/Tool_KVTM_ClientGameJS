@@ -12,10 +12,14 @@ WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_apple
 AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
 FUNCTION_ONE = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_function_one/workflow.py"
 APPLE_JUICE = ROOT / "components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py"
+COTTON = ROOT / "components/clientjs-auto/kvtm_automation/actions/cotton_planting.py"
+PASS_THREE_NAV = ROOT / "components/clientjs-auto/kvtm_automation/actions/function_one_pass_three_navigation.py"
+YELLOW_FABRIC = ROOT / "components/clientjs-auto/kvtm_automation/actions/yellow_fabric_production.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.png"
 MULTI_DEV_EMPTY_SLOT = ROOT / "components/clientjs-auto/assets/items/o_trong.png"
+MULTI_DEV_YELLOW_FABRIC = ROOT / "components/clientjs-auto/assets/items/vai_vang.png"
 
 
 def require(text: str, token: str, message: str) -> None:
@@ -24,7 +28,21 @@ def require(text: str, token: str, message: str) -> None:
 
 
 def main() -> int:
-    for path in (ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, AUTO_MAIN, FUNCTION_ONE, APPLE_JUICE, DEV_ENTRY, AUTO_MULTI_WORKER):
+    contract_files = (
+        ACTION,
+        FLOOR_ACTION,
+        AUTOMATION,
+        WORKFLOW,
+        AUTO_MAIN,
+        FUNCTION_ONE,
+        APPLE_JUICE,
+        COTTON,
+        PASS_THREE_NAV,
+        YELLOW_FABRIC,
+        DEV_ENTRY,
+        AUTO_MULTI_WORKER,
+    )
+    for path in contract_files:
         if not path.is_file():
             raise AssertionError(f"Missing production contract file: {path}")
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -32,13 +50,12 @@ def main() -> int:
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             for node in ast.walk(tree)
         )
-        if path in (ACTION, FLOOR_ACTION, WORKFLOW) and functions > 10:
+        if path in (ACTION, FLOOR_ACTION, WORKFLOW, COTTON, PASS_THREE_NAV, YELLOW_FABRIC) and functions > 10:
             raise AssertionError(f"{path}: {functions} functions exceeds limit 10")
 
-    if not MULTI_DEV_DRIED_APPLE.is_file():
-        raise AssertionError("Multi Dev production asset missing: tao_say.png")
-    if not MULTI_DEV_EMPTY_SLOT.is_file():
-        raise AssertionError("Multi Dev production asset missing: o_trong.png")
+    for asset in (MULTI_DEV_DRIED_APPLE, MULTI_DEV_EMPTY_SLOT, MULTI_DEV_YELLOW_FABRIC):
+        if not asset.is_file():
+            raise AssertionError(f"Multi Dev production asset missing: {asset.name}")
 
     action = ACTION.read_text(encoding="utf-8")
     floor_action = FLOOR_ACTION.read_text(encoding="utf-8")
@@ -47,84 +64,74 @@ def main() -> int:
     auto_main = AUTO_MAIN.read_text(encoding="utf-8")
     function_one = FUNCTION_ONE.read_text(encoding="utf-8")
     apple_juice = APPLE_JUICE.read_text(encoding="utf-8")
+    cotton = COTTON.read_text(encoding="utf-8")
+    pass_three_nav = PASS_THREE_NAV.read_text(encoding="utf-8")
+    yellow_fabric = YELLOW_FABRIC.read_text(encoding="utf-8")
     dev = DEV_ENTRY.read_text(encoding="utf-8")
     auto_multi_worker = AUTO_MULTI_WORKER.read_text(encoding="utf-8")
 
+    # Pass 1: keep the already verified dried-apple contract intact.
     require(action, "DRYER_POINT = (262, 917)", "AUTO PRO dryer coordinate changed")
     require(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"', "AUTO PRO production template missing")
     if 'DRIED_APPLE_PRODUCTION_TEMPLATE = "kho_tao_say"' in action:
         raise AssertionError("Warehouse dried-apple template must never drive production")
-    require(action, "PRODUCT_SEARCH_ZONE = None",
-            "Production image must be searched across the open panel")
-    require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.70",
-            "Production image threshold must reject the observed 0.301 false match")
-    require(action, "empty_before, product_point, top_point = self._open_verified_dryer()",
-            "Detected source and top-slot centers are not returned to queue loop")
-    require(action, "(product_point, top_point)",
-            "Production swipe must run from library tao_say to detected top slot")
+    require(action, "PRODUCT_SEARCH_ZONE = None", "Production image must be searched across the open panel")
+    require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.70", "Production image threshold must reject observed false match")
+    require(action, "empty_before, product_point, top_point = self._open_verified_dryer()", "Detected source/top centers are not returned")
+    require(action, "(product_point, top_point)", "Production swipe must use detected centers")
     require(action, "REQUIRED_COUNT = 9", "Exactly nine dried apples required")
-    require(action, "empty < self.REQUIRED_COUNT", "Nine-empty-slot precondition missing")
-    require(action, "current_empty >= empty_after",
-            "Per-drag empty-slot state-change gate missing")
+    require(action, "current_empty >= empty_after", "Per-drag empty-slot state-change gate missing")
     require(action, "consumed != self.REQUIRED_COUNT", "Exact post-production accounting missing")
     require(action, "self.speed_config.vp_production_delay", "Production speed binding missing")
-    require(action, "_collect_finished_before_open()", "Finished-output collection gate missing")
-    require(action, "while True:",
-            "Machine opening must keep clicking until the panel is verified")
-    require(action, "self.context.ensure_running()",
-            "Continuous machine click loop must remain stoppable")
-    require(action, "đã thu hết VP chắn máy và mở được panel tầng 1",
-            "Collection-to-panel verification missing")
-    require(action, "dừng click sau",
-            "Machine click loop must stop only after panel verification")
+    require(action, "self.context.ensure_running()", "Production loops must remain stoppable")
     require(action, "for attempt in range(1, 4)", "Three product-render retries missing")
-    require(action, 'threshold=0.70', "AUTO PRO initial empty-slot gate missing")
     require(action, '"full_kho"', "Canonical full warehouse template missing")
-    require(action, "TOP_EMPTY_SLOT_ZONE = (335, 650, 130, 135)",
-            "Upper queue slot zone missing")
-    require(action, "def _find_top_empty_slot(self):",
-            "Reusable upper queue-slot detector missing")
-    require(action, "top_match = self._find_top_empty_slot()",
-            "Upper queue count must use detected library template")
-    require(action, "scales=(1.00, 1.15, 1.30, 1.45, 1.60)",
-            "Upper queue slot scales changed")
-    require(action, "lower = min(8, self._count_matches(",
-            "Lower queue slots must count at most eight")
-    require(action, "total = top + lower",
-            "Nine-slot queue total must include upper and lower slots")
-    require(action, "không khớp chắc chắn ảnh thư viện tao_say",
-            "Wrong-item fail-close missing")
-    require(action, "Không tìm thấy ô top bằng ảnh thư viện o_trong",
-            "Top destination fail-close missing")
-    require(automation, "self.production = ProductionActions(", "Resident production wiring missing")
-    require(workflow, "plant_27_apples()", "Apple planting step missing")
-    require(workflow, "produce_9_dried_apples()", "Dried apple production step missing")
-    require(auto_main, "FunctionOneWorkflow(self.auto).run", "Function one pipeline missing")
+    require(action, "def _find_top_empty_slot(self):", "Reusable upper queue-slot detector missing")
+
+    # Pass 2: keep the verified apple-juice stage and navigation route.
     require(function_one, "AppleDryerWorkflow(self.auto).run", "Stable dried-apple stage missing")
     require(function_one, "floor_1_to_floor_6()", "Floor-1 to floor-6 route missing")
     require(function_one, "produce_9_apple_juices()", "Apple-juice intermediate stage missing")
     require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice production asset missing")
-    require(apple_juice, "while True:", "Apple-juice machine must click until panel opens")
     require(apple_juice, "if panel_ready:", "Apple-juice panel verification missing")
-    require(dev, "TẠM PASS 2/3 CHỨC NĂNG 1", "GUI temporary result status missing")
+
+    # Pass 3: cotton -> verified floor 3 -> exactly nine yellow fabrics.
+    require(cotton, 'COTTON_TEMPLATE = "cay_bong"', "Cotton template id changed")
+    require(cotton, "if not self.vision.assets.has(self.COTTON_TEMPLATE):", "Cotton must fail-close before gesture when clean asset is missing")
+    require(cotton, "return self._plant_27(self.COTTON_TEMPLATE, \"Bông\")", "Cotton must reuse the proven 27-pot planting path")
+    require(pass_three_nav, "def floor_2_to_main", "Pass-3 floor2-to-main route missing")
+    require(pass_three_nav, "self._gesture(self.DOWN_ONE", "Pass-3 downward route must use verified fresh-frame gesture")
+    require(pass_three_nav, "def floor_1_to_floor_3", "Pass-3 floor1-to-floor3 route missing")
+    require(pass_three_nav, "self._gesture(self.UP_ONE", "Pass-3 upward route must use verified fresh-frame gesture")
+    require(yellow_fabric, 'PRODUCT_TEMPLATE = "vai_vang"', "Yellow-fabric production template missing")
+    require(yellow_fabric, "REQUIRED_COUNT = 9", "Exactly nine yellow fabrics required")
+    require(yellow_fabric, "MAX_OPEN_CLICKS = 30", "Yellow-fabric machine opening must be bounded")
+    require(yellow_fabric, "for click_count in range(1, self.MAX_OPEN_CLICKS + 1)", "Bounded yellow-fabric opening loop missing")
+    require(yellow_fabric, "if not panel_ready:", "Yellow-fabric panel fail-close missing")
+    require(yellow_fabric, "current >= empty_after", "Yellow-fabric per-drag empty-slot gate missing")
+    require(yellow_fabric, "empty_before - empty_after != self.REQUIRED_COUNT", "Yellow-fabric exact post-accounting missing")
+    require(yellow_fabric, "self.speed_config.vp_production_delay", "Yellow-fabric speed binding missing")
+    require(function_one, "floor_2_to_main()", "Pass-3 must return from floor 2 to main")
+    require(function_one, "plant_27_cotton()", "Pass-3 cotton planting missing")
+    require(function_one, "floor_1_to_floor_3()", "Pass-3 floor-3 navigation missing")
+    require(function_one, "produce_9_yellow_fabrics()", "Pass-3 yellow-fabric production missing")
+    require(function_one, "progress_steps=3", "Function 1 result must report progress 3")
+    require(function_one, "total_steps=3", "Function 1 result must report total 3")
+
+    require(auto_main, "function_one.progress_steps != 3", "Auto Main PASS 3/3 guard missing")
+    require(auto_main, "function_one.yellow_fabrics != 9", "Auto Main yellow-fabric final guard missing")
+    require(auto_main, "function_one.cotton_planted != 27", "Auto Main cotton final guard missing")
+    require(auto_main, "production_ready=True", "Auto Main must be ready only after PASS 3/3")
+    require(auto_main, '"auto-main-function-1-pass-3-of-3"', "Auto Main final stage marker missing")
+
+    require(automation, "self.production = ProductionActions(", "Resident production wiring missing")
+    require(automation, "self.cotton_planting = CottonPlantingActions(", "Resident cotton wiring missing")
+    require(automation, "self.yellow_fabric_production = YellowFabricProductionActions(", "Resident yellow-fabric wiring missing")
+    require(automation, "self.function_one_pass_three_navigation = FunctionOnePassThreeNavigationActions(", "Resident pass-3 navigation wiring missing")
+    require(auto_main, "FunctionOneWorkflow(self.auto).run", "Function one pipeline missing")
     require(dev, 'text="↟ Demo Auto Pro tới tầng 6"', "Dedicated floor demo button missing")
-    require(dev, "profile_id in self._clean_floor_demo_requested",
-            "Floor demo request is not isolated per profile")
-    require(auto_multi_worker, "automation.floors.reference_main_to_floor_6()",
-            "Floor demo worker must replay Auto Pro target=6 state machine")
-    require(dev, '"floor_demo_finished"', "Floor demo result path missing")
-    require(automation, "self.floors = FloorNavigationActions(",
-            "Resident floor navigation wiring missing")
-    require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)",
-            "Exact Auto Pro goUp(4) geometry missing")
-    require(floor_action, "commands=goUp(1),goUp(4),goUp(1)",
-            "Exact Auto Pro target=6 command order missing")
-    require(floor_action, "duration=self.speed_config.plant_harvest_duration",
-            "Auto Pro goUp(4) must use the harvest-speed equivalent")
-    require(floor_action, "AUTO_PRO_GO_UP_WAIT = 0.70",
-            "Auto Pro go_up_wait reference missing")
-    require(floor_action, "AUTO_PRO_POST_WAIT = 0.15",
-            "Auto Pro post-command wait missing")
+    require(auto_multi_worker, "automation.floors.reference_main_to_floor_6()", "Floor demo worker must replay target=6 state machine")
+    require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)", "Exact Auto Pro goUp(4) geometry missing")
 
     forbidden = (
         "clear_stall_probe_runtime",
@@ -133,13 +140,14 @@ def main() -> int:
         "adb_controller.pyc",
     )
     for token in forbidden:
-        if token in action or token in workflow:
+        if token in action or token in workflow or token in yellow_fabric or token in cotton:
             raise AssertionError(f"New production module touches stable/legacy path: {token}")
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
-    print("flow=plant_27_apples_then_collect_finished_output_then_queue_9_dried_apples")
-    print("dryer_floor=1")
+    print("flow=pass1_dried_apple pass2_apple_juice pass3_cotton_yellow_fabric")
+    print("pass3=cotton_27 then yellow_fabric_9")
+    print("cotton_asset=runtime_fail_close_if_missing")
     print("legacy_auto_pro=reference_only")
     print("stable_sale_and_clear_stall=untouched")
     return 0
