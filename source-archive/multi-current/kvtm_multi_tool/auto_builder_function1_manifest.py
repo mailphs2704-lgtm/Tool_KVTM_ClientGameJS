@@ -6,9 +6,10 @@ FILE_FUNCTIONS = (
     "Mô tả đầy đủ thứ tự thực thi Function 1 đã có để Load Function hiển thị",
     "Giữ riêng blueprint hiển thị với runtime wrapper proven function_1",
     "Liệt kê module, click, swipe, wait, nhận diện, loop/gate theo đúng thứ tự source",
+    "Hiển thị bước normalize về main cuối vòng để Function 1 có thể lặp an toàn",
 )
 
-MANIFEST_VERSION = 3
+MANIFEST_VERSION = 4
 
 
 def _row(new_step_id, kind: str, detail: str) -> dict:
@@ -216,7 +217,18 @@ def display_steps(new_step_id) -> list[dict]:
     add("gate", "Sau mỗi swipe: số ô trống phải giảm")
     add("click", "Đóng panel • (965,198)")
     add("gate", "Hậu kiểm 9/9 • PASS 3/3")
-    add("module", "FunctionOneWorkflow.run • hoàn tất 9 Táo sấy + 9 Nước táo + 9 Vải vàng")
+
+    # Repeatability boundary: runtime does not count the Function loop complete
+    # until it has returned from floor 3 to an exact own-main screen.
+    add("module", "FunctionOneWorkflow._normalize_end_of_loop_to_main")
+    add("gate", "Nếu is_own_main_screen() đã PASS: kết thúc vòng không swipe")
+    add("loop", "Tối đa 6 nhịp goDown(1); sau từng nhịp kiểm tra exact main")
+    add("click", "Đóng panel cạnh trước mỗi end-loop goDown(1) • (975,316)")
+    add("wait", "0.15s trước mỗi swipe")
+    add("swipe", "end-loop goDown(1) • (514,314) → (514,214)")
+    add("wait", "0.70s sau mỗi swipe")
+    add("gate", "is_own_main_screen() PASS thì dừng; hết 6 nhịp chưa PASS → FAIL-CLOSE")
+    add("module", "FunctionOneWorkflow.run • hoàn tất 9 Táo sấy + 9 Nước táo + 9 Vải vàng • main-ready")
 
     return rows
 
