@@ -6,10 +6,11 @@ FILE_FUNCTIONS = (
     "Mô tả đầy đủ thứ tự thực thi Function 1 đã có để Load Function hiển thị",
     "Giữ riêng blueprint hiển thị với runtime wrapper proven function_1",
     "Liệt kê module, click, swipe, wait, nhận diện, loop/gate theo đúng thứ tự source",
-    "Hiển thị bước normalize về main cuối vòng để Function 1 có thể lặp an toàn",
+    "Hiển thị Sửa máy sau cả ba production và tốc độ thu VP độc lập",
+    "Hiển thị boundary cuối vòng goDown(1) → click xuống tầng → exact main",
 )
 
-MANIFEST_VERSION = 4
+MANIFEST_VERSION = 5
 
 
 def _row(new_step_id, kind: str, detail: str) -> dict:
@@ -19,21 +20,18 @@ def _row(new_step_id, kind: str, detail: str) -> dict:
 def display_steps(new_step_id) -> list[dict]:
     """Return the operator-visible execution blueprint for proven Function 1.
 
-    These rows are an inspection manifest. They intentionally describe the
-    exact business-module order and atomic input/vision operations already
-    implemented in clean AUTO MULTI DEV source. Runtime execution stays bound
-    to ``function_1`` through :func:`runtime_steps` so displaying the internals
-    cannot silently replace the proven fail-close workflow with guessed JSON.
+    These rows are inspection-only. Runtime remains bound to ``function_1`` via
+    :func:`runtime_steps`; this manifest exposes the actual ordered clean source
+    without replacing its recognition, accounting, repair or fail-close gates.
     """
-
     rows: list[dict] = []
     add = lambda kind, detail: rows.append(_row(new_step_id, kind, detail))
 
     add("module", "FunctionOneWorkflow.run • bắt đầu Function 1")
     add("gate", "check tùy chọn chưa cấu hình • bỏ qua")
 
-    # PASS 1 — 27 Táo -> 9 Táo sấy.
-    add("module", "AppleDryerWorkflow.run • PASS 1 • 27 Táo → 9 Táo sấy")
+    # PASS 1 — 27 Táo -> 9 Táo sấy -> Sửa máy.
+    add("module", "AppleDryerWorkflow.run • PASS 1 • 27 Táo → 9 Táo sấy → Sửa máy")
     add("module", "PlantingActions.plant_27_apples")
     add("click", "Đóng panel cạnh trước goUp(1) • (975,316)")
     add("wait", "0.20s")
@@ -59,10 +57,10 @@ def display_steps(new_step_id) -> list[dict]:
     add("wait", "0.55s")
     add("gate", "Diagnostic changed_waypoint_regions/27 • non_blocking=true")
 
-    add("module", "ProductionActions.produce_9_dried_apples")
+    add("module", "ProductionActions.produce_9_dried_apples • close_after_success=False")
     add("loop", "Click thu VP/mở máy sấy tầng 1 cho tới khi panel_ready")
     add("click", "Máy sấy tầng 1 • (262,917)")
-    add("wait", "0.30s sau mỗi click mở/thu VP")
+    add("wait", "vp_collect_delay sau mỗi click mở/thu VP")
     add("recognize", "full_kho • threshold=0.90 • zone=(333,363,313,115)")
     add("recognize", "o_trong panel_ready • threshold=0.70 • zone=(335,781,395,186)")
     add("gate", "Nếu full_kho: đóng panel và FAIL-CLOSE")
@@ -75,8 +73,9 @@ def display_steps(new_step_id) -> list[dict]:
     add("wait", "vp_production_delay")
     add("recognize", "x thiếu nguyên liệu • threshold=0.80 • zone=(682,337,142,120)")
     add("gate", "Sau mỗi swipe: số ô trống phải giảm")
-    add("click", "Đóng panel máy • (965,198) sau đủ 9/9")
-    add("gate", "Hậu kiểm consumed == 9 • PASS 1/3")
+    add("gate", "Hậu kiểm consumed == 9 • giữ panel production mở")
+    _add_repair_steps(add, "Táo sấy")
+    add("gate", "9 Táo sấy + Sửa máy PASS • tiến độ 1/3")
 
     # Apple supply refresh and floor 6.
     add("module", "AppleSupplyActions.wait_until_floor_1_ripe")
@@ -134,7 +133,7 @@ def display_steps(new_step_id) -> list[dict]:
         add("gate", "Fresh-frame change >= 1.0")
     add("gate", "Exact main PASS • sau trồng Táo tầng 6 → trước SX Nước táo")
 
-    # PASS 2 — 9 Nước táo.
+    # PASS 2 — 9 Nước táo -> Sửa máy.
     add("module", "FunctionOneNavigationActions.main_to_floor_2")
     for label in ("main-goUp(1)-to-floor1", "floor1-goUp(1)-to-floor2"):
         add("click", f"Đóng panel cạnh • (975,316) trước {label}")
@@ -142,10 +141,10 @@ def display_steps(new_step_id) -> list[dict]:
         add("wait", "0.70s + 0.15s")
         add("gate", "Fresh-frame change >= 1.0")
 
-    add("module", "AppleJuiceProductionActions.produce_9_apple_juices")
+    add("module", "AppleJuiceProductionActions.produce_9_apple_juices • close_after_success=False")
     add("loop", "Click thu VP/mở máy tầng 2 cho tới panel_ready")
     add("click", "Máy Nước táo tầng 2 • (262,917)")
-    add("wait", "0.30s sau mỗi click")
+    add("wait", "vp_collect_delay sau mỗi click")
     add("recognize", "full_kho + o_trong panel state")
     add("recognize", "nuoc_tao • tối đa 3 lần • threshold=0.70")
     add("wait", "0.20s giữa các lần tìm nuoc_tao")
@@ -155,8 +154,9 @@ def display_steps(new_step_id) -> list[dict]:
     add("swipe", "nuoc_tao.center → top_empty.center • duration=0.02s")
     add("wait", "vp_production_delay")
     add("gate", "Sau mỗi swipe: số ô trống phải giảm")
-    add("click", "Đóng panel • (965,198)")
-    add("gate", "Hậu kiểm 9/9 • TẠM PASS 2/3")
+    add("gate", "Hậu kiểm 9/9 • giữ panel production mở")
+    _add_repair_steps(add, "Nước táo")
+    add("gate", "9 Nước táo + Sửa máy PASS • TẠM PASS 2/3")
 
     # Normalize to main, then PASS 3.
     add("module", "FunctionOnePassThreeNavigationActions.floor_2_to_main")
@@ -200,10 +200,10 @@ def display_steps(new_step_id) -> list[dict]:
         add("wait", "0.70s + 0.15s")
         add("gate", "Fresh-frame change >= 1.0")
 
-    add("module", "YellowFabricProductionActions.produce_9_yellow_fabrics")
+    add("module", "YellowFabricProductionActions.produce_9_yellow_fabrics • close_after_success=False")
     add("loop", "Tối đa 30 click thu VP/mở máy tầng 3 cho tới panel_ready")
     add("click", "Máy Vải vàng tầng 3 • (262,917)")
-    add("wait", "0.30s sau mỗi click")
+    add("wait", "vp_collect_delay sau mỗi click")
     add("recognize", "full_kho + o_trong panel state")
     add("gate", "Nếu không panel_ready sau 30 click: FAIL-CLOSE")
     add("recognize", "vai_vang • tối đa 3 lần • threshold=0.70")
@@ -215,26 +215,43 @@ def display_steps(new_step_id) -> list[dict]:
     add("wait", "vp_production_delay")
     add("recognize", "x thiếu nguyên liệu • threshold=0.80 • zone=(682,337,142,120)")
     add("gate", "Sau mỗi swipe: số ô trống phải giảm")
-    add("click", "Đóng panel • (965,198)")
-    add("gate", "Hậu kiểm 9/9 • PASS 3/3")
+    add("gate", "Hậu kiểm 9/9 • giữ panel production mở")
+    _add_repair_steps(add, "Vải vàng")
+    add("gate", "9 Vải vàng + Sửa máy PASS • PASS 3/3")
 
-    # Repeatability boundary: runtime does not count the Function loop complete
-    # until it has returned from floor 3 to an exact own-main screen.
+    # Repeatability boundary: floor 3 -> one goDown(1) -> down-floor -> exact main.
     add("module", "FunctionOneWorkflow._normalize_end_of_loop_to_main")
-    add("gate", "Nếu is_own_main_screen() đã PASS: kết thúc vòng không swipe")
-    add("loop", "Tối đa 6 nhịp goDown(1); sau từng nhịp kiểm tra exact main")
-    add("click", "Đóng panel cạnh trước mỗi end-loop goDown(1) • (975,316)")
-    add("wait", "0.15s trước mỗi swipe")
-    add("swipe", "end-loop goDown(1) • (514,314) → (514,214)")
-    add("wait", "0.70s sau mỗi swipe")
-    add("gate", "is_own_main_screen() PASS thì dừng; hết 6 nhịp chưa PASS → FAIL-CLOSE")
-    add("module", "FunctionOneWorkflow.run • hoàn tất 9 Táo sấy + 9 Nước táo + 9 Vải vàng • main-ready")
+    add("module", "FunctionOnePassThreeNavigationActions.floor_3_to_main_via_down_floor")
+    add("click", "Đóng panel cạnh trước end-loop goDown(1) • (975,316)")
+    add("wait", "0.15s")
+    add("swipe", "function1-end-loop-floor3-goDown(1) • (514,314) → (514,214) • duration=floor_swipe_duration")
+    add("wait", "0.70s")
+    add("gate", "Fresh frame recorded sau goDown(1)")
+    add("click", "Nút xuống tầng AUTO PRO goDownLast • (497,978)")
+    add("wait", "0.70s")
+    add("gate", "Click xuống tầng phải tạo frame_change >= 1.0; nếu không → FAIL-CLOSE")
+    add("gate", "is_own_main_screen() exact PASS; chưa PASS → FAIL-CLOSE")
+    add("module", "FunctionOneWorkflow.run • hoàn tất 9 Táo sấy + 9 Nước táo + 9 Vải vàng • 3 máy repaired • main-ready")
 
     return rows
 
 
+def _add_repair_steps(add, item_label: str) -> None:
+    add("module", f"MachineRepairActions.repair_after_production • {item_label}")
+    add("gate", "Bàn giao chỉ PASS khi queued == requested == slot_delta")
+    add("click", "Mở Sửa máy bằng ? • (165,856)")
+    add("wait", "0.65s")
+    add("gate", "Modal Sửa máy phải tạo screen_change >= MIN_MODAL_CHANGE")
+    add("click", "Nút Sửa máy theo vị trí • (730,596) • KHÔNG đọc/OCR giá")
+    add("wait", "0.75s")
+    add("gate", "Vùng Độ bền hoặc nút Sửa phải thay đổi >= MIN_REPAIR_CHANGE")
+    add("click", "Đóng modal Sửa máy • (652,284)")
+    add("wait", "0.65s")
+    add("gate", "Modal phải biến mất với change >= MIN_CLOSE_CHANGE")
+
+
 def runtime_steps(new_step_id) -> list[dict]:
-    """Keep runtime bound to the already-proven fail-close Function 1 workflow."""
+    """Keep runtime bound to the proven fail-close Function 1 workflow."""
     return [
         {
             "id": new_step_id(),
