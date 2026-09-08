@@ -8,11 +8,12 @@ FILE_FUNCTIONS = (
     "Đưa camera từ máy Nước táo tầng 2 về màn hình chính bằng 1+3 nhịp goDown(1)",
     "Cho phép các nhịp settle chạm biên có frame_change thấp nhưng vẫn lấy fresh frame",
     "Sau khi gieo Bông, đi từ mốc tầng 1 lên tầng 3 bằng hai nhịp goUp(1)",
+    "Cung cấp một nhịp goDown(1) công khai để workflow normalize cuối vòng bằng exact-main gate",
 )
 
 
 class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
-    """Only the two routes introduced by Function 1 pass 3."""
+    """Only the routes introduced by Function 1 pass 3."""
 
     def _settle_down_one(self, label: str) -> float:
         """Send one goDown(1) and record fresh-frame change without boundary fail.
@@ -38,6 +39,10 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
             "fresh_frame=true | boundary_change_non_blocking=true"
         )
         return change
+
+    def go_down_one_toward_main(self, label: str) -> float:
+        """Public single-step primitive for bounded exact-main normalization."""
+        return self._settle_down_one(label)
 
     def floor_2_to_main(self) -> NavigationEvidence:
         """Normalize the post-juice camera all the way to main before cotton.
