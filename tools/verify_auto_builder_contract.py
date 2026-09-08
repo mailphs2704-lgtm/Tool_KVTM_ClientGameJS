@@ -27,8 +27,9 @@ CORE_GUI = MULTI / "kvtm_multi.py"
 FILE_FUNCTIONS = (
     "Parse toàn bộ module Builder bắt buộc",
     "Khóa module nghiệp vụ độc lập và Function metadata",
-    "Khóa Function tự tạo nhiều tab/load/save/call graph",
-    "Khóa Swipe kéo trực tiếp trên OpenGL game không HWND fallback",
+    "Khóa Function tự tạo nhiều tab/load/save/call graph + Function 1 cũ load được",
+    "Khóa Swipe nhiều điểm liên tục qua native swipe_points/BATCH_SWIPE",
+    "Khóa thư viện ảnh Multi DEV và import AUTO PRO vào thư viện",
     "Khóa custom image/click/swipe/wait fail-close",
     "Khóa giao diện Builder dùng style/tab Multi DEV",
     "Khóa plan bền qua Control Center build và worker isolated V3",
@@ -106,28 +107,72 @@ def main() -> int:
     require(image_match, "cv2.matchTemplate", "Custom recognition matcher missing")
     require(runner, "raise ScreenTimeout", "Recognition failure is not fail-closed")
 
+    # Reusable Function library + prior built-in Function exposed in Load Function.
     require(model, 'self.functions_dir = self.root / "functions"',
             "Persistent Function library missing")
     require(model, "def save_function", "Builder cannot save reusable Functions")
     require(model, "def load_function", "Builder cannot load reusable Functions")
     require(model, "def list_functions", "Builder cannot list reusable Functions")
     require(model, "def bundle_plan", "Builder cannot bundle saved Functions for worker")
+    require(model, '_BUILTIN_WRAPPER_ID = "builtin_function_1_existing"',
+            "Prior Function-1 stable load-library id missing")
+    require(model, '"name": "9 Táo sấy - 9 Vải vàng"',
+            "Prior 9 Táo sấy - 9 Vải vàng Function is not exposed")
+    require(model, "def _seed_existing_function_one", "Prior Function seed hook missing")
+    require(model, "self._seed_existing_function_one()", "Prior Function is not seeded on store startup")
+    require(model, '"function_id": "function_1"',
+            "Prior Function wrapper is not bound to proven built-in Function 1")
     require(model, '"type": "enter_game_popup"', "Default plan enter-game block missing")
     require(model, '"type": "sell_function_vp"', "Default plan sale module missing")
 
+    # Recognition images: Multi DEV library is first-class; AUTO PRO is import-only.
+    require(model, 'self.image_library_dir = self.root / "image-library"',
+            "Persistent Multi DEV image library missing")
+    require(model, "def list_library_images", "Multi DEV image library cannot be listed")
+    require(model, "def list_auto_pro_images", "AUTO PRO image catalog cannot be listed")
+    require(model, "def resolve_auto_pro_root", "Packaged AUTO PRO root resolver missing")
+    require(model, "def import_auto_pro_image", "AUTO PRO image import path missing")
+    require(model, "self._copy_image_to_library(path)",
+            "AUTO PRO image selection must copy into Multi DEV library")
+    require(dialogs, 'text="1 • Thư viện Multi DEV"',
+            "Recognition source option 1 must be Multi DEV library")
+    require(dialogs, 'text="2 • Ảnh AUTO PRO"',
+            "Recognition source option 2 must be AUTO PRO images")
+    require(dialogs, "store.list_library_images()", "Recognition dialog does not list Multi DEV library")
+    require(dialogs, "store.list_auto_pro_images(auto_root)", "Recognition dialog does not list AUTO PRO images")
+    require(dialogs, "store.import_auto_pro_image(chosen, auto_root)",
+            "AUTO PRO selection is not copied into Multi DEV library")
+    require(dialogs, 'step["image_source"] = source',
+            "Recognition step does not record source provenance")
+
+    # Swipe v1.2 is one ordered multi-point gesture, not N independent swipes.
     require(dialogs, "pick_swipe_on_game", "Swipe dialog is not wired to live picker")
     require(dialogs, 'step_type == "call_saved_function"',
             "Saved Function call configuration missing")
-    require(dialogs, "Kéo trực tiếp trên màn hình game", "Live Swipe prompt missing")
+    require(dialogs, "Kéo trực tiếp nhiều đoạn trên màn hình game", "Multi-segment live Swipe prompt missing")
+    require(dialogs, 'step["points"] = points', "Swipe dialog does not persist ordered points")
+    require(dialogs, '"x,y; x,y; x,y ..."', "Manual multi-point Swipe fallback missing")
 
     require(gesture, "self.core.capture_shared_bgra(",
             "Gesture picker must use OpenGL shared capture")
     forbid(gesture, "capture_bgra(",
            "Gesture picker must not use HWND/PrintWindow fallback")
+    require(gesture, "self._points", "Gesture picker does not retain multiple points")
     require(gesture, "<ButtonPress-1>", "Gesture picker drag start binding missing")
     require(gesture, "<B1-Motion>", "Gesture picker drag motion binding missing")
     require(gesture, "<ButtonRelease-1>", "Gesture picker drag release binding missing")
+    require(gesture, "↶ Undo đoạn cuối", "Gesture picker cannot undo last segment")
+    require(gesture, "✕ Xóa đường", "Gesture picker cannot clear the path")
     require(gesture, "1000.0", "Gesture picker logical 0..1000 mapping missing")
+    require(gesture, 'self.result = [[int(x), int(y)] for x, y in self._points]',
+            "Gesture picker does not return the full ordered polyline")
+
+    require(runner, "def _normalize_swipe_points", "Runtime multi-point Swipe validation missing")
+    require(runner, 'step["points"] = points', "Runtime does not normalize Swipe points")
+    require(runner, "self.auto.driver.swipe_points(points, duration=duration)",
+            "Runtime Swipe must execute one native multi-point swipe_points gesture")
+    forbid(runner, "for segment in points", "Runtime must not split one Builder Swipe into independent swipes")
+    require(runner, "segments={len(points) - 1}", "Runtime multi-segment Swipe diagnostic missing")
 
     require(worker, 'choices=("main", "floor-demo", "builder")',
             "Isolated worker Builder mode missing")
@@ -201,8 +246,10 @@ def main() -> int:
 
     print("AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED")
     print("ui=multi-dev-native-style-multi-tab-function-editor")
-    print("functions=create-save-load-call-nested-no-recursion")
-    print("gesture_picker=opengl-shared-drag-to-logical-1000-no-hwnd-fallback")
+    print("functions=create-save-load-call-nested-no-recursion+builtin-function1-loadable")
+    print("gesture_picker=multi-segment-opengl-drag-to-logical-1000-no-hwnd-fallback")
+    print("swipe_runtime=one-native-swipe-points-batch")
+    print("recognition_library=multi-dev-first-auto-pro-copy-in")
     print("modules=enter_game_popup,sell_function_vp,builtin_function")
     print("blocks=call_saved_function,recognize_image,click,swipe,wait,finish_pass,finish_fail")
     print("scheduler=function-loop-sale-after-each-loop-configurable")
