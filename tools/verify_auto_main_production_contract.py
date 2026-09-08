@@ -98,14 +98,15 @@ def main() -> int:
     if EXPECTED_YELLOW_FABRIC_BLOB_SHA == EXPECTED_WAREHOUSE_YELLOW_FABRIC_BLOB_SHA:
         raise AssertionError("Production and warehouse yellow-fabric assets must remain distinct")
 
-    # Startup remains the proven diagnostic low-floor route. Exact main is a
-    # business-transition/end-loop gate, not a startup image guess.
-    require(game_session, "DOWN_ONE = (514, 314, 514, 214)", "Startup goDown(1) geometry changed")
-    require(game_session, 'started_on_main = self.auto.popup.is_own_main_screen()', "Startup routing hint missing")
-    require(game_session, 'self._startup_go_down_one("startup-low-floor-probe-1-of-4")', "STEP 2 initial goDown(1) probe missing")
-    require(game_session, "for index in range(2, 5):", "STEP 2 must issue three settling goDown(1)s")
-    require(game_session, "không gate main tại startup", "Startup exact-main policy changed")
-    forbid(game_session, "if change <", "Startup must not infer main from frame-change")
+    # Startup owns portal/account entry + popup cleanup only. No floor/camera
+    # navigation is allowed here; exact business navigation stays in Function flows.
+    require(game_session, "self.auto.ensure_main_screen(timeout=float(timeout))",
+            "GameSession enter-game/popup transaction missing")
+    require(game_session, "startup không thực hiện goDown(1)",
+            "Startup no-goDown policy marker missing")
+    forbid(game_session, "DOWN_ONE =", "Startup goDown geometry must be removed")
+    forbid(game_session, "_startup_go_down_one", "Startup goDown helper must be removed")
+    forbid(game_session, "_recover_floor_1_or_2_start", "Startup low-floor recovery must be removed")
     forbid(workflow, "self.auto.ensure_main_screen(timeout=timeout)", "AppleDryer duplicated startup main gate")
     require(function_one, "def _require_main_transition", "Inter-stage exact-main helper missing")
     require(function_one, 'self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")', "Apple→juice main gate missing")
@@ -123,10 +124,15 @@ def main() -> int:
     require(action, "self.speed_config.vp_production_delay", "Dried-apple production speed binding missing")
     require(action, '"full_kho"', "Full warehouse guard missing")
     require(action, "def _find_top_empty_slot(self):", "Reusable top-slot detector missing")
+    require(action, "def _wait_for_idle_open_panel", "Open-panel busy wait missing")
+    require(action, "empty == self.REQUIRED_COUNT", "Production must wait for exact 9/9 empty slots")
+    require(action, "self.waiter.sleep(self.PANEL_RECHECK_SECONDS)", "Open-panel cooperative recheck missing")
+    require(action, "panel_ready = empty_ready or product_ready", "Dried-apple full-slot panel recognition missing")
     require(action, "close_after_success: bool = True", "Production panel handoff switch missing")
 
     require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice production template missing")
-    require(apple_juice, "if panel_ready:", "Apple-juice panel verification missing")
+    require(apple_juice, "panel_ready = empty_ready or product_ready", "Apple-juice full-slot panel recognition missing")
+    require(apple_juice, "self.slots._wait_for_idle_open_panel(", "Apple-juice open-panel wait missing")
     require(apple_juice, "current >= empty_after", "Apple-juice per-drag gate missing")
     require(apple_juice, "self.speed_config.vp_collect_delay", "Apple-juice collect speed binding missing")
     require(apple_juice, "self.speed_config.vp_production_delay", "Apple-juice production speed binding missing")
@@ -136,6 +142,8 @@ def main() -> int:
     forbid(yellow_fabric, "kho_vai_vang", "Warehouse yellow-fabric template referenced by production")
     require(yellow_fabric, "REQUIRED_COUNT = 9", "Exactly nine yellow fabrics required")
     require(yellow_fabric, "MAX_OPEN_CLICKS = 30", "Yellow-fabric open loop is unbounded")
+    require(yellow_fabric, "panel_ready = empty_ready or product_ready", "Yellow-fabric full-slot panel recognition missing")
+    require(yellow_fabric, "self.slots._wait_for_idle_open_panel(", "Yellow-fabric open-panel wait missing")
     require(yellow_fabric, "if not panel_ready:", "Yellow-fabric panel fail-close missing")
     require(yellow_fabric, "current >= empty_after", "Yellow-fabric per-drag gate missing")
     require(yellow_fabric, "empty_before - empty_after != self.REQUIRED_COUNT", "Yellow-fabric post-accounting missing")
@@ -155,7 +163,6 @@ def main() -> int:
     require(machine_repair, "MIN_CLOSE_CHANGE", "Repair modal-close visual gate missing")
     forbid(machine_repair, "OCR", "Repair runtime must never depend on OCR price")
 
-    # Every Function-1 production keeps the panel open and immediately repairs.
     require(workflow, "produce_9_dried_apples(\n            close_after_success=False", "Dried-apple production does not keep panel open for repair")
     require(workflow, "self.auto.machine_repair.repair_after_production(produced)", "Dried-apple machine repair missing")
     require(function_one, "produce_9_apple_juices(\n            close_after_success=False", "Apple-juice production does not keep panel open for repair")
@@ -163,7 +170,6 @@ def main() -> int:
     require(function_one, "produce_9_yellow_fabrics(\n            close_after_success=False", "Yellow-fabric production does not keep panel open for repair")
     require(function_one, "self.auto.machine_repair.repair_after_production(fabric)", "Yellow-fabric machine repair missing")
 
-    # Cotton and pass-3 upward route remain proven.
     require(cotton, 'COTTON_TEMPLATE = "cay_bong"', "Cotton template id changed")
     require(cotton, "if not self.vision.assets.has(self.COTTON_TEMPLATE):", "Cotton asset fail-close missing")
     require(cotton, "path = (seed.center,) + self.rose_path()[1:]", "Cotton 27-pot geometry changed")
@@ -174,8 +180,6 @@ def main() -> int:
     require(pass_three_nav, '"post-juice-goDown(1)-settle-4-of-4"', "Post-juice settling route incomplete")
     require(pass_three_nav, "def floor_1_to_floor_3", "Floor1→floor3 route missing")
 
-    # Corrected end-loop route: NO stall/quầy. Floor 3 → one goDown(1) →
-    # recovered AUTO PRO down-floor button → fresh frame → exact own-main.
     require(pass_three_nav, "DOWN_FLOOR_POINT = (497, 978)", "AUTO PRO down-floor coordinate missing")
     require(pass_three_nav, "def floor_3_to_main_via_down_floor", "End-loop down-floor route missing")
     require(pass_three_nav, '"function1-end-loop-floor3-goDown(1)"', "End-loop exactly-one goDown(1) missing")
@@ -190,13 +194,14 @@ def main() -> int:
     require(function_one, "progress_steps=3", "Function 1 result progress changed")
     require(function_one, "total_steps=3", "Function 1 result total changed")
 
-    # Scheduler keeps running only after a verified Function result/main boundary.
     require(auto_main, "FunctionModule(automation)", "Selected Function dispatcher missing")
     require(auto_main, 'self.spec.runner_key == "function_1"', "Function-1 completion branch missing")
     require(auto_main, 'payload.get("progress_steps"', "Function-1 progress guard missing")
     require(auto_main, 'payload.get("yellow_fabrics"', "Function-1 yellow-fabric guard missing")
     require(auto_main, 'payload.get("cotton_planted"', "Function-1 cotton guard missing")
     require(auto_main, "self._validate_function_result(payload)", "Scheduler Function validation missing")
+    require(auto_main, "function_loop_delay_seconds: float = 0.0", "AUTO Main Function loop delay input missing")
+    require(auto_main, "self._wait_before_next_function_loop()", "AUTO Main between-loop wait missing")
     require(auto_main, "while True:", "AUTO Main recurring loop missing")
     require(auto_main, "self.context.ensure_running()", "AUTO Main stop checkpoints missing")
 
@@ -208,6 +213,7 @@ def main() -> int:
     require(auto_multi_worker, "automation.floors.reference_main_to_floor_6()", "Floor demo target-6 state machine missing")
     require(auto_multi_worker, "function_id=function_id", "Worker selected Function handoff missing")
     require(auto_multi_worker, "sale_every_loops=sale_every", "Worker recurring sale handoff missing")
+    require(auto_multi_worker, "function_loop_delay_seconds=loop_delay", "Worker Function loop delay handoff missing")
     require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)", "Auto Pro goUp(4) geometry missing")
 
     for token in ("clear_stall_probe_runtime", "adb_controller.pyc"):
@@ -216,9 +222,11 @@ def main() -> int:
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
-    print("production=three_verified_9_item_passes+repair_after_each")
+    print("startup=enter-game-popup-only-no-godown")
+    print("production=keep-open-panel-wait-9-of-9+three_verified_passes+repair_after_each")
     print("machine_repair=verified_handoff+no_price_ocr")
     print("vp_collect_speed=independent")
+    print("function_loop_delay=visible-main-control+between-loops-only")
     print("post_juice_navigation=1_plus_3_godown1_boundary_non_blocking_exact_main_gate")
     print("end_loop_navigation=floor3_one_godown1+down_floor_497_978+exact_main")
     print("next_loop=main_required_before_restart")
