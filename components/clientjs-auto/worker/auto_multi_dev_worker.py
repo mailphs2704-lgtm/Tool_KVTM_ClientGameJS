@@ -17,6 +17,10 @@ from clean_worker_support import (
 
 
 WORKFLOW_NAME = "auto_multi_dev_main"
+_REQUIRED_BRIDGE_PROTOCOL = (
+    "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
+    "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP"
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -106,6 +110,13 @@ def main() -> int:
         )
 
         install_component_path()
+        # EngineDriver historically accepted any response beginning with the
+        # base V3 prefix. That lets a resident pre-SYNC2/pre-FIXEDMAP DLL survive
+        # a source rebuild and serve a newer worker, splitting the pipe response
+        # from the shared mapping. Multi Dev requires the exact current revision.
+        engine_driver = importlib.import_module("engine_driver")
+        engine_driver._PROTOCOL_PREFIX = _REQUIRED_BRIDGE_PROTOCOL
+
         from kvtm_automation import AutomationContext, KVAutomation
         from kvtm_automation.errors import AutomationStopped
         from kvtm_automation.workflows.game_session import GameSessionWorkflow
