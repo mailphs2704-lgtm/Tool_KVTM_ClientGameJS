@@ -200,7 +200,7 @@ def main() -> int:
             "Saved Function call configuration missing")
     require(dialogs, "Kéo trực tiếp nhiều đoạn trên màn hình game", "Multi-segment live Swipe prompt missing")
     require(dialogs, 'step["points"] = points', "Swipe dialog does not persist ordered points")
-    require(dialogs, '"x,y; x,y; x,y ..."', "Manual multi-point Swipe fallback missing")
+    require(dialogs, "Nhập đường Swipe dạng x,y; x,y; x,y ...", "Manual multi-point Swipe fallback missing")
 
     require(gesture, "self.core.capture_shared_bgra(",
             "Gesture picker must use OpenGL shared capture")
