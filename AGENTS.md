@@ -35,7 +35,10 @@ This file is a mandatory first-read for every AI session that works on this repo
 ## 5. Current AUTO MULTI DEV transport contract
 
 - Main AUTO MULTI DEV worker is isolated and uses Bridge V3.
-- Keep the strict protocol/revision contract required by the current source, including `CAPTURE3`, `INPUT4`, `BATCH_SWIPE`, `NO_LAYOUT`, `CAPTURE3_SYNC2`, and `CAPTURE3_FIXEDMAP` where the current worker/verifier requires them.
+- Keep the strict protocol/revision contract required by the current source: `CAPTURE3`, `INPUT4`, `BATCH_SWIPE`, `NO_LAYOUT`, `CAPTURE3_SYNC2`, `CAPTURE3_FIXEDMAP`, and `CAPTURE3_WRITERMAP2`.
+- `CAPTURE3_WRITERMAP2` is mandatory after the 2026-09-08 live evidence where one frame id had different coherent dimensions in the pipe response and PID-only shared mapping. Multi Dev must use `CAPTUREW`, receive the native writer id, and open only `Local\\KVTM-CaptureV3-{pid}-{writer_id}` for that request.
+- Do not regress Multi Dev to the legacy PID-only `CAPTURE` mapping. Legacy `CAPTURE` remains native compatibility only for other packaged consumers.
+- Do not accept an older/newer frame from another request merely because it is complete. Multi Dev WRITERMAP2 binds one `CAPTUREW` to one writer and one exact expected frame.
 - Do not reintroduce HWND capture fallback into AUTO MULTI DEV main flow without explicit evidence and approval.
 
 When these rules conflict with an older handoff note, follow the user's latest explicit instruction and update the coordination documentation accordingly.
