@@ -87,6 +87,10 @@ class PopupActions:
 
     def is_own_main_screen(self) -> bool:
         """Confirm the clone's own farm, not a friend's visited home."""
+        # Home classification must be atomic relative to CAPTURE3. Previously
+        # icon_home used this frame but friend_off/cua_hang each captured a newer
+        # frame, so one decision could mix three renderer moments. Reuse exactly
+        # one snapshot for every mutually-exclusive home anchor.
         frame = self.vision.frame()
         if self._blocking_modal_geometry(frame)[0]:
             return False
@@ -95,8 +99,12 @@ class PopupActions:
         ) is not None:
             return False
         return bool(
-            self.vision.find("friend_off", threshold=0.76, zone=self.FRIEND_ZONE)
-            or self.vision.find("cua_hang", threshold=0.78, zone=self.HOME_ZONE)
+            self.vision.find(
+                "friend_off", threshold=0.76, zone=self.FRIEND_ZONE, frame=frame
+            )
+            or self.vision.find(
+                "cua_hang", threshold=0.78, zone=self.HOME_ZONE, frame=frame
+            )
         )
 
     # Compatibility name used by a few generic callers.
