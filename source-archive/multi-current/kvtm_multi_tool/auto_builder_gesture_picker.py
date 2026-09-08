@@ -13,7 +13,8 @@ FILE_FUNCTIONS = (
     "Cấu hình Win32 GDI pointer-safe cho Python x64",
     "Hiển thị fresh OpenGL shared capture không dùng HWND fallback",
     "Ánh xạ kéo chuột trên preview về tọa độ logic 0..1000",
-    "Vẽ preview đường swipe và trả start/end cho Builder",
+    "Cho kéo nhiều đoạn liên tiếp và vẽ toàn bộ polyline Swipe",
+    "Undo đoạn cuối / xóa toàn bộ đường trước khi xác nhận",
     "Chặn picker khi profile đang có AUTO/preview chiếm capture",
 )
 
@@ -77,6 +78,24 @@ def _configure_gdi(core) -> None:
     gdi32.Ellipse.restype = wintypes.BOOL
 
 
+def _normalize_initial(initial) -> list[tuple[int, int]]:
+    if not initial:
+        return []
+    if isinstance(initial, (list, tuple)) and len(initial) >= 2:
+        if all(isinstance(item, (list, tuple)) and len(item) == 2 for item in initial):
+            points = [(int(item[0]), int(item[1])) for item in initial]
+            return [
+                (max(0, min(1000, x)), max(0, min(1000, y)))
+                for x, y in points
+            ]
+        if len(initial) == 4:
+            return [
+                (int(initial[0]), int(initial[1])),
+                (int(initial[2]), int(initial[3])),
+            ]
+    return []
+
+
 class _SwipePickerWindow:
     def __init__(self, app, core, parent, profile_id: str, profile: dict, pid: int, initial):
         self.app = app
@@ -90,18 +109,18 @@ class _SwipePickerWindow:
         self._dib_pixels = None
         self._dib_size = 0
         self._target_rect = (0, 0, 1, 1)
-        self._drag_start = None
-        self._drag_current = None
-        self._initial = initial
+        self._points: list[tuple[int, int]] = _normalize_initial(initial)
+        self._drag_start: tuple[int, int] | None = None
+        self._drag_current: tuple[int, int] | None = None
         _configure_gdi(core)
 
         tk, ttk = core.tk, core.ttk
         win = tk.Toplevel(parent or app)
         self.window = win
         name = str(profile.get("name") or profile_id)
-        win.title(f"KVTM Multi DEV - Chọn Swipe - {name}")
-        win.geometry("660x730")
-        win.minsize(460, 520)
+        win.title(f"KVTM Multi DEV - Chọn Swipe nhiều đoạn - {name}")
+        win.geometry("700x760")
+        win.minsize(500, 560)
         win.configure(background="#f3f6fa")
         win.transient(parent or app)
 
@@ -109,9 +128,14 @@ class _SwipePickerWindow:
         header.pack(fill="x")
         ttk.Label(
             header,
-            text="Kéo trực tiếp trên hình game từ điểm bắt đầu tới điểm kết thúc",
+            text="Kéo nhiều lần trên hình game; mỗi lần kéo sẽ thêm một đoạn vào cùng một Swipe",
             style="Key.TLabel",
         ).pack(anchor="w")
+        ttk.Label(
+            header,
+            text="Đường mới được nối theo đúng thứ tự điểm. Có thể Undo đoạn cuối hoặc Xóa đường.",
+            style="AutoValue.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
         self.status = tk.StringVar(value="Đang lấy OpenGL shared capture...")
         ttk.Label(header, textvariable=self.status, style="AutoValue.TLabel").pack(
             anchor="w", pady=(5, 0)
@@ -128,9 +152,20 @@ class _SwipePickerWindow:
 
         actions = ttk.Frame(win, padding=(12, 0, 12, 12), style="App.TFrame")
         actions.pack(fill="x")
+        left_actions = ttk.Frame(actions, style="App.TFrame")
+        left_actions.pack(side="left")
+        ttk.Button(
+            left_actions, text="↶ Undo đoạn cuối", width=17, style="Action.TButton",
+            command=self._undo_segment,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            left_actions, text="✕ Xóa đường", width=14, style="Action.TButton",
+            command=self._clear_path,
+        ).pack(side="left")
+
         self.selection_text = tk.StringVar(value="Chưa chọn đường Swipe")
         ttk.Label(actions, textvariable=self.selection_text, style="AutoValue.TLabel").pack(
-            side="left", fill="x", expand=True
+            side="left", fill="x", expand=True, padx=(12, 8)
         )
         ttk.Button(
             actions, text="Dùng Swipe này", width=18, style="AutoStart.TButton",
@@ -141,11 +176,7 @@ class _SwipePickerWindow:
             command=self._cancel,
         ).pack(side="right")
 
-        if initial and len(initial) == 4:
-            self._drag_start = (int(initial[0]), int(initial[1]))
-            self._drag_current = (int(initial[2]), int(initial[3]))
-            self._update_selection_text()
-
+        self._update_selection_text()
         win.protocol("WM_DELETE_WINDOW", self._cancel)
         threading.Thread(target=self._capture_loop, daemon=True).start()
         win.after(25, self._poll_frame)
@@ -201,7 +232,10 @@ class _SwipePickerWindow:
                 self._dib_size = size
             ctypes.memmove(self._dib_pixels, raw, size)
             self._latest = (self._dib_pixels, width, height)
-            self.status.set(f"OpenGL shared capture • {width}×{height} • kéo chuột để chọn Swipe")
+            self.status.set(
+                f"OpenGL shared capture • {width}×{height} • "
+                f"{max(0, len(self._points) - 1)} đoạn đã giữ"
+            )
             self._paint_latest()
         self.window.after(25, self._poll_frame)
 
@@ -254,19 +288,32 @@ class _SwipePickerWindow:
         ly = int(round((y - top) * 1000.0 / max(1, height)))
         return max(0, min(1000, lx)), max(0, min(1000, ly))
 
+    def _overlay_points(self) -> list[tuple[int, int]]:
+        points = list(self._points)
+        if self._drag_start is not None and self._drag_current is not None:
+            if not points or points[-1] != self._drag_start:
+                points.append(self._drag_start)
+            if not points or points[-1] != self._drag_current:
+                points.append(self._drag_current)
+        return points
+
     def _paint_overlay(self, dc) -> None:
-        if self._drag_start is None or self._drag_current is None:
+        points = self._overlay_points()
+        if not points:
             return
-        sx, sy = self._logical_to_canvas(self._drag_start)
-        ex, ey = self._logical_to_canvas(self._drag_current)
+        canvas_points = [self._logical_to_canvas(point) for point in points]
         gdi32 = ctypes.windll.gdi32
         pen = gdi32.CreatePen(0, 4, 0x0000FFFF)
         old_pen = gdi32.SelectObject(dc, pen)
         try:
-            gdi32.MoveToEx(dc, sx, sy, None)
-            gdi32.LineTo(dc, ex, ey)
-            gdi32.Ellipse(dc, sx - 6, sy - 6, sx + 6, sy + 6)
-            gdi32.Ellipse(dc, ex - 6, ey - 6, ex + 6, ey + 6)
+            if len(canvas_points) >= 2:
+                sx, sy = canvas_points[0]
+                gdi32.MoveToEx(dc, sx, sy, None)
+                for ex, ey in canvas_points[1:]:
+                    gdi32.LineTo(dc, ex, ey)
+            for index, (x, y) in enumerate(canvas_points):
+                radius = 8 if index in (0, len(canvas_points) - 1) else 5
+                gdi32.Ellipse(dc, x - radius, y - radius, x + radius, y + radius)
         finally:
             gdi32.SelectObject(dc, old_pen)
             gdi32.DeleteObject(pen)
@@ -296,32 +343,54 @@ class _SwipePickerWindow:
         point = self._canvas_to_logical(event.x, event.y)
         if point is not None:
             self._drag_current = point
+        start, end = self._drag_start, self._drag_current
+        if end is not None and start != end:
+            if not self._points:
+                self._points.append(start)
+            elif self._points[-1] != start:
+                self._points.append(start)
+            if self._points[-1] != end:
+                self._points.append(end)
+        self._drag_start = None
+        self._drag_current = None
+        self._update_selection_text()
+        self._paint_latest()
+
+    def _undo_segment(self) -> None:
+        if len(self._points) <= 2:
+            self._points.clear()
+        else:
+            self._points.pop()
+        self._drag_start = None
+        self._drag_current = None
+        self._update_selection_text()
+        self._paint_latest()
+
+    def _clear_path(self) -> None:
+        self._points.clear()
+        self._drag_start = None
+        self._drag_current = None
         self._update_selection_text()
         self._paint_latest()
 
     def _update_selection_text(self) -> None:
-        if self._drag_start is None or self._drag_current is None:
-            self.selection_text.set("Chưa chọn đường Swipe")
+        points = self._overlay_points()
+        if len(points) < 2:
+            self.selection_text.set("Chưa có đoạn Swipe • kéo trên hình để thêm đoạn")
             return
         self.selection_text.set(
-            f"Swipe: {self._drag_start[0]},{self._drag_start[1]} → "
-            f"{self._drag_current[0]},{self._drag_current[1]}"
+            f"{len(points)} điểm / {len(points) - 1} đoạn • "
+            f"{points[0][0]},{points[0][1]} → {points[-1][0]},{points[-1][1]}"
         )
 
     def _accept(self) -> None:
-        if self._drag_start is None or self._drag_current is None:
+        if len(self._points) < 2:
             self.core.messagebox.showinfo(
-                self.core.APP_NAME, "Hãy kéo một đường Swipe trên màn hình game.",
+                self.core.APP_NAME, "Hãy tạo ít nhất một đoạn Swipe trên màn hình game.",
                 parent=self.window,
             )
             return
-        if self._drag_start == self._drag_current:
-            self.core.messagebox.showinfo(
-                self.core.APP_NAME, "Điểm bắt đầu và kết thúc Swipe phải khác nhau.",
-                parent=self.window,
-            )
-            return
-        self.result = (*self._drag_start, *self._drag_current)
+        self.result = [[int(x), int(y)] for x, y in self._points]
         self._close()
 
     def _cancel(self) -> None:
@@ -335,7 +404,7 @@ class _SwipePickerWindow:
 
 
 def pick_swipe_on_game(app, core, parent=None, initial=None):
-    """Return logical ``(x1, y1, x2, y2)`` from a live game drag or ``None``."""
+    """Return ordered logical ``[[x,y], ...]`` polyline from live game drags."""
     profile_id, profile, pid = _selected_running_profile(app, core)
     picker = _SwipePickerWindow(
         app, core, parent, profile_id, profile, pid, initial,
