@@ -12,11 +12,13 @@ __all__ = ["install_production_busy_wait"]
 FILE_FUNCTIONS = (
     "Chuyển riêng lỗi máy còn đang sản xuất thành WAIT + recheck thay vì kết thúc AUTO",
     "Chỉ retry các lỗi thiếu ô top/chưa đủ 9 ô trống đã xác định là trạng thái máy bận",
+    "Với lỗi gộp product/top, phải mở lại và thấy đúng ảnh sản phẩm mới được retry",
     "Giữ nguyên fail-close cho sai panel, sai vật phẩm, thiếu nguyên liệu và kho đầy",
     "Mọi vòng chờ đều stop-aware để nút Dừng AUTO sạch vẫn có hiệu lực",
 )
 
 _RECHECK_SECONDS = 1.0
+_PROBE_OPEN_CLICKS = 5
 _INSTALLED = False
 
 
@@ -30,21 +32,23 @@ def _log_wait(owner, label: str, reason: str, attempt: int) -> None:
 
 def _probe_product_after_reopen(owner, *, point: tuple[int, int], template: str) -> bool:
     """Disambiguate a combined product/top error after the original fail-close."""
-    owner.context.ensure_running()
-    owner.vision.driver.click(*point)
-    owner.waiter.sleep(owner.speed_config.vp_collect_delay)
-    product = owner.vision.find(
-        template,
-        threshold=0.70,
-        zone=None,
-        scales=(0.75, 0.90, 1.00, 1.10, 1.25),
-        click=False,
-    )
-    # The previous transaction had already closed the verified panel. This
-    # one-shot probe reopens only to decide busy-vs-wrong-panel; always close it
-    # again before either retrying or propagating FAIL.
-    owner.vision.driver.click(*owner.CLOSE_POINT)
-    return product is not None
+    for _attempt in range(1, _PROBE_OPEN_CLICKS + 1):
+        owner.context.ensure_running()
+        owner.vision.driver.click(*point)
+        owner.waiter.sleep(owner.speed_config.vp_collect_delay)
+        product = owner.vision.find(
+            template,
+            threshold=0.70,
+            zone=None,
+            scales=(0.75, 0.90, 1.00, 1.10, 1.25),
+            click=False,
+        )
+        if product is not None:
+            owner.vision.driver.click(*owner.CLOSE_POINT)
+            return True
+    # If the correct production asset cannot be recovered, do not turn a wrong
+    # panel/navigation bug into an infinite busy wait.
+    return False
 
 
 def _dried_busy(owner, exc: ScreenTimeout) -> bool:
