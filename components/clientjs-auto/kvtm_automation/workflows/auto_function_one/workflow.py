@@ -17,6 +17,7 @@ FILE_FUNCTIONS = (
     "Về màn hình chính, lên tầng 2 và sản xuất chín Nước táo",
     "Về màn hình chính, gieo 27 Bông rồi lên tầng 3 sản xuất chín Vải vàng",
     "Chỉ PASS 3/3 sau khi hậu kiểm đủ chín Vải vàng",
+    "Sau PASS 3/3, normalize tầng 3 về main bằng từng nhịp goDown + exact-main gate",
 )
 
 
@@ -41,6 +42,8 @@ class FunctionOneResult:
 class FunctionOneWorkflow:
     """Function 1: verified 9 dried apples + supply chain + 9 yellow fabrics."""
 
+    END_LOOP_MAIN_MAX_SWIPES = 6
+
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
         self.context = automation.context
@@ -55,6 +58,41 @@ class FunctionOneWorkflow:
             )
         self.context.log(
             f"AUTO transition check • {label} • exact main PASS"
+        )
+
+    def _normalize_end_of_loop_to_main(self) -> None:
+        """Return a completed Function 1 loop to a repeatable main-screen state.
+
+        The route does not assume a fixed number of down swipes. After every
+        single gesture it asks the proven exact own-main classifier. Six gestures
+        are only a safety bound; if the classifier never passes we stop rather
+        than starting the next Function loop from an unknown floor.
+        """
+        self.context.stage("auto-function-1-end-loop-main-normalize")
+        self.context.ensure_running()
+        if self.auto.popup.is_own_main_screen():
+            self.context.log(
+                "AUTO chức năng 1 • cuối vòng đã ở main • không cần goDown"
+            )
+            return
+
+        for ordinal in range(1, self.END_LOOP_MAIN_MAX_SWIPES + 1):
+            self.context.ensure_running()
+            self.auto.function_one_pass_three_navigation.go_down_one_toward_main(
+                f"function1-end-loop-goDown(1)-{ordinal}"
+            )
+            if self.auto.popup.is_own_main_screen():
+                self.context.stage("auto-function-1-end-loop-main-ready")
+                self.context.log(
+                    "AUTO chức năng 1 • cuối vòng về main PASS • "
+                    f"goDown={ordinal}"
+                )
+                return
+
+        raise ScreenTimeout(
+            "Function 1 đã PASS sản xuất nhưng không xác nhận được main sau "
+            f"{self.END_LOOP_MAIN_MAX_SWIPES} nhịp goDown; "
+            "dừng trước vòng Function tiếp theo/bán VP"
         )
 
     def run(self) -> FunctionOneResult:
@@ -102,6 +140,9 @@ class FunctionOneWorkflow:
             "AUTO chức năng 1 • PASS 3/3 • đủ 9 Táo sấy + 9 Nước táo + "
             "27 Bông đã gieo + 9 Vải vàng đã xác minh"
         )
+
+        # A Function is repeatable only after it returns to the stable main state.
+        self._normalize_end_of_loop_to_main()
 
         return FunctionOneResult(
             profile_id=self.context.profile_id,
