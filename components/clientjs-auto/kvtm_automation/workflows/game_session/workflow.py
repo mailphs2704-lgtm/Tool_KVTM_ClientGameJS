@@ -27,9 +27,29 @@ class GameSessionWorkflow:
     def run(self, timeout: float = 180.0) -> GameSessionResult:
         started = time.monotonic()
         self.context.stage("clean-session-enter-game")
+
+        # Startup normalization is being added case-by-case. The first locked
+        # case is intentionally passive: when the worker already starts on the
+        # clone's own main farm screen, do not emit any downward floor gesture.
+        # Keep the camera at the canonical main anchor and let the existing
+        # production path own the single goUp(1) transition when planting begins.
+        started_on_main = self.auto.popup.is_own_main_screen()
+        if started_on_main:
+            self.context.stage("clean-session-start-main-detected")
+            self.context.log(
+                "AUTO khởi điểm • đã ở màn hình chính • giữ nguyên camera, không goDown"
+            )
+
         self.auto.ensure_main_screen(timeout=float(timeout))
         self.context.ensure_running()
         self.context.stage("clean-session-main-screen-ready")
+
+        if started_on_main:
+            self.context.log(
+                "AUTO khởi điểm • màn hình chính đã xác nhận • bàn giao pipeline; "
+                "goUp(1) chỉ do action gieo phát đúng một lần"
+            )
+
         return GameSessionResult(
             profile_id=self.context.profile_id,
             main_screen_ready=True,
