@@ -14,11 +14,13 @@ __all__ = [
     "EnterGamePopupModule",
     "SellFunctionVpModule",
     "FunctionModule",
+    "MachineRepairTestModule",
 ]
 FILE_FUNCTIONS = (
     "Gọi riêng module vào game và đóng popup",
     "Gọi riêng module bán VP theo Function",
     "Gọi riêng một vòng Function hoàn chỉnh",
+    "Gọi riêng TEST Sửa máy bắt đầu tại panel sản xuất VP đang mở",
     "Chuẩn hóa result module về dict để Scheduler ghi log",
 )
 
@@ -86,4 +88,20 @@ class FunctionModule:
         else:
             raise ValueError(f"Thiếu runner cho {spec.function_id}")
         self.auto.context.stage(f"builder-function-{spec.function_id}-finished")
+        return _payload(result)
+
+
+class MachineRepairTestModule:
+    """DEV-only module; operator must already be on an open production panel."""
+
+    module_id = "machine_repair_test"
+    label = "TEST Sửa máy từ panel VP"
+
+    def __init__(self, automation: KVAutomation) -> None:
+        self.auto = automation
+
+    def run(self) -> dict[str, Any]:
+        self.auto.context.stage("builder-module-machine-repair-test-start")
+        result = self.auto.machine_repair.test_from_open_production_panel()
+        self.auto.context.stage("builder-module-machine-repair-test-finished")
         return _payload(result)
