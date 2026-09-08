@@ -24,8 +24,8 @@ FILE_FUNCTIONS = (
     "Đọc/ghi thư viện Function riêng theo function_id",
     "Expose template Function 1 đã làm trước đó để Load Function",
     "Đóng gói Function đã lưu vào snapshot plan trước khi chạy",
-    "Quản lý thư viện ảnh riêng của Multi DEV ngoài dist",
-    "Copy ảnh được chọn từ AUTO PRO sang thư viện ảnh Multi DEV",
+    "Quản lý/liệt kê thư viện ảnh riêng của Multi DEV ngoài dist",
+    "Liệt kê ảnh AUTO PRO và copy ảnh được chọn sang thư viện Multi DEV",
     "Tạo mô tả ngắn của bước cho giao diện Multi DEV",
 )
 
@@ -51,13 +51,7 @@ def new_function(name: str = "Function mới") -> dict:
 
 
 def builtin_function_templates() -> list[dict]:
-    """Return editable wrappers around already-proven built-in business Functions.
-
-    The built-in implementation itself stays in Python. Loading one of these
-    creates a custom Function document containing one explicit built-in Function
-    block; it does not attempt to decompile/rewrite proven business code into
-    guessed click/swipe JSON.
-    """
+    """Return editable wrappers around already-proven built-in business Functions."""
     return [
         {
             "template_id": "builtin_function_1",
@@ -196,7 +190,6 @@ class AutoBuilderPlanStore:
                 pass
         self.plan_path = self.root / "current-plan.json"
         self.functions_dir = self.root / "functions"
-        # ``assets`` remains for backward compatibility with v1/v1.1 plans.
         self.assets_dir = self.root / "assets"
         self.image_library_dir = self.root / "image-library"
         self.root.mkdir(parents=True, exist_ok=True)
@@ -265,20 +258,14 @@ class AutoBuilderPlanStore:
     def save(self, plan: dict) -> None:
         payload = self._validate_document(plan, kind="plan")
         temporary = self.plan_path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         temporary.replace(self.plan_path)
 
     def save_function(self, function: dict) -> Path:
         payload = self._validate_document(function, kind="function")
         path = self.functions_dir / f"{payload['function_id']}.json"
         temporary = path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         temporary.replace(path)
         return path
 
@@ -296,9 +283,7 @@ class AutoBuilderPlanStore:
         result: list[dict] = []
         for path in sorted(self.functions_dir.glob("*.json"), key=lambda item: item.name.lower()):
             try:
-                data = self._validate_document(
-                    json.loads(path.read_text(encoding="utf-8")), kind="function"
-                )
+                data = self._validate_document(json.loads(path.read_text(encoding="utf-8")), kind="function")
             except Exception:
                 continue
             result.append(data)
@@ -324,6 +309,23 @@ class AutoBuilderPlanStore:
             key=lambda item: item.name.lower(),
         )
 
+    @staticmethod
+    def resolve_auto_pro_root(tool_dir: str | Path) -> Path:
+        tool = Path(tool_dir).expanduser().resolve()
+        candidate = tool.parent / "AUTO_PRO"
+        if not candidate.is_dir():
+            raise FileNotFoundError(f"Không tìm thấy thư mục AUTO_PRO cùng package Multi DEV: {candidate}")
+        return candidate
+
+    def list_auto_pro_images(self, auto_pro_root: str | Path) -> list[Path]:
+        root = Path(auto_pro_root).expanduser().resolve()
+        if not root.is_dir():
+            raise FileNotFoundError(root)
+        return sorted(
+            (path.resolve() for path in root.rglob("*") if self._is_image(path)),
+            key=lambda item: str(item.relative_to(root)).lower(),
+        )
+
     def use_library_image(self, source: str | Path) -> Path:
         path = Path(source).expanduser().resolve()
         if not self._is_image(path):
@@ -331,16 +333,6 @@ class AutoBuilderPlanStore:
         if not self._under(path, self.image_library_dir):
             raise ValueError("Chỉ được chọn ảnh nằm trong thư viện Multi DEV")
         return path
-
-    @staticmethod
-    def resolve_auto_pro_root(tool_dir: str | Path) -> Path:
-        tool = Path(tool_dir).expanduser().resolve()
-        candidate = tool.parent / "AUTO_PRO"
-        if not candidate.is_dir():
-            raise FileNotFoundError(
-                f"Không tìm thấy thư mục AUTO_PRO cùng package Multi DEV: {candidate}"
-            )
-        return candidate
 
     def _copy_image_to_library(self, source: str | Path) -> Path:
         path = Path(source).expanduser().resolve()
