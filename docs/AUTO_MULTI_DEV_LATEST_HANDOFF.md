@@ -1,69 +1,87 @@
 # AUTO MULTI DEV — LATEST HANDOFF
 
-Cập nhật: 2026-09-08 15:17+ +07
+Cập nhật: 2026-09-08
 
-Đây là handoff ngắn để phiên AI kế tiếp tiếp tục ngay mà không phải phục dựng lại toàn bộ ngữ cảnh. Tài liệu chi tiết của mốc hiện tại: `docs/AUTO_MULTI_DEV_AUTO_BUILDER_HANDOFF.md`.
+Đây là handoff ngắn cho phiên AI kế tiếp. Tài liệu chi tiết mới nhất:
+
+`docs/AUTO_MULTI_DEV_AUTO_BUILDER_V11_HANDOFF.md`
 
 ## Trạng thái hiện tại
 
 - Branch: `develop/multi-auto-dev`.
-- AUTO Builder implementation baseline ban đầu: `6f2d7543840a946186289b978f528133f70ea455`.
-- Live startup fix mới: `ef5cbef360d16a5cd6c070e44cac3de1c2a26800`.
-- Static regression guard mới: `e9ce3f11a05b4d0716be615931ee7f1345312fb5`.
-- Feature hiện tại: `TỰ TẠO AUTO v1`.
-- Status: `STARTUP_FIX_READY / WINDOWS_RETEST_PENDING`.
-- Không được gọi Builder runtime PASS trước khi có Windows live evidence.
+- Baseline trước Builder v1.1: `d6cc834341f8750a17f052f2f2334510a93c2fea`.
+- Implementation v1.1 trước commit tài liệu: `34e2a5bc27477a3ad502ec6231a1f67e1b283111`.
+- Feature: `TỰ TẠO AUTO v1.1`.
+- Status: `SOURCE IMPLEMENTED / STATIC GATE UPDATED / WINDOWS LIVE PENDING`.
+- Không gọi runtime PASS trước khi operator build + live test trên Windows.
 
-## Live evidence mới nhất
+## Những gì v1.1 vừa thêm
 
-Sau Control Center `[1]` sync runtime và khi `[2]` mở Multi DEV, ứng dụng thoát ngay trong lúc dựng UI:
+### 1. Function tự tạo thật sự
 
-`AttributeError: 'int' object has no attribute 'tk'`
+Không còn chỉ có block hard-code `Function 1`.
 
-Trace đi qua:
+Builder có thư viện Function persistent tại:
 
-`kvtm_multi.py::_build_auto_panel` → `auto_builder_integration.py::build_auto_panel` → `auto_builder_ui.py::_build_tab` → `core.tk.Button(app.auto_tabs_window, ...)`.
+`%APPDATA%\KVTM Multi DEV\auto-builder\functions`
 
-Root cause đã xác định chắc chắn từ source core:
+Mỗi Function tự tạo có id, tên và danh sách block riêng. Plan chính có block mới:
 
-- `kvtm_multi.py` tạo `tab_bar` là widget thật.
-- Sau đó `self.auto_tabs_window = self.auto_tabs_canvas.create_window(...)`.
-- `Canvas.create_window()` trả về **canvas item id kiểu integer**, không phải Tk widget.
-- Builder v1 đã dùng nhầm integer `app.auto_tabs_window` làm master của `tk.Button`, nên Tkinter crash trước khi Multi mở xong.
+`FUNCTION TỰ TẠO • Gọi Function đã lưu`
 
-Đây là lỗi UI integration của Builder, **không phải Bridge/CAPTURE3, không phải profile, không phải worker runtime**.
+Block này có số vòng và có thể cấu hình gọi module bán VP Function 1 sau mỗi vòng.
 
-Fix `ef5cbef...`:
+Runtime hỗ trợ Function tự tạo lồng nhau và fail-close nếu graph bị gọi đệ quy vòng.
 
-- lấy tab `AUTO MULTI DEV` đã tồn tại: `anchor = app.auto_tab_buttons.get("multi_dev")`;
-- lấy widget tab bar thật bằng `tab_bar = anchor.master`;
-- tạo nút `TỰ TẠO AUTO` với parent `tab_bar`;
-- pack `after=anchor` để vẫn nằm ngay sau `AUTO MULTI DEV`;
-- không sửa `kvtm_multi.py` hay canvas scroll contract.
+### 2. Editor nhiều tab
 
-Verifier `e9ce3f1...` khóa regression:
+Cửa sổ Builder dùng `ttk.Notebook`:
 
-- xác nhận core `auto_tabs_window` vẫn là canvas item từ `create_window`;
-- Builder bắt buộc lấy `anchor.master`;
-- cấm dùng `app.auto_tabs_window` làm parent của `tk.Button`.
+- tab `QUY TRÌNH CHÍNH`;
+- `＋ Function mới`;
+- `📂 Load Function`;
+- nhiều Function có thể mở cùng lúc để chỉnh song song;
+- mỗi tab Save riêng;
+- Function tab có `＋ Chèn vào plan chính`;
+- mỗi tab có `▶ Chạy tab` để test riêng.
 
-## Kiến trúc đã khóa
+Lưu ý: nhiều tab là nhiều document đang mở cùng lúc. Runtime trên **cùng một profile** vẫn single-worker/single-capture-owner; không chạy hai Function đồng thời trên cùng ClientJS.
 
-- Builder là visual Scheduler DEV-only, đồng bộ style với Multi DEV.
-- Thứ tự danh sách Builder = thứ tự chạy thật.
-- `Vào game + đóng popup` là module riêng.
-- `Bán VP theo Function` là module riêng.
-- `Function` là module riêng.
-- Function có số vòng; nếu `sale_after_each_loop=true`, Scheduler gọi module bán riêng sau mỗi vòng.
-- Builder không tự prepend `GameSessionWorkflow`.
-- Function 1 sale metadata hiện chỉ gồm `tao_say` + `vai_vang`.
-- Builder có custom `Nhận diện ảnh`, `Click`, `Swipe`, `Wait`, `PASS`, `FAIL`.
-- Plan và ảnh operator chọn lưu persistent dưới `%APPDATA%\KVTM Multi DEV\auto-builder`.
+### 3. Swipe kéo trực tiếp trên game
+
+Khi thêm/sửa block Swipe, operator có thể chọn:
+
+`Kéo trực tiếp trên màn hình game`
+
+Picker mới:
+
+- yêu cầu chọn đúng 1 ClientJS đang Online;
+- không cho dùng khi AUTO MULTI DEV đang chạy trên profile đó;
+- yêu cầu đóng Live View của profile;
+- chỉ đọc OpenGL shared capture;
+- không HWND/PrintWindow fallback;
+- mouse down/drag/up để lấy start/end;
+- tự map về hệ ClientJS `0..1000`;
+- vẽ overlay đường swipe;
+- chỉ lưu sau khi bấm `Dùng Swipe này`;
+- duration vẫn cấu hình riêng.
+
+GDI picker đã được khai báo pointer-safe cho Python x64.
+
+## Commit chain v1.1
+
+- `0e274c961fee13b51e730febdb85004b85425fe5` — reusable Function library.
+- `f230bf199047c56ed10fbb5cdc0428d598cd78cb` — live Swipe picker.
+- `0618ecc582a203c22c0ff8df5135255e9c61dad9` — dialogs cho saved Function + visual Swipe.
+- `94d257d8f2cc194442577e53e16f92f7cfacac47` — multi-tab Function editor.
+- `bcef315db1f3456af948106c516c93da9db8c73b` — runtime saved Function execution.
+- `51a4bf6f3da5eb3c0f376afd06d48490312fb8a1` — static contract.
+- `34e2a5bc27477a3ad502ec6231a1f67e1b283111` — pointer-safe GDI.
 
 ## Transport bắt buộc giữ nguyên
 
 - isolated `auto_multi_dev_worker.py`;
-- strict Bridge V3;
+- strict Bridge V3 cho runtime AUTO;
 - `CAPTURE3_WRITERMAP2`;
 - `CAPTURE3_WRITERMSG1`;
 - exact same-request capture;
@@ -72,62 +90,55 @@ Verifier `e9ce3f1...` khóa regression:
 - một owner/profile;
 - preview nhường capture trước worker.
 
-## Không được đụng khi tiếp tục Builder
+## Không được đụng
 
-- Dọn quầy ổn định.
-- `components/workspace/**`.
-- `KVTM_WORKSPACE_CONTROL.bat`.
-- profile/login/DPAPI data.
-- không hạ threshold hoặc thêm click mù để ép test chạy.
+- Dọn quầy ổn định;
+- `components/workspace/**`;
+- `KVTM_WORKSPACE_CONTROL.bat`;
+- profile/login/DPAPI;
+- không hạ threshold hoặc thêm click mù;
+- không tự phát minh route tầng chưa live-prove.
 
-## Bước tiếp theo duy nhất cho người dùng
+## NEXT duy nhất
 
-Chỉ yêu cầu:
+Operator chạy:
 
 `KVTM_DEV_CONTROL.bat` → `[1] Cap nhat source + build runtime DEV`
 
-Không dùng `[9]`. Không thay bằng manual git/powershell/dist edit.
+Không dùng `[9]` và không sửa `dist` thủ công.
 
-Nếu `[1]` PASS mới chuyển `[2]` và xác nhận Multi DEV **mở được, không còn `int has no attribute tk`**.
+Build phải có:
 
-Sau đó mới kiểm tra:
+`AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED`
 
-1. tab `TỰ TẠO AUTO` nằm ngay sau `AUTO MULTI DEV` và đồng bộ giao diện;
-2. editor mở được;
-3. plan mặc định đúng 3 block;
-4. runtime test đầu tiên chỉ dùng `Vào game + đóng popup → Kết thúc PASS`.
+và các dòng:
 
-Chưa chạy Function loop ngay.
+- `ui=multi-dev-native-style-multi-tab-function-editor`
+- `functions=create-save-load-call-nested-no-recursion`
+- `gesture_picker=opengl-shared-drag-to-logical-1000-no-hwnd-fallback`
 
-## Blocker đã biết của Function loop
+Sau `[1]` PASS mới `[2]`.
 
-Function 1 hiện kết thúc sau sản xuất Vải vàng ở khu vực tầng 3. Route `tầng 3 → main` trước module bán VP sau vòng chưa được live-prove đầy đủ. Scheduler phải fail-close nếu sale module không chứng minh được main. Không được tự phát minh route tầng chỉ để loop chạy tiếp.
+## Thứ tự live test tiếp theo
 
-## Khi người dùng gửi log mới
+1. Multi DEV mở bình thường.
+2. `TỰ TẠO AUTO` → editor mở.
+3. Có `＋ Function mới` và `📂 Load Function`.
+4. Tạo 2 Function, giữ cùng lúc 2 tab, save và load lại một Function.
+5. Chọn đúng 1 ClientJS Online, không chạy AUTO/Live View; thêm Swipe và kéo trực tiếp trên ảnh game.
+6. Kiểm row Swipe nhận đúng start/end đã kéo.
+7. Chèn Function tự tạo vào `QUY TRÌNH CHÍNH`.
+8. Runtime plumbing đầu tiên nên dùng Function test rất nhỏ: `Wait → Kết thúc PASS` và plan `Vào game + đóng popup → gọi Function test`.
+9. Chỉ khi plumbing PASS mới dùng Function tự tạo cho chuỗi sản xuất thật.
 
-- Nếu Multi còn crash lúc startup, ưu tiên traceback UI/integration trước; chưa đi vào worker thì không chẩn đoán Bridge.
-- Nếu Multi mở và test Builder runtime, đọc từ Bridge PING/runtime READY tới terminal event.
-- Phân biệt operator Stop/profile switch với lỗi runtime thật.
-- Nếu test Builder, đối chiếu log theo đúng thứ tự block trong plan.
-- Static/build PASS không đồng nghĩa runtime PASS.
-- Nếu plumbing `Vào game + đóng popup → PASS` đạt live PASS, test tiếp `Bán VP` như module riêng trước khi ghép Function loop.
+## Blocker nghiệp vụ vẫn còn
 
-## Source chính cần đọc khi debug Builder
-
-- `source-archive/multi-current/kvtm_multi_tool/auto_builder_model.py`
-- `source-archive/multi-current/kvtm_multi_tool/auto_builder_step_dialogs.py`
-- `source-archive/multi-current/kvtm_multi_tool/auto_builder_ui.py`
-- `source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py`
-- `components/clientjs-auto/kvtm_automation/workflows/auto_builder/catalog.py`
-- `components/clientjs-auto/kvtm_automation/workflows/auto_builder/modules.py`
-- `components/clientjs-auto/kvtm_automation/workflows/auto_builder/runner.py`
-- `components/clientjs-auto/kvtm_automation/workflows/auto_builder/image_match.py`
-- `components/clientjs-auto/worker/auto_multi_dev_worker.py`
-- `tools/verify_auto_builder_contract.py`
+Built-in Function 1 kết thúc sau SX Vải vàng ở khu vực tầng 3. Route `tầng 3 → main` trước sale-after-loop chưa live-prove đầy đủ. Không được coi việc có Function Builder mới là đã giải quyết blocker điều hướng này.
 
 ## Read-first cho phiên AI kế tiếp
 
 1. `AGENTS.md`
 2. `AI_COORDINATION.md`
 3. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`
-4. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_HANDOFF.md`
+4. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_V11_HANDOFF.md`
+5. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_HANDOFF.md` chỉ để xem lịch sử v1.
