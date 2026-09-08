@@ -10,6 +10,7 @@ ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/production.py"
 FLOOR_ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/floor_navigation.py"
 AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
 WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_apple_dryer/workflow.py"
+GAME_SESSION = ROOT / "components/clientjs-auto/kvtm_automation/workflows/game_session/workflow.py"
 AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
 FUNCTION_ONE = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_function_one/workflow.py"
 APPLE_JUICE = ROOT / "components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py"
@@ -45,6 +46,7 @@ def main() -> int:
         FLOOR_ACTION,
         AUTOMATION,
         WORKFLOW,
+        GAME_SESSION,
         AUTO_MAIN,
         FUNCTION_ONE,
         APPLE_JUICE,
@@ -62,7 +64,7 @@ def main() -> int:
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             for node in ast.walk(tree)
         )
-        if path in (ACTION, FLOOR_ACTION, WORKFLOW, COTTON, PASS_THREE_NAV, YELLOW_FABRIC) and functions > 10:
+        if path in (ACTION, FLOOR_ACTION, WORKFLOW, GAME_SESSION, COTTON, PASS_THREE_NAV, YELLOW_FABRIC) and functions > 10:
             raise AssertionError(f"{path}: {functions} functions exceeds limit 10")
 
     for asset in (
@@ -94,6 +96,7 @@ def main() -> int:
     floor_action = FLOOR_ACTION.read_text(encoding="utf-8")
     automation = AUTOMATION.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
+    game_session = GAME_SESSION.read_text(encoding="utf-8")
     auto_main = AUTO_MAIN.read_text(encoding="utf-8")
     function_one = FUNCTION_ONE.read_text(encoding="utf-8")
     apple_juice = APPLE_JUICE.read_text(encoding="utf-8")
@@ -102,6 +105,17 @@ def main() -> int:
     yellow_fabric = YELLOW_FABRIC.read_text(encoding="utf-8")
     dev = DEV_ENTRY.read_text(encoding="utf-8")
     auto_multi_worker = AUTO_MULTI_WORKER.read_text(encoding="utf-8")
+
+    # Startup normalization STEP 1 + STEP 2.
+    require(game_session, "DOWN_ONE = (514, 314, 514, 214)", "Startup goDown(1) geometry changed")
+    require(game_session, 'started_on_main = self.auto.popup.is_own_main_screen()', "Startup exact-main probe missing")
+    require(game_session, 'self._startup_go_down_one("startup-low-floor-probe-1-of-4")', "STEP 2 initial goDown(1) probe missing")
+    require(game_session, "for index in range(2, 5):", "STEP 2 must issue exactly three additional goDown(1)s")
+    require(game_session, "fresh_frame=true", "STEP 2 must capture a fresh frame after each goDown(1)")
+    require(game_session, "if not self.auto.popup.is_own_main_screen():", "STEP 2 exact main-screen final gate missing")
+    require(game_session, "STEP 3 nút xuống tầng", "Higher-floor startup must remain fail-closed until STEP 3")
+    if "if change <" in game_session:
+        raise AssertionError("Startup STEP 2 must not use frame-change as a floor/main detector")
 
     # Pass 1: keep the already verified dried-apple contract intact.
     require(action, "DRYER_POINT = (262, 917)", "AUTO PRO dryer coordinate changed")
@@ -189,6 +203,8 @@ def main() -> int:
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
+    print("startup_step2=low_floor_1_plus_3_godown1_main_confirmed")
+    print("startup_higher_floor=fail_closed_pending_step3")
     print("flow=pass1_dried_apple pass2_apple_juice pass3_cotton_yellow_fabric")
     print("pass3=cotton_27 then yellow_fabric_9")
     print("cotton_asset=canonical_blob_locked")
