@@ -42,14 +42,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _bootstrap_shared_image_runtime(auto_root: Path, profile_id: str) -> None:
-    """Prepare only the clean shared image stack before Bridge V3 construction.
-
-    Do not import ``local_launcher`` here. It belongs to the AUTO PRO runtime
-    and can enter native robot-image initialization before the isolated Multi Dev
-    worker reaches EngineDriver. Multi Dev needs only packaged Pillow/OpenCV/NumPy
-    plus adaptive matching at this stage. EngineDriver remains the V3 transport.
-    """
-
+    """Prepare only the clean shared image stack before Bridge V3 construction."""
     root = Path(auto_root).resolve()
     install_component_path()
     os.environ["KVTM_SKIP_RUNTIME_SYNC"] = "1"
@@ -67,17 +60,13 @@ def _bootstrap_shared_image_runtime(auto_root: Path, profile_id: str) -> None:
     from shared_runtime.image_runtime import install_binary_dependencies
 
     install_binary_dependencies(root, logger=bootstrap_log)
-
     root_text = str(root)
     if root_text not in sys.path:
         sys.path.insert(0, root_text)
     adaptive_cv = importlib.import_module("adaptive_cv")
     adaptive_cv.install_adaptive_matching()
 
-    missing = [
-        name for name in ("PIL", "numpy", "cv2")
-        if name not in sys.modules
-    ]
+    missing = [name for name in ("PIL", "numpy", "cv2") if name not in sys.modules]
     if missing:
         raise RuntimeError(
             "Shared image runtime không nạp đủ module: " + ", ".join(missing)
@@ -91,6 +80,28 @@ def _bootstrap_shared_image_runtime(auto_root: Path, profile_id: str) -> None:
     )
 
 
+def _load_builder_plan(args) -> tuple[str, dict | None]:
+    """Resolve Builder only from an explicit CLI plan or per-run marker file."""
+    effective_mode = str(args.mode)
+    source = ""
+    if args.mode == "builder":
+        source = str(args.plan_json or "")
+    elif args.mode == "main":
+        marker = Path(args.work_dir).resolve() / "auto-builder-plan.json"
+        if marker.is_file():
+            source = marker.read_text(encoding="utf-8")
+            effective_mode = "builder"
+    if effective_mode != "builder":
+        return effective_mode, None
+    try:
+        plan = json.loads(source)
+        if not isinstance(plan, dict):
+            raise ValueError("plan phải là object")
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"AUTO Builder plan không hợp lệ: {exc}") from exc
+    return effective_mode, plan
+
+
 def main() -> int:
     configure_utf8_stdio()
     args = _parser().parse_args()
@@ -98,23 +109,13 @@ def main() -> int:
         speed_values = json.loads(args.speed_json)
         if not isinstance(speed_values, dict):
             raise ValueError("speed-json phải là object")
+        effective_mode, builder_plan = _load_builder_plan(args)
     except (json.JSONDecodeError, ValueError) as exc:
-        emit("worker_error", workflow=WORKFLOW_NAME, error=str(exc))
+        emit(
+            "worker_error", workflow=WORKFLOW_NAME,
+            profile_id=args.profile_id, error=str(exc),
+        )
         return 2
-
-    builder_plan = None
-    if args.mode == "builder":
-        try:
-            builder_plan = json.loads(args.plan_json)
-            if not isinstance(builder_plan, dict):
-                raise ValueError("plan-json phải là object")
-        except (json.JSONDecodeError, ValueError) as exc:
-            emit(
-                "worker_error", workflow=WORKFLOW_NAME,
-                profile_id=args.profile_id,
-                error=f"AUTO Builder plan không hợp lệ: {exc}",
-            )
-            return 2
 
     try:
         emit(
@@ -123,15 +124,9 @@ def main() -> int:
             runtime="isolated-process", bridge="V3",
             capture_owner="single-worker",
         )
-        _bootstrap_shared_image_runtime(
-            Path(args.auto_root), str(args.profile_id)
-        )
+        _bootstrap_shared_image_runtime(Path(args.auto_root), str(args.profile_id))
 
         install_component_path()
-        # Multi Dev requires the exact current native revision. WRITERMAP2 binds
-        # CAPTUREW to a writer-specific mapping; WRITERMSG1 also binds the
-        # render-thread window dispatch to that writer so an older subclass proc
-        # using the legacy WM_APP capture id cannot consume the new command.
         engine_driver = importlib.import_module("engine_driver")
         engine_driver._PROTOCOL_PREFIX = _REQUIRED_BRIDGE_PROTOCOL
 
@@ -208,13 +203,15 @@ def main() -> int:
             f"check cây={speed.crop_check_interval:.3f}s"
         )
 
-        # Builder owns the exact block order. Do not silently prepend the
-        # historical GameSessionWorkflow: Vào game + đóng popup is a callable
-        # block and only runs where the operator placed it in the plan.
-        if args.mode == "builder":
+        # Builder owns exact block order. There is no hidden GameSession prefix:
+        # entering the game/closing popups runs only when that block exists.
+        if effective_mode == "builder":
             from kvtm_automation.workflows.auto_builder import AutoBuilderRunner
 
             assert builder_plan is not None
+            log(
+                f"AUTO Builder worker mode • plan={builder_plan.get('name') or 'AUTO tự tạo'}"
+            )
             result = AutoBuilderRunner(automation, builder_plan).run()
             result_payload = result.to_dict()
             result_payload.pop("profile_id", None)
@@ -231,7 +228,7 @@ def main() -> int:
             "exact-main gate chỉ chạy ở transition nghiệp vụ"
         )
 
-        if args.mode == "floor-demo":
+        if effective_mode == "floor-demo":
             context.stage("floor-demo-1-to-6-start")
             movement = automation.floors.reference_main_to_floor_6()
             emit(
