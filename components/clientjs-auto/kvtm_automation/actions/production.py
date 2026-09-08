@@ -12,6 +12,7 @@ from ..runtime.wait import Waiter
 __all__ = ["ProductionResult", "ProductionActions"]
 FILE_FUNCTIONS = (
     "Click thu VP liên tục đến khi panel máy thực sự mở",
+    "Cho phép chỉnh riêng tốc độ click thu VP trước khi panel mở",
     "Chỉ mở máy sấy tầng 1 sau khi đã thu VP và xác minh panel",
     "Xác minh đúng máy bằng template Táo sấy trước khi thao tác",
     "Đếm ô sản xuất trống bằng template và loại trùng hình học",
@@ -150,13 +151,14 @@ class ProductionActions:
             self.context.ensure_running()
             click_count += 1
             self.vision.driver.click(*self.DRYER_POINT)
-            self.waiter.sleep(0.30)
+            self.waiter.sleep(self.speed_config.vp_collect_delay)
             warehouse_full, panel_ready = self._panel_state()
             if click_count == 1 or click_count % 5 == 0 or panel_ready:
                 self.context.log(
                     "AUTO sản xuất • click thu VP/mở máy "
                     f"• clicks={click_count} • panel={panel_ready} • "
-                    f"fullkho={warehouse_full}"
+                    f"fullkho={warehouse_full} • "
+                    f"delay={self.speed_config.vp_collect_delay:.3f}s"
                 )
             if warehouse_full:
                 self.vision.driver.click(*self.CLOSE_POINT)
