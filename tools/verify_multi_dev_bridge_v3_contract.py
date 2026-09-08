@@ -57,6 +57,7 @@ def main() -> int:
         "CAPTURE3_SYNC2",
         "CAPTURE3_FIXEDMAP",
         "CAPTURE3_WRITERMAP2",
+        "CAPTURE3_WRITERMSG1",
     )
     require(factory, '_load_module("engine_driver")',
             "Multi Dev does not select EngineDriver V3")
@@ -70,13 +71,12 @@ def main() -> int:
             "Stale resident Bridge V3 fail-closed message missing")
     require(factory, '"CAPTURE3_WRITERMAP2"',
             "Factory must reject pre-writer-map resident V3 binaries")
+    require(factory, '"CAPTURE3_WRITERMSG1"',
+            "Factory must reject shared-window-message resident V3 binaries")
 
     if "CocosBridgeDriver(" in factory or "kvtm_bridge.dll" in factory:
         raise AssertionError("AUTO MULTI DEV still wires the legacy CAPTURE1 bridge")
 
-    # Shared EngineDriver remains compatible with legacy CAPTURE for other
-    # packaged consumers. Multi Dev replaces only _capture_shared_bgra with the
-    # writer-bound CAPTUREW adapter before KVAutomation constructs the driver.
     require(engine, "def _trace(self, _action: str, **_details)",
             "EngineDriver must own its trace compatibility shim")
     require(engine, "class EngineTouchProxy:",
@@ -92,8 +92,8 @@ def main() -> int:
     require(engine, "verified_key != snapshot_key",
             "Legacy Capture3 seqlock post-copy verification missing")
 
-    # WRITERMAP2 root contract: one native module generation owns a unique
-    # mapping and the CAPTUREW response carries that exact writer identity.
+    # WRITERMAP2: one native module generation owns a unique mapping and the
+    # CAPTUREW response carries that exact writer identity.
     require(native, "ULONGLONG g_writer_id = 0;",
             "Native writer generation id missing")
     require(native, "initialize_writer_id()",
@@ -131,6 +131,30 @@ def main() -> int:
     require(native, '"OK FRAME %lu %lu %lu %lu\\n"',
             "Legacy CAPTURE response changed unexpectedly")
 
+    # WRITERMSG1: live evidence showed the pipe could be the new writer while a
+    # different resident window proc consumed the shared WM_APP capture message,
+    # returning success without filling the new writer_id tail. CAPTUREW must hop
+    # to the render thread through a registered message unique to this writer.
+    require(native, "UINT g_writer_capture_message = 0;",
+            "Writer-specific capture message id missing")
+    require(native, "RegisterWindowMessageW(name)",
+            "Writer-specific registered window message missing")
+    require(native, "KVTM_CAPTURE3_WRITERMSG1_%lu_%016llX",
+            "Registered capture message name must include PID and writer id")
+    require(native, "initialize_writer_capture_message()",
+            "Writer-specific capture message initialization missing")
+    require(native, "message == g_writer_capture_message",
+            "Current bridge window proc does not handle its writer-specific message")
+    capturew_body = native.split('std::strncmp(input, "CAPTUREW", 8)', 1)[1].split(
+        'std::strncmp(input, "CAPTURE", 7)', 1
+    )[0]
+    require(capturew_body, "g_window, g_writer_capture_message, 0",
+            "CAPTUREW must dispatch through the writer-specific registered message")
+    if "g_window, WM_KVTM_CAPTURE, 0" in capturew_body:
+        raise AssertionError(
+            "CAPTUREW regressed to the shared WM_APP capture message"
+        )
+
     capture_body = native.split("LONG dispatch_capture", 1)[1].split(
         "LONG dispatch_touch", 1
     )[0]
@@ -149,8 +173,6 @@ def main() -> int:
             "Capture3 writer must publish completed status only after frame id"
         )
 
-    # Multi Dev reader must never fall back to the PID-only mapping. It requests
-    # CAPTUREW once, validates a 16-hex writer id and opens only that generation.
     require(capture_adapter, 'self._pipe("CAPTUREW\\n", 3000)',
             "Multi Dev must request writer-bound CAPTUREW")
     require(capture_adapter, '["OK", "FRAMEW"]',
@@ -189,14 +211,16 @@ def main() -> int:
             "AUTO MULTI DEV worker isolation marker missing")
     require(worker, 'bridge="V3"', "AUTO MULTI DEV worker V3 marker missing")
     require(worker,
-            '"NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2"',
+            '"NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2 "',
             "Worker must require writer-bound synchronized Bridge V3 revision")
+    require(worker, '"CAPTURE3_WRITERMSG1"',
+            "Worker must require writer-specific capture dispatch revision")
     require(worker, "engine_driver._PROTOCOL_PREFIX = _REQUIRED_BRIDGE_PROTOCOL",
             "Worker must install the strict resident Bridge V3 revision gate")
     require(worker, "install_capture3_same_request_wait(engine_driver)",
             "Worker must install writer-bound capture adapter")
-    require(worker, "CAPTURE3 WRITERMAP2 ENABLED",
-            "Live writer-map revision marker missing")
+    require(worker, "CAPTURE3 WRITERMAP2+WRITERMSG1 ENABLED",
+            "Live writer-map/message revision marker missing")
     require(worker, "from shared_runtime.image_runtime import install_binary_dependencies",
             "Worker must use the shared clean image runtime")
     require(worker, "install_binary_dependencies(root, logger=bootstrap_log)",
@@ -242,10 +266,12 @@ def main() -> int:
     print("AUTO MULTI DEV BRIDGE V3 CONTRACT VERIFIED")
     print(
         "protocol=KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE NO_LAYOUT "
-        "CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2"
+        "CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2 "
+        "CAPTURE3_WRITERMSG1"
     )
     print("capture3_writer=status-first-seqlock writer-id-bound")
     print("capture3_mapping=legacy-fixed-plus-writer-generation-fixed-64m")
+    print("capture3_dispatch=writer-specific-registered-message")
     print("capture3_reader=one-CAPTUREW-one-writer-exact-frame")
     print("bridge_owner=pid-mutex first-pipe-instance")
     print("resident_bridge=revision-gated")
