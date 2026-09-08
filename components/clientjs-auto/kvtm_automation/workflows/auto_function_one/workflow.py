@@ -10,14 +10,14 @@ from ..auto_apple_dryer import AppleDryerWorkflow
 
 __all__ = ["FunctionOneResult", "FunctionOneWorkflow"]
 FILE_FUNCTIONS = (
-    "Chạy phần Táo sấy đã live-pass",
+    "Chạy phần Táo sấy đã live-pass và Sửa máy ngay sau production",
     "Chờ chín, thu hoạch và gieo lại ba mươi Táo tầng 1-5",
     "Đi từ tầng 1 lên tầng 6 rồi xử lý đúng hàng dưới cùng",
     "Chỉ exact-check main sau transition giữa lượt trồng/sản xuất",
-    "Về màn hình chính, lên tầng 2 và sản xuất chín Nước táo",
-    "Về màn hình chính, gieo 27 Bông rồi lên tầng 3 sản xuất chín Vải vàng",
-    "Chỉ PASS 3/3 sau khi hậu kiểm đủ chín Vải vàng",
-    "Sau PASS 3/3, normalize tầng 3 về main bằng từng nhịp goDown + exact-main gate",
+    "Về màn hình chính, lên tầng 2, sản xuất chín Nước táo rồi Sửa máy",
+    "Về màn hình chính, gieo 27 Bông rồi lên tầng 3 sản xuất chín Vải vàng và Sửa máy",
+    "Chỉ PASS 3/3 sau khi hậu kiểm đủ chín Vải vàng và Sửa máy",
+    "Sau mỗi vòng: tầng 3 → goDown(1) → click xuống tầng → exact-main PASS",
 )
 
 
@@ -42,8 +42,6 @@ class FunctionOneResult:
 class FunctionOneWorkflow:
     """Function 1: verified 9 dried apples + supply chain + 9 yellow fabrics."""
 
-    END_LOOP_MAIN_MAX_SWIPES = 6
-
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
         self.context = automation.context
@@ -61,38 +59,21 @@ class FunctionOneWorkflow:
         )
 
     def _normalize_end_of_loop_to_main(self) -> None:
-        """Return a completed Function 1 loop to a repeatable main-screen state.
+        """Return the completed floor-3 loop to exact own-main state.
 
-        The route does not assume a fixed number of down swipes. After every
-        single gesture it asks the proven exact own-main classifier. Six gestures
-        are only a safety bound; if the classifier never passes we stop rather
-        than starting the next Function loop from an unknown floor.
+        Operator-confirmed route: exactly one goDown(1), then click the down-floor
+        button recovered from AUTO PRO goDownLast. Navigation requires fresh-frame
+        response and this workflow immediately requires exact own-main before the
+        Scheduler can count the loop or start the next Function/sale cycle.
         """
         self.context.stage("auto-function-1-end-loop-main-normalize")
         self.context.ensure_running()
-        if self.auto.popup.is_own_main_screen():
-            self.context.log(
-                "AUTO chức năng 1 • cuối vòng đã ở main • không cần goDown"
-            )
-            return
-
-        for ordinal in range(1, self.END_LOOP_MAIN_MAX_SWIPES + 1):
-            self.context.ensure_running()
-            self.auto.function_one_pass_three_navigation.go_down_one_toward_main(
-                f"function1-end-loop-goDown(1)-{ordinal}"
-            )
-            if self.auto.popup.is_own_main_screen():
-                self.context.stage("auto-function-1-end-loop-main-ready")
-                self.context.log(
-                    "AUTO chức năng 1 • cuối vòng về main PASS • "
-                    f"goDown={ordinal}"
-                )
-                return
-
-        raise ScreenTimeout(
-            "Function 1 đã PASS sản xuất nhưng không xác nhận được main sau "
-            f"{self.END_LOOP_MAIN_MAX_SWIPES} nhịp goDown; "
-            "dừng trước vòng Function tiếp theo/bán VP"
+        self.auto.function_one_pass_three_navigation.floor_3_to_main_via_down_floor()
+        self._require_main_transition("cuối vòng Function 1 tầng 3 → main")
+        self.context.stage("auto-function-1-end-loop-main-ready")
+        self.context.log(
+            "AUTO chức năng 1 • cuối vòng về main PASS • "
+            "goDown(1) → click xuống tầng → exact main"
         )
 
     def run(self) -> FunctionOneResult:
@@ -103,7 +84,9 @@ class FunctionOneWorkflow:
         dried = AppleDryerWorkflow(self.auto).run(timeout=120.0)
         self.context.ensure_running()
         self.context.stage("auto-function-1-progress-1-of-3")
-        self.context.log("AUTO chức năng 1 • tiến độ 1/3 • đủ 9 Táo sấy")
+        self.context.log(
+            "AUTO chức năng 1 • tiến độ 1/3 • đủ 9 Táo sấy + Sửa máy PASS"
+        )
 
         self.auto.apple_supply.wait_until_floor_1_ripe()
         five_floors = self.auto.apple_supply.harvest_and_replant_five_floors()
@@ -116,11 +99,16 @@ class FunctionOneWorkflow:
         self.auto.function_one_navigation.floor_6_to_main()
         self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")
         self.auto.function_one_navigation.main_to_floor_2()
-        juice = self.auto.apple_juice_production.produce_9_apple_juices()
+        juice = self.auto.apple_juice_production.produce_9_apple_juices(
+            close_after_success=False
+        )
+        self.auto.machine_repair.repair_after_production(juice)
+        self.context.ensure_running()
+        self.context.stage("auto-function-1-apple-juice-machine-repaired")
         self.context.stage("auto-function-1-progress-2-of-3")
         self.context.log(
             "AUTO chức năng 1 • TẠM PASS 2/3 • đủ 9 Táo sấy + 9 Nước táo; "
-            "bắt đầu chuỗi Bông → Vải vàng"
+            "Nước táo đã Sửa máy • bắt đầu chuỗi Bông → Vải vàng"
         )
 
         self.auto.function_one_pass_three_navigation.floor_2_to_main()
@@ -133,15 +121,19 @@ class FunctionOneWorkflow:
         )
 
         self.auto.function_one_pass_three_navigation.floor_1_to_floor_3()
-        fabric = self.auto.yellow_fabric_production.produce_9_yellow_fabrics()
+        fabric = self.auto.yellow_fabric_production.produce_9_yellow_fabrics(
+            close_after_success=False
+        )
+        self.auto.machine_repair.repair_after_production(fabric)
         self.context.ensure_running()
+        self.context.stage("auto-function-1-yellow-fabric-machine-repaired")
         self.context.stage("auto-function-1-progress-3-of-3")
         self.context.log(
             "AUTO chức năng 1 • PASS 3/3 • đủ 9 Táo sấy + 9 Nước táo + "
-            "27 Bông đã gieo + 9 Vải vàng đã xác minh"
+            "27 Bông đã gieo + 9 Vải vàng; cả 3 máy đã Sửa máy PASS"
         )
 
-        # A Function is repeatable only after it returns to the stable main state.
+        # A Function loop is complete only after it returns to exact main.
         self._normalize_end_of_loop_to_main()
 
         return FunctionOneResult(
