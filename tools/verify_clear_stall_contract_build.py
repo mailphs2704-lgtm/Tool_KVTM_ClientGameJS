@@ -2,11 +2,12 @@ from __future__ import annotations
 
 """Build adapter for the clear-stall contract during AUTO MULTI DEV migration.
 
-The clear-stall verifier owns many safety checks that must remain active.  One
-legacy assertion inside it still requires AUTO MULTI DEV to import
-``local_launcher``.  That assertion is obsolete now that Multi Dev has its own
-shared clean image runtime.  This adapter replaces only that one assertion and
-leaves every other clear-stall contract check untouched.
+The clear-stall verifier owns many safety checks that must remain active. A few
+legacy assertions inside it describe older AUTO MULTI DEV integration details:
+legacy ``local_launcher`` image bootstrap and the old zero-argument
+``AutoMainWorkflow(automation).run`` call. Those details changed without
+changing Dọn quầy runtime. This adapter replaces only those migration assertions
+and leaves every other clear-stall contract check untouched.
 """
 
 import importlib.util
@@ -30,6 +31,20 @@ def main() -> int:
     original_require = module.require
 
     def migration_aware_require(source: str, needle: str, message: str) -> None:
+        if message == "Isolated AUTO Main wiring missing":
+            required = (
+                "AutoMainWorkflow(",
+                "function_id=function_id",
+                "sale_every_loops=sale_every",
+                ").run()",
+            )
+            missing = [token for token in required if token not in source]
+            if missing:
+                raise AssertionError(
+                    "Isolated selectable AUTO Main wiring missing: "
+                    + ", ".join(missing)
+                )
+            return
         if message == "AUTO MULTI DEV worker must use the proven AUTO image bootstrap":
             expected = "from shared_runtime.image_runtime import install_binary_dependencies"
             if expected not in source:
@@ -47,6 +62,7 @@ def main() -> int:
     result = int(module.main())
     print("CLEAR-STALL CONTRACT MIGRATION ADAPTER VERIFIED")
     print("auto_multi_image_runtime=shared-clean local_launcher=false")
+    print("auto_main_wiring=selectable-function recurring-sale-schedule")
     return result
 
 
