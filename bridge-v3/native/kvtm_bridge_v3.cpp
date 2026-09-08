@@ -84,6 +84,7 @@ CaptureHeader* g_writer_capture_header = nullptr;
 volatile LONG g_writer_capture_frame = 0;
 HANDLE g_bridge_owner = nullptr;
 ULONGLONG g_writer_id = 0;
+UINT g_writer_capture_message = 0;
 
 void initialize_writer_id() {
     LARGE_INTEGER counter{};
@@ -99,6 +100,20 @@ void initialize_writer_id() {
         (tid << 17) ^
         (module << 3);
     if (!g_writer_id) g_writer_id = (pid << 32) | 1u;
+}
+
+bool initialize_writer_capture_message() {
+    if (!g_writer_id) {
+        SetLastError(ERROR_INVALID_DATA);
+        return false;
+    }
+    wchar_t name[160]{};
+    swprintf_s(
+        name, L"KVTM_CAPTURE3_WRITERMSG1_%lu_%016llX",
+        GetCurrentProcessId(),
+        static_cast<unsigned long long>(g_writer_id));
+    g_writer_capture_message = RegisterWindowMessageW(name);
+    return g_writer_capture_message != 0;
 }
 
 bool claim_bridge_owner() {
@@ -186,10 +201,6 @@ bool ensure_capture_mapping(
     volatile LONG* frame_slot = mapping_mode == kCaptureModeWriterMap
         ? &g_writer_capture_frame : &g_capture_frame;
 
-    // Both mappings are fixed at the maximum capacity for the lifetime of the
-    // writer. WRITERMAP2 additionally gives the Multi Dev reader a generation-
-    // specific name so a PID-only mapping from another writer can never satisfy
-    // the same frame id with different dimensions.
     if (*header_slot && *mapping_slot) {
         *header_out = *header_slot;
         *frame_out = frame_slot;
@@ -259,9 +270,6 @@ LONG dispatch_capture(CaptureCommand* command) {
             pixel_bytes, command->mapping_mode, &header, &frame_counter))
         return GetLastError();
 
-    // The in-progress marker is the writer lock for CAPTURE3. Publish it before
-    // changing any metadata so a reader can never observe old frame_id/status=2
-    // together with width/height/stride from the next frame.
     header->status = 1;
     MemoryBarrier();
     std::memcpy(header->magic, "KCAP", 4);
@@ -296,8 +304,6 @@ LONG dispatch_capture(CaptureCommand* command) {
         return ERROR_READ_FAULT;
     }
 
-    // glReadPixels returns rows bottom-up while Workspace/AUTO consume
-    // top-down BGRA. Swap row order only; preserve left/right pixel order.
     auto* words = reinterpret_cast<std::uint32_t*>(pixels);
     const size_t row_words = static_cast<size_t>(width);
     for (size_t top = 0, bottom = static_cast<size_t>(height) - 1;
@@ -353,7 +359,8 @@ LRESULT CALLBACK bridge_window_proc(HWND hwnd, UINT message, WPARAM wp, LPARAM l
         command->result = dispatch_touch(command);
         return command->result;
     }
-    if (message == WM_KVTM_CAPTURE) {
+    if (message == WM_KVTM_CAPTURE ||
+        (g_writer_capture_message != 0 && message == g_writer_capture_message)) {
         auto* command = reinterpret_cast<CaptureCommand*>(lp);
         command->result = dispatch_capture(command);
         return command->result;
@@ -472,7 +479,8 @@ LONG dispatch_gesture(const GestureCommand& gesture, DWORD& actual_ms, DWORD& mo
 
 DWORD WINAPI pipe_thread(void*) {
     if (!claim_bridge_owner()) return 1;
-    if (!attach_window() || !resolve_cocos()) return 2;
+    if (!initialize_writer_capture_message()) return 2;
+    if (!attach_window() || !resolve_cocos()) return 3;
 
     wchar_t pipe_name[128]{};
     swprintf_s(pipe_name, L"\\\\.\\pipe\\KVTM-CocosV3-%lu", GetCurrentProcessId());
@@ -481,14 +489,12 @@ DWORD WINAPI pipe_thread(void*) {
         PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
         PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
         1, 4096, 4096, 0, nullptr);
-    if (pipe == INVALID_HANDLE_VALUE) return 3;
+    if (pipe == INVALID_HANDLE_VALUE) return 4;
 
     for (;;) {
         BOOL connected = ConnectNamedPipe(pipe, nullptr) ||
             GetLastError() == ERROR_PIPE_CONNECTED;
         if (connected) {
-            // Keep one connection alive. SWIPE batches the complete AUTO PRO
-            // polyline so transport overhead cannot distort per-segment timing.
             for (;;) {
                 char input[4096]{};
                 DWORD read = 0;
@@ -503,15 +509,19 @@ DWORD WINAPI pipe_thread(void*) {
                         output,
                         "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
                         "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP "
-                        "CAPTURE3_WRITERMAP2 %016llX\n",
+                        "CAPTURE3_WRITERMAP2 CAPTURE3_WRITERMSG1 %016llX\n",
                         static_cast<unsigned long long>(g_writer_id));
                     response = output;
                 } else if (std::strncmp(input, "CAPTUREW", 8) == 0) {
                     CaptureCommand command{};
                     command.mapping_mode = kCaptureModeWriterMap;
-                    SendMessageW(
-                        g_window, WM_KVTM_CAPTURE, 0,
-                        reinterpret_cast<LPARAM>(&command));
+                    if (!g_writer_capture_message) {
+                        command.result = ERROR_NOT_READY;
+                    } else {
+                        SendMessageW(
+                            g_window, g_writer_capture_message, 0,
+                            reinterpret_cast<LPARAM>(&command));
+                    }
                     if (command.result == ERROR_SUCCESS &&
                         command.writer_id == g_writer_id) {
                         sprintf_s(
@@ -529,9 +539,6 @@ DWORD WINAPI pipe_thread(void*) {
                     }
                     response = output;
                 } else if (std::strncmp(input, "CAPTURE", 7) == 0) {
-                    // Preserve the legacy PID-only CAPTURE command for other
-                    // packaged consumers. AUTO MULTI DEV exclusively uses
-                    // CAPTUREW + the writer-generation mapping above.
                     CaptureCommand command{};
                     command.mapping_mode = kCaptureModeLegacy;
                     SendMessageW(
