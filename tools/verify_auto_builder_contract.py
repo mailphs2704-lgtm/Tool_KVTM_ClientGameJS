@@ -107,7 +107,6 @@ def main() -> int:
     require(image_match, "cv2.matchTemplate", "Custom recognition matcher missing")
     require(runner, "raise ScreenTimeout", "Recognition failure is not fail-closed")
 
-    # Reusable Function library + prior built-in Function exposed in Load Function.
     require(model, 'self.functions_dir = self.root / "functions"',
             "Persistent Function library missing")
     require(model, "def save_function", "Builder cannot save reusable Functions")
@@ -125,7 +124,6 @@ def main() -> int:
     require(model, '"type": "enter_game_popup"', "Default plan enter-game block missing")
     require(model, '"type": "sell_function_vp"', "Default plan sale module missing")
 
-    # Recognition images: Multi DEV library is first-class; AUTO PRO is import-only.
     require(model, 'self.image_library_dir = self.root / "image-library"',
             "Persistent Multi DEV image library missing")
     require(model, "def list_library_images", "Multi DEV image library cannot be listed")
@@ -145,13 +143,12 @@ def main() -> int:
     require(dialogs, 'step["image_source"] = source',
             "Recognition step does not record source provenance")
 
-    # Swipe v1.2 is one ordered multi-point gesture, not N independent swipes.
     require(dialogs, "pick_swipe_on_game", "Swipe dialog is not wired to live picker")
     require(dialogs, 'step_type == "call_saved_function"',
             "Saved Function call configuration missing")
     require(dialogs, "Kéo trực tiếp nhiều đoạn trên màn hình game", "Multi-segment live Swipe prompt missing")
     require(dialogs, 'step["points"] = points', "Swipe dialog does not persist ordered points")
-    require(dialogs, '"x,y; x,y; x,y ..."', "Manual multi-point Swipe fallback missing")
+    require(dialogs, "x,y; x,y; x,y ...", "Manual multi-point Swipe fallback missing")
 
     require(gesture, "self.core.capture_shared_bgra(",
             "Gesture picker must use OpenGL shared capture")
@@ -210,8 +207,6 @@ def main() -> int:
     require(ui, "def run_document", "Independent Function test runner UI missing")
     require(ui, "self.store.bundle_plan", "UI must bundle saved Functions before worker launch")
 
-    # Canvas.create_window returns an integer item id. Builder must attach its
-    # native tab to the real tab_bar widget, never to that integer id.
     require(core_gui, "self.auto_tabs_window = self.auto_tabs_canvas.create_window(",
             "Core tab-strip canvas item contract changed")
     require(ui, 'anchor = app.auto_tab_buttons.get("multi_dev")',
