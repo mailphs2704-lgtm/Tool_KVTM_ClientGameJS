@@ -86,6 +86,12 @@ class VisionEngine:
             x1, y1 = min(width, x + w), min(height, y + h)
         roi = source[y0:y1, x0:x1]
         if roi.size == 0:
+            self._detail(
+                f"Match [{name}] | Context: clean-main | Score: -1.0000 | "
+                f"Threshold: {float(threshold):.4f} | Zone: {zone or 'FULL'} | "
+                f"Frame: {width}x{height} | BestBox: NONE | BestCenter: NONE | "
+                "Scale: 0.00 | Template: NONE | FAIL"
+            )
             return None
 
         best: Match | None = None
@@ -123,10 +129,15 @@ class VisionEngine:
         passed = best is not None and best.score >= float(threshold)
         score = float(best.score) if best is not None else -1.0
         scale = float(best.scale) if best is not None else 0.0
+        best_box = str(best.box) if best is not None else "NONE"
+        best_center = str(best.center) if best is not None else "NONE"
+        template_name = best.template.name if best is not None else "NONE"
         self._detail(
             f"Match [{name}] | Context: clean-main | Score: {score:.4f} | "
             f"Threshold: {float(threshold):.4f} | Zone: {zone or 'FULL'} | "
-            f"Scale: {scale:.2f} | {'PASS' if passed else 'FAIL'}"
+            f"Frame: {width}x{height} | BestBox: {best_box} | "
+            f"BestCenter: {best_center} | Scale: {scale:.2f} | "
+            f"Template: {template_name} | {'PASS' if passed else 'FAIL'}"
         )
         if not passed:
             return None
