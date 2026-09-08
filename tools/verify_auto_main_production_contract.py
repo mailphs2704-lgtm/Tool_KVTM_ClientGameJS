@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 from pathlib import Path
 
 
@@ -21,11 +22,21 @@ MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.pn
 MULTI_DEV_EMPTY_SLOT = ROOT / "components/clientjs-auto/assets/items/o_trong.png"
 MULTI_DEV_COTTON = ROOT / "components/clientjs-auto/assets/items/cay_bong.png"
 MULTI_DEV_YELLOW_FABRIC = ROOT / "components/clientjs-auto/assets/items/vai_vang.png"
+MULTI_DEV_WAREHOUSE_YELLOW_FABRIC = ROOT / "components/clientjs-auto/assets/items/kho_vai_vang.png"
+EXPECTED_COTTON_BLOB_SHA = "a828d5a796579f58de77989a80bd92d1122336d3"
+EXPECTED_YELLOW_FABRIC_BLOB_SHA = "e963be3a5c33b85732f1b611b6801a741a4837ec"
+EXPECTED_WAREHOUSE_YELLOW_FABRIC_BLOB_SHA = "f1d6135fa1af9725897f8a5b046e6fd2e5220754"
 
 
 def require(text: str, token: str, message: str) -> None:
     if token not in text:
         raise AssertionError(message)
+
+
+def git_blob_sha(path: Path) -> str:
+    data = path.read_bytes()
+    header = f"blob {len(data)}\0".encode("ascii")
+    return hashlib.sha1(header + data).hexdigest()
 
 
 def main() -> int:
@@ -59,9 +70,25 @@ def main() -> int:
         MULTI_DEV_EMPTY_SLOT,
         MULTI_DEV_COTTON,
         MULTI_DEV_YELLOW_FABRIC,
+        MULTI_DEV_WAREHOUSE_YELLOW_FABRIC,
     ):
         if not asset.is_file():
             raise AssertionError(f"Multi Dev production asset missing: {asset.name}")
+
+    asset_blob_contract = (
+        (MULTI_DEV_COTTON, EXPECTED_COTTON_BLOB_SHA),
+        (MULTI_DEV_YELLOW_FABRIC, EXPECTED_YELLOW_FABRIC_BLOB_SHA),
+        (MULTI_DEV_WAREHOUSE_YELLOW_FABRIC, EXPECTED_WAREHOUSE_YELLOW_FABRIC_BLOB_SHA),
+    )
+    for asset, expected_sha in asset_blob_contract:
+        actual_sha = git_blob_sha(asset)
+        if actual_sha != expected_sha:
+            raise AssertionError(
+                f"Canonical asset blob changed: {asset.name} expected={expected_sha} actual={actual_sha}"
+            )
+
+    if EXPECTED_YELLOW_FABRIC_BLOB_SHA == EXPECTED_WAREHOUSE_YELLOW_FABRIC_BLOB_SHA:
+        raise AssertionError("Production and warehouse yellow-fabric assets must remain distinct")
 
     action = ACTION.read_text(encoding="utf-8")
     floor_action = FLOOR_ACTION.read_text(encoding="utf-8")
@@ -161,9 +188,11 @@ def main() -> int:
     print("runtime=isolated_worker_v3")
     print("flow=pass1_dried_apple pass2_apple_juice pass3_cotton_yellow_fabric")
     print("pass3=cotton_27 then yellow_fabric_9")
-    print("cotton_asset=required_in_multi_assets")
+    print("cotton_asset=canonical_blob_locked")
     print("cotton_postcheck=27_of_27_required")
     print("yellow_fabric_asset=production_vai_vang_only")
+    print("yellow_fabric_asset_blob=canonical_locked")
+    print("warehouse_yellow_fabric_asset_blob=distinct_canonical_locked")
     print("legacy_auto_pro=reference_only")
     print("stable_sale_and_clear_stall=untouched")
     return 0
