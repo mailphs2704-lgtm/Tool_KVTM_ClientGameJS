@@ -8,6 +8,7 @@ ASSET_ROOT = ROOT / "components/clientjs-auto/assets/items"
 ASSET_LIBRARY = ROOT / "components/clientjs-auto/kvtm_automation/runtime/assets.py"
 REQUIRED_ASSETS = (
     "add_friend",
+    "cay_bong",
     "cay_tao",
     "cua_hang",
     "dat_ban",
@@ -61,6 +62,7 @@ def main() -> int:
         raise AssertionError("Missing Multi Dev assets: " + ", ".join(missing))
     print("AUTO MULTI DEV SELF-CONTAINED ASSET CONTRACT VERIFIED")
     print(f"asset_count={len(REQUIRED_ASSETS)}")
+    print("function_one_pass3_asset=cay_bong")
     print("auto_pro_asset_fallback=false")
     return 0
 
