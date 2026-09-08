@@ -19,6 +19,7 @@ DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_
 AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.png"
 MULTI_DEV_EMPTY_SLOT = ROOT / "components/clientjs-auto/assets/items/o_trong.png"
+MULTI_DEV_COTTON = ROOT / "components/clientjs-auto/assets/items/cay_bong.png"
 MULTI_DEV_YELLOW_FABRIC = ROOT / "components/clientjs-auto/assets/items/vai_vang.png"
 
 
@@ -53,7 +54,12 @@ def main() -> int:
         if path in (ACTION, FLOOR_ACTION, WORKFLOW, COTTON, PASS_THREE_NAV, YELLOW_FABRIC) and functions > 10:
             raise AssertionError(f"{path}: {functions} functions exceeds limit 10")
 
-    for asset in (MULTI_DEV_DRIED_APPLE, MULTI_DEV_EMPTY_SLOT, MULTI_DEV_YELLOW_FABRIC):
+    for asset in (
+        MULTI_DEV_DRIED_APPLE,
+        MULTI_DEV_EMPTY_SLOT,
+        MULTI_DEV_COTTON,
+        MULTI_DEV_YELLOW_FABRIC,
+    ):
         if not asset.is_file():
             raise AssertionError(f"Multi Dev production asset missing: {asset.name}")
 
@@ -108,6 +114,10 @@ def main() -> int:
     require(pass_three_nav, "def floor_1_to_floor_3", "Pass-3 floor1-to-floor3 route missing")
     require(pass_three_nav, "self._gesture(self.UP_ONE", "Pass-3 upward route must use verified fresh-frame gesture")
     require(yellow_fabric, 'PRODUCT_TEMPLATE = "vai_vang"', "Yellow-fabric production template missing")
+    if "kho_vai_vang" in yellow_fabric:
+        raise AssertionError(
+            "Warehouse yellow-fabric template must never be referenced by production"
+        )
     require(yellow_fabric, "REQUIRED_COUNT = 9", "Exactly nine yellow fabrics required")
     require(yellow_fabric, "MAX_OPEN_CLICKS = 30", "Yellow-fabric machine opening must be bounded")
     require(yellow_fabric, "for click_count in range(1, self.MAX_OPEN_CLICKS + 1)", "Bounded yellow-fabric opening loop missing")
@@ -151,8 +161,9 @@ def main() -> int:
     print("runtime=isolated_worker_v3")
     print("flow=pass1_dried_apple pass2_apple_juice pass3_cotton_yellow_fabric")
     print("pass3=cotton_27 then yellow_fabric_9")
-    print("cotton_asset=runtime_fail_close_if_missing")
+    print("cotton_asset=required_in_multi_assets")
     print("cotton_postcheck=27_of_27_required")
+    print("yellow_fabric_asset=production_vai_vang_only")
     print("legacy_auto_pro=reference_only")
     print("stable_sale_and_clear_stall=untouched")
     return 0
