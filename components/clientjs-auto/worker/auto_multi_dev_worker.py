@@ -19,7 +19,7 @@ from clean_worker_support import (
 WORKFLOW_NAME = "auto_multi_dev_main"
 _REQUIRED_BRIDGE_PROTOCOL = (
     "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
-    "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP"
+    "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2"
 )
 
 
@@ -110,25 +110,21 @@ def main() -> int:
         )
 
         install_component_path()
-        # EngineDriver historically accepted any response beginning with the
-        # base V3 prefix. That lets a resident pre-SYNC2/pre-FIXEDMAP DLL survive
-        # a source rebuild and serve a newer worker, splitting the pipe response
-        # from the shared mapping. Multi Dev requires the exact current revision.
+        # Multi Dev requires the exact current native revision. WRITERMAP2 binds
+        # every CAPTUREW response to the unique shared mapping owned by the same
+        # injected writer, preventing a PID-only mapping from being confused with
+        # another resident/generation when dimensions or frame counters overlap.
         engine_driver = importlib.import_module("engine_driver")
         engine_driver._PROTOCOL_PREFIX = _REQUIRED_BRIDGE_PROTOCOL
 
-        # Keep CAPTURE3 fail-closed while avoiding a moving response target.
-        # One CAPTURE command now owns one expected frame id; transient shared
-        # publication lag is polled on that same fixed mapping instead of issuing
-        # another CAPTURE and advancing expected again.
         from capture3_same_request import install_capture3_same_request_wait
 
         install_capture3_same_request_wait(engine_driver)
         emit(
             "detail", workflow=WORKFLOW_NAME, profile_id=args.profile_id,
             message=(
-                "DLL bridge V3: CAPTURE3 same-request wait ENABLED • "
-                "stale frame vẫn bị từ chối"
+                "DLL bridge V3: CAPTURE3 WRITERMAP2 ENABLED • "
+                "mỗi CAPTUREW khóa đúng writer mapping • stale frame vẫn bị từ chối"
             ),
         )
 
