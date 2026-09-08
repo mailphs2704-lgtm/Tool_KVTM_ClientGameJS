@@ -26,6 +26,7 @@ class YellowFabricProductionActions:
     MATERIAL_ERROR_TEMPLATE = "x"
     MATERIAL_ERROR_ZONE = (682, 337, 142, 120)
     REQUIRED_COUNT = 9
+    MAX_OPEN_CLICKS = 30
 
     def __init__(
         self,
@@ -45,9 +46,9 @@ class YellowFabricProductionActions:
 
     def _open_verified(self) -> tuple[int, tuple[int, int], tuple[int, int]]:
         click_count = 0
-        while True:
+        panel_ready = False
+        for click_count in range(1, self.MAX_OPEN_CLICKS + 1):
             self.context.ensure_running()
-            click_count += 1
             self.vision.driver.click(*self.MACHINE_POINT)
             self.waiter.sleep(0.30)
             warehouse_full, panel_ready = self.slots._panel_state()
@@ -64,6 +65,13 @@ class YellowFabricProductionActions:
                 )
             if panel_ready:
                 break
+
+        if not panel_ready:
+            self._close_panel()
+            raise ScreenTimeout(
+                "Không mở/xác minh được panel Vải vàng sau "
+                f"{self.MAX_OPEN_CLICKS} lần click; dừng fail-close"
+            )
 
         product = None
         for attempt in range(1, 4):
