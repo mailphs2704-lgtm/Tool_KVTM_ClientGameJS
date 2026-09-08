@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 import time
@@ -10,9 +11,9 @@ import uuid
 __all__ = ["AutoBuilderPlanStore", "default_plan", "new_step_id", "step_summary"]
 FILE_FUNCTIONS = (
     "Tạo plan AUTO Builder mặc định",
-    "Đọc/ghi plan JSON trong data-dev",
+    "Đọc/ghi plan JSON ở vùng AppData bền qua build DEV",
+    "Di chuyển plan Builder cũ từ data-dev nếu có",
     "Sao chép ảnh nhận diện người dùng vào vùng dữ liệu Builder",
-    "Sinh id ổn định cho từng bước",
     "Tạo mô tả ngắn của bước cho giao diện Multi DEV",
 )
 
@@ -26,11 +27,7 @@ def default_plan() -> dict:
         "version": 1,
         "name": "AUTO tự tạo 1",
         "steps": [
-            {
-                "id": new_step_id(),
-                "type": "enter_game_popup",
-                "timeout": 180.0,
-            },
+            {"id": new_step_id(), "type": "enter_game_popup", "timeout": 180.0},
             {
                 "id": new_step_id(),
                 "type": "sell_function_vp",
@@ -80,10 +77,18 @@ def step_summary(step: dict) -> tuple[str, str]:
 
 
 class AutoBuilderPlanStore:
-    """Persistent DEV-only plan/asset storage under ``data-dev/auto-builder``."""
+    """Persistent DEV-only Builder plans/assets outside the rebuilt dist tree."""
 
     def __init__(self, app_dir: Path) -> None:
-        self.root = Path(app_dir).resolve() / "auto-builder"
+        legacy_root = Path(app_dir).resolve() / "auto-builder"
+        appdata = Path(os.environ.get("APPDATA") or Path.home()).resolve()
+        self.root = appdata / "KVTM Multi DEV" / "auto-builder"
+        if not self.root.exists() and legacy_root.is_dir():
+            try:
+                self.root.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(legacy_root, self.root)
+            except OSError:
+                pass
         self.plan_path = self.root / "current-plan.json"
         self.assets_dir = self.root / "assets"
         self.root.mkdir(parents=True, exist_ok=True)
