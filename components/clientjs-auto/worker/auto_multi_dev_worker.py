@@ -32,7 +32,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile-name", required=True)
     parser.add_argument("--profile-file", required=True)
     parser.add_argument("--work-dir", required=True)
-    parser.add_argument("--mode", choices=("main", "floor-demo"), default="main")
+    parser.add_argument(
+        "--mode", choices=("main", "floor-demo", "builder"), default="main"
+    )
+    parser.add_argument("--plan-json", default="")
     parser.add_argument("--speed-json", default="{}")
     parser.add_argument("--timeout", type=float, default=180.0)
     return parser
@@ -98,6 +101,20 @@ def main() -> int:
     except (json.JSONDecodeError, ValueError) as exc:
         emit("worker_error", workflow=WORKFLOW_NAME, error=str(exc))
         return 2
+
+    builder_plan = None
+    if args.mode == "builder":
+        try:
+            builder_plan = json.loads(args.plan_json)
+            if not isinstance(builder_plan, dict):
+                raise ValueError("plan-json phải là object")
+        except (json.JSONDecodeError, ValueError) as exc:
+            emit(
+                "worker_error", workflow=WORKFLOW_NAME,
+                profile_id=args.profile_id,
+                error=f"AUTO Builder plan không hợp lệ: {exc}",
+            )
+            return 2
 
     try:
         emit(
@@ -190,6 +207,24 @@ def main() -> int:
             f"sản xuất VP={speed.vp_production_delay:.3f}s | "
             f"check cây={speed.crop_check_interval:.3f}s"
         )
+
+        # Builder owns the exact block order. Do not silently prepend the
+        # historical GameSessionWorkflow: Vào game + đóng popup is a callable
+        # block and only runs where the operator placed it in the plan.
+        if args.mode == "builder":
+            from kvtm_automation.workflows.auto_builder import AutoBuilderRunner
+
+            assert builder_plan is not None
+            result = AutoBuilderRunner(automation, builder_plan).run()
+            result_payload = result.to_dict()
+            result_payload.pop("profile_id", None)
+            emit(
+                "worker_finished", workflow=WORKFLOW_NAME,
+                profile_id=args.profile_id, outcome="auto_builder_ready",
+                **result_payload,
+            )
+            return 0
+
         GameSessionWorkflow(automation).run(timeout=args.timeout)
         log(
             "PASS | vào game/đóng popup và chuẩn bị startup route; "
