@@ -22,7 +22,7 @@ FILE_FUNCTIONS = (
     "Tạo plan AUTO Builder mặc định và Function tái sử dụng",
     "Đọc/ghi plan chính ở AppData bền qua build DEV",
     "Đọc/ghi thư viện Function riêng theo function_id",
-    "Expose template Function 1 đã làm trước đó để Load Function",
+    "Seed Function 9 Táo sấy - 9 Vải vàng đã làm trước đó vào Load Function",
     "Đóng gói Function đã lưu vào snapshot plan trước khi chạy",
     "Quản lý/liệt kê thư viện ảnh riêng của Multi DEV ngoài dist",
     "Liệt kê ảnh AUTO PRO và copy ảnh được chọn sang thư viện Multi DEV",
@@ -30,6 +30,7 @@ FILE_FUNCTIONS = (
 )
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
+_BUILTIN_WRAPPER_ID = "builtin_function_1_existing"
 
 
 def new_step_id() -> str:
@@ -51,7 +52,6 @@ def new_function(name: str = "Function mới") -> dict:
 
 
 def builtin_function_templates() -> list[dict]:
-    """Return editable wrappers around already-proven built-in business Functions."""
     return [
         {
             "template_id": "builtin_function_1",
@@ -61,26 +61,31 @@ def builtin_function_templates() -> list[dict]:
     ]
 
 
+def _builtin_function_document(function_id: str) -> dict:
+    return {
+        "version": 1,
+        "kind": "function",
+        "function_id": function_id,
+        "name": "9 Táo sấy - 9 Vải vàng",
+        "source_template_id": "builtin_function_1",
+        "steps": [
+            {
+                "id": new_step_id(),
+                "type": "function",
+                "function_id": "function_1",
+                "loops": 1,
+                "sale_after_each_loop": False,
+                "sale_timeout": 120.0,
+            }
+        ],
+    }
+
+
 def new_function_from_builtin(template_id: str) -> dict:
     key = str(template_id or "").strip()
-    template = next(
-        (item for item in builtin_function_templates() if item["template_id"] == key),
-        None,
-    )
-    if template is None:
+    if key != "builtin_function_1":
         raise KeyError(f"Built-in Function template chưa hỗ trợ: {key}")
-    function = new_function(template["name"])
-    function["source_template_id"] = key
-    function["steps"] = [
-        {
-            "id": new_step_id(),
-            "type": "function",
-            "function_id": "function_1",
-            "loops": 1,
-            "sale_after_each_loop": False,
-            "sale_timeout": 120.0,
-        }
-    ]
+    function = _builtin_function_document(_new_function_id())
     return function
 
 
@@ -197,6 +202,7 @@ class AutoBuilderPlanStore:
         self.assets_dir.mkdir(parents=True, exist_ok=True)
         self.image_library_dir.mkdir(parents=True, exist_ok=True)
         self._migrate_legacy_assets_to_image_library()
+        self._seed_existing_function_one()
 
     @staticmethod
     def _validate_document(data: dict, *, kind: str) -> dict:
@@ -227,6 +233,15 @@ class AutoBuilderPlanStore:
             return True
         except ValueError:
             return False
+
+    def _seed_existing_function_one(self) -> None:
+        path = self.functions_dir / f"{_BUILTIN_WRAPPER_ID}.json"
+        if path.is_file():
+            return
+        payload = _builtin_function_document(_BUILTIN_WRAPPER_ID)
+        temporary = path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(path)
 
     def _migrate_legacy_assets_to_image_library(self) -> None:
         for path in self.assets_dir.iterdir():
@@ -287,7 +302,10 @@ class AutoBuilderPlanStore:
             except Exception:
                 continue
             result.append(data)
-        return result
+        return sorted(
+            result,
+            key=lambda item: (0 if item.get("function_id") == _BUILTIN_WRAPPER_ID else 1, str(item.get("name") or "").lower()),
+        )
 
     def bundle_plan(self, plan: dict) -> dict:
         payload = self._validate_document(plan, kind="plan")
