@@ -13,7 +13,9 @@ __all__ = ["ProductionResult", "ProductionActions"]
 FILE_FUNCTIONS = (
     "Click thu VP liên tục đến khi panel máy thực sự mở",
     "Cho phép chỉnh riêng tốc độ click thu VP trước khi panel mở",
-    "Chỉ mở máy sấy tầng 1 sau khi đã thu VP và xác minh panel",
+    "Nhận panel đã mở bằng ô trống HOẶC ảnh đúng sản phẩm để hỗ trợ máy đang kín 9 ô",
+    "Giữ nguyên panel sản xuất trong lúc còn ô đang chạy; không đóng/mở lại để recheck",
+    "Chỉ bắt đầu lượt sản xuất mới khi xác minh đủ đúng 9/9 ô trống",
     "Xác minh đúng máy bằng template Táo sấy trước khi thao tác",
     "Đếm ô sản xuất trống bằng template và loại trùng hình học",
     "Kéo đúng chín Táo sấy từ ảnh thư viện xuống tâm ô top",
@@ -46,6 +48,8 @@ class ProductionActions:
     CLOSE_POINT = (965, 198)
     REQUIRED_COUNT = 9
     MIN_DISTANCE = 34
+    PANEL_RECHECK_SECONDS = 1.0
+    PANEL_PRODUCT_MISS_LIMIT = 3
 
     def __init__(
         self,
@@ -123,6 +127,15 @@ class ProductionActions:
         )
         return total
 
+    def _find_product_match(self, name: str, *, threshold: float = 0.70):
+        return self.vision.find(
+            name,
+            threshold=threshold,
+            zone=None,
+            scales=(0.75, 0.90, 1.00, 1.10, 1.25),
+            click=False,
+        )
+
     def _panel_state(self) -> tuple[bool, bool]:
         frame = self.vision.frame()
         warehouse_full = self.vision.find(
@@ -143,6 +156,57 @@ class ProductionActions:
         )
         return warehouse_full is not None, empty_ready is not None
 
+    def _wait_for_idle_open_panel(
+        self,
+        *,
+        product_template: str,
+        label: str,
+        product_threshold: float = 0.70,
+    ) -> tuple[int, tuple[int, int], tuple[int, int]]:
+        """Keep the verified production panel open until all 9 slots are empty."""
+        wait_round = 0
+        product_misses = 0
+        while True:
+            self.context.ensure_running()
+            product = self._find_product_match(
+                product_template, threshold=product_threshold
+            )
+            if product is None:
+                product_misses += 1
+                if product_misses >= self.PANEL_PRODUCT_MISS_LIMIT:
+                    self.vision.driver.click(*self.CLOSE_POINT)
+                    raise ScreenTimeout(
+                        f"{label}: panel đang chờ bị mất ảnh sản phẩm đúng "
+                        f"sau {product_misses} lần kiểm tra; dừng fail-close"
+                    )
+                self.waiter.sleep(0.35)
+                continue
+            product_misses = 0
+
+            warehouse_full, _empty_anchor = self._panel_state()
+            if warehouse_full:
+                self.vision.driver.click(*self.CLOSE_POINT)
+                raise ScreenTimeout(
+                    f"{label}: kho đang đầy trong lúc chờ máy sản xuất xong"
+                )
+
+            top_slot = self._find_top_empty_slot()
+            empty = self._count_empty_slots()
+            if top_slot is not None and empty == self.REQUIRED_COUNT:
+                self.context.log(
+                    f"AUTO {label} • panel giữ nguyên đã READY • đủ {empty}/9 ô trống"
+                )
+                return empty, product.center, top_slot.center
+
+            wait_round += 1
+            if wait_round == 1 or wait_round % 10 == 0:
+                self.context.log(
+                    f"AUTO {label} • giữ nguyên panel sản xuất • "
+                    f"đang có {empty}/9 ô trống • chờ máy chạy xong • "
+                    f"recheck={self.PANEL_RECHECK_SECONDS:.1f}s • vòng={wait_round}"
+                )
+            self.waiter.sleep(self.PANEL_RECHECK_SECONDS)
+
     def _collect_finished_before_open(self) -> None:
         """Collect finished output first; opening the panel is the verification."""
 
@@ -152,7 +216,12 @@ class ProductionActions:
             click_count += 1
             self.vision.driver.click(*self.DRYER_POINT)
             self.waiter.sleep(self.speed_config.vp_collect_delay)
-            warehouse_full, panel_ready = self._panel_state()
+            warehouse_full, empty_ready = self._panel_state()
+            product_ready = self._find_product_match(
+                self.DRIED_APPLE_PRODUCTION_TEMPLATE,
+                threshold=self.DRIED_APPLE_GUARD_THRESHOLD,
+            ) is not None
+            panel_ready = empty_ready or product_ready
             if click_count == 1 or click_count % 5 == 0 or panel_ready:
                 self.context.log(
                     "AUTO sản xuất • click thu VP/mở máy "
@@ -167,60 +236,26 @@ class ProductionActions:
                 )
             if panel_ready:
                 self.context.log(
-                    "AUTO sản xuất • đã thu hết VP chắn máy và mở được panel tầng 1 "
-                    f"• dừng click sau {click_count} lần"
+                    "AUTO sản xuất • đã mở đúng panel tầng 1; "
+                    "nếu còn ô đang chạy sẽ giữ nguyên panel để chờ"
                 )
                 return
 
     def _open_verified_dryer(self) -> tuple[int, tuple[int, int], tuple[int, int]]:
         self._collect_finished_before_open()
-
-        product = None
-        for attempt in range(1, 4):
-            product = self.vision.find(
-                self.DRIED_APPLE_PRODUCTION_TEMPLATE,
-                threshold=self.DRIED_APPLE_GUARD_THRESHOLD,
-                zone=self.PRODUCT_SEARCH_ZONE,
-                scales=(0.75, 0.90, 1.00, 1.10, 1.25),
-                click=False,
-            )
-            if product is not None:
-                break
-            self.context.log(
-                "AUTO sản xuất • chưa khớp ảnh thư viện tao_say trên panel "
-                f"• lần {attempt}/3"
-            )
-            self.waiter.sleep(0.35)
-        if product is None:
-            self.vision.driver.click(*self.CLOSE_POINT)
-            raise ScreenTimeout(
-                "Panel máy đã mở nhưng không khớp chắc chắn ảnh thư viện tao_say; "
-                "dừng trước gesture để không chọn nhầm vật phẩm"
-            )
-        self.context.log(
-            "AUTO sản xuất • xác minh ảnh thư viện tao_say "
-            f"• score={product.score:.3f} • center={product.center}"
+        empty, product_point, top_point = self._wait_for_idle_open_panel(
+            product_template=self.DRIED_APPLE_PRODUCTION_TEMPLATE,
+            label="Táo sấy",
+            product_threshold=self.DRIED_APPLE_GUARD_THRESHOLD,
         )
-        top_slot = self._find_top_empty_slot()
-        if top_slot is None:
-            self.vision.driver.click(*self.CLOSE_POINT)
-            raise ScreenTimeout(
-                "Không tìm thấy ô top bằng ảnh thư viện o_trong; dừng trước gesture"
-            )
-        empty = self._count_empty_slots()
-        if empty < self.REQUIRED_COUNT:
-            self.vision.driver.click(*self.CLOSE_POINT)
-            raise ScreenTimeout(
-                f"Máy sấy chỉ có {empty}/9 ô trống; chưa đủ để sản xuất đúng 9 Táo sấy"
-            )
         self.context.log(
             f"AUTO sản xuất • đúng máy sấy tầng 1 • có {empty} ô trống"
         )
         self.context.log(
             "AUTO sản xuất • đường kéo đã xác minh "
-            f"• tao_say={product.center} → top={top_slot.center}"
+            f"• tao_say={product_point} → top={top_point}"
         )
-        return empty, product.center, top_slot.center
+        return empty, product_point, top_point
 
     def produce_9_dried_apples(
         self, *, close_after_success: bool = True
