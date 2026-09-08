@@ -11,6 +11,7 @@ from .production import ProductionActions, ProductionResult
 __all__ = ["YellowFabricProductionActions"]
 FILE_FUNCTIONS = (
     "Mở máy tầng 3 và xác minh đúng ảnh sản xuất Vải vàng",
+    "Thu VP/mở panel theo tốc độ thu VP cấu hình riêng",
     "Dùng bộ đếm chín ô trống đã live-pass của hai pass trước",
     "Kéo Vải vàng xuống ô top động đúng chín lần",
     "Hậu kiểm mỗi lần kéo làm giảm đúng bộ đếm ô trống",
@@ -50,13 +51,14 @@ class YellowFabricProductionActions:
         for click_count in range(1, self.MAX_OPEN_CLICKS + 1):
             self.context.ensure_running()
             self.vision.driver.click(*self.MACHINE_POINT)
-            self.waiter.sleep(0.30)
+            self.waiter.sleep(self.speed_config.vp_collect_delay)
             warehouse_full, panel_ready = self.slots._panel_state()
             if click_count == 1 or click_count % 5 == 0 or panel_ready:
                 self.context.log(
                     "AUTO Vải vàng • click thu VP/mở máy tầng 3 "
                     f"• clicks={click_count} • panel={panel_ready} • "
-                    f"fullkho={warehouse_full}"
+                    f"fullkho={warehouse_full} • "
+                    f"delay={self.speed_config.vp_collect_delay:.3f}s"
                 )
             if warehouse_full:
                 self._close_panel()
