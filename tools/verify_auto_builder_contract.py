@@ -141,6 +141,22 @@ def main() -> int:
     require(ui, '("FUNCTION • Function 1", "function")',
             "Builder add-menu Function missing")
 
+    # Canvas.create_window returns an integer item id. It is valid for canvas.bbox
+    # and xview bookkeeping but cannot be used as a Tk widget parent. Builder must
+    # attach its tab to the real tab_bar via an existing native tab button.
+    require(core_gui, "self.auto_tabs_window = self.auto_tabs_canvas.create_window(",
+            "Core tab-strip canvas item contract changed")
+    require(ui, 'anchor = app.auto_tab_buttons.get("multi_dev")',
+            "Builder must anchor after the native AUTO MULTI DEV tab")
+    require(ui, "tab_bar = anchor.master",
+            "Builder must recover the real Tk tab-bar widget from the anchor")
+    require(ui, "button = core.tk.Button(\n            tab_bar",
+            "Builder tab must use the real Tk widget as its parent")
+    forbid(ui, "core.tk.Button(\n            app.auto_tabs_window",
+           "Builder cannot parent a Tk button to the integer canvas item id")
+    forbid(ui, "core.tk.Button(app.auto_tabs_window",
+           "Builder cannot parent a Tk button to the integer canvas item id")
+
     # Compare the same style tokens against the authoritative core UI so a
     # Builder-only palette cannot drift silently.
     for token in (
@@ -167,7 +183,7 @@ def main() -> int:
         require(text, "FILE_FUNCTIONS", "Every Builder module must document FILE_FUNCTIONS")
 
     print("AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED")
-    print("ui=multi-dev-native-style-tab-and-tree")
+    print("ui=multi-dev-native-style-tab-and-tree-real-widget-parent")
     print("modules=enter_game_popup,sell_function_vp,function")
     print("blocks=recognize_image,click,swipe,wait,finish_pass,finish_fail")
     print("scheduler=function-loop-sale-after-each-loop-configurable")
