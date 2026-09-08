@@ -12,6 +12,8 @@ __all__ = ["YellowFabricProductionActions"]
 FILE_FUNCTIONS = (
     "Mở máy tầng 3 và xác minh đúng ảnh sản xuất Vải vàng",
     "Thu VP/mở panel theo tốc độ thu VP cấu hình riêng",
+    "Nhận panel đã mở bằng ô trống hoặc ảnh Vải vàng khi máy đang kín slot",
+    "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
     "Dùng bộ đếm chín ô trống đã live-pass của hai pass trước",
     "Kéo Vải vàng xuống ô top động đúng chín lần",
     "Hậu kiểm mỗi lần kéo làm giảm đúng bộ đếm ô trống",
@@ -52,7 +54,11 @@ class YellowFabricProductionActions:
             self.context.ensure_running()
             self.vision.driver.click(*self.MACHINE_POINT)
             self.waiter.sleep(self.speed_config.vp_collect_delay)
-            warehouse_full, panel_ready = self.slots._panel_state()
+            warehouse_full, empty_ready = self.slots._panel_state()
+            product_ready = self.slots._find_product_match(
+                self.PRODUCT_TEMPLATE, threshold=0.70
+            ) is not None
+            panel_ready = empty_ready or product_ready
             if click_count == 1 or click_count % 5 == 0 or panel_ready:
                 self.context.log(
                     "AUTO Vải vàng • click thu VP/mở máy tầng 3 "
@@ -75,44 +81,16 @@ class YellowFabricProductionActions:
                 f"{self.MAX_OPEN_CLICKS} lần click; dừng fail-close"
             )
 
-        product = None
-        for attempt in range(1, 4):
-            self.context.ensure_running()
-            product = self.vision.find(
-                self.PRODUCT_TEMPLATE,
-                threshold=0.70,
-                zone=None,
-                scales=(0.75, 0.90, 1.00, 1.10, 1.25),
-                click=False,
-            )
-            if product is not None:
-                break
-            self.context.log(
-                "AUTO Vải vàng • panel đã mở nhưng chưa khớp vai_vang "
-                f"• lần {attempt}/3"
-            )
-            self.waiter.sleep(0.20)
-
-        top = self.slots._find_top_empty_slot()
-        if product is None or top is None:
-            self._close_panel()
-            raise ScreenTimeout(
-                "Panel tầng 3 đã mở nhưng chưa xác minh được vai_vang hoặc ô top"
-            )
-
-        empty = self.slots._count_empty_slots()
-        if empty != self.REQUIRED_COUNT:
-            self._close_panel()
-            raise ScreenTimeout(
-                f"Máy Vải vàng có {empty}/9 ô trống; yêu cầu đúng 9"
-            )
-
-        self.context.log(
-            "AUTO Vải vàng • panel đã mở, dừng click • "
-            f"clicks={click_count} • score={product.score:.3f} • "
-            f"đường kéo={product.center} → {top.center}"
+        empty, product_point, top_point = self.slots._wait_for_idle_open_panel(
+            product_template=self.PRODUCT_TEMPLATE,
+            label="Vải vàng",
+            product_threshold=0.70,
         )
-        return empty, product.center, top.center
+        self.context.log(
+            "AUTO Vải vàng • panel giữ nguyên READY • "
+            f"clicks={click_count} • đường kéo={product_point} → {top_point}"
+        )
+        return empty, product_point, top_point
 
     def produce_9_yellow_fabrics(
         self, *, close_after_success: bool = True
