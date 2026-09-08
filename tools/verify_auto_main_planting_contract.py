@@ -67,10 +67,21 @@ def main() -> int:
     require(action, "self.rose_path()[1:]", "Seed center must replace reference start point")
     require(action, 'raise ScreenTimeout(', "Fail-closed planting guard missing")
     require(workflow, "self.auto.planting.plant_27_roses()", "Workflow planting call missing")
-    require(auto_main, "FunctionOneWorkflow(self.auto).run",
-            "Consolidated start must execute Function 1 workflow")
-    require(auto_multi_worker, "AutoMainWorkflow(automation).run",
+
+    # AUTO Main no longer hard-codes FunctionOneWorkflow directly. It dispatches
+    # the GUI-selected complete Function and keeps the Function-specific gate.
+    require(auto_main, "FunctionModule(automation)",
+            "Consolidated start must use selected Function dispatcher")
+    require(auto_main, "self.function.run(function_id=self.spec.function_id)",
+            "AUTO Main does not execute the selected Function")
+    require(auto_main, 'self.spec.runner_key == "function_1"',
+            "Function-1 completion guard missing from selected scheduler")
+    require(auto_multi_worker, "AutoMainWorkflow(",
             "Consolidated isolated-worker workflow wiring missing")
+    require(auto_multi_worker, "function_id=function_id",
+            "Worker selected Function handoff missing")
+    require(auto_multi_worker, "sale_every_loops=sale_every",
+            "Worker recurring sale interval handoff missing")
     require(auto_multi_worker, 'outcome="auto_main_ready"',
             "Worker AUTO Main result marker missing")
     require(dev, 'worker_root / "auto_multi_dev_worker.py"',
@@ -92,6 +103,7 @@ def main() -> int:
     print("tree_count=27")
     print("floors=6+6+6+6+3")
     print("floor5_endpoint=(578,40)")
+    print("selected_function_scheduler=verified")
     print("stable_sale_and_clear_stall=untouched")
     return 0
 
