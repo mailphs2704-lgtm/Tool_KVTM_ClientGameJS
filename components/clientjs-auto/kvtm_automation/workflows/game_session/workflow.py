@@ -19,7 +19,7 @@ class GameSessionResult:
 
 
 class GameSessionWorkflow:
-    """First clean AUTO layer: connect, enter game, clear modals, verify home."""
+    """Connect/enter ClientJS and prepare the startup camera without stage gates."""
 
     CLOSE_SIDE = (975, 316)
     DOWN_ONE = (514, 314, 514, 214)
@@ -30,13 +30,7 @@ class GameSessionWorkflow:
         self.context = automation.context
 
     def _startup_go_down_one(self, label: str) -> None:
-        """Dispatch one goDown(1), then force a fresh CAPTURE3 observation.
-
-        Frame change is diagnostic only here. Repeated low-floor settling is
-        allowed to reach the camera boundary, where a valid goDown can produce
-        little or no visual movement. Only the final own-main classifier may
-        declare startup normalization complete.
-        """
+        """Dispatch one startup goDown(1) and keep fresh-frame diagnostics only."""
         self.context.ensure_running()
         before = self.auto.screenshot().copy()
         self.auto.driver.click(*self.CLOSE_SIDE)
@@ -59,55 +53,49 @@ class GameSessionWorkflow:
         )
 
     def _recover_floor_1_or_2_start(self) -> None:
-        """STEP 2: one probe down plus exactly three settling goDown(1)s."""
+        """Startup low-floor settling: one probe plus exactly three goDown(1)s.
+
+        This route no longer owns a fatal main-screen classifier. The operator's
+        latest contract places exact state checks only at business transitions
+        between planting/production stages. Startup merely normalizes the camera
+        and hands control to the first business action.
+        """
         self.context.stage("clean-session-start-low-floor-recovery")
         self.context.log(
             "AUTO khởi điểm STEP 2 • chưa ở main • thử nhánh tầng 1/2 bằng goDown(1)"
         )
 
         self._startup_go_down_one("startup-low-floor-probe-1-of-4")
-
-        # STEP 3/4 will add the short-lived down-floor button branch. Until that
-        # detector is live-proven, this STEP 2 build only owns the low-floor
-        # branch: exactly three additional goDown(1)s, then an exact main check.
-        # A higher-floor start therefore fails closed below instead of continuing
-        # production under a guessed camera state.
         for index in range(2, 5):
             self._startup_go_down_one(
                 f"startup-low-floor-settle-{index}-of-4"
             )
 
         self.context.ensure_running()
-        if not self.auto.popup.is_own_main_screen():
-            raise ScreenTimeout(
-                "STEP 2 đã gửi 1+3 goDown(1) nhưng chưa xác nhận được màn hình chính; "
-                "dừng fail-close. Nếu khởi điểm tầng 3-10, chờ STEP 3 nút xuống tầng."
-            )
-
-        self.context.stage("clean-session-start-low-floor-main-confirmed")
+        self.context.stage("clean-session-start-low-floor-settled")
         self.context.log(
             "AUTO khởi điểm STEP 2 • 1+3 goDown(1) hoàn tất • "
-            "fresh-frame đã xác nhận màn hình chính"
+            "không gate main tại startup; exact check chỉ chạy ở transition nghiệp vụ"
         )
 
     def run(self, timeout: float = 180.0) -> GameSessionResult:
         started = time.monotonic()
         self.context.stage("clean-session-enter-game")
 
-        # STEP 1: when already on own main, stay passive. This exact probe also
-        # prevents an unnecessary low-floor recovery on the canonical start.
+        # Keep the initial home probe only as a routing hint so a clone already
+        # at main does not receive unnecessary down gestures. It is not a PASS
+        # gate. Fatal exact-main checks belong to inter-stage navigation.
         started_on_main = self.auto.popup.is_own_main_screen()
         recovered_low_floor = False
         if started_on_main:
             self.context.stage("clean-session-start-main-detected")
             self.context.log(
-                "AUTO khởi điểm • đã ở màn hình chính • giữ nguyên camera, không goDown"
+                "AUTO khởi điểm • thấy màn hình chính • giữ nguyên camera, không goDown"
             )
         else:
-            # Preserve the proven portal/popup path first. A bounded grace window
-            # lets ClientJS enter the game or dismiss blockers without turning a
-            # portal/loading frame into a floor gesture. If it still cannot reach
-            # main, STEP 2 takes ownership of the loaded non-main camera state.
+            # Give the existing portal/popup route a short opportunity to enter
+            # the game or clear blockers. A timeout here is only a signal to run
+            # low-floor camera settling; it is not itself a startup failure.
             grace = min(float(timeout), self.PORTAL_GRACE_SECONDS)
             try:
                 self.auto.ensure_main_screen(timeout=grace)
@@ -117,25 +105,23 @@ class GameSessionWorkflow:
             else:
                 started_on_main = True
 
-        remaining = max(1.0, float(timeout) - (time.monotonic() - started))
-        self.auto.ensure_main_screen(timeout=remaining)
         self.context.ensure_running()
-        self.context.stage("clean-session-main-screen-ready")
+        self.context.stage("clean-session-startup-route-ready")
 
         if started_on_main:
             self.context.log(
-                "AUTO khởi điểm • màn hình chính đã xác nhận • bàn giao pipeline; "
-                "goUp(1) chỉ do action gieo phát đúng một lần"
+                "AUTO khởi điểm • route sẵn sàng • bàn giao pipeline; "
+                "không đặt exact-main gate tại session"
             )
         elif recovered_low_floor:
             self.context.log(
-                "AUTO khởi điểm STEP 2 • bàn giao pipeline từ main đã chuẩn hóa; "
-                "không phát thêm goUp ngoài action gieo"
+                "AUTO khởi điểm STEP 2 • bàn giao pipeline sau 1+3 goDown(1); "
+                "exact-main gate được hoãn tới transition trồng/sản xuất"
             )
 
         return GameSessionResult(
             profile_id=self.context.profile_id,
-            main_screen_ready=True,
+            main_screen_ready=bool(started_on_main),
             elapsed_seconds=round(time.monotonic() - started, 3),
             bridge_mode=str(self.auto.bridge_mode),
         )
