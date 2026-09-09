@@ -20,6 +20,114 @@ function Resolve-KvtmGitExe {
     return $null
 }
 
+function Stop-KvtmPackagedRuntimeProcesses {
+    param(
+        [Parameter(Mandatory = $true)][string]$OutputRoot,
+        [int]$TimeoutSeconds = 12
+    )
+
+    # A hidden Multi DEV host is python/pythonw with its script/cwd under the
+    # packaged output. It can keep dist\...\Multi locked even after the visible
+    # window is gone. Detect only processes proven to belong to this exact output
+    # tree, then include their descendants. Never kill unrelated Python/ClientJS.
+    if (-not (Test-Path -LiteralPath $OutputRoot -PathType Container)) {
+        Write-Host "[DEV] Runtime cu khong ton tai; khong can giai phong process." -ForegroundColor DarkCyan
+        return
+    }
+
+    $normalizedRoot = [System.IO.Path]::GetFullPath($OutputRoot).TrimEnd('\')
+    $rootNeedle = $normalizedRoot.ToLowerInvariant()
+    $all = @(
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+    )
+    if ($all.Count -eq 0) {
+        Write-Host "[WARN] Khong doc duoc Win32_Process; se dung cleanup retry o buoc xoa output." -ForegroundColor Yellow
+        return
+    }
+
+    $byParent = @{}
+    foreach ($process in $all) {
+        $parentId = [int]$process.ParentProcessId
+        if (-not $byParent.ContainsKey($parentId)) {
+            $byParent[$parentId] = New-Object System.Collections.Generic.List[object]
+        }
+        $byParent[$parentId].Add($process)
+    }
+
+    $owned = New-Object "System.Collections.Generic.HashSet[int]"
+    foreach ($process in $all) {
+        $pidValue = [int]$process.ProcessId
+        if ($pidValue -le 0 -or $pidValue -eq $PID) { continue }
+        $commandLine = [string]$process.CommandLine
+        $executablePath = [string]$process.ExecutablePath
+        $matchesOutput = (
+            (-not [string]::IsNullOrWhiteSpace($commandLine) -and $commandLine.ToLowerInvariant().Contains($rootNeedle)) -or
+            (-not [string]::IsNullOrWhiteSpace($executablePath) -and $executablePath.ToLowerInvariant().StartsWith($rootNeedle))
+        )
+        if ($matchesOutput) {
+            [void]$owned.Add($pidValue)
+        }
+    }
+
+    # Include children even when their command line is short/opaque. This catches
+    # ClientJS/worker descendants created by the packaged Multi host without
+    # widening the kill scope to processes from another project folder.
+    $queue = New-Object System.Collections.Generic.Queue[int]
+    foreach ($ownedPid in @($owned)) { $queue.Enqueue([int]$ownedPid) }
+    while ($queue.Count -gt 0) {
+        $parent = $queue.Dequeue()
+        if (-not $byParent.ContainsKey($parent)) { continue }
+        foreach ($child in @($byParent[$parent])) {
+            $childPid = [int]$child.ProcessId
+            if ($childPid -le 0 -or $childPid -eq $PID) { continue }
+            if ($owned.Add($childPid)) {
+                $queue.Enqueue($childPid)
+            }
+        }
+    }
+
+    if ($owned.Count -eq 0) {
+        Write-Host "[DEV] Khong co process runtime cu nao dang giu package output." -ForegroundColor DarkCyan
+        return
+    }
+
+    Write-Host ("[DEV] Giai phong {0} process runtime cu truoc build..." -f $owned.Count) -ForegroundColor Yellow
+    # Stop descendants/large PIDs first, then parents. Stop-Process -Force is
+    # intentional here: [1] is a rebuild transaction and the old runtime must not
+    # keep executable/script handles inside the directory being replaced.
+    foreach ($ownedPid in @($owned | Sort-Object -Descending)) {
+        $candidate = Get-Process -Id $ownedPid -ErrorAction SilentlyContinue
+        if ($null -eq $candidate) { continue }
+        try {
+            Write-Host ("[DEV] Stop packaged runtime PID {0} ({1})" -f $ownedPid, $candidate.ProcessName) -ForegroundColor DarkYellow
+            Stop-Process -Id $ownedPid -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Host ("[WARN] Chua stop duoc PID {0}: {1}" -f $ownedPid, $_.Exception.Message) -ForegroundColor Yellow
+        }
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSeconds))
+    do {
+        $remaining = @(
+            $owned | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) }
+        )
+        if ($remaining.Count -eq 0) {
+            Write-Host "[DEV] Packaged runtime handles: RELEASED" -ForegroundColor Green
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    $stillAlive = @(
+        $owned | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) }
+    )
+    throw (
+        "Khong giai phong duoc packaged runtime sau ${TimeoutSeconds}s; PID con song: " +
+        ($stillAlive -join ", ")
+    )
+}
+
 [string]$KvtmGitExe = Resolve-KvtmGitExe
 if ([string]::IsNullOrWhiteSpace($KvtmGitExe)) { throw "git.exe not found for package build." }
 
@@ -27,6 +135,7 @@ Write-Host "PS5.1 package compatibility wrapper" -ForegroundColor Cyan
 Write-Host "Git: $KvtmGitExe"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$OutputRoot = Join-Path (Join-Path $RepoRoot "dist") $OutputName
 [object[]]$probeOutput = @(& $KvtmGitExe -C $RepoRoot rev-parse HEAD 2>$null)
 $probeExit = $LASTEXITCODE
 [string]$probeHead = ($probeOutput | Select-Object -First 1)
@@ -34,6 +143,11 @@ if ($probeExit -ne 0 -or [string]::IsNullOrWhiteSpace($probeHead)) {
     throw "Native Git HEAD preflight failed; exit=$probeExit repo=$RepoRoot"
 }
 Write-Host "Git HEAD preflight: $($probeHead.Trim())" -ForegroundColor Green
+
+# Stop only runtime processes that are proven to belong to the old packaged
+# output. This fixes rebuilds where the hidden Multi host keeps dist\...\Multi
+# locked even after the operator closes the visible window.
+Stop-KvtmPackagedRuntimeProcesses -OutputRoot $OutputRoot
 
 # Persistent DEV settings are a build contract. This protects Dọn quầy profile
 # settings and the proven Multi speed baseline from being silently regressed by a
@@ -61,9 +175,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO MULTI DEV main-boundary contract: VERIFIED" -ForegroundColor Green
 
-# Each AUTO VP sale pass must check free advertising at the beginning, middle and
-# end of the stall, skip listings that already carry the red ad marker, and never
-# click the paid diamond path. This gate protects the full-stall visibility fix.
 $VpAdvertisingVerifier = Join-Path $RepoRoot "tools\verify_auto_vp_advertising_contract.py"
 if (-not (Test-Path -LiteralPath $VpAdvertisingVerifier -PathType Leaf)) {
     throw "Missing VP advertising verifier: $VpAdvertisingVerifier"
@@ -100,6 +211,50 @@ if (-not $source.Contains($oldBlock)) {
 }
 $patched = $source.Replace($oldBlock, $newBlock)
 
+# Windows can release a directory handle a few hundred milliseconds after its
+# owning process exits. Replace the one-shot output deletion in the runtime copy
+# with a bounded retry so a transient handle/AV scan cannot waste the whole build.
+$oldOutputCleanup = @'
+if (Test-Path -LiteralPath $OutputRoot) {
+    Remove-Item -LiteralPath $OutputRoot -Recurse -Force
+}
+'@
+$newOutputCleanup = @'
+if (Test-Path -LiteralPath $OutputRoot) {
+    $OutputRemoved = $false
+    $LastOutputCleanupError = $null
+    for ($OutputCleanupAttempt = 1; $OutputCleanupAttempt -le 20; $OutputCleanupAttempt++) {
+        try {
+            Remove-Item -LiteralPath $OutputRoot -Recurse -Force -ErrorAction Stop
+            $OutputRemoved = -not (Test-Path -LiteralPath $OutputRoot)
+            if ($OutputRemoved) {
+                Write-Host ("[DEV] Old package output removed after attempt {0}/20." -f $OutputCleanupAttempt) -ForegroundColor Green
+                break
+            }
+        }
+        catch {
+            $LastOutputCleanupError = $_
+        }
+        Start-Sleep -Milliseconds 350
+    }
+    if (-not $OutputRemoved) {
+        $detail = if ($null -ne $LastOutputCleanupError) {
+            $LastOutputCleanupError.Exception.Message
+        } else {
+            "unknown filesystem lock"
+        }
+        throw (
+            "Khong xoa duoc package output sau 20 lan retry: $OutputRoot. " +
+            "Hay kiem tra process ngoai KVTM/Explorer/antivirus dang giu file. LastError=$detail"
+        )
+    }
+}
+'@
+if (-not $patched.Contains($oldOutputCleanup)) {
+    throw "Output cleanup compatibility patch target not found in BUILD_FULL_PACKAGE.ps1."
+}
+$patched = $patched.Replace($oldOutputCleanup, $newOutputCleanup)
+
 # The clear-stall verifier predates the independent AUTO MULTI DEV image runtime
 # and still contains one obsolete assertion that requires local_launcher. Keep
 # every other clear-stall safety check active by routing only this build through
@@ -123,6 +278,8 @@ $previousGitExe = $env:KVTM_PS51_GIT_EXE
 $env:KVTM_PS51_GIT_EXE = $KvtmGitExe
 try {
     Write-Host "PS5.1 HEAD stamp patch: READY" -ForegroundColor Green
+    Write-Host "AUTO MULTI DEV old-runtime release: READY" -ForegroundColor Green
+    Write-Host "AUTO MULTI DEV output cleanup retry: READY" -ForegroundColor Green
     Write-Host "AUTO MULTI DEV clear-stall migration gate: READY" -ForegroundColor Green
     & $RuntimeBuilder -OutputName $OutputName
 }
