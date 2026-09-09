@@ -117,6 +117,7 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         "function_id": "function_1",
         "sale_every_loops": 1,
         "function_loop_delay_seconds": 0.0,
+        "friend_refresh_enabled": False,
     }
     if effective_mode != "main":
         return default
@@ -134,6 +135,7 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
     function_id = str(raw.get("function_id") or "function_1").strip()
     sale_every = int(raw.get("sale_every_loops", 1) or 1)
     loop_delay = float(raw.get("function_loop_delay_seconds", 0.0) or 0.0)
+    friend_refresh_enabled = bool(raw.get("friend_refresh_enabled", False))
     if not function_id:
         raise ValueError("AUTO Main config thiếu function_id")
     if not 1 <= sale_every <= 999:
@@ -145,6 +147,7 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         "function_id": function_id,
         "sale_every_loops": sale_every,
         "function_loop_delay_seconds": loop_delay,
+        "friend_refresh_enabled": friend_refresh_enabled,
     }
 
 
@@ -384,10 +387,13 @@ def main() -> int:
         function_id = str(auto_main_config["function_id"])
         sale_every = int(auto_main_config["sale_every_loops"])
         loop_delay = float(auto_main_config["function_loop_delay_seconds"])
+        friend_refresh_enabled = bool(auto_main_config["friend_refresh_enabled"])
         log(
             "AUTO MULTI DEV schedule • "
             f"function_id={function_id} • bán lại sau mỗi {sale_every} vòng • "
             f"chờ giữa vòng Function={loop_delay:.3f}s • "
+            f"qua nhà bạn #1 sau mỗi 3 vòng="
+            f"{'BẬT' if friend_refresh_enabled else 'TẮT'} • "
             f"runtime_error_policy=recover-main-restart • "
             f"same_error_limit={_AUTO_MAIN_SAME_ERROR_LIMIT}"
         )
@@ -436,6 +442,7 @@ def main() -> int:
                     function_id=function_id,
                     sale_every_loops=sale_every,
                     function_loop_delay_seconds=loop_delay,
+                    friend_refresh_enabled=friend_refresh_enabled,
                 ).run()
                 result_payload = result.to_dict()
                 result_payload.pop("profile_id", None)
