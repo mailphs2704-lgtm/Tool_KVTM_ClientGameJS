@@ -10,6 +10,29 @@ import traceback
 
 
 _RUNTIME_TIMEOUT_SECONDS = 15.0
+_PINNED_MULTI_DEV_TUNING = {
+    # Operator-verified Multi DEV values. These are the source fallback if a new
+    # machine/profile has no settings.json yet; persistent saved values still win.
+    "floor_swipe_duration": 0.350,
+    "plant_harvest_duration": 0.035,
+    "vp_production_delay": 0.070,
+    "crop_check_interval": 0.100,
+}
+_PINNED_CLEAR_STALL_DEFAULTS = {
+    # Stable Dọn quầy baseline. Existing per-profile settings are never replaced;
+    # these values only self-heal fields that disappear after a schema/update.
+    "schema_version": 2,
+    "target_mode": "friend_ordinal",
+    "target_friend_ordinal": 1,
+    "target_stall_id": 2,
+    "buy_quantity": 10,
+    "max_scan_pages": 4,
+    "interval_minutes": 65,
+    "next_run_at": 0,
+    "close_client_after_run": True,
+    "enabled": False,
+    "last_checkpoint": "WAITING",
+}
 
 
 def _roots() -> tuple[Path, Path, Path]:
@@ -109,6 +132,53 @@ def _install_non_modal_error_ui(core) -> None:
     )
 
 
+def _install_pinned_dev_settings(core) -> None:
+    """Pin proven DEV defaults and self-heal Dọn quầy profile settings.
+
+    The launcher stores settings under %APPDATA%/KVTM Multi DEV, outside the
+    rebuilt dist tree. This layer provides a source-controlled fallback so even a
+    brand-new/missing settings file starts with the same operator-approved values.
+    Existing Dọn quầy values always win over the fallback and remain editable.
+    """
+    core.DEFAULT_AUTO_TUNING.update(_PINNED_MULTI_DEV_TUNING)
+
+    original_clear_stall_job = core.MultiApp._clear_stall_job
+
+    def pinned_clear_stall_job(self, profile_id: str) -> dict:
+        profile_id = str(profile_id)
+        existing = original_clear_stall_job(self, profile_id)
+        current = dict(existing) if isinstance(existing, dict) else {}
+        defaults = dict(_PINNED_CLEAR_STALL_DEFAULTS)
+        defaults.update({
+            "job_id": f"clear-stall-{profile_id}",
+            "clone_profile_id": profile_id,
+            "allowed_item_ids": [
+                item_id for item_id, _label in core.CLEAR_STALL_ITEM_OPTIONS
+            ],
+        })
+        merged = dict(defaults)
+        merged.update(current)
+        if merged != current:
+            self.settings.setdefault("clear_stall_jobs", {})[profile_id] = merged
+            try:
+                core.save_settings(self.settings)
+            except Exception as exc:
+                print(
+                    "[KVTM DEV] WARN pinned Dọn quầy settings save failed: "
+                    f"{type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+        return merged
+
+    core.MultiApp._clear_stall_job = pinned_clear_stall_job
+    print(
+        "[KVTM DEV] Persistent settings READY | "
+        "speed=0.350/0.035/0.070/0.100 | "
+        "clear-stall defaults=friend1/storage2/x10/pages4/65m",
+        flush=True,
+    )
+
+
 def _configure_dpi() -> None:
     try:
         ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
@@ -144,6 +214,7 @@ def main() -> int:
         # running clones. Callers still update note/status and every worker error
         # remains in action/detail logs.
         _install_non_modal_error_ui(kvtm_multi_dev_entry.core)
+        _install_pinned_dev_settings(kvtm_multi_dev_entry.core)
 
         # Builder is DEV-only and is layered onto MultiDevApp after import. This
         # keeps the shared kvtm_multi.py production UI untouched while reusing its
