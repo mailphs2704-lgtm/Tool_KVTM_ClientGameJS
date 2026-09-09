@@ -61,6 +61,19 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO MULTI DEV main-boundary contract: VERIFIED" -ForegroundColor Green
 
+# Each AUTO VP sale pass must check free advertising at the beginning, middle and
+# end of the stall, skip listings that already carry the red ad marker, and never
+# click the paid diamond path. This gate protects the full-stall visibility fix.
+$VpAdvertisingVerifier = Join-Path $RepoRoot "tools\verify_auto_vp_advertising_contract.py"
+if (-not (Test-Path -LiteralPath $VpAdvertisingVerifier -PathType Leaf)) {
+    throw "Missing VP advertising verifier: $VpAdvertisingVerifier"
+}
+& py.exe -3.11 $VpAdvertisingVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw "AUTO MULTI DEV VP advertising contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "AUTO MULTI DEV VP advertising contract: VERIFIED" -ForegroundColor Green
+
 # BUILD_FULL_PACKAGE.ps1 was written for newer PowerShell semantics and checks
 # LASTEXITCODE after piping native git output through Select-Object. On Windows
 # PowerShell 5.1 that value can become stale/-1 even though git succeeded.
