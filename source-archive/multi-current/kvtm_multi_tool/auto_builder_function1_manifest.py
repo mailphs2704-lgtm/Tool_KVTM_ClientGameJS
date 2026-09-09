@@ -7,10 +7,11 @@ FILE_FUNCTIONS = (
     "Giữ riêng blueprint hiển thị với runtime wrapper proven function_1",
     "Liệt kê module, click, swipe, wait, nhận diện, loop/gate theo đúng thứ tự source",
     "Hiển thị Sửa máy sau cả ba production và tốc độ thu VP độc lập",
+    "Hiển thị recovery kho đầy: xuống quầy bán VP rồi quay lại đúng tầng sản xuất",
     "Hiển thị boundary cuối vòng goDown(1) → click xuống tầng → exact main",
 )
 
-MANIFEST_VERSION = 5
+MANIFEST_VERSION = 6
 
 
 def _row(new_step_id, kind: str, detail: str) -> dict:
@@ -62,12 +63,17 @@ def display_steps(new_step_id) -> list[dict]:
     add("click", "Máy sấy tầng 1 • (262,917)")
     add("wait", "vp_collect_delay sau mỗi click mở/thu VP")
     add("recognize", "full_kho • threshold=0.90 • zone=(333,363,313,115)")
-    add("recognize", "o_trong panel_ready • threshold=0.70 • zone=(335,781,395,186)")
-    add("gate", "Nếu full_kho: đóng panel và FAIL-CLOSE")
-    add("recognize", "tao_say • tối đa 3 lần • threshold=0.70 • scales=0.75..1.25")
-    add("wait", "0.35s giữa các lần tìm tao_say")
+    add("recognize", "o_trong hoặc tao_say xác nhận panel đã mở")
+    add("gate", "Nếu full_kho: đóng bảng cảnh báo/panel → InventoryFull")
+    add("module", "ProductionWarehouseRecovery • floor=1 • chỉ retry production Táo sấy")
+    add("module", "FunctionOneNavigationActions.floor_1_to_main → exact main")
+    add("module", "AutoVpSaleWorkflow(function_1) • bán VP thuộc Function: tao_say, vai_vang")
+    add("gate", "Recovery phải treo được ít nhất 1 ô VP; sold_listings == 0 → FAIL-CLOSE")
+    add("module", "FunctionOneNavigationActions.main_to_floor_1 → retry đúng máy Táo sấy")
+    add("loop", "Giữ nguyên panel; recheck mỗi 1.0s cho tới đúng 9/9 ô trống")
+    add("recognize", "tao_say mỗi recheck • mất ảnh đúng 5 lần → FAIL-CLOSE")
     add("recognize", "o_trong top slot • threshold=0.82 • zone=(335,650,130,135)")
-    add("gate", "Đếm ô trống top+lower • yêu cầu >=9 trước sản xuất")
+    add("gate", "Đếm ô trống top+lower • yêu cầu đúng 9/9 trước sản xuất")
     add("loop", "Lặp 9 lần xếp Táo sấy")
     add("swipe", "tao_say.center → top_empty.center • duration=0.02s")
     add("wait", "vp_production_delay")
@@ -145,9 +151,13 @@ def display_steps(new_step_id) -> list[dict]:
     add("loop", "Click thu VP/mở máy tầng 2 cho tới panel_ready")
     add("click", "Máy Nước táo tầng 2 • (262,917)")
     add("wait", "vp_collect_delay sau mỗi click")
-    add("recognize", "full_kho + o_trong panel state")
-    add("recognize", "nuoc_tao • tối đa 3 lần • threshold=0.70")
-    add("wait", "0.20s giữa các lần tìm nuoc_tao")
+    add("recognize", "full_kho + o_trong/nuoc_tao panel state")
+    add("gate", "Nếu full_kho: InventoryFull → ProductionWarehouseRecovery floor=2")
+    add("module", "FunctionOnePassThreeNavigationActions.floor_2_to_main → exact main")
+    add("module", "AutoVpSaleWorkflow(function_1) • sold_listings phải > 0")
+    add("module", "FunctionOneNavigationActions.main_to_floor_2 → retry đúng Nước táo")
+    add("loop", "Giữ nguyên panel; recheck mỗi 1.0s cho tới đúng 9/9 ô trống")
+    add("recognize", "nuoc_tao mỗi recheck • mất ảnh đúng 5 lần → FAIL-CLOSE")
     add("recognize", "o_trong top slot • threshold=0.82")
     add("gate", "Yêu cầu đúng 9/9 ô trống")
     add("loop", "Lặp 9 lần xếp Nước táo")
@@ -204,10 +214,14 @@ def display_steps(new_step_id) -> list[dict]:
     add("loop", "Tối đa 30 click thu VP/mở máy tầng 3 cho tới panel_ready")
     add("click", "Máy Vải vàng tầng 3 • (262,917)")
     add("wait", "vp_collect_delay sau mỗi click")
-    add("recognize", "full_kho + o_trong panel state")
+    add("recognize", "full_kho + o_trong/vai_vang panel state")
+    add("gate", "Nếu full_kho: InventoryFull → ProductionWarehouseRecovery floor=3")
+    add("module", "FunctionOnePassThreeNavigationActions.floor_3_to_main_via_down_floor → exact main")
+    add("module", "AutoVpSaleWorkflow(function_1) • sold_listings phải > 0")
+    add("module", "main_to_floor_1 → floor_1_to_floor_3 → retry đúng Vải vàng")
     add("gate", "Nếu không panel_ready sau 30 click: FAIL-CLOSE")
-    add("recognize", "vai_vang • tối đa 3 lần • threshold=0.70")
-    add("wait", "0.20s giữa các lần tìm vai_vang")
+    add("loop", "Giữ nguyên panel; recheck mỗi 1.0s cho tới đúng 9/9 ô trống")
+    add("recognize", "vai_vang mỗi recheck • mất ảnh đúng 5 lần → FAIL-CLOSE")
     add("recognize", "o_trong top slot • threshold=0.82")
     add("gate", "Yêu cầu đúng 9/9 ô trống")
     add("loop", "Lặp 9 lần xếp Vải vàng")
