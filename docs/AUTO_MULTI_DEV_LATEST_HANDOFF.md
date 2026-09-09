@@ -13,7 +13,7 @@ Tài liệu này là mốc đọc đầu tiên cho phiên AI kế tiếp của b
 - Cấu hình Multi DEV: lưu persistent tại `%APPDATA%\KVTM Multi DEV`, không phụ thuộc thư mục `dist`.
 - Cleanup/repository normalization nếu tiếp tục phải tách khỏi runtime đang PASS; không xóa source chỉ dựa trên tên `source-archive`/`test-candidates` vì builder hiện vẫn có dependency thật ở các vùng đó.
 
-## Function 1 đã PASS
+## Function 1 đã PASS + route tối ưu mới
 
 Chuỗi Function 1 hiện gồm:
 
@@ -22,15 +22,51 @@ Chuỗi Function 1 hiện gồm:
 3. trồng/thu Táo;
 4. sản xuất 9 Táo sấy;
 5. lên tầng 6 xử lý Táo;
-6. về main rồi lên tầng 2;
-7. sản xuất 9 Nước táo;
-8. về main, trồng Bông;
-9. lên tầng 3;
-10. sản xuất 9 Vải vàng;
-11. recovery về main;
-12. PASS 3/3 và tiếp tục scheduler.
+6. **goDown(4) thẳng tầng 6 → candidate tầng 2**;
+7. bounded probe máy Nước táo, chỉ PASS khi thấy `nuoc_tao` trong vùng thư viện panel;
+8. nếu probe miss: đóng panel → background-independent exact-main recovery → `goUp(1)x2` → tầng 2;
+9. sản xuất 9 Nước táo;
+10. về main, trồng Bông;
+11. **true AUTO PRO goUp(2) mode 2 tại `(257,416)`** lên tầng 3, không còn hai goUp(1);
+12. sản xuất 9 Vải vàng;
+13. recovery về main;
+14. PASS 3/3 và tiếp tục scheduler.
 
 Các VP sản xuất dùng true x5 click burst để thu thành phẩm. Panel chỉ được coi là mở khi **ảnh sản phẩm đúng** xuất hiện trong vùng thư viện panel; `o_trong` chỉ là diagnostic và không được phép kết thúc burst sớm.
+
+### Route Nước táo direct
+
+Đường cũ tốn thời gian:
+
+`floor6 → goDown(4) → floor2 → floor1 → main → floor1 → floor2`
+
+Đường bình thường mới:
+
+`floor6 → goDown(4) → floor2 candidate → nuoc_tao proof → production`
+
+Các khóa an toàn:
+
+- `goDown(4)` không tự chứng minh tầng;
+- direct probe tối đa `2` burst x5, mỗi burst `3` recheck;
+- miss hoặc `full_kho` trong probe đều đóng panel và fallback, không dùng làm floor proof;
+- fallback dùng `go_down_one_toward_main()` + nút XUỐNG + main-boundary hiện tại;
+- exact-main phải PASS trước `main_to_floor_2()`;
+- warehouse-full recovery chuẩn vẫn giữ nguyên cho production thật.
+
+### Route Bông → Vải vàng
+
+Forensic `adb_controller.goUp` đã xác nhận `num_up` là mode:
+
+- mode1 = swipe goUp(1);
+- **mode2 = click `(257,416)`**;
+- mode3 = click `(257,191)`;
+- mode4 = swipe goUp(4).
+
+Sau gieo Bông, Function 1 hiện dùng một true mode2:
+
+`click (975,316) → click (257,416) → wait 0.70s → wait 0.15s → fresh-frame gate`
+
+Không được regression về hai lần `goUp(1)`.
 
 ## Exact-main / recovery đa background
 
@@ -153,6 +189,11 @@ Các gate quan trọng phải PASS gồm:
 - production contract;
 - asset contract.
 
+Production contract hiện phải in thêm:
+
+- `apple_to_juice=direct-goDown4+bounded-nuoc_tao-proof+exact-main-fallback`
+- `cotton_to_fabric=true-auto-pro-goUp2-mode-at-257,416`
+
 Sau `[1]` PASS mới mở/chạy runtime mới.
 
 ## Không được regression
@@ -166,6 +207,10 @@ Sau `[1]` PASS mới mở/chạy runtime mới.
 - Không click quảng cáo trả phí.
 - Không click ô đang có QC khi kiểm tra quảng cáo.
 - Không dừng advertisement traversal chỉ vì quầy full hoặc kho hết VP.
+- Không quay lại đường vòng `floor6 → main → floor2` khi direct `nuoc_tao` proof đã PASS.
+- Không coi goDown(4) tự chứng minh tầng 2.
+- Không để direct floor probe click vô hạn khi lệch tầng.
+- Không dùng hai goUp(1) cho route Bông → tầng 3; phải giữ true mode2 `(257,416)`.
 - Không đụng luồng Dọn quầy ổn định khi sửa AUTO Main.
 
 ## Read-first cho phiên AI kế tiếp
@@ -174,7 +219,9 @@ Sau `[1]` PASS mới mở/chạy runtime mới.
 2. `AI_COORDINATION.md`
 3. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`
 4. `docs/AUTO_MULTI_DEV_FUNCTION_ONE.md`
-5. `components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/workflow.py`
-6. `components/clientjs-auto/kvtm_automation/actions/stall_advertising.py`
+5. `components/clientjs-auto/kvtm_automation/workflows/auto_function_one/workflow.py`
+6. `components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py`
 7. `components/clientjs-auto/kvtm_automation/actions/function_one_pass_three_navigation.py`
-8. `packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1`
+8. `components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/workflow.py`
+9. `components/clientjs-auto/kvtm_automation/actions/stall_advertising.py`
+10. `packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1`
