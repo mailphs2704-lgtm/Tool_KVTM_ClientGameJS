@@ -11,11 +11,11 @@ from .production import ProductionActions, ProductionResult
 __all__ = ["AppleJuiceProductionActions"]
 FILE_FUNCTIONS = (
     "Mở máy tầng 2 và xác minh đúng ảnh sản xuất Nước táo",
-    "Thu VP/mở panel theo tốc độ thu VP cấu hình riêng",
+    "Thu VP bằng burst tối đa năm click và dừng ngay khi panel xuất hiện",
     "Nhận panel đã mở bằng ô trống hoặc ảnh Nước táo khi máy đang kín slot",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
+    "Mất ảnh sản phẩm tạm thời khi chờ không làm dừng AUTO",
     "Phát tín hiệu kho đầy riêng để workflow xuống quầy bán VP rồi quay lại tầng 2",
-    "Dùng bộ đếm chín ô trống đã live-pass của máy sấy",
     "Kéo Nước táo xuống ô top động đúng chín lần",
     "Hậu kiểm mỗi lần kéo làm giảm đúng bộ đếm ô trống",
 )
@@ -38,28 +38,12 @@ class AppleJuiceProductionActions:
         self.slots = ProductionActions(context, vision, waiter, self.speed_config)
 
     def _open_verified(self):
-        click_count = 0
-        while True:
-            self.context.ensure_running()
-            click_count += 1
-            self.vision.driver.click(*self.MACHINE_POINT)
-            self.waiter.sleep(self.speed_config.vp_collect_delay)
-            warehouse_full, empty_ready = self.slots._panel_state()
-            product_ready = self.slots._find_product_match(
-                self.PRODUCT_TEMPLATE, threshold=0.70
-            ) is not None
-            panel_ready = empty_ready or product_ready
-            if click_count == 1 or click_count % 5 == 0 or panel_ready:
-                self.context.log(
-                    "AUTO Nước táo • click thu VP/mở máy tầng 2 "
-                    f"• clicks={click_count} • panel={panel_ready} • "
-                    f"delay={self.speed_config.vp_collect_delay:.3f}s"
-                )
-            if warehouse_full:
-                self.slots._raise_inventory_full("Nước táo")
-            if panel_ready:
-                break
-
+        click_count = self.slots._click_until_panel_open(
+            machine_point=self.MACHINE_POINT,
+            product_template=self.PRODUCT_TEMPLATE,
+            label="Nước táo",
+            product_threshold=0.70,
+        )
         empty, product_point, top_point = self.slots._wait_for_idle_open_panel(
             product_template=self.PRODUCT_TEMPLATE,
             label="Nước táo",
@@ -67,7 +51,7 @@ class AppleJuiceProductionActions:
         )
         self.context.log(
             "AUTO Nước táo • panel giữ nguyên READY • "
-            f"clicks={click_count} • đường kéo={product_point} → {top_point}"
+            f"tổng click thu VP={click_count} • đường kéo={product_point} → {top_point}"
         )
         return empty, product_point, top_point
 
