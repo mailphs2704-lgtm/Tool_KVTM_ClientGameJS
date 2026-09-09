@@ -18,12 +18,13 @@ from .inventory import InventoryActions
 class SellingActions:
     """Place a verified purchased VP stack using the recovered sale order."""
 
-    # AUTO_PRO_REFERENCE: fixed 1000x1000 regions/click point.
+    # AUTO_PRO_REFERENCE: fixed logical 1000x1000 regions/click point.
     EMPTY_STALL_ZONE = (196, 340, 599, 395)
     DAT_BAN_ZONE = (662, 598, 231, 145)
     SL10_ZONE = (737, 426, 81, 81)
     CONFIRM_ZONE = (390, 552, 211, 102)
     PLACE_BUTTON = (771, 692)
+    SALE_CHANGE_ZONE = (180, 330, 640, 430)
 
     # LIVE_CALIBRATED 20260903-195708: the last two verified x10 batches
     # matched at 0.612 and 0.605 after the own-stall view transition. 0.60 is
@@ -44,6 +45,14 @@ class SellingActions:
         self.waiter = waiter
         self.inventory = inventory
         self.minimum_screen_change = float(minimum_screen_change)
+
+    def _sale_change_crop(self):
+        """Capture destructive-sale verification ROI at the actual frame size."""
+        frame = self.vision.frame()
+        x, y, width, height = self.vision.logical_zone_to_frame(
+            self.SALE_CHANGE_ZONE, frame
+        )
+        return frame[y : y + height, x : x + width].copy()
 
     def open_inventory_read_only(self, *, storage_id: int = 2) -> None:
         """Open the sale inventory without selecting or listing any VP."""
@@ -76,7 +85,7 @@ class SellingActions:
                 click=True,
             )
             if close_match is None:
-                # Fixed 1000x1000 ClientJS item-picker X shown at the top-right.
+                # Logical 1000x1000 item-picker X shown at the top-right.
                 self.vision.driver.click(968, 28)
             self.waiter.sleep(0.35)
 
@@ -132,7 +141,7 @@ class SellingActions:
             + ("x10-found" if quantity_marker is not None else "not-required")
         )
 
-        before = self.vision.frame()[330:760, 180:820].copy()
+        before = self._sale_change_crop()
         self.vision.driver.click(*self.PLACE_BUTTON)
 
         # The destructive click has already been sent. Keep accounting atomic
@@ -148,7 +157,7 @@ class SellingActions:
         best_change = 0.0
         deadline = time.monotonic() + 6.0
         while time.monotonic() < deadline:
-            after = self.vision.frame()[330:760, 180:820].copy()
+            after = self._sale_change_crop()
             best_change = max(best_change, _mean_difference(before, after))
             if best_change >= self.minimum_screen_change:
                 self.context.log(
