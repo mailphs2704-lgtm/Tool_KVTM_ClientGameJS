@@ -1,132 +1,180 @@
 # AUTO MULTI DEV — LATEST HANDOFF
 
-Cập nhật: 2026-09-08
+Cập nhật: 2026-09-09
 
-Đây là handoff ngắn cho phiên AI kế tiếp. Tài liệu chi tiết mới nhất:
-
-`docs/AUTO_MULTI_DEV_AUTO_BUILDER_V13_HANDOFF.md`
+Tài liệu này là mốc đọc đầu tiên cho phiên AI kế tiếp của branch `develop/multi-auto-dev`.
 
 ## Trạng thái hiện tại
 
-- Branch: `develop/multi-auto-dev`.
-- Feature hiện tại: `TỰ TẠO AUTO v1.3`.
-- Status: `SOURCE IMPLEMENTED / STATIC CONTRACT UPDATED / WINDOWS LIVE PENDING`.
-- Không gọi runtime PASS trước khi operator build + live test trên Windows.
+- Branch runtime: `develop/multi-auto-dev`.
+- Function 1: **operator đã chạy nhiều vòng và chốt PASS thực tế**. Nếu phát sinh regression mới thì xử lý như lỗi riêng, không mở lại toàn bộ Function 1 theo mặc định.
+- Runtime: isolated worker + Bridge V3.
+- Dọn quầy: giữ ổn định, không được trộn logic Dọn quầy vào AUTO Main.
+- Cấu hình Multi DEV: lưu persistent tại `%APPDATA%\KVTM Multi DEV`, không phụ thuộc thư mục `dist`.
+- Cleanup/repository normalization nếu tiếp tục phải tách khỏi runtime đang PASS; không xóa source chỉ dựa trên tên `source-archive`/`test-candidates` vì builder hiện vẫn có dependency thật ở các vùng đó.
 
-## Sửa nghĩa Load Function theo yêu cầu mới nhất
+## Function 1 đã PASS
 
-`📂 Load Function` không được chỉ mở một wrapper 1 dòng.
+Chuỗi Function 1 hiện gồm:
 
-Function đã làm trước đó:
+1. exact-main trước scheduler;
+2. sale VP của Function;
+3. trồng/thu Táo;
+4. sản xuất 9 Táo sấy;
+5. lên tầng 6 xử lý Táo;
+6. về main rồi lên tầng 2;
+7. sản xuất 9 Nước táo;
+8. về main, trồng Bông;
+9. lên tầng 3;
+10. sản xuất 9 Vải vàng;
+11. recovery về main;
+12. PASS 3/3 và tiếp tục scheduler.
 
-`9 Táo sấy - 9 Vải vàng`
+Các VP sản xuất dùng true x5 click burst để thu thành phẩm. Panel chỉ được coi là mở khi **ảnh sản phẩm đúng** xuất hiện trong vùng thư viện panel; `o_trong` chỉ là diagnostic và không được phép kết thúc burst sớm.
 
-phải show đầy đủ ordered execution blueprint gồm:
+## Exact-main / recovery đa background
 
-- MODULE;
-- CLICK;
-- SWIPE;
-- WAIT;
-- NHẬN DIỆN;
-- GATE / HẬU KIỂM;
-- LOOP / NHÁNH.
+Không được dùng background/quầy nhà làm gate exact-main vì mỗi account có background khác nhau.
 
-Full manifest hiện nằm tại:
+Hợp đồng hiện tại:
 
-`source-archive/multi-current/kvtm_multi_tool/auto_builder_function1_manifest.py`
+- own farm: fixed HUD (`friend_off` / tín hiệu HUD ổn định);
+- exact-main: bằng chứng điều hướng runtime;
+- camera không rõ tầng: goDown có kiểm soát;
+- hai nhịp goDown liên tiếp có `frame_change <= 6.0` là fallback biên dưới;
+- tầng trên có UI `XUỐNG`: sau `goDown(1)` phải **nhận diện nút XUỐNG ở mép dưới rồi click đúng tâm match**, không click mù `(497,978)`;
+- recovery chain hỗ trợ tối đa 10 tầng;
+- tầng 1 không có nút XUỐNG là trạng thái bình thường.
 
-UI render Function built-in thành:
+Build contract phải giữ:
 
-`FULL SOURCE VIEW • chỉ đọc • runtime vẫn gọi proven function_1`
+- background world anchor không được quay lại làm runtime exact-main gate;
+- blind fixed-coordinate down-floor click bị cấm.
 
-Blueprint hiển thị không thay business runtime. Khi bundle plan, document built-in được thay `steps` bằng `runtime_steps` là wrapper proven `function_1` trước khi worker validate/run.
+## AUTO bán VP + quảng cáo quầy
 
-File AppData seed cũ chỉ có 1 row FUNCTION được tự refresh theo `manifest_version`; operator không cần xóa AppData thủ công.
+Mỗi lượt bán VP có thêm ba checkpoint quảng cáo phân bố đầu/giữa/cuối quầy, xấp xỉ physical slot `1 / 10 / 20`.
 
-## Những gì v1.2 vẫn giữ
+Tại mỗi checkpoint:
 
-### Swipe nhiều điểm / nhiều đoạn
+1. tìm listing còn tồn tại;
+2. nếu listing đã có dấu QC đỏ thì **không click**;
+3. nếu chưa QC thì click listing để mở popup;
+4. nếu nút xanh `Đặt quảng cáo` đã hồi thì click đúng nút miễn phí;
+5. tuyệt đối không click nút quảng cáo trả phí/kim cương;
+6. nếu còn cooldown thì đóng popup bằng X và tiếp tục bán;
+7. lỗi nhận diện QC là non-blocking, không được phá sale đã PASS.
 
-- Step lưu ordered `points=[[x,y], ...]`, tối thiểu 2 điểm.
-- Live picker kéo nhiều lần, có Undo/Xóa đường.
-- Runtime dùng một `driver.swipe_points(points, duration=...)` / native BATCH_SWIPE.
-- Không chia thành nhiều swipe rời.
+Trường hợp quầy full/no empty slot vẫn phải tiếp tục đi hết ba checkpoint quảng cáo và thu vàng. Mục tiêu là tránh quầy đầy nhưng không có listing được quảng cáo nên không lên bảng tin.
 
-### Nhận diện ảnh đúng hai nguồn
+Contract build riêng:
 
-1. `1 • Thư viện Multi DEV`
-2. `2 • Ảnh AUTO PRO`
+`tools/verify_auto_vp_advertising_contract.py`
 
-Ảnh AUTO PRO được copy/dedupe vào:
+Kỳ vọng log build:
 
-`%APPDATA%\KVTM Multi DEV\auto-builder\image-library`
+`AUTO MULTI DEV VP ADVERTISING CONTRACT VERIFIED`
 
-Step recognition sau import dùng bản copy Multi DEV, không phụ thuộc trực tiếp AUTO PRO.
+## Persistent settings
 
-## Transport bắt buộc giữ nguyên
+Multi DEV không lưu settings chính trong `dist` nữa.
 
-- isolated `auto_multi_dev_worker.py`;
-- strict Bridge V3;
-- `CAPTURE3_WRITERMAP2`;
-- `CAPTURE3_WRITERMSG1`;
-- exact same-request capture;
-- không stale frame;
-- không HWND fallback trong AUTO runtime;
-- live gesture picker chỉ dùng OpenGL shared capture;
-- một owner/profile.
+Nguồn persistent:
 
-## Không được đụng
+`%APPDATA%\KVTM Multi DEV`
 
-- Dọn quầy ổn định;
-- `components/workspace/**`;
-- `KVTM_WORKSPACE_CONTROL.bat`;
-- profile/login/DPAPI;
-- không hạ threshold hoặc thêm click mù;
-- không tự phát minh route tầng chưa live-prove;
-- không đổi multi-point Swipe thành nhiều swipe rời;
-- không để recognition phụ thuộc trực tiếp file AUTO PRO sau import.
+Các file quan trọng:
 
-## NEXT duy nhất
+- `profiles.json`;
+- `settings.json`;
+- `clear-stall-history.jsonl`.
 
-Operator chạy:
+Migration từ package-local `data-dev` chỉ chạy một lần khi persistent file chưa tồn tại và **không overwrite** dữ liệu đã có.
+
+Baseline speed được source khóa:
+
+- floor swipe: `0.350`;
+- plant/harvest: `0.035`;
+- VP production: `0.070`;
+- crop check: `0.100`.
+
+Dọn quầy có baseline self-heal nhưng setting profile đã lưu luôn được ưu tiên.
+
+## Fix build khi `dist\...\Multi` bị lock
+
+Lỗi đã gặp trên Windows:
+
+`Remove-Item ... dist\KVTM-ClientJS-Suite-Multi-DEV\Multi ... because it is being used by another process`
+
+Root cause chính: visible Multi có thể đã đóng nhưng hidden `python/pythonw` resident host hoặc worker cũ vẫn thuộc package output và giữ handle/cwd trong `dist\...\Multi`. Builder cũ chỉ đóng một số `GameClientJS`, chưa release toàn bộ packaged runtime trước khi xóa output.
+
+`packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1` hiện có hai lớp bảo vệ:
+
+1. **process ownership release trước build**
+   - chỉ chọn process có `CommandLine` hoặc `ExecutablePath` nằm dưới đúng `$OutputRoot`;
+   - thêm descendants của các process đó;
+   - không kill Python/ClientJS ngoài project;
+   - force-stop packaged runtime cũ và chờ handle release;
+2. **bounded output cleanup retry**
+   - runtime copy thay one-shot `Remove-Item` bằng tối đa 20 lần retry;
+   - mỗi lần cách 350 ms;
+   - nếu vẫn fail mới báo rõ external lock/Explorer/antivirus.
+
+Kỳ vọng đầu build sau fix:
+
+- `[DEV] Giai phong ... process runtime cu truoc build...` nếu còn process cũ;
+- `[DEV] Packaged runtime handles: RELEASED`;
+- `AUTO MULTI DEV old-runtime release: READY`;
+- `AUTO MULTI DEV output cleanup retry: READY`;
+- `[DEV] Old package output removed after attempt N/20.`
+
+Không cần operator tự Task Manager kill toàn bộ Python nếu process thuộc package cũ; `[1]` phải tự xử lý.
+
+## Build flow chuẩn
+
+Operator dùng:
 
 `KVTM_DEV_CONTROL.bat` → `[1] Cap nhat source + build runtime DEV`
 
-Không dùng `[9]` và không sửa `dist` thủ công.
+Không sửa `dist` thủ công.
 
-Build phải có:
+Các gate quan trọng phải PASS gồm:
 
-`AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED`
+- persistent settings contract;
+- main-boundary contract;
+- VP advertising contract;
+- clear-stall contract;
+- AUTO Builder contract;
+- AUTO Main sale contract;
+- planting contract;
+- speed contract;
+- floor navigation contract;
+- Bridge V3 contract;
+- production contract;
+- asset contract.
 
-và các dòng:
+Sau `[1]` PASS mới mở/chạy runtime mới.
 
-- `ui=multi-dev-native-style-multi-tab-function-editor`
-- `functions=create-save-load-call-nested-no-recursion+builtin-function1-full-source-view`
-- `function1_load=full-module-click-swipe-recognize-order+proven-runtime-wrapper`
-- `gesture_picker=multi-segment-opengl-drag-to-logical-1000-no-hwnd-fallback`
-- `swipe_runtime=one-native-swipe-points-batch`
-- `recognition_library=multi-dev-first-auto-pro-copy-in`
+## Không được regression
 
-Sau `[1]` PASS mới `[2]`.
-
-## Thứ tự live test tiếp theo
-
-1. Multi DEV mở bình thường.
-2. `TỰ TẠO AUTO` → `📂 Load Function` → chọn `9 Táo sấy - 9 Vải vàng`.
-3. Tab không còn chỉ một row FUNCTION.
-4. Phải thấy nhiều row MODULE/CLICK/SWIPE/WAIT/NHẬN DIỆN/GATE/LOOP đúng thứ tự.
-5. Header phải có `FULL SOURCE VIEW • chỉ đọc • runtime vẫn gọi proven function_1`.
-6. Sau đó mới tiếp tục test Swipe multi-point và recognition library của v1.2.
-
-## Blocker nghiệp vụ vẫn còn
-
-Built-in Function 1 kết thúc sau SX Vải vàng ở khu vực tầng 3. Route `tầng 3 → main` trước sale-after-loop chưa live-prove đầy đủ. Builder không tự giải quyết/đoán route này.
+- Không popup lỗi blocking cho AUTO Multi DEV.
+- Không retry mù destructive transaction nhiều lần; runtime error phải recover main rồi restart pipeline.
+- Không dùng background account làm exact-main gate.
+- Không click mù nút xuống tầng.
+- Không coi `o_trong` là bằng chứng panel production đã mở.
+- Không xóa persistent settings khi rebuild/update.
+- Không click quảng cáo trả phí.
+- Không click ô đang có QC khi kiểm tra quảng cáo.
+- Không dừng advertisement traversal chỉ vì quầy full hoặc kho hết VP.
+- Không đụng luồng Dọn quầy ổn định khi sửa AUTO Main.
 
 ## Read-first cho phiên AI kế tiếp
 
 1. `AGENTS.md`
 2. `AI_COORDINATION.md`
 3. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`
-4. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_V13_HANDOFF.md`
-5. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_V12_HANDOFF.md` chỉ để xem lịch sử v1.2.
-6. `docs/AUTO_MULTI_DEV_AUTO_BUILDER_V11_HANDOFF.md` chỉ để xem lịch sử v1.1.
+4. `docs/AUTO_MULTI_DEV_FUNCTION_ONE.md`
+5. `components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/workflow.py`
+6. `components/clientjs-auto/kvtm_automation/actions/stall_advertising.py`
+7. `components/clientjs-auto/kvtm_automation/actions/function_one_pass_three_navigation.py`
+8. `packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1`
