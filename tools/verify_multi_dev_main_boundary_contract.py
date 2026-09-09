@@ -12,6 +12,7 @@ FUNCTION_NAV = CLEAN / "actions/function_one_navigation.py"
 PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
 WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 FUNCTION_ONE = CLEAN / "workflows/auto_function_one/workflow.py"
+AUTO_VP_SALE = CLEAN / "workflows/auto_vp_sale/workflow.py"
 WAREHOUSE = CLEAN / "workflows/production_warehouse_recovery.py"
 
 
@@ -41,6 +42,7 @@ def main() -> int:
     pass_nav = read(PASS_THREE_NAV)
     worker = read(WORKER)
     function_one = read(FUNCTION_ONE)
+    auto_vp_sale = read(AUTO_VP_SALE)
     warehouse = read(WAREHOUSE)
 
     # Exact-main is runtime state, not a world/background image classifier.
@@ -74,6 +76,19 @@ def main() -> int:
     require(pass_nav, 'mark_camera_exact_main("floor2-to-main 1+3 deterministic route")', "Floor2→main deterministic proof missing")
     require(pass_nav, '"floor3-to-main-via-down-floor deterministic route"', "Floor3→main deterministic proof missing")
 
+    # Initial AUTO VP sale is the first business action after game entry. It must
+    # prove the lower boundary itself, then open the own stall from canonical
+    # logical geometry. The account-specific quay_hang world artwork must not be
+    # a pre-click gate; quay_hang_on remains the stable post-click panel proof.
+    require(auto_vp_sale, "def _normalize_exact_main_for_sale", "Sale exact-main normalizer missing")
+    require(auto_vp_sale, "go_down_one_toward_main(", "Sale does not behaviorally prove exact-main")
+    require(auto_vp_sale, "self.auto.popup.is_own_exact_main_screen()", "Sale does not consume runtime exact-main proof")
+    require(auto_vp_sale, "def _open_own_stall_from_exact_main", "Background-independent own-stall entry missing")
+    require(auto_vp_sale, "stall.OWN_STALL_ENTRY_POINT", "Sale does not use canonical own-stall entry geometry")
+    require(auto_vp_sale, '"quay_hang_on", threshold=0.80', "Own-stall active panel postcheck missing")
+    require(auto_vp_sale, "background_gate=disabled", "Own-stall background-exclusion marker missing")
+    forbid(auto_vp_sale, "self.auto.stall.open_own_stall()", "Sale returned to legacy quay_hang-gated stall entry")
+
     # Existing worker/function recovery paths may keep calling the exact-main
     # predicate because that predicate is now runtime-proof based; ensure they do
     # not bypass it with the legacy quay_hang world anchor.
@@ -86,6 +101,7 @@ def main() -> int:
     print("own_farm=fixed_hud")
     print("exact_main=runtime_navigation_proof")
     print("unknown_camera=bounded_godown_until_two_low_change_frames")
+    print("sale_entry=exact-main-proof->fixed-own-stall-point->quay_hang_on")
     print("background_world_anchor=forbidden_as_runtime_gate")
     print("boundary_change_max=6.0")
     print("boundary_stable_required=2")
