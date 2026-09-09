@@ -35,6 +35,19 @@ if ($probeExit -ne 0 -or [string]::IsNullOrWhiteSpace($probeHead)) {
 }
 Write-Host "Git HEAD preflight: $($probeHead.Trim())" -ForegroundColor Green
 
+# Persistent DEV settings are a build contract. This protects Dọn quầy profile
+# settings and the proven Multi speed baseline from being silently regressed by a
+# later source update.
+$PersistentSettingsVerifier = Join-Path $RepoRoot "tools\verify_multi_dev_persistent_settings_contract.py"
+if (-not (Test-Path -LiteralPath $PersistentSettingsVerifier -PathType Leaf)) {
+    throw "Missing persistent settings verifier: $PersistentSettingsVerifier"
+}
+& py.exe -3.11 $PersistentSettingsVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw "AUTO MULTI DEV persistent settings contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "AUTO MULTI DEV persistent settings contract: VERIFIED" -ForegroundColor Green
+
 # BUILD_FULL_PACKAGE.ps1 was written for newer PowerShell semantics and checks
 # LASTEXITCODE after piping native git output through Select-Object. On Windows
 # PowerShell 5.1 that value can become stale/-1 even though git succeeded.
