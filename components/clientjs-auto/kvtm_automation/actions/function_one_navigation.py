@@ -13,7 +13,8 @@ __all__ = ["FunctionOneNavigationActions", "NavigationEvidence"]
 FILE_FUNCTIONS = (
     "Đi từ màn hình chính lên tầng 1 và từ tầng 1 về main bằng đúng một goUp/goDown(1)",
     "Đi từ tầng 1 lên tầng 6 bằng phần còn lại goUp(4), goUp(1)",
-    "Đưa camera từ tầng 6 về màn hình chính bằng chuỗi đối xứng 4,1,1",
+    "Đi thẳng từ tầng 6 xuống candidate tầng 2 bằng đúng goDown(4)",
+    "Giữ route tầng 6 về main đối xứng 4,1,1 cho recovery cũ",
     "Đi từ màn hình chính lên tầng 2 bằng hai nhịp goUp(1)",
     "Kiểm tra fresh-frame change sau từng gesture và fail-closed",
     "Đánh dấu exact-main bằng route runtime đã biết, không bằng background",
@@ -97,6 +98,22 @@ class FunctionOneNavigationActions:
             "AUTO điều hướng • tầng 1 → tầng 6 • goUp(4) → goUp(1) đã có phản hồi"
         )
         return NavigationEvidence("floor1-to-floor6", changes)
+
+    def floor_6_to_floor_2(self) -> NavigationEvidence:
+        """Fast Function-1 route: floor 6 -> candidate floor 2 with one goDown(4).
+
+        The gesture itself is movement evidence only. The caller must prove the
+        destination by opening the Nước táo machine and matching ``nuoc_tao`` in
+        the panel library before production is allowed to continue.
+        """
+        changes = (
+            self._gesture(self.DOWN_FOUR, "floor6-goDown(4)-to-floor2-candidate"),
+        )
+        self.context.log(
+            "AUTO điều hướng • tầng 6 → candidate tầng 2 • goDown(4) đã có phản hồi "
+            "• chờ anchor Nước táo xác minh tầng"
+        )
+        return NavigationEvidence("floor6-to-floor2-candidate", changes)
 
     def floor_6_to_main(self) -> NavigationEvidence:
         changes = (
