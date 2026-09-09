@@ -17,6 +17,7 @@ FILE_FUNCTIONS = (
     "Mất ảnh sản phẩm tạm thời khi chờ không làm dừng AUTO",
     "Phát tín hiệu kho đầy riêng để workflow xuống quầy bán VP rồi quay lại tầng 2",
     "Kéo Nước táo xuống ô top động đúng chín lần",
+    "Mỗi lần kéo được recheck nhiều frame và retry tối đa ba gesture trước khi fail",
     "Hậu kiểm mỗi lần kéo làm giảm đúng bộ đếm ô trống",
 )
 
@@ -28,6 +29,9 @@ class AppleJuiceProductionActions:
     PRODUCT_TEMPLATE = "nuoc_tao"
     CLOSE_POINT = (965, 198)
     REQUIRED_COUNT = 9
+    DRAG_ATTEMPTS = 3
+    VERIFY_RECHECKS = 4
+    VERIFY_RECHECK_SECONDS = 0.18
 
     def __init__(self, context: AutomationContext, vision: VisionEngine,
                  waiter: Waiter, speed_config: AutoSpeedConfig | None = None) -> None:
@@ -55,6 +59,46 @@ class AppleJuiceProductionActions:
         )
         return empty, product_point, top_point
 
+    def _drag_one_with_retry(
+        self,
+        *,
+        ordinal: int,
+        product_point: tuple[int, int],
+        top_point: tuple[int, int],
+        empty_before: int,
+    ) -> int:
+        """Retry a lost/slow production gesture without failing on one early frame."""
+        last_empty = int(empty_before)
+        for drag_attempt in range(1, self.DRAG_ATTEMPTS + 1):
+            self.context.ensure_running()
+            self.vision.driver.swipe_points((product_point, top_point), duration=0.02)
+            self.waiter.sleep(self.speed_config.vp_production_delay)
+
+            for verify_round in range(1, self.VERIFY_RECHECKS + 1):
+                self.context.ensure_running()
+                current = self.slots._count_empty_slots()
+                last_empty = current
+                if current < empty_before:
+                    if drag_attempt > 1 or verify_round > 1:
+                        self.context.log(
+                            f"AUTO Nước táo • xếp {ordinal}/9 đã phục hồi sau recheck/retry "
+                            f"• drag={drag_attempt}/{self.DRAG_ATTEMPTS} • "
+                            f"verify={verify_round}/{self.VERIFY_RECHECKS} • "
+                            f"ô trống {empty_before}→{current}"
+                        )
+                    return current
+                if verify_round < self.VERIFY_RECHECKS:
+                    self.waiter.sleep(self.VERIFY_RECHECK_SECONDS)
+
+            if drag_attempt < self.DRAG_ATTEMPTS:
+                self.context.log(
+                    f"AUTO Nước táo • xếp {ordinal}/9 chưa thấy ô trống giảm sau "
+                    f"{self.VERIFY_RECHECKS} frame • thử lại gesture "
+                    f"{drag_attempt + 1}/{self.DRAG_ATTEMPTS}"
+                )
+
+        return last_empty
+
     def produce_9_apple_juices(
         self, *, close_after_success: bool = True
     ) -> ProductionResult:
@@ -62,13 +106,17 @@ class AppleJuiceProductionActions:
         empty_after = empty_before
         for ordinal in range(1, self.REQUIRED_COUNT + 1):
             self.context.ensure_running()
-            self.vision.driver.swipe_points((product_point, top_point), duration=0.02)
-            self.waiter.sleep(self.speed_config.vp_production_delay)
-            current = self.slots._count_empty_slots()
+            current = self._drag_one_with_retry(
+                ordinal=ordinal,
+                product_point=product_point,
+                top_point=top_point,
+                empty_before=empty_after,
+            )
             if current >= empty_after:
                 self.vision.driver.click(*self.CLOSE_POINT)
                 raise ScreenTimeout(
-                    f"Kéo Nước táo {ordinal}/9 không làm giảm ô trống: "
+                    f"Kéo Nước táo {ordinal}/9 không làm giảm ô trống sau "
+                    f"{self.DRAG_ATTEMPTS} lần kéo x {self.VERIFY_RECHECKS} recheck: "
                     f"trước={empty_after}, sau={current}"
                 )
             empty_after = current
