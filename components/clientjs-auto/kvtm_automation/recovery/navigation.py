@@ -115,6 +115,7 @@ class NavigationRecovery:
         """Enter a requested floor from proven main using a default or injected route."""
         floor = int(floor)
         self.ensure_main(f"{label}: trước main → tầng {floor}")
+        self.context.invalidate_camera_main(f"recovery-main-to-floor-{floor}:{label}")
         self.context.stage(f"auto-recovery-main-to-floor-{floor}")
         custom = self._from_main_routes.get(floor)
         if custom is not None:
@@ -158,6 +159,9 @@ class NavigationRecovery:
         source = int(source_floor)
         target = int(target_floor)
         self.context.ensure_running()
+        self.context.invalidate_camera_main(
+            f"recovery-floor-{source}-to-floor-{target}:{label}"
+        )
         self.context.stage(f"auto-recovery-floor-{source}-to-floor-{target}")
         custom = self._between_floor_routes.get((source, target))
         if custom is not None:
