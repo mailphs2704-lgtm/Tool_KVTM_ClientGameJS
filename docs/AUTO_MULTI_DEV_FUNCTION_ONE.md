@@ -1,37 +1,147 @@
 # AUTO MULTI DEV — Chức năng 1
 
-Chức năng 1 chỉ hoàn thành khi cùng một vòng đã sản xuất đủ **9 Táo sấy và 9 Vải vàng**. Nước táo là thành phẩm trung gian bắt buộc để sản xuất Vải vàng, không phải kết thúc chức năng.
+Cập nhật: 2026-09-09
 
-## Chuỗi hiện tại
+## Trạng thái
 
-1. Vào game, đóng popup và xác minh farm.
-2. Bán đúng VP của chức năng hiện tại: Táo sấy, Vải vàng.
-3. Chạy điểm mở rộng “check tùy chọn”; hiện chưa cấu hình nên chỉ ghi stage.
-4. Từ màn hình chính lên tầng 1; trồng 27 Táo.
-5. Đứng tầng 1, sản xuất và hậu kiểm 9 Táo sấy. Mốc 1/3.
-6. Đóng máy; tại tầng 1 chờ template thu_hoach. Chỉ khi chín mới thu hoạch 5 tầng và gieo lại 30 Táo.
-7. Vì camera đang ở tầng 1, lên tầng 6 bằng goUp(4) rồi goUp(1). Không chạy nhịp khởi tạo goUp(1) của demo màn hình chính.
-8. Ở tầng 6, kiểm tra hàng dưới cùng của sơ đồ bốn tầng; thu hoạch và gieo 6 Táo.
-9. Đưa camera từ tầng 6 về màn hình chính, rồi lên tầng 2.
-10. Xác minh máy bằng asset Multi Dev nuoc_tao.png; kéo xuống ô top động và hậu kiểm đủ 9 Nước táo.
-11. Báo TẠM PASS 2/3. Không phát stage hoàn thành chức năng 1.
-12. Bước sau: dùng 9 Nước táo sản xuất 9 Vải vàng; hậu kiểm đủ mới PASS 3/3 và hoàn thành.
+**Function 1 đã được operator chạy nhiều vòng và chốt PASS thực tế.**
 
-## Hợp đồng an toàn
+Từ mốc này, Function 1 được xem là baseline ổn định. Nếu phát sinh lỗi mới thì xử lý như regression cụ thể; không thay đổi hàng loạt các bước đang PASS nếu không có bằng chứng runtime.
 
-- Asset nghiệp vụ nằm trong components/clientjs-auto; không gọi runtime đến AUTO_PRO.
-- Ảnh sản xuất dùng template sản xuất, không dùng ảnh kho và không dùng ảnh chụp người dùng.
-- Mỗi gesture sản xuất phải làm giảm bộ đếm ô trống; không thay đổi thì dừng.
-- Route màn hình chính → tầng 6 (demo) là 1,4,1. Route tầng 1 → tầng 6 của chức năng là 4,1.
-- Chờ cây chín có timeout 120 giây, mặc định kiểm tra mỗi 0.3 giây theo cấu hình Multi Dev và luôn tôn trọng stop event.
-- Tầng 6: nếu hàng dưới cùng là chậu trống thì gieo ngay; nếu có cây chưa chín mới tiếp tục kiểm tra.
+## Điều kiện hoàn thành
 
-- Khi máy còn VP hoàn thành che phía trước, auto click liên tục tại máy; không giới hạn ba nhịp. Chỉ dừng click khi panel máy được xác minh đã mở. Lệnh Dừng AUTO và chặn kho đầy vẫn có hiệu lực.
+Một vòng Function 1 chỉ PASS khi chuỗi đã hoàn tất đầy đủ và trả hợp đồng `progress_steps=3`, `total_steps=3`, có đủ **9 Táo sấy**, **9 Vải vàng** và **27 Bông đã trồng** theo gate scheduler hiện tại.
 
-## Điều kiện runtime của chuỗi
+Nước táo là thành phẩm trung gian bắt buộc để sản xuất Vải vàng, không phải điểm kết thúc Function.
 
-Toàn bộ kéo tầng, kéo trồng/thu và kéo sản xuất trong Chức năng 1 chạy trên Bridge V3. Đường kéo nhiều điểm được gửi thành một batch native để một cấu hình thời gian có một chủ sở hữu duy nhất; không dùng luồng `CAPTURE1` cũ.
+## Chuỗi runtime hiện tại
+
+1. Worker chuẩn hóa về exact-main trước scheduler.
+2. AUTO bán VP đúng catalog của Function 1.
+3. Từ main lên tầng 1 và trồng 27 Táo.
+4. Sản xuất đủ 9 Táo sấy tại tầng 1.
+5. Chờ/thu hoạch/gieo lại Táo theo gate cây chín.
+6. Từ tầng 1 lên tầng 6 bằng route đã prove của Function.
+7. Xử lý hàng Táo ở tầng 6.
+8. Recovery tầng 6 → main.
+9. Main → tầng 2.
+10. Sản xuất đủ 9 Nước táo.
+11. Recovery tầng 2 → main.
+12. Trồng 27 Bông.
+13. Điều hướng tới tầng 3.
+14. Sản xuất đủ 9 Vải vàng.
+15. Recovery tầng 3/upper-floor → exact-main bằng navigation proof.
+16. PASS 3/3 và trả kết quả cho scheduler.
+17. Scheduler bán lại theo số vòng đã cấu hình rồi tiếp tục vòng Function kế tiếp.
+
+## Hợp đồng production đã PASS
+
+### Thu VP bằng burst x5
+
+Táo sấy, Nước táo và Vải vàng dùng chung nguyên tắc:
+
+- mỗi burst gửi đúng 5 click tức thì tại cùng tọa độ máy;
+- nghỉ theo `vp_collect_delay` sau burst;
+- tiếp tục burst cho tới khi panel được xác minh mở;
+- panel chỉ được coi là mở khi **ảnh sản phẩm đúng** xuất hiện trong `PRODUCT_SEARCH_ZONE`;
+- `o_trong` chỉ được dùng làm diagnostic, không được phép kết thúc vòng collect;
+- product-image miss tạm thời khi panel đang chờ là non-blocking và tiếp tục recheck.
+
+### Kéo sản xuất
+
+- Mỗi gesture phải làm giảm số ô trống theo hậu kiểm.
+- Với render chậm, runtime recheck nhiều frame và retry gesture có giới hạn trước khi báo lỗi.
+- Không retry mù vô hạn destructive gesture.
+
+### Kho đầy
+
+`InventoryFull` là business signal riêng:
+
+1. quay về exact-main;
+2. chạy sale VP thuộc Function hiện tại;
+3. quay lại đúng tầng sản xuất;
+4. retry đúng production call đang dở.
+
+Không nuốt generic `ScreenTimeout` vào warehouse recovery.
+
+## Exact-main và điều hướng đa background
+
+Không dùng background/quầy của account làm exact-main gate.
+
+Hợp đồng:
+
+- own farm nhận bằng HUD cố định;
+- exact-main nhận bằng bằng chứng navigation runtime;
+- unknown camera dùng goDown có giới hạn;
+- fallback main boundary: 2 lần liên tiếp `frame_change <= 6.0`;
+- nếu sau `goDown(1)` xuất hiện nút `XUỐNG` ở mép dưới thì nhận diện nút và click đúng `match.center`;
+- không click mù tọa độ `(497,978)`;
+- tầng 1 không có nút XUỐNG là trạng thái bình thường;
+- upper-floor recovery chain tối đa 10 bước.
+
+Điều này bắt buộc vì mỗi account có farm/background khác nhau.
+
+## AUTO bán VP của Function 1
+
+Function 1 mặc định bán:
+
+- `tao_say`;
+- `vai_vang`.
+
+Mỗi listing phải qua exact-x10 gate và hậu kiểm screen-change trước khi được ghi nhận SOLD.
+
+### Quảng cáo quầy
+
+Mỗi lượt sale có 3 checkpoint QC gần physical slot `1 / 10 / 20`:
+
+- nếu ô đã có dấu QC đỏ → bỏ qua, không click;
+- nếu chưa QC → click listing và kiểm tra popup;
+- nếu nút xanh `Đặt quảng cáo` đã hồi → click đúng nút miễn phí;
+- nếu còn cooldown → đóng X và tiếp tục;
+- không click nút kim cương/quảng cáo trả phí;
+- lỗi QC là non-blocking;
+- quầy full hoặc kho hết VP vẫn tiếp tục đi hết ba checkpoint QC và thu vàng.
+
+## Cấu hình tốc độ baseline
+
+Multi DEV persistent baseline hiện khóa:
+
+- kéo tầng: `0.350s`;
+- trồng/thu: `0.035s`;
+- sản xuất VP: `0.070s`;
+- kiểm tra cây: `0.100s`.
+
+Settings operator đã lưu trong `%APPDATA%\KVTM Multi DEV` vẫn là authoritative và không bị rebuild `dist` xóa.
 
 ## Biên thực thi
 
-Chuỗi Chức năng 1 chạy trọn vẹn trong một worker process riêng cho từng profile. Từ vào game, bán VP, trồng Táo, sản xuất Táo sấy đến Nước táo đều dùng cùng một `EngineDriver V3`; không chuyển driver giữa các chừng và không chạy logic automation trong GUI Multi.
+- Mỗi profile chạy một isolated worker riêng.
+- Runtime ảnh + input dùng Bridge V3.
+- Không HWND fallback trong AUTO runtime.
+- Không chạy automation business logic trong GUI thread Multi.
+- Runtime error policy: recover exact-main rồi restart pipeline; không popup blocking.
+
+## Build gates liên quan
+
+Các verifier chính bảo vệ Function 1:
+
+- `tools/verify_auto_main_sale_contract.py`
+- `tools/verify_auto_main_planting_contract.py`
+- `tools/verify_auto_main_production_contract.py`
+- `tools/verify_auto_floor_navigation_contract.py`
+- `tools/verify_multi_dev_main_boundary_contract.py`
+- `tools/verify_auto_vp_advertising_contract.py`
+
+## Quy tắc regression
+
+Không được đưa trở lại các hành vi sau:
+
+- `o_trong` tự chứng minh panel production đã mở;
+- click mù nút xuống tầng;
+- background farm làm exact-main gate;
+- popup error blocking toàn Multi;
+- retry destructive transaction 3–10 lần tại cùng trạng thái mà không recover;
+- sale bỏ qua exact-x10/post-verify;
+- quảng cáo click ô đã có QC;
+- quảng cáo click nút trả phí;
+- quầy full làm sale workflow kết thúc trước khi hoàn tất ba checkpoint QC.
