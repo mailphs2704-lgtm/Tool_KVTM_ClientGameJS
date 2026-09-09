@@ -19,6 +19,7 @@ WAREHOUSE_RECOVERY = CLEAN / "workflows/production_warehouse_recovery.py"
 APPLE_JUICE = CLEAN / "actions/apple_juice_production.py"
 COTTON = CLEAN / "actions/cotton_planting.py"
 PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
+DOWN_FLOOR_DETECTOR = CLEAN / "runtime/down_floor_button.py"
 YELLOW_FABRIC = CLEAN / "actions/yellow_fabric_production.py"
 MACHINE_REPAIR = CLEAN / "actions/machine_repair.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
@@ -63,8 +64,8 @@ def main() -> int:
         for path in (
             ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, GAME_SESSION, AUTO_MAIN,
             FUNCTION_ONE, FUNCTION_NAV, WAREHOUSE_RECOVERY, APPLE_JUICE, COTTON,
-            PASS_THREE_NAV, YELLOW_FABRIC, MACHINE_REPAIR, DEV_ENTRY,
-            AUTO_MULTI_WORKER,
+            PASS_THREE_NAV, DOWN_FLOOR_DETECTOR, YELLOW_FABRIC, MACHINE_REPAIR,
+            DEV_ENTRY, AUTO_MULTI_WORKER,
         )
     }
     action = sources[ACTION]
@@ -79,6 +80,7 @@ def main() -> int:
     apple_juice = sources[APPLE_JUICE]
     cotton = sources[COTTON]
     pass_three_nav = sources[PASS_THREE_NAV]
+    down_floor_detector = sources[DOWN_FLOOR_DETECTOR]
     yellow_fabric = sources[YELLOW_FABRIC]
     machine_repair = sources[MACHINE_REPAIR]
     dev = sources[DEV_ENTRY]
@@ -230,11 +232,28 @@ def main() -> int:
     require(pass_three_nav, '"post-juice-goDown(1)-settle-4-of-4"', "Post-juice settling route incomplete")
     require(pass_three_nav, "def floor_1_to_floor_3", "Floor1→floor3 route missing")
 
-    require(pass_three_nav, "DOWN_FLOOR_POINT = (497, 978)", "AUTO PRO down-floor coordinate missing")
+    # End-loop and unknown-floor recovery must consume the transient XUỐNG control
+    # by visual proof. The historical (497,978) coordinate may remain documented,
+    # but it must never be used as a blind runtime click.
+    require(pass_three_nav, "from ..runtime.down_floor_button import find_down_floor_button", "Down-floor detector wiring missing")
+    require(pass_three_nav, "DOWN_FLOOR_BUTTON_THRESHOLD = 0.78", "Down-floor detector threshold changed")
+    require(pass_three_nav, "def _click_down_floor_if_visible", "Visual down-floor click helper missing")
+    require(pass_three_nav, "match = find_down_floor_button(", "Down-floor visual probe missing")
+    require(pass_three_nav, "self.vision.driver.click(*match.center)", "Detected down-floor center is not clicked")
+    forbid(pass_three_nav, "self.vision.driver.click(*self.DOWN_FLOOR_POINT)", "Blind fixed-coordinate down-floor click returned")
+    require(pass_three_nav, "if click_change < self.MIN_CHANGE:", "Down-floor fresh-frame fail-close missing")
+    require(pass_three_nav, "RECOVERY_DOWN_CHAIN_LIMIT = 10", "Upper-floor recovery chain limit changed")
+    require(pass_three_nav, "for step in range(1, self.RECOVERY_DOWN_CHAIN_LIMIT + 1):", "Upper-floor down-button chain missing")
     require(pass_three_nav, "def floor_3_to_main_via_down_floor", "End-loop down-floor route missing")
     require(pass_three_nav, '"function1-end-loop-floor3-goDown(1)"', "End-loop exactly-one goDown(1) missing")
-    require(pass_three_nav, "self.vision.driver.click(*self.DOWN_FLOOR_POINT)", "End-loop down-floor click missing")
-    require(pass_three_nav, "if click_change < self.MIN_CHANGE:", "Down-floor fresh-frame fail-close missing")
+
+    require(down_floor_detector, "def find_down_floor_button(", "Down-floor detector implementation missing")
+    require(down_floor_detector, "_TEMPLATE_PNG_B64", "Embedded down-floor template missing")
+    require(down_floor_detector, "width * 0.38", "Down-floor detector left search bound changed")
+    require(down_floor_detector, "width * 0.62", "Down-floor detector right search bound changed")
+    require(down_floor_detector, "height * 0.935", "Down-floor detector bottom-strip search bound changed")
+    require(down_floor_detector, "cv2.TM_CCOEFF_NORMED", "Down-floor normalized matching missing")
+
     require(function_one, "self.auto.function_one_pass_three_navigation.floor_3_to_main_via_down_floor()", "Function-1 does not use down-floor route")
     require(function_one, 'self._require_main_transition("cuối vòng Function 1 tầng 3 → main")', "End-loop exact-main gate missing")
     require(function_one, "self._normalize_end_of_loop_to_main()", "Function-1 does not normalize before loop completion")
@@ -284,7 +303,8 @@ def main() -> int:
     print("vp_collect_speed=independent")
     print("function_loop_delay=visible-main-control+between-loops-only")
     print("post_juice_navigation=1_plus_3_godown1_boundary_non_blocking_exact_main_gate")
-    print("end_loop_navigation=floor3_one_godown1+down_floor_497_978+exact_main")
+    print("end_loop_navigation=floor3_one_godown1+visual_down_button+fresh_frame+exact_main")
+    print("upper_floor_recovery=godown1+visual_down_button_chain_up_to_10+boundary_fallback")
     print("next_loop=main_required_before_restart")
     print("stable_sale_and_clear_stall=untouched")
     return 0
