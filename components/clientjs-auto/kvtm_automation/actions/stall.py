@@ -15,7 +15,7 @@ TOTAL_STALL_SLOTS = 20
 STALL_VIEW_COUNT = 4
 STALL_SHIFT = 4
 
-# Recovered AUTO PRO crop geometry at the fixed 1000x1000 ClientJS size.
+# Recovered AUTO PRO crop geometry in logical 1000x1000 coordinates.
 VISIBLE_SLOT_CENTERS = (
     (300, 456), (432, 456), (565, 456), (698, 456),
     (300, 647), (432, 647), (565, 647), (698, 647),
@@ -297,27 +297,29 @@ class StallActions:
         for _ in range(max(0, int(current_view) - 1)):
             self.previous_view()
 
-    @staticmethod
-    def listing_is_available(frame: Any, local_slot: int) -> bool:
-        """Reject sold cells before purchase planning.
+    def listing_is_available(self, frame: Any, local_slot: int) -> bool:
+        """Reject sold cells before purchase planning at any client resolution.
 
         A purchasable friend listing always shows the orange coin icon at the
-        right side of its price bar. A sold cell shows "Đã bán" in the same
-        area and has no coin. This is intentionally independent from item
-        artwork/fingerprint so repeated item types remain valid.
+        right side of its price bar. The recovered geometry stays logical 1000;
+        only this small color ROI and its pixel-count threshold are converted to
+        the current rendered frame.
         """
         slot = int(local_slot)
         if not 1 <= slot <= len(VISIBLE_SLOT_CENTERS):
             return False
         cx, _cy = VISIBLE_SLOT_CENTERS[slot - 1]
         top, bottom = ((495, 530) if slot <= 4 else (685, 720))
-        roi = frame[top:bottom, cx + 10 : cx + 48]
+        logical_zone = (cx + 10, top, 38, bottom - top)
+        x, y, width, height = self.vision.logical_zone_to_frame(
+            logical_zone, frame
+        )
+        roi = frame[y : y + height, x : x + width]
         if roi is None or getattr(roi, "size", 0) == 0:
             return False
         # BGR/BGRA channel test for the orange/yellow coin. Live Gate 3B
-        # evidence: correct top price band y=495..530 and bottom band
-        # y=685..720 separate empty/sold cells (0 pixels) from available x10
-        # listings (130..199 pixels); threshold 120 keeps a safe margin.
+        # evidence at 1000: correct top/bottom price bands separate empty/sold
+        # cells (0 pixels) from available x10 listings (130..199 pixels).
         blue = roi[:, :, 0]
         green = roi[:, :, 1]
         red = roi[:, :, 2]
@@ -328,7 +330,12 @@ class StallActions:
             & (blue < 80)
             & (red.astype("float32") > green.astype("float32") * 1.10)
         )
-        return int(coin_pixels.sum()) >= 120
+        frame_sx, frame_sy = self.vision.frame_scales(frame)
+        minimum_coin_pixels = max(
+            8,
+            int(round(120.0 * frame_sx * frame_sy)),
+        )
+        return int(coin_pixels.sum()) >= minimum_coin_pixels
 
     def scan_view(
         self,
@@ -337,25 +344,25 @@ class StallActions:
         *,
         frame: Any | None = None,
     ) -> tuple[StallSlotObservation, ...]:
-        """Capture only newly exposed physical positions for one shop view."""
+        """Capture visible physical positions using logical 1000 slot geometry."""
         import cv2
 
         self.context.ensure_running()
         source = self.vision.frame() if frame is None else frame
         height, width = source.shape[:2]
-        if width < 800 or height < 750:
-            raise RuntimeError(f"Khung ClientJS không hợp lệ: {width}x{height}")
+        frame_sx, frame_sy = self.vision.frame_scales(source)
+        if frame_sx < 0.40 or frame_sy < 0.40:
+            raise RuntimeError(
+                f"Khung ClientJS quá nhỏ cho quầy: {width}x{height} "
+                f"scale=({frame_sx:.3f},{frame_sy:.3f})"
+            )
         template_dir = Path(template_dir)
         template_dir.mkdir(parents=True, exist_ok=True)
         observations: list[StallSlotObservation] = []
         for local_slot in self.visible_local_slots(view):
             if not self.listing_is_available(source, local_slot):
                 continue
-            cx, cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
-            icon = source[
-                cy - ICON_HALF_HEIGHT : cy + ICON_HALF_HEIGHT,
-                cx - ICON_HALF_WIDTH : cx + ICON_HALF_WIDTH,
-            ].copy()
+            icon = self.crop_icon(source, local_slot)
             score = _occupancy_score(icon)
             if score < EMPTY_THRESHOLD:
                 continue
@@ -406,13 +413,19 @@ class StallActions:
                 self.next_view()
         return tuple(found)
 
-    @staticmethod
-    def crop_icon(frame: Any, local_slot: int):
+    def crop_icon(self, frame: Any, local_slot: int):
+        """Crop one logical slot icon from the actual rendered frame."""
         cx, cy = VISIBLE_SLOT_CENTERS[int(local_slot) - 1]
-        return frame[
-            cy - ICON_HALF_HEIGHT : cy + ICON_HALF_HEIGHT,
-            cx - ICON_HALF_WIDTH : cx + ICON_HALF_WIDTH,
-        ].copy()
+        logical_zone = (
+            cx - ICON_HALF_WIDTH,
+            cy - ICON_HALF_HEIGHT,
+            ICON_HALF_WIDTH * 2,
+            ICON_HALF_HEIGHT * 2,
+        )
+        x, y, width, height = self.vision.logical_zone_to_frame(
+            logical_zone, frame
+        )
+        return frame[y : y + height, x : x + width].copy()
 
 
 def _occupancy_score(image: Any) -> float:
