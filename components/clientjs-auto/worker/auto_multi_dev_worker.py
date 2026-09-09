@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 import traceback
 
 from clean_worker_support import (
@@ -22,6 +23,13 @@ _REQUIRED_BRIDGE_PROTOCOL = (
     "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2 "
     "CAPTURE3_WRITERMSG1"
 )
+# Runtime errors are handled inside the worker. Multi must not interrupt the
+# operator with modal error dialogs for transient image/navigation failures.
+# A repeated identical failure is bounded so a deterministic code bug cannot
+# create an endless recovery loop.
+_AUTO_MAIN_SAME_ERROR_LIMIT = 10
+_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS = 8
+_AUTO_MAIN_PASSIVE_MAIN_TIMEOUT = 2.5
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -140,6 +148,82 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
     }
 
 
+def _error_signature(exc: BaseException) -> str:
+    """Stable short signature used only for the repeated-error circuit breaker."""
+    return f"{type(exc).__name__}: {str(exc)}"
+
+
+def _recover_auto_main_to_main_screen(automation, context, *, reason: str) -> bool:
+    """Recover an unknown Function-1 camera state back to exact own-main.
+
+    Passive popup/main recognition is always tried before movement. If the clone
+    is still on a farm floor, reuse the public non-blocking goDown(1) primitive
+    up to eight times. Every step is followed by the exact own-main classifier.
+    No stage transaction is blindly repeated while the camera state is unknown.
+    """
+    context.stage("auto-main-error-recovery-start")
+    context.log(
+        "AUTO MULTI DEV recovery • lỗi runtime được giữ trong log, không bật popup • "
+        f"reason={reason}"
+    )
+
+    for attempt in range(1, _AUTO_MAIN_RECOVERY_NAV_ATTEMPTS + 1):
+        context.ensure_running()
+
+        try:
+            automation.ensure_main_screen(timeout=_AUTO_MAIN_PASSIVE_MAIN_TIMEOUT)
+            if automation.popup.is_own_main_screen():
+                context.stage("auto-main-error-recovery-main-ready")
+                context.log(
+                    f"AUTO recovery PASS • exact-main sau passive check {attempt}/"
+                    f"{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS}"
+                )
+                return True
+        except Exception as exc:
+            context.detail(
+                "AUTO recovery passive check • "
+                f"attempt={attempt}/{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS} • "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+        context.ensure_running()
+        try:
+            automation.function_one_pass_three_navigation.go_down_one_toward_main(
+                f"auto-error-recovery-goDown(1)-{attempt}-of-"
+                f"{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS}"
+            )
+        except Exception as exc:
+            # Recovery navigation is deliberately non-fatal. A stale frame or
+            # boundary can fail one probe; the next exact-main check decides.
+            context.detail(
+                "AUTO recovery goDown(1) nonfatal • "
+                f"attempt={attempt}/{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS} • "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+        try:
+            if automation.popup.is_own_main_screen():
+                context.stage("auto-main-error-recovery-main-ready")
+                context.log(
+                    f"AUTO recovery PASS • exact-main sau goDown {attempt}/"
+                    f"{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS}"
+                )
+                return True
+        except Exception as exc:
+            context.detail(
+                "AUTO recovery exact-main probe nonfatal • "
+                f"attempt={attempt}/{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS} • "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+    context.stage("auto-main-error-recovery-not-ready")
+    context.log(
+        "AUTO recovery chưa về exact-main sau "
+        f"{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS} nhịp • dừng yên lặng để tránh thao tác mù"
+    )
+    return False
+
+
 def main() -> int:
     configure_utf8_stdio()
     args = _parser().parse_args()
@@ -150,9 +234,14 @@ def main() -> int:
         effective_mode, builder_plan = _load_builder_plan(args)
         auto_main_config = _load_auto_main_config(args, effective_mode)
     except (json.JSONDecodeError, ValueError) as exc:
+        # Configuration failures are terminal but still non-modal in Multi.
         emit(
-            "worker_error", workflow=WORKFLOW_NAME,
-            profile_id=args.profile_id, error=str(exc),
+            "progress", workflow=WORKFLOW_NAME, profile_id=args.profile_id,
+            message=f"AUTO MULTI DEV dừng yên lặng • cấu hình lỗi: {exc}",
+        )
+        emit(
+            "worker_stopped", workflow=WORKFLOW_NAME,
+            profile_id=args.profile_id, reason=str(exc),
         )
         return 2
 
@@ -260,12 +349,13 @@ def main() -> int:
             )
             return 0
 
-        GameSessionWorkflow(automation).run(timeout=args.timeout)
-        log(
-            "PASS | vào game/đóng popup • chuẩn bị chạy Function đã chọn và bán VP theo Function"
-        )
-
+        # Floor demo keeps the old one-shot behavior. Resilient restart is only
+        # enabled for the continuous AUTO Main pipeline.
         if effective_mode == "floor-demo":
+            GameSessionWorkflow(automation).run(timeout=args.timeout)
+            log(
+                "PASS | vào game/đóng popup • chuẩn bị chạy Function đã chọn và bán VP theo Function"
+            )
             context.stage("floor-demo-1-to-6-start")
             movement = automation.floors.reference_main_to_floor_6()
             emit(
@@ -285,36 +375,127 @@ def main() -> int:
         log(
             "AUTO MULTI DEV schedule • "
             f"function_id={function_id} • bán lại sau mỗi {sale_every} vòng • "
-            f"chờ giữa vòng Function={loop_delay:.3f}s"
+            f"chờ giữa vòng Function={loop_delay:.3f}s • "
+            f"runtime_error_policy=recover-main-restart • "
+            f"same_error_limit={_AUTO_MAIN_SAME_ERROR_LIMIT}"
         )
-        result = AutoMainWorkflow(
-            automation,
-            function_id=function_id,
-            sale_every_loops=sale_every,
-            function_loop_delay_seconds=loop_delay,
-        ).run()
-        result_payload = result.to_dict()
-        result_payload.pop("profile_id", None)
-        emit(
-            "worker_finished", workflow=WORKFLOW_NAME,
-            profile_id=args.profile_id, outcome="auto_main_ready",
-            **result_payload,
-        )
-        return 0
-    except Exception as exc:
-        try:
-            if "AutomationStopped" in locals() and isinstance(exc, AutomationStopped):
+
+        last_error_signature = ""
+        same_error_count = 0
+        restart_ordinal = 0
+
+        while True:
+            context.ensure_running()
+            try:
+                GameSessionWorkflow(automation).run(timeout=args.timeout)
+                log(
+                    "PASS | vào game/đóng popup • exact-main READY • "
+                    "chuẩn bị chạy Function đã chọn và bán VP theo Function"
+                )
+                if restart_ordinal:
+                    log(
+                        f"AUTO MULTI DEV recovery • chạy lại pipeline từ main • "
+                        f"restart={restart_ordinal}"
+                    )
+
+                result = AutoMainWorkflow(
+                    automation,
+                    function_id=function_id,
+                    sale_every_loops=sale_every,
+                    function_loop_delay_seconds=loop_delay,
+                ).run()
+                result_payload = result.to_dict()
+                result_payload.pop("profile_id", None)
+                emit(
+                    "worker_finished", workflow=WORKFLOW_NAME,
+                    profile_id=args.profile_id, outcome="auto_main_ready",
+                    **result_payload,
+                )
+                return 0
+            except AutomationStopped as exc:
                 emit(
                     "worker_stopped", workflow=WORKFLOW_NAME,
                     profile_id=args.profile_id, reason=str(exc),
                 )
                 return 0
-        except Exception:
-            pass
+            except Exception as exc:
+                signature = _error_signature(exc)
+                if signature == last_error_signature:
+                    same_error_count += 1
+                else:
+                    last_error_signature = signature
+                    same_error_count = 1
+                restart_ordinal += 1
+
+                emit(
+                    "detail", workflow=WORKFLOW_NAME,
+                    profile_id=args.profile_id,
+                    message=(
+                        "AUTO runtime exception captured internally • popup=disabled • "
+                        f"restart={restart_ordinal} • same_error="
+                        f"{same_error_count}/{_AUTO_MAIN_SAME_ERROR_LIMIT}\n"
+                        + traceback.format_exc()
+                    ),
+                )
+                log(
+                    "AUTO MULTI DEV • bắt lỗi nội bộ, KHÔNG hiện popup • "
+                    f"{signature} • cùng lỗi {same_error_count}/"
+                    f"{_AUTO_MAIN_SAME_ERROR_LIMIT} • đang đưa về main"
+                )
+
+                recovered = _recover_auto_main_to_main_screen(
+                    automation, context, reason=signature
+                )
+                if not recovered:
+                    log(
+                        "AUTO MULTI DEV • recovery không xác minh được main • "
+                        "dừng yên lặng để tránh thao tác sai trạng thái"
+                    )
+                    emit(
+                        "worker_stopped", workflow=WORKFLOW_NAME,
+                        profile_id=args.profile_id,
+                        reason=(
+                            "recovery_not_main_ready; popup_disabled; "
+                            f"last_error={signature}"
+                        ),
+                    )
+                    return 0
+
+                if same_error_count >= _AUTO_MAIN_SAME_ERROR_LIMIT:
+                    log(
+                        "AUTO MULTI DEV • cùng lỗi đã lặp đủ "
+                        f"{_AUTO_MAIN_SAME_ERROR_LIMIT} lần • đã về main • "
+                        "tạm dừng yên lặng để tránh vòng lặp vô hạn"
+                    )
+                    emit(
+                        "worker_stopped", workflow=WORKFLOW_NAME,
+                        profile_id=args.profile_id,
+                        reason=(
+                            "same_error_limit_reached; main_ready=true; "
+                            f"last_error={signature}"
+                        ),
+                    )
+                    return 0
+
+                # Small cooperative settle after exact-main recovery. The next
+                # iteration reruns GameSession and then starts AUTO Main fresh.
+                context.ensure_running()
+                automation.wait.sleep(0.75)
+                continue
+    except Exception as exc:
+        # Bootstrap/bridge failures happen before the resilient pipeline exists.
+        # Keep them in logs/status only; never ask the GUI to open an error modal.
         emit(
-            "worker_error", workflow=WORKFLOW_NAME,
-            profile_id=args.profile_id, error=repr(exc),
-            traceback=traceback.format_exc(),
+            "detail", workflow=WORKFLOW_NAME, profile_id=args.profile_id,
+            message="AUTO fatal bootstrap exception • popup=disabled\n" + traceback.format_exc(),
+        )
+        emit(
+            "progress", workflow=WORKFLOW_NAME, profile_id=args.profile_id,
+            message=f"AUTO MULTI DEV dừng yên lặng • {type(exc).__name__}: {exc}",
+        )
+        emit(
+            "worker_stopped", workflow=WORKFLOW_NAME,
+            profile_id=args.profile_id, reason=repr(exc),
         )
         return 1
 
