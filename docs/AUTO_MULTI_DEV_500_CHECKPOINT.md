@@ -60,20 +60,44 @@ components/clientjs-auto/kvtm_automation/runtime/vision.py
 
 1000x1000 giữ scale=1 nên behavior hình học cũ được bảo toàn.
 
+### Stage 2 — DIRECT ROI / CUSTOM DETECTOR — DONE
+
+Commits:
+
+```text
+469fb46ff161cc186fbc346981edebf448556b34  XUỐNG logical result
+f06e53167fe319af95271ac3c285c5ab52fbb30d  production repeated-slot scaling
+```
+
+Đã làm:
+
+- `runtime/down_floor_button.py` vẫn match trên frame thật và vẫn dùng ROI tỷ lệ;
+- 500x500 dùng base template scale 0.50;
+- detector đổi frame center/box trở lại logical 1000 trước khi caller nhận;
+- `driver.click(*match.center)` vì vậy không double-scale ở 500;
+- `actions/production.py::_count_matches()` không còn crop logical zone trực tiếp;
+- logical production zone được đổi qua `VisionEngine.logical_zone_to_frame()`;
+- template `o_trong` được resize theo frame scale;
+- tâm các slot được đổi lại logical trước de-duplicate;
+- `MIN_DISTANCE=34` tiếp tục mang nghĩa logical, không bị thành 34 pixel thật ở client 500.
+
+Các path production dùng `VisionEngine.find()` như `full_kho`, product anchor, material error tự hưởng Stage 1.
+
 ## CURRENT STAGE
 
 ```text
-Stage 2 — audit direct ROI/custom detector
+Stage 3 — static contract + build gate cho adaptive resolution
 ```
 
 Next exact task:
 
-1. rà `components/clientjs-auto/kvtm_automation` cho direct `cv2.matchTemplate`, frame slicing, ROI pixel;
-2. sửa `actions/production.py::_count_matches()` dùng VisionEngine mapping;
-3. sửa `runtime/down_floor_button.py` để center trả logical 1000 nếu caller đưa vào `driver.click()`;
-4. rà các custom detector khác;
-5. commit Stage 2 riêng;
-6. cập nhật file checkpoint này sang Stage 3.
+1. tạo `tools/verify_resolution_adaptive_contract.py`;
+2. verifier khóa driver reference 1000, VisionEngine transform, production repeated-slot transform và XUỐNG logical center;
+3. verifier scan các module clean để cảnh báo direct `cv2.matchTemplate` ngoài các path đã audit;
+4. wire verifier vào `packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1` và bản PS51 nếu build [1] có dùng;
+5. commit Stage 3 riêng;
+6. cập nhật checkpoint sang Stage 4;
+7. Stage 4 mới được đụng launch/resize actual ClientJS 500x500.
 
 ## Contract bất biến
 
