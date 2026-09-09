@@ -30,7 +30,7 @@ FILE_FUNCTIONS = (
     "Khóa module nghiệp vụ độc lập và Function metadata",
     "Khóa Function tự tạo nhiều tab/load/save/call graph + Function 1 full source view",
     "Khóa Function 1 load hiển thị module/click/swipe đúng thứ tự nhưng runtime vẫn proven wrapper",
-    "Khóa Function 1 source view có Sửa máy sau từng production + down-floor exact-main boundary",
+    "Khóa Function 1 source view có Sửa máy + recovery kho đầy bán VP + down-floor exact-main boundary",
     "Khóa Swipe nhiều điểm liên tục qua native swipe_points/BATCH_SWIPE",
     "Khóa thư viện ảnh Multi DEV và import AUTO PRO vào thư viện",
     "Khóa custom image/click/swipe/wait fail-close",
@@ -146,13 +146,18 @@ def main() -> int:
     require(model, '"type": "enter_game_popup"', "Default plan enter-game block missing")
     require(model, '"type": "sell_function_vp"', "Default plan sale module missing")
 
-    require(function1_manifest, "MANIFEST_VERSION = 5",
+    require(function1_manifest, "MANIFEST_VERSION = 6",
             "Function-1 execution manifest version is not current")
     require(function1_manifest, 'return {"id": new_step_id(), "type": f"trace_{kind}"',
             "Function-1 manifest rows are not typed for ordered UI display")
     for token in (
         "PlantingActions.plant_27_apples",
         "ProductionActions.produce_9_dried_apples",
+        "ProductionWarehouseRecovery",
+        "AutoVpSaleWorkflow(function_1)",
+        "sold_listings == 0 → FAIL-CLOSE",
+        "FunctionOneNavigationActions.floor_1_to_main",
+        "FunctionOneNavigationActions.main_to_floor_1",
         "AppleSupplyActions.harvest_and_replant_five_floors",
         "FunctionOneNavigationActions.floor_6_to_main",
         "AppleJuiceProductionActions.produce_9_apple_juices",
@@ -293,7 +298,7 @@ def main() -> int:
     print("AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED")
     print("ui=multi-dev-native-style-multi-tab-function-editor")
     print("functions=create-save-load-call-nested-no-recursion+builtin-function1-full-source-view")
-    print("function1_load=full-module-click-swipe-recognize-order+repair-after-each+down-floor-main-boundary+proven-runtime-wrapper")
+    print("function1_load=full-source+repair-after-each+warehouse-full-sale-recovery+down-floor-main-boundary+proven-runtime-wrapper")
     print("gesture_picker=multi-segment-opengl-drag-to-logical-1000-no-hwnd-fallback")
     print("swipe_runtime=one-native-swipe-points-batch")
     print("image_library=multi-dev-primary-auto-pro-import-only")
