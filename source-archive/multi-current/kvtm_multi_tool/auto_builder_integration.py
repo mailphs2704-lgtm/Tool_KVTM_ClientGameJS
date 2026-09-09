@@ -14,6 +14,7 @@ FILE_FUNCTIONS = (
     "Ẩn tab Thiết kế cũ khỏi hàng chức năng của Multi DEV",
     "Thay khối mô tả AUTO MULTI DEV bằng menu chọn Function + số vòng giữa hai lần bán",
     "Hiển thị trực tiếp thời gian chờ giữa các vòng Function trên AUTO MULTI DEV",
+    "Thêm công tắc chung qua nhà bạn #1 sau mỗi ba vòng Function để làm mới scene/item treo",
     "Bổ sung Tốc độ thu VP vào đúng cửa sổ Cấu hình tốc độ hiện có",
     "Đưa Log hành động + Log chi tiết xuống hàng riêng dưới nút AUTO MULTI DEV",
     "Ghi cấu hình Function AUTO Main theo từng run mà không thay Bridge/capture ownership",
@@ -23,6 +24,7 @@ FILE_FUNCTIONS = (
 _AUTO_MAIN_FUNCTION_OPTIONS = (
     ("function_1", "9 Táo sấy - 9 Vải vàng"),
 )
+_FRIEND_REFRESH_SETTING_KEY = "auto_multi_dev_friend_refresh_enabled"
 
 
 def _install_vp_collect_speed_control(core) -> None:
@@ -65,6 +67,29 @@ def install_auto_builder_integration(app_class, core) -> None:
         self._auto_multi_dev_selected_function_id = function_id
         self.auto_multi_dev_function_label.set(options[function_id])
 
+    def _load_friend_refresh_setting(self) -> bool:
+        """Read the DEV-only toggle while preserving the base settings schema."""
+        enabled = False
+        try:
+            raw = json.loads(core.SETTINGS_FILE.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                enabled = bool(raw.get(_FRIEND_REFRESH_SETTING_KEY, False))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            enabled = False
+        # Reinsert into the in-memory settings object so every later native
+        # save_settings(self.settings) call preserves this integration key.
+        self.settings[_FRIEND_REFRESH_SETTING_KEY] = enabled
+        return enabled
+
+    def _save_auto_multi_dev_friend_refresh(self) -> None:
+        enabled = bool(self.auto_multi_dev_friend_refresh_enabled.get())
+        self.settings[_FRIEND_REFRESH_SETTING_KEY] = enabled
+        core.save_settings(self.settings)
+        self.note.set(
+            "AUTO MULTI DEV • làm mới item treo qua nhà bạn #1 sau mỗi 3 vòng: "
+            + ("BẬT" if enabled else "TẮT")
+        )
+
     def _apply_requested_dev_layout(self) -> None:
         tab_buttons = getattr(self, "auto_tab_buttons", {})
         designer_button = tab_buttons.get("clear_stall_designer")
@@ -101,7 +126,8 @@ def install_auto_builder_integration(app_class, core) -> None:
         controls.columnconfigure(0, weight=3)
         controls.columnconfigure(1, weight=2)
         controls.columnconfigure(2, weight=2)
-        controls.columnconfigure(3, weight=3)
+        controls.columnconfigure(3, weight=2)
+        controls.columnconfigure(4, weight=3)
 
         function_box = core.ttk.Frame(controls, style="Detail.TFrame")
         function_box.grid(row=0, column=0, sticky="ew", padx=(0, 14))
@@ -183,18 +209,40 @@ def install_auto_builder_integration(app_class, core) -> None:
         )
         self.auto_multi_dev_function_loop_delay_spin.pack(anchor="w", pady=(6, 0))
 
+        refresh_box = core.ttk.Frame(controls, style="Detail.TFrame")
+        refresh_box.grid(row=0, column=3, sticky="ew", padx=(0, 14))
+        core.ttk.Label(
+            refresh_box,
+            text="LÀM MỚI ITEM TREO",
+            style="AutoKey.TLabel",
+        ).pack(anchor="w")
+        self.auto_multi_dev_friend_refresh_enabled = core.tk.BooleanVar(
+            value=self._load_friend_refresh_setting()
+        )
+        self.auto_multi_dev_friend_refresh_button = self._make_toggle_button(
+            refresh_box,
+            "Qua bạn #1 / 3 vòng",
+            self.auto_multi_dev_friend_refresh_enabled,
+            self._save_auto_multi_dev_friend_refresh,
+        )
+        self.auto_multi_dev_friend_refresh_button.configure(
+            anchor="center", padx=9, pady=6
+        )
+        self.auto_multi_dev_friend_refresh_button.pack(fill="x", pady=(4, 0))
+
         note_box = core.ttk.Frame(controls, style="Detail.TFrame")
-        note_box.grid(row=0, column=3, sticky="ew")
+        note_box.grid(row=0, column=4, sticky="ew")
         core.ttk.Label(
             note_box,
             text=(
                 "Vào game + đóng popup → bán VP lần 1 → chạy Function. "
-                "Ô chờ chỉ áp dụng giữa hai vòng Function; không tác động thao tác khác."
+                "Nếu bật làm mới: sau vòng 3/6/9..., bán đến hạn xong sẽ sang "
+                "nhà bạn đầu tiên rồi quay về nhà trước vòng kế tiếp."
             ),
             style="AutoValue.TLabel",
             anchor="w",
             justify="left",
-            wraplength=310,
+            wraplength=330,
         ).pack(fill="x", pady=(17, 0))
 
         start_button.configure(command=self._start_configured_auto_main)
@@ -279,11 +327,18 @@ def install_auto_builder_integration(app_class, core) -> None:
             return
         self.auto_multi_dev_function_loop_delay.set(loop_delay)
 
+        friend_refresh_enabled = bool(
+            self.auto_multi_dev_friend_refresh_enabled.get()
+        )
+        self.settings[_FRIEND_REFRESH_SETTING_KEY] = friend_refresh_enabled
+        core.save_settings(self.settings)
+
         config = {
             "version": 1,
             "function_id": function_id,
             "sale_every_loops": sale_every,
             "function_loop_delay_seconds": loop_delay,
+            "friend_refresh_enabled": friend_refresh_enabled,
         }
         for profile_id in selected:
             self._auto_main_pending_config[profile_id] = dict(config)
@@ -291,7 +346,8 @@ def install_auto_builder_integration(app_class, core) -> None:
         label = dict(_AUTO_MAIN_FUNCTION_OPTIONS)[function_id]
         self.note.set(
             f"AUTO MULTI DEV • {label} • bán lại sau {sale_every} vòng • "
-            f"chờ giữa vòng {loop_delay:g}s"
+            f"chờ giữa vòng {loop_delay:g}s • qua bạn #1/3 vòng="
+            f"{'BẬT' if friend_refresh_enabled else 'TẮT'}"
         )
         original_start_clean_session(self)
 
@@ -385,5 +441,7 @@ def install_auto_builder_integration(app_class, core) -> None:
     app_class._finish_clean_main = finish_clean_main
     app_class._start_auto_builder_plan = start_auto_builder_plan
     app_class._select_auto_multi_dev_function = _select_auto_multi_dev_function
+    app_class._save_auto_multi_dev_friend_refresh = _save_auto_multi_dev_friend_refresh
+    app_class._load_friend_refresh_setting = _load_friend_refresh_setting
     app_class._start_configured_auto_main = start_configured_auto_main
     app_class._kvtm_auto_builder_installed = True
