@@ -30,7 +30,7 @@ FILE_FUNCTIONS = (
     "Khóa GUI chọn Function + số vòng giữa hai lần bán + chờ giữa vòng Function",
     "Khóa công tắc qua nhà bạn #1 sau mỗi ba vòng Function và handoff tới worker",
     "Khóa maintenance dùng navigation Dọn-quầy đã prove nhưng không chạy business Dọn quầy",
-    "Khóa restart ClientJS chỉ tại safe boundary sau Function đủ vòng + sale hoàn tất",
+    "Khóa restart ClientJS 2 giờ chỉ tại safe boundary sau Function đủ vòng + sale hoàn tất",
     "Khóa relaunch đúng profile và resume worker mà không sale lặp ngay sau restart",
     "Khóa vào game/đóng popup trước sale lần 1 và Function loop",
     "Khóa sale lần 2..N chỉ sau đủ số vòng cấu hình",
@@ -141,11 +141,11 @@ def main() -> int:
     require(integration, "self._save_auto_multi_dev_friend_refresh", "Friend-refresh toggle save hook missing")
     require(integration, '"friend_refresh_enabled": friend_refresh_enabled',
             "GUI does not persist friend-refresh into per-run marker")
-    require(integration, '_CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0',
-            "ClientJS restart live-test interval must remain 60 seconds until PASS")
+    require(integration, '_CLIENT_RESTART_INTERVAL_SECONDS = 7200.0',
+            "ClientJS production restart interval must remain 2 hours")
     require(integration, '_CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"',
             "ClientJS restart handoff prefix missing")
-    require(integration, '"client_restart_interval_seconds": _CLIENT_RESTART_TEST_INTERVAL_SECONDS',
+    require(integration, '"client_restart_interval_seconds": _CLIENT_RESTART_INTERVAL_SECONDS',
             "GUI run marker does not carry ClientJS restart interval")
     require(integration, '"skip_initial_sale_once": False',
             "Initial AUTO run must keep sale #1")
@@ -177,8 +177,8 @@ def main() -> int:
     require(auto_main, "friend_refresh_enabled: bool = False", "AUTO Main friend-refresh input missing")
     require(auto_main, "FRIEND_REFRESH_EVERY_LOOPS = 3", "Friend-refresh interval must remain exactly three loops")
     require(auto_main, "self.friend_refresh = FriendRefreshWorkflow(", "Common friend-refresh workflow not wired")
-    require(auto_main, "CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0",
-            "Scheduler ClientJS restart live-test interval changed before PASS")
+    require(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 7200.0",
+            "Scheduler ClientJS restart interval must remain 2 hours")
     require(auto_main, "CLIENT_RESTART_REQUEST_PREFIX = \"CLIENT_RESTART_REQUESTED\"",
             "Scheduler restart request prefix missing")
     require(auto_main, "self._load_runtime_maintenance_config()",
@@ -270,7 +270,7 @@ def main() -> int:
     print("flow=game-session+sale1+selected-function-loop+sale-every-n-loops")
     print("friend_refresh=gui-toggle+every3-function-loops+friend1-return-home")
     print("friend_refresh_navigation=reuse-clean-navigation-assets-no-friend-stall")
-    print("client_restart=TEST60s+defer-until-function-sale-boundary+same-profile-relaunch")
+    print("client_restart=2h+defer-until-function-sale-boundary+same-profile-relaunch")
     print("client_restart_resume=skip-duplicate-initial-sale+new-worker+new-bridge-generation")
     print("function_loop_delay=visible+between-loops-only+stop-aware")
     print("function_select=verified-complete-functions-only")
