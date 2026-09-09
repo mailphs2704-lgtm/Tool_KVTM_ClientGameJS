@@ -20,6 +20,7 @@ FILE_FUNCTIONS = (
     "Xác minh đúng máy bằng template sản phẩm trước khi thao tác",
     "Đếm ô sản xuất trống bằng template và loại trùng hình học",
     "Kéo đúng chín Táo sấy từ ảnh thư viện xuống tâm ô top",
+    "Mỗi lần kéo được recheck nhiều frame và retry tối đa ba gesture trước khi fail",
     "Hậu kiểm số ô trống giảm và dừng an toàn nếu giao dịch không khớp",
 )
 
@@ -55,6 +56,9 @@ class ProductionActions:
     MIN_DISTANCE = 34
     PANEL_RECHECK_SECONDS = 1.0
     COLLECT_CLICK_BURST = 5
+    DRAG_ATTEMPTS = 3
+    VERIFY_RECHECKS = 4
+    VERIFY_RECHECK_SECONDS = 0.18
 
     def __init__(
         self,
@@ -319,6 +323,61 @@ class ProductionActions:
         )
         return empty, product_point, top_point
 
+    def _drag_dried_apple_with_retry(
+        self,
+        *,
+        ordinal: int,
+        product_point: tuple[int, int],
+        top_point: tuple[int, int],
+        empty_before: int,
+    ) -> int:
+        last_empty = int(empty_before)
+        for drag_attempt in range(1, self.DRAG_ATTEMPTS + 1):
+            self.context.ensure_running()
+            self.vision.driver.swipe_points(
+                (product_point, top_point),
+                duration=0.02,
+            )
+            self.waiter.sleep(self.speed_config.vp_production_delay)
+
+            for verify_round in range(1, self.VERIFY_RECHECKS + 1):
+                self.context.ensure_running()
+                missing = self.vision.find(
+                    self.MATERIAL_ERROR_TEMPLATE,
+                    threshold=0.80,
+                    zone=self.MATERIAL_ERROR_ZONE,
+                    scales=(0.90, 1.00, 1.10),
+                    click=False,
+                )
+                if missing is not None:
+                    self.vision.driver.click(*missing.center)
+                    self.vision.driver.click(*self.CLOSE_POINT)
+                    raise ScreenTimeout(
+                        f"Thiếu nguyên liệu khi xếp Táo sấy {ordinal}/9"
+                    )
+
+                current_empty = self._count_empty_slots()
+                last_empty = current_empty
+                if current_empty < empty_before:
+                    if drag_attempt > 1 or verify_round > 1:
+                        self.context.log(
+                            f"AUTO Táo sấy • xếp {ordinal}/9 đã phục hồi sau recheck/retry "
+                            f"• drag={drag_attempt}/{self.DRAG_ATTEMPTS} • "
+                            f"verify={verify_round}/{self.VERIFY_RECHECKS} • "
+                            f"ô trống {empty_before}→{current_empty}"
+                        )
+                    return current_empty
+                if verify_round < self.VERIFY_RECHECKS:
+                    self.waiter.sleep(self.VERIFY_RECHECK_SECONDS)
+
+            if drag_attempt < self.DRAG_ATTEMPTS:
+                self.context.log(
+                    f"AUTO Táo sấy • xếp {ordinal}/9 chưa thấy ô trống giảm sau "
+                    f"{self.VERIFY_RECHECKS} frame • thử lại gesture "
+                    f"{drag_attempt + 1}/{self.DRAG_ATTEMPTS}"
+                )
+        return last_empty
+
     def produce_9_dried_apples(
         self, *, close_after_success: bool = True
     ) -> ProductionResult:
@@ -327,30 +386,19 @@ class ProductionActions:
         queued = 0
         for ordinal in range(1, self.REQUIRED_COUNT + 1):
             self.context.ensure_running()
-            self.vision.driver.swipe_points(
-                (product_point, top_point),
-                duration=0.02,
+            current_empty = self._drag_dried_apple_with_retry(
+                ordinal=ordinal,
+                product_point=product_point,
+                top_point=top_point,
+                empty_before=empty_after,
             )
-            self.waiter.sleep(self.speed_config.vp_production_delay)
-            missing = self.vision.find(
-                self.MATERIAL_ERROR_TEMPLATE,
-                threshold=0.80,
-                zone=self.MATERIAL_ERROR_ZONE,
-                scales=(0.90, 1.00, 1.10),
-                click=False,
-            )
-            if missing is not None:
-                self.vision.driver.click(*missing.center)
-                self.vision.driver.click(*self.CLOSE_POINT)
-                raise ScreenTimeout(
-                    f"Thiếu nguyên liệu khi xếp Táo sấy {ordinal}/9"
-                )
-            current_empty = self._count_empty_slots()
             if current_empty >= empty_after:
                 self.vision.driver.click(*self.CLOSE_POINT)
                 raise ScreenTimeout(
-                    "Kéo Táo sấy không làm giảm ô trống: "
+                    "Kéo Táo sấy không làm giảm ô trống sau retry: "
                     f"lần={ordinal}/9, trước={empty_after}, sau={current_empty}, "
+                    f"drag_attempts={self.DRAG_ATTEMPTS}, "
+                    f"verify_rechecks={self.VERIFY_RECHECKS}, "
                     f"từ={product_point}, đến_top={top_point}"
                 )
             empty_after = current_empty
