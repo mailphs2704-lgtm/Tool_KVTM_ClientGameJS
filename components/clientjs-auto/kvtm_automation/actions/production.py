@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..context import AutomationContext
-from ..errors import ScreenTimeout
+from ..errors import InventoryFull, ScreenTimeout
 from ..runtime.auto_speed_config import AutoSpeedConfig
 from ..runtime.vision import VisionEngine
 from ..runtime.wait import Waiter
@@ -13,9 +13,10 @@ __all__ = ["ProductionResult", "ProductionActions"]
 FILE_FUNCTIONS = (
     "Click thu VP liên tục đến khi panel máy thực sự mở",
     "Cho phép chỉnh riêng tốc độ click thu VP trước khi panel mở",
-    "Nhận panel đã mở bằng ô trống HOẶC ảnh đúng sản phẩm để hỗ trợ máy đang kín 9 ô",
-    "Giữ nguyên panel sản xuất trong lúc còn ô đang chạy; không đóng/mở lại để recheck",
-    "Chỉ bắt đầu lượt sản xuất mới khi xác minh đủ đúng 9/9 ô trống",
+    "Nhận panel đã mở bằng ô trống hoặc ảnh đúng sản phẩm khi máy đang kín slot",
+    "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
+    "Phát tín hiệu InventoryFull riêng khi kho đầy để workflow xuống quầy bán VP",
+    "Chỉ mở máy sấy tầng 1 sau khi đã thu VP và xác minh panel",
     "Xác minh đúng máy bằng template Táo sấy trước khi thao tác",
     "Đếm ô sản xuất trống bằng template và loại trùng hình học",
     "Kéo đúng chín Táo sấy từ ảnh thư viện xuống tâm ô top",
@@ -49,7 +50,7 @@ class ProductionActions:
     REQUIRED_COUNT = 9
     MIN_DISTANCE = 34
     PANEL_RECHECK_SECONDS = 1.0
-    PANEL_PRODUCT_MISS_LIMIT = 3
+    PANEL_PRODUCT_MISS_LIMIT = 5
 
     def __init__(
         self,
@@ -156,6 +157,15 @@ class ProductionActions:
         )
         return warehouse_full is not None, empty_ready is not None
 
+    def _raise_inventory_full(self, label: str) -> None:
+        self.vision.driver.click(*self.CLOSE_POINT)
+        self.context.stage("auto-production-warehouse-full")
+        self.context.log(
+            f"AUTO {label} • phát hiện full_kho • đóng bảng cảnh báo/panel • "
+            "bàn giao workflow xuống quầy bán VP"
+        )
+        raise InventoryFull(f"{label}: kho đầy khi thu VP/sản xuất")
+
     def _wait_for_idle_open_panel(
         self,
         *,
@@ -185,10 +195,7 @@ class ProductionActions:
 
             warehouse_full, _empty_anchor = self._panel_state()
             if warehouse_full:
-                self.vision.driver.click(*self.CLOSE_POINT)
-                raise ScreenTimeout(
-                    f"{label}: kho đang đầy trong lúc chờ máy sản xuất xong"
-                )
+                self._raise_inventory_full(label)
 
             top_slot = self._find_top_empty_slot()
             empty = self._count_empty_slots()
@@ -230,10 +237,7 @@ class ProductionActions:
                     f"delay={self.speed_config.vp_collect_delay:.3f}s"
                 )
             if warehouse_full:
-                self.vision.driver.click(*self.CLOSE_POINT)
-                raise ScreenTimeout(
-                    "Đã thu VP trước máy nhưng kho đang đầy; dừng trước khi sản xuất"
-                )
+                self._raise_inventory_full("Táo sấy")
             if panel_ready:
                 self.context.log(
                     "AUTO sản xuất • đã mở đúng panel tầng 1; "
