@@ -14,6 +14,8 @@ WORKFLOW = CLEAN / "workflows/auto_apple_dryer/workflow.py"
 GAME_SESSION = CLEAN / "workflows/game_session/workflow.py"
 AUTO_MAIN = CLEAN / "workflows/auto_main/workflow.py"
 FUNCTION_ONE = CLEAN / "workflows/auto_function_one/workflow.py"
+FUNCTION_NAV = CLEAN / "actions/function_one_navigation.py"
+WAREHOUSE_RECOVERY = CLEAN / "workflows/production_warehouse_recovery.py"
 APPLE_JUICE = CLEAN / "actions/apple_juice_production.py"
 COTTON = CLEAN / "actions/cotton_planting.py"
 PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
@@ -60,8 +62,9 @@ def main() -> int:
         path: read_python(path)
         for path in (
             ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, GAME_SESSION, AUTO_MAIN,
-            FUNCTION_ONE, APPLE_JUICE, COTTON, PASS_THREE_NAV, YELLOW_FABRIC,
-            MACHINE_REPAIR, DEV_ENTRY, AUTO_MULTI_WORKER,
+            FUNCTION_ONE, FUNCTION_NAV, WAREHOUSE_RECOVERY, APPLE_JUICE, COTTON,
+            PASS_THREE_NAV, YELLOW_FABRIC, MACHINE_REPAIR, DEV_ENTRY,
+            AUTO_MULTI_WORKER,
         )
     }
     action = sources[ACTION]
@@ -71,6 +74,8 @@ def main() -> int:
     game_session = sources[GAME_SESSION]
     auto_main = sources[AUTO_MAIN]
     function_one = sources[FUNCTION_ONE]
+    function_nav = sources[FUNCTION_NAV]
+    warehouse_recovery = sources[WAREHOUSE_RECOVERY]
     apple_juice = sources[APPLE_JUICE]
     cotton = sources[COTTON]
     pass_three_nav = sources[PASS_THREE_NAV]
@@ -123,6 +128,8 @@ def main() -> int:
     require(action, "self.speed_config.vp_collect_delay", "Dried-apple collect speed binding missing")
     require(action, "self.speed_config.vp_production_delay", "Dried-apple production speed binding missing")
     require(action, '"full_kho"', "Full warehouse guard missing")
+    require(action, "raise InventoryFull(", "Full warehouse must emit InventoryFull")
+    require(action, "def _raise_inventory_full", "Shared full-warehouse signal helper missing")
     require(action, "def _find_top_empty_slot(self):", "Reusable top-slot detector missing")
     require(action, "def _wait_for_idle_open_panel", "Open-panel busy wait missing")
     require(action, "empty == self.REQUIRED_COUNT", "Production must wait for exact 9/9 empty slots")
@@ -132,6 +139,7 @@ def main() -> int:
 
     require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice production template missing")
     require(apple_juice, "panel_ready = empty_ready or product_ready", "Apple-juice full-slot panel recognition missing")
+    require(apple_juice, 'self.slots._raise_inventory_full("Nước táo")', "Apple-juice full warehouse signal missing")
     require(apple_juice, "self.slots._wait_for_idle_open_panel(", "Apple-juice open-panel wait missing")
     require(apple_juice, "current >= empty_after", "Apple-juice per-drag gate missing")
     require(apple_juice, "self.speed_config.vp_collect_delay", "Apple-juice collect speed binding missing")
@@ -143,6 +151,7 @@ def main() -> int:
     require(yellow_fabric, "REQUIRED_COUNT = 9", "Exactly nine yellow fabrics required")
     require(yellow_fabric, "MAX_OPEN_CLICKS = 30", "Yellow-fabric open loop is unbounded")
     require(yellow_fabric, "panel_ready = empty_ready or product_ready", "Yellow-fabric full-slot panel recognition missing")
+    require(yellow_fabric, 'self.slots._raise_inventory_full("Vải vàng")', "Yellow-fabric full warehouse signal missing")
     require(yellow_fabric, "self.slots._wait_for_idle_open_panel(", "Yellow-fabric open-panel wait missing")
     require(yellow_fabric, "if not panel_ready:", "Yellow-fabric panel fail-close missing")
     require(yellow_fabric, "current >= empty_after", "Yellow-fabric per-drag gate missing")
@@ -150,6 +159,21 @@ def main() -> int:
     require(yellow_fabric, "self.speed_config.vp_collect_delay", "Yellow-fabric collect speed binding missing")
     require(yellow_fabric, "self.speed_config.vp_production_delay", "Yellow-fabric production speed binding missing")
     require(yellow_fabric, "close_after_success: bool = True", "Yellow-fabric panel handoff switch missing")
+
+    # Warehouse-full recovery is a Function-level business transition, not a
+    # generic retry of image failures. It sells Function-owned VP and returns to
+    # the exact production floor before retrying only that production call.
+    require(warehouse_recovery, "except InventoryFull as exc:", "Warehouse recovery must catch only InventoryFull")
+    forbid(warehouse_recovery, "except ScreenTimeout", "Warehouse recovery must not swallow visual failures")
+    require(warehouse_recovery, "AutoVpSaleWorkflow(", "Warehouse recovery sale module missing")
+    require(warehouse_recovery, "allowed_item_ids=self.spec.sale_item_ids", "Warehouse recovery sale is not Function-bound")
+    require(warehouse_recovery, "if int(sale.sold_listings) <= 0:", "Warehouse recovery infinite-loop guard missing")
+    require(warehouse_recovery, "self._to_main(floor, label)", "Warehouse recovery does not descend before sale")
+    require(warehouse_recovery, "self._back_to_floor(floor, label)", "Warehouse recovery does not return to production floor")
+    require(function_nav, "def floor_1_to_main", "Floor-1 warehouse recovery route missing")
+    require(function_nav, "def main_to_floor_1", "Main-to-floor-1 recovery route missing")
+    require(warehouse_recovery, "self.auto.function_one_pass_three_navigation.floor_2_to_main()", "Floor-2 warehouse recovery descent missing")
+    require(warehouse_recovery, "self.auto.function_one_pass_three_navigation.floor_3_to_main_via_down_floor()", "Floor-3 warehouse recovery descent missing")
 
     # Machine repair is allowed only from a fully verified, still-open panel.
     require(automation, "self.machine_repair = MachineRepairActions(", "Resident machine repair wiring missing")
@@ -163,11 +187,17 @@ def main() -> int:
     require(machine_repair, "MIN_CLOSE_CHANGE", "Repair modal-close visual gate missing")
     forbid(machine_repair, "OCR", "Repair runtime must never depend on OCR price")
 
-    require(workflow, "produce_9_dried_apples(\n            close_after_success=False", "Dried-apple production does not keep panel open for repair")
+    require(workflow, "self.warehouse_recovery.run_production(", "Dried-apple warehouse recovery wrapper missing")
+    require(workflow, "floor=1", "Dried-apple warehouse recovery floor binding missing")
+    require(workflow, "producer=lambda: self.auto.production.produce_9_dried_apples(", "Dried-apple recovery does not retry only production")
+    require(workflow, "close_after_success=False", "Dried-apple production does not keep panel open for repair")
     require(workflow, "self.auto.machine_repair.repair_after_production(produced)", "Dried-apple machine repair missing")
-    require(function_one, "produce_9_apple_juices(\n            close_after_success=False", "Apple-juice production does not keep panel open for repair")
+    require(function_one, "self.warehouse_recovery.run_production(", "Function-1 warehouse recovery wrapper missing")
+    require(function_one, "floor=2", "Apple-juice warehouse recovery floor binding missing")
+    require(function_one, "producer=lambda: self.auto.apple_juice_production.produce_9_apple_juices(", "Apple-juice recovery does not retry only production")
     require(function_one, "self.auto.machine_repair.repair_after_production(juice)", "Apple-juice machine repair missing")
-    require(function_one, "produce_9_yellow_fabrics(\n            close_after_success=False", "Yellow-fabric production does not keep panel open for repair")
+    require(function_one, "floor=3", "Yellow-fabric warehouse recovery floor binding missing")
+    require(function_one, "producer=lambda: self.auto.yellow_fabric_production.produce_9_yellow_fabrics(", "Yellow-fabric recovery does not retry only production")
     require(function_one, "self.auto.machine_repair.repair_after_production(fabric)", "Yellow-fabric machine repair missing")
 
     require(cotton, 'COTTON_TEMPLATE = "cay_bong"', "Cotton template id changed")
@@ -217,13 +247,17 @@ def main() -> int:
     require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)", "Auto Pro goUp(4) geometry missing")
 
     for token in ("clear_stall_probe_runtime", "adb_controller.pyc"):
-        for text in (action, workflow, function_one, yellow_fabric, cotton, pass_three_nav):
+        for text in (
+            action, workflow, function_one, function_nav, warehouse_recovery,
+            yellow_fabric, cotton, pass_three_nav,
+        ):
             forbid(text, token, f"Production path touches stable/legacy path: {token}")
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
     print("startup=enter-game-popup-only-no-godown")
     print("production=keep-open-panel-wait-9-of-9+three_verified_passes+repair_after_each")
+    print("warehouse_full=InventoryFull->exact-main->function-vp-sale->same-floor-retry")
     print("machine_repair=verified_handoff+no_price_ocr")
     print("vp_collect_speed=independent")
     print("function_loop_delay=visible-main-control+between-loops-only")
