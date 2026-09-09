@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import json
 import time
 
 from ...automation import KVAutomation
+from ...errors import ClientRestartRequested
 from ..auto_builder.catalog import FunctionSpec, get_function_spec
 from ..auto_builder.modules import FunctionModule
 from ..auto_vp_sale import AutoVpSaleWorkflow
@@ -17,6 +19,8 @@ FILE_FUNCTIONS = (
     "Chạy Function hoàn chỉnh liên tục cho tới khi operator bấm Dừng",
     "Sau lần bán đầu, chỉ bán lại khi đã hoàn thành đủ số vòng cấu hình",
     "Nếu GUI bật, sau mỗi đúng ba vòng Function chạy maintenance qua nhà bạn #1 rồi quay về",
+    "Theo dõi lịch restart ClientJS chung cho mọi Function nhưng chỉ phát yêu cầu restart sau sale boundary an toàn",
+    "Nếu giờ restart đến giữa vòng Function thì chờ Function đủ vòng và bán VP xong mới restart",
     "Cho phép chờ riêng giữa hai vòng Function; không áp vào thao tác khác",
     "Giữ stop-check trước từng vòng Function, từng lượt bán, maintenance và thời gian chờ",
     "Fail-close nếu Function chưa có runner runtime hoàn chỉnh",
@@ -53,12 +57,20 @@ class AutoMainWorkflow:
     three completed Function loops it visits the first friend and returns home to
     rebuild the game scene and clear stale/floating item layers.
 
+    ClientJS restart is also scheduler-wide. During the temporary live test the
+    deadline is 60 seconds. Reaching the deadline never interrupts an in-progress
+    Function or a sale. The request is emitted only after a periodic sale has
+    completed, so the parent Multi process can close/reopen ClientJS and attach a
+    fresh worker without cutting a transactional Function in half.
+
     ``function_loop_delay_seconds`` is applied only between completed Function
     loops; it never delays the first loop and is skipped after the final loop of a
     bounded run.
     """
 
     FRIEND_REFRESH_EVERY_LOOPS = 3
+    CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0
+    CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"
 
     def __init__(
         self,
@@ -85,6 +97,17 @@ class AutoMainWorkflow:
         )
         if self.max_function_loops is not None and self.max_function_loops < 1:
             raise ValueError("max_function_loops phải >= 1 khi được cấu hình")
+
+        maintenance = self._load_runtime_maintenance_config()
+        self.client_restart_interval_seconds = float(
+            maintenance["client_restart_interval_seconds"]
+        )
+        self.skip_initial_sale_once = bool(maintenance["skip_initial_sale_once"])
+        if not 0.0 <= self.client_restart_interval_seconds <= 86400.0:
+            raise ValueError(
+                "client_restart_interval_seconds phải trong khoảng 0..86400"
+            )
+
         self.function = FunctionModule(automation)
         self.friend_refresh = FriendRefreshWorkflow(
             automation,
@@ -95,6 +118,43 @@ class AutoMainWorkflow:
         self.sold_listings = 0
         self.collected_gold_slots = 0
         self.friend_refresh_calls = 0
+        self._client_restart_due_at = 0.0
+        self._client_restart_due_announced = False
+
+    def _load_runtime_maintenance_config(self) -> dict[str, object]:
+        """Read integration-only maintenance fields from this run marker.
+
+        The isolated worker intentionally ignores these extra keys. Keeping the
+        handoff in the existing per-run marker lets the scheduler support a
+        one-shot resume flag after ClientJS restart without expanding worker CLI
+        or Bridge ownership.
+        """
+        config: dict[str, object] = {
+            "client_restart_interval_seconds": self.CLIENT_RESTART_TEST_INTERVAL_SECONDS,
+            "skip_initial_sale_once": False,
+        }
+        marker = self.context.work_dir / "auto-main-config.json"
+        try:
+            raw = json.loads(marker.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return config
+        if not isinstance(raw, dict):
+            return config
+        try:
+            config["client_restart_interval_seconds"] = float(
+                raw.get(
+                    "client_restart_interval_seconds",
+                    self.CLIENT_RESTART_TEST_INTERVAL_SECONDS,
+                )
+            )
+        except (TypeError, ValueError):
+            config["client_restart_interval_seconds"] = (
+                self.CLIENT_RESTART_TEST_INTERVAL_SECONDS
+            )
+        config["skip_initial_sale_once"] = bool(
+            raw.get("skip_initial_sale_once", False)
+        )
+        return config
 
     def _validate_function_result(self, payload: dict) -> None:
         """Keep proven Function-specific completion gates at scheduler boundary."""
@@ -133,6 +193,41 @@ class AutoMainWorkflow:
             f"AUTO MULTI DEV • bán VP lần {ordinal} hoàn tất • "
             f"Function={self.spec.label} • treo={sale.sold_listings} ô • "
             f"thu_vàng={sale.collected_gold_slots}"
+        )
+
+    def _client_restart_due(self) -> bool:
+        return bool(
+            self.client_restart_interval_seconds > 0.0
+            and self._client_restart_due_at > 0.0
+            and time.monotonic() >= self._client_restart_due_at
+        )
+
+    def _announce_client_restart_deferred(self, *, loops_since_sale: int) -> None:
+        if not self._client_restart_due() or self._client_restart_due_announced:
+            return
+        self._client_restart_due_announced = True
+        self.context.stage("auto-main-client-restart-due-deferred")
+        self.context.log(
+            "AUTO MULTI DEV • đến giờ restart ClientJS nhưng chưa ở safe boundary • "
+            f"Function đã hoàn tất={self.function_loops} vòng • "
+            f"đã {int(loops_since_sale)}/{self.sale_every_loops} vòng từ lần bán gần nhất • "
+            "tiếp tục đủ vòng và bán VP xong mới restart"
+        )
+
+    def _request_client_restart_after_sale(self) -> None:
+        self.context.ensure_running()
+        self.context.stage("auto-main-client-restart-safe-boundary")
+        self.context.log(
+            "AUTO MULTI DEV • restart ClientJS SAFE • đã hoàn tất Function boundary "
+            f"và bán VP xong • loops={self.function_loops} • sale_calls={self.sale_calls} • "
+            f"interval={self.client_restart_interval_seconds:.0f}s"
+        )
+        raise ClientRestartRequested(
+            f"{self.CLIENT_RESTART_REQUEST_PREFIX}|"
+            f"function_id={self.spec.function_id}|"
+            f"function_loops={self.function_loops}|"
+            f"sale_calls={self.sale_calls}|"
+            f"interval_seconds={self.client_restart_interval_seconds:.0f}"
         )
 
     def _friend_refresh_if_due(self) -> None:
@@ -177,6 +272,11 @@ class AutoMainWorkflow:
 
     def run(self) -> AutoMainResult:
         started = time.monotonic()
+        self._client_restart_due_at = (
+            started + self.client_restart_interval_seconds
+            if self.client_restart_interval_seconds > 0.0
+            else 0.0
+        )
         self.context.stage("auto-main-pipeline-start")
         self.context.log(
             "AUTO MULTI DEV • Function đã chọn: "
@@ -184,10 +284,19 @@ class AutoMainWorkflow:
             f"các lần sau mỗi {self.sale_every_loops} vòng • "
             f"refresh nhà bạn mỗi {self.FRIEND_REFRESH_EVERY_LOOPS} vòng="
             f"{'BẬT' if self.friend_refresh_enabled else 'TẮT'} • "
+            f"restart ClientJS TEST={self.client_restart_interval_seconds:.0f}s "
+            "(chỉ sau sale boundary) • "
             f"chờ giữa vòng Function={self.function_loop_delay_seconds:.3f}s"
         )
 
-        self._sale_once(ordinal=1)
+        if self.skip_initial_sale_once:
+            self.context.stage("auto-main-initial-sale-skipped-after-client-restart")
+            self.context.log(
+                "AUTO MULTI DEV • resume sau restart ClientJS • bỏ sale đầu một lần "
+                "vì sale an toàn đã hoàn tất ngay trước khi restart"
+            )
+        else:
+            self._sale_once(ordinal=1)
         loops_since_sale = 0
 
         while True:
@@ -213,11 +322,19 @@ class AutoMainWorkflow:
                 f"đã {loops_since_sale}/{self.sale_every_loops} vòng từ lần bán gần nhất"
             )
 
-            # Keep the established sale schedule first. If loop 3/6/9 is also a
-            # sale boundary, finish sale/QC before the scene-refresh round trip.
+            self._announce_client_restart_deferred(
+                loops_since_sale=loops_since_sale
+            )
+
+            # Keep the established sale schedule first. Restart is permitted only
+            # after this sale returns, never merely because the timer expired.
             if loops_since_sale >= self.sale_every_loops:
                 self._sale_once(ordinal=self.sale_calls + 1)
                 loops_since_sale = 0
+                if self._client_restart_due():
+                    # A full ClientJS restart supersedes same-boundary friend
+                    # refresh; the fresh client scene is already a stronger reset.
+                    self._request_client_restart_after_sale()
 
             self._friend_refresh_if_due()
 
