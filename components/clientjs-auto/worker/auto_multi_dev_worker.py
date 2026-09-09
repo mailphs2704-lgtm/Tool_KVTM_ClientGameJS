@@ -154,43 +154,55 @@ def _error_signature(exc: BaseException) -> str:
 
 
 def _recover_auto_main_to_main_screen(automation, context, *, reason: str) -> bool:
-    """Recover an unknown Function-1 camera state back to exact own-main.
+    """Normalize an unknown own-farm camera state back to true exact-main.
 
-    Passive popup/main recognition is always tried before movement. If the clone
-    is still on a farm floor, reuse the public non-blocking goDown(1) primitive
-    up to eight times. Every step is followed by the exact own-main classifier.
-    No stage transaction is blindly repeated while the camera state is unknown.
+    ``PopupActions.is_own_main_screen`` is intentionally only an own-farm HUD
+    classifier: the same HUD remains visible on floor 1/2/3/... . Recovery must
+    therefore never accept that signal as exact-main. First close modal/portal
+    state, then require the dedicated world-space stall anchor. If that anchor is
+    absent, send bounded goDown(1) steps and re-check the exact-main anchor after
+    every step. This safely recovers a failure that happened on floor 2 without
+    restarting the sale loop from the wrong camera position.
     """
     context.stage("auto-main-error-recovery-start")
     context.log(
-        "AUTO MULTI DEV recovery • lỗi runtime được giữ trong log, không bật popup • "
+        "AUTO MULTI DEV main-normalize • đưa camera về exact-main • "
         f"reason={reason}"
     )
 
+    # First make sure we are on our own farm and any blocking panel is closed.
+    # This may return while the camera is still on an upper farm floor; that is
+    # expected. Only is_own_exact_main_screen() is allowed to finish recovery.
+    try:
+        automation.ensure_main_screen(timeout=_AUTO_MAIN_PASSIVE_MAIN_TIMEOUT)
+    except Exception as exc:
+        context.detail(
+            "AUTO recovery farm-HUD preflight nonfatal • "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    try:
+        if automation.popup.is_own_exact_main_screen():
+            context.stage("auto-main-error-recovery-main-ready")
+            context.log("AUTO recovery PASS • exact-main đã sẵn sàng trước khi goDown")
+            return True
+    except Exception as exc:
+        context.detail(
+            "AUTO recovery initial exact-main probe nonfatal • "
+            f"{type(exc).__name__}: {exc}"
+        )
+
     for attempt in range(1, _AUTO_MAIN_RECOVERY_NAV_ATTEMPTS + 1):
         context.ensure_running()
-
         try:
-            automation.ensure_main_screen(timeout=_AUTO_MAIN_PASSIVE_MAIN_TIMEOUT)
-            if automation.popup.is_own_main_screen():
-                context.stage("auto-main-error-recovery-main-ready")
-                context.log(
-                    f"AUTO recovery PASS • exact-main sau passive check {attempt}/"
-                    f"{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS}"
-                )
-                return True
-        except Exception as exc:
-            context.detail(
-                "AUTO recovery passive check • "
-                f"attempt={attempt}/{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS} • "
-                f"{type(exc).__name__}: {exc}"
-            )
-
-        context.ensure_running()
-        try:
-            automation.function_one_pass_three_navigation.go_down_one_toward_main(
+            change = automation.function_one_pass_three_navigation.go_down_one_toward_main(
                 f"auto-error-recovery-goDown(1)-{attempt}-of-"
                 f"{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS}"
+            )
+            context.detail(
+                "AUTO recovery goDown(1) • "
+                f"attempt={attempt}/{_AUTO_MAIN_RECOVERY_NAV_ATTEMPTS} • "
+                f"frame_change={float(change):.2f}"
             )
         except Exception as exc:
             # Recovery navigation is deliberately non-fatal. A stale frame or
@@ -202,7 +214,7 @@ def _recover_auto_main_to_main_screen(automation, context, *, reason: str) -> bo
             )
 
         try:
-            if automation.popup.is_own_main_screen():
+            if automation.popup.is_own_exact_main_screen():
                 context.stage("auto-main-error-recovery-main-ready")
                 context.log(
                     f"AUTO recovery PASS • exact-main sau goDown {attempt}/"
@@ -271,7 +283,7 @@ def main() -> int:
         )
 
         from kvtm_automation import AutomationContext, KVAutomation
-        from kvtm_automation.errors import AutomationStopped
+        from kvtm_automation.errors import AutomationStopped, ScreenTimeout
         from kvtm_automation.workflows.game_session import GameSessionWorkflow
 
         channel = StopChannel(
@@ -388,6 +400,27 @@ def main() -> int:
             context.ensure_running()
             try:
                 GameSessionWorkflow(automation).run(timeout=args.timeout)
+
+                # GameSession intentionally owns only portal/popup/own-farm HUD
+                # recovery and does not move the camera. Before sale #1 or any
+                # Function restart, require the world-space exact-main anchor.
+                # This makes starting AUTO while the client is already on floor 2
+                # safe: the worker normalizes downward before touching the stall.
+                if not automation.popup.is_own_exact_main_screen():
+                    log(
+                        "AUTO MULTI DEV • farm HUD READY nhưng camera chưa ở exact-main "
+                        "• chuẩn hóa xuống màn hình chính trước khi chạy scheduler"
+                    )
+                    normalized = _recover_auto_main_to_main_screen(
+                        automation,
+                        context,
+                        reason="pipeline-start-camera-normalize",
+                    )
+                    if not normalized:
+                        raise ScreenTimeout(
+                            "Không chuẩn hóa được camera về exact-main trước AUTO Main"
+                        )
+
                 log(
                     "PASS | vào game/đóng popup • exact-main READY • "
                     "chuẩn bị chạy Function đã chọn và bán VP theo Function"
