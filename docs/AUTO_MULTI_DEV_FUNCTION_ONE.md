@@ -29,7 +29,7 @@ Nước táo là thành phẩm trung gian bắt buộc để sản xuất Vải 
 11. Sản xuất đủ 9 Nước táo và Sửa máy.
 12. Recovery tầng 2 → exact-main.
 13. Trồng 27 Bông.
-14. Từ mốc tầng 1 lên tầng 3 bằng **true AUTO PRO `goUp(2)` mode 2**, một command tại `(257,416)`, không còn `goUp(1)` hai lần.
+14. Từ mốc tầng 1 lên tầng 3 bằng **click chậu tầng 4 tại `(257,191)`**. Điểm cũ `(257,416)` đã live-test và chỉ đưa camera lên tầng 2 nên không được dùng cho bước Vải vàng.
 15. Sản xuất đủ 9 Vải vàng và Sửa máy.
 16. Recovery tầng 3/upper-floor → exact-main bằng navigation proof.
 17. PASS 3/3 và trả kết quả cho scheduler.
@@ -64,24 +64,26 @@ Fallback direct-floor miss:
 5. production Nước táo chạy lại qua transaction chuẩn;
 6. `InventoryFull` vẫn do warehouse recovery chuẩn xử lý, không bị probe nuốt.
 
-## True AUTO PRO goUp(2) cho Bông → Vải vàng
+## Bông → Vải vàng: click đúng chậu tầng 4
 
-Forensic bytecode `adb_controller.goUp` đã xác nhận `num_up` là **mode**, không phải count:
+Forensic bytecode `adb_controller.goUp` từng cho thấy các điểm:
 
 - mode 1: swipe `(514,214) → (514,314)`;
-- **mode 2: click `(257,416)`**;
+- mode 2: click `(257,416)`;
 - mode 3: click `(257,191)`;
 - mode 4: swipe `(387,69) → (387,918)`.
 
-Sau trồng Bông, route tầng 1 → tầng 3 hiện phát đúng một mode 2:
+**Live test 2026-09-09 đã sửa cách hiểu:** trong trạng thái Function 1 sau gieo Bông, click `(257,416)` chỉ đưa camera tới tầng 2. Để camera tới máy Vải vàng tầng 3, runtime phải click điểm chậu cao hơn ở tầng 4, dùng tọa độ recovered `(257,191)`.
+
+Chuỗi hiện tại:
 
 1. click common side-close `(975,316)`;
-2. click mode 2 `(257,416)`;
+2. click chậu tầng 4 `(257,191)`;
 3. chờ `0.70s` + post wait `0.15s`;
 4. hậu kiểm fresh-frame change;
-5. fail-closed nếu command không tạo phản hồi hình ảnh.
+5. production Vải vàng tiếp tục xác minh `vai_vang`; nếu panel mở ra là máy khác thì kích hoạt wrong-machine recovery.
 
-Không được regression về hai lần `goUp(1)` cho route này.
+Không được regression về `(257,416)` hoặc hai lần `goUp(1)` cho route này.
 
 ## Hợp đồng production đã PASS
 
@@ -92,9 +94,30 @@ Táo sấy, Nước táo và Vải vàng dùng chung nguyên tắc:
 - mỗi burst gửi đúng 5 click tức thì tại cùng tọa độ máy;
 - nghỉ theo `vp_collect_delay` sau burst;
 - tiếp tục burst cho tới khi panel được xác minh mở;
-- panel chỉ được coi là mở khi **ảnh sản phẩm đúng** xuất hiện trong `PRODUCT_SEARCH_ZONE`;
-- `o_trong` chỉ được dùng làm diagnostic, không được phép kết thúc vòng collect;
-- product-image miss tạm thời khi panel đang chờ là non-blocking và tiếp tục recheck.
+- panel đúng chỉ được coi là mở khi **ảnh sản phẩm yêu cầu** xuất hiện trong `PRODUCT_SEARCH_ZONE`;
+- `o_trong` chỉ được dùng làm diagnostic, không được phép tự chứng minh đúng máy;
+- product-image miss tạm thời khi panel đã xác minh đúng là non-blocking và tiếp tục recheck.
+
+### Sai máy / sai tầng
+
+Khi panel production đã mở nhưng vùng thư viện hiện **một VP production khác** trong bộ:
+
+- `tao_say`;
+- `nuoc_tao`;
+- `vai_vang`;
+
+runtime phải coi đây là bằng chứng `WrongProductionMachine`, không được tiếp tục click thu VP.
+
+Ví dụ đang cần `vai_vang` nhưng panel hiện `nuoc_tao`:
+
+1. đóng panel SX ngay;
+2. không tin tầng dự kiến hiện tại;
+3. dùng unknown-floor `goDown(1)` + nút `XUỐNG` + main-boundary để chứng minh exact-main;
+4. từ exact-main đi lại đúng tầng 3;
+5. retry production Vải vàng;
+6. lần retry vẫn phải xác minh `vai_vang` trước khi xếp hàng.
+
+Wrong-machine recovery giới hạn tối đa `3` lần để không tạo vòng điều hướng vô hạn.
 
 ### Kéo sản xuất
 
@@ -111,7 +134,7 @@ Táo sấy, Nước táo và Vải vàng dùng chung nguyên tắc:
 3. quay lại đúng tầng sản xuất;
 4. retry đúng production call đang dở.
 
-Không nuốt generic `ScreenTimeout` vào warehouse recovery.
+Không nuốt generic `ScreenTimeout` vào recovery.
 
 ## Exact-main và điều hướng đa background
 
@@ -186,8 +209,10 @@ Production contract hiện khóa thêm:
 - direct `floor6 → goDown(4) → floor2 candidate`;
 - bounded `nuoc_tao` proof;
 - exact-main fallback + `goUp(1)x2`;
-- true AUTO PRO `goUp(2)` tại `(257,416)`;
-- cấm route Bông → tầng 3 quay lại hai `goUp(1)`.
+- Bông → tầng 3 phải click chậu tầng 4 `(257,191)`;
+- cấm runtime dùng điểm cũ `(257,416)` cho route Vải vàng;
+- panel mở nhưng VP sai máy phải đóng và phát `WrongProductionMachine`;
+- wrong-machine phải recovery unknown-floor → exact-main → đúng tầng rồi retry.
 
 ## Quy tắc regression
 
@@ -196,8 +221,9 @@ Không được đưa trở lại các hành vi sau:
 - vòng `floor6 → main → floor2` trong đường bình thường khi direct `nuoc_tao` đã PASS;
 - direct goDown(4) tự được coi là tầng 2 mà không có anchor `nuoc_tao`;
 - probe sai tầng click x5 vô hạn;
-- route Bông → Vải vàng dùng hai `goUp(1)` thay cho true mode `goUp(2)`;
-- `o_trong` tự chứng minh panel production đã mở;
+- route Bông → Vải vàng dùng `(257,416)` hoặc hai `goUp(1)`;
+- panel đã mở sai máy nhưng AUTO vẫn click thu VP vô hạn;
+- `o_trong` tự chứng minh panel production đúng máy;
 - click mù nút xuống tầng;
 - background farm làm exact-main gate;
 - popup error blocking toàn Multi;
