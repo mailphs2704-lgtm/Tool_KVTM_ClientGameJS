@@ -35,6 +35,14 @@ def check_python(path: Path) -> str:
     return text
 
 
+def method_section(text: str, start: str, end: str) -> str:
+    start_index = text.find(start)
+    end_index = text.find(end, start_index + len(start))
+    if start_index < 0 or end_index < 0:
+        raise AssertionError(f"Cannot isolate method section: {start} -> {end}")
+    return text[start_index:end_index]
+
+
 def main() -> int:
     config = check_python(CONFIG_PATH)
     action = check_python(ACTION_PATH)
@@ -88,14 +96,53 @@ def main() -> int:
     require(apple_supply, "self.speed_config.crop_check_interval",
             "Crop check interval not applied")
 
-    # VP collection is now centralized in ProductionActions so all three
-    # machines share one five-click burst implementation and one speed source.
+    # VP collection is centralized in ProductionActions so all three machines
+    # share one true x5 multi-click burst. There must be no intentional wait,
+    # capture, panel check, or stop checkpoint between the five raw clicks.
+    require(production, "def _send_collect_burst(",
+            "Raw five-click VP burst helper missing")
     require(production, "def _click_until_panel_open(",
             "Shared VP collect helper missing")
     require(production, "COLLECT_CLICK_BURST = 5",
             "Five-click VP collect burst contract missing")
-    require(production, "self.waiter.sleep(self.speed_config.vp_collect_delay)",
-            "VP collect speed not applied inside shared collect helper")
+
+    burst = method_section(
+        production,
+        "    def _send_collect_burst(",
+        "    def _click_until_panel_open(",
+    )
+    require(burst, "for _ in range(self.COLLECT_CLICK_BURST):",
+            "VP burst does not send exactly COLLECT_CLICK_BURST raw clicks")
+    require(burst, "self.vision.driver.click(*machine_point)",
+            "Raw machine click missing inside VP burst")
+    if burst.count("self.context.ensure_running()") != 1:
+        raise AssertionError(
+            "VP burst must have one stop checkpoint before x5, never between clicks"
+        )
+    if "self.waiter.sleep(" in burst:
+        raise AssertionError("VP burst contains an inter-click sleep")
+    if "_panel_state(" in burst or "_find_product_match(" in burst or ".frame(" in burst:
+        raise AssertionError("VP burst contains a vision/panel check between raw clicks")
+    if burst.index("self.context.ensure_running()") > burst.index("for _ in range"):
+        raise AssertionError("VP burst stop checkpoint must happen before the x5 loop")
+
+    collect = method_section(
+        production,
+        "    def _click_until_panel_open(",
+        "    def _wait_for_idle_open_panel(",
+    )
+    require(collect, "self._send_collect_burst(machine_point=machine_point)",
+            "Shared collect helper does not call true x5 burst")
+    require(collect, "self.waiter.sleep(self.speed_config.vp_collect_delay)",
+            "VP collect post-burst settle delay missing")
+    require(collect, "warehouse_full, empty_ready = self._panel_state()",
+            "VP collect post-burst panel check missing")
+    burst_call = collect.index("self._send_collect_burst(machine_point=machine_point)")
+    settle = collect.index("self.waiter.sleep(self.speed_config.vp_collect_delay)")
+    panel_check = collect.index("warehouse_full, empty_ready = self._panel_state()")
+    if not burst_call < settle < panel_check:
+        raise AssertionError("VP collect order must be x5 -> settle once -> panel check once")
+
     require(production, "self.speed_config.vp_production_delay",
             "VP production speed not applied to dried apple")
 
@@ -135,7 +182,7 @@ def main() -> int:
     print("AUTO MULTI DEV SPEED CONFIG STATIC CONTRACT VERIFIED")
     print("floor_swipe=independent")
     print("plant_harvest=independent")
-    print("vp_collect=shared-five-click-helper+independent_default_0.3s")
+    print("vp_collect=true-x5-no-inter-click-wait+post-burst-settle")
     print("vp_production=independent_reserved")
     print("crop_check_interval=independent_default_0.3s")
     print("stable_sale_and_clear_stall=untouched")
