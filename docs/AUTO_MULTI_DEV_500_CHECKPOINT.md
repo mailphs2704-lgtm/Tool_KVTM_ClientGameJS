@@ -97,20 +97,6 @@ BUILD_FULL_PACKAGE.ps1
 
 PS5.1 wrapper invokes the same authoritative builder, nên cũng nhận gate này.
 
-Expected marker:
-
-```text
-AUTO MULTI DEV ADAPTIVE RESOLUTION CONTRACT VERIFIED
-logical_reference=1000x1000
-production_target=500x500
-vision=logical-zone->frame-match->logical-result
-driver=logical-input->actual-client-once
-client_size=500x500-stable-before-bridge
-legacy_adaptive=neutralized-before-bridge
-down_floor=500-scale+logical-center
-production_slots=frame-scaled+logical-dedup
-```
-
 ### Stage 4 — ACTUAL CLIENT 500x500 BEFORE BRIDGE — SOURCE DONE
 
 ```text
@@ -144,27 +130,107 @@ Trước `ClientJSDriverFactory.engine()`:
 
 Điểm này cũng tự áp cho periodic ClientJS restart vì worker mới của profile restart đi lại cùng `KVAutomation` bootstrap.
 
+### Stage 4.5 — BUILD ATTEMPT #1 FOUND MORE RAW 1000 GEOMETRY — FIXED IN SOURCE
+
+Operator chạy `[1]` tại HEAD `e953c1d9d772fbe2c2598c892385902c66db7b3f`.
+
+Các static gate cũ đều PASS đến `AUTO MULTI DEV production static contract` nhưng adaptive gate fail đúng mục đích với:
+
+```text
+AssertionError: Unreviewed direct cv2.matchTemplate bypasses VisionEngine:
+actions/inventory.py, workflows/auto_builder/image_match.py
+```
+
+Không whitelist mù hai file này. Audit cho thấy cả hai thật sự còn dùng geometry frame-pixel 1000 cũ.
+
+Fix chia nhỏ:
+
+```text
+b2b1790e8d28dc3dd9aff665987abb00ba521c69  inventory fingerprint ROI/center adaptive
+3042bf8eeff6896a3d682afc2440a1edb2831fd6  Builder custom image logical/frame transform
+bb9ccd61dffdc68c925394d44532ddc021c3d68b  stall direct crop/color geometry 500-safe
+20b16bf9763753a335b31fa84ef963061cb838d0  extend adaptive verifier for all above
+```
+
+#### Inventory fingerprint
+
+`actions/inventory.py`:
+
+- fingerprint template là ảnh crop runtime được chụp trong cùng transaction, nên **không** scale thêm 0.5 lần nữa;
+- `INVENTORY_ZONE` logical 1000 -> frame ROI;
+- direct OpenCV vẫn match template ở kích thước pixel nó được capture;
+- center tìm được frame-pixel -> logical trước khi Selling dùng click;
+- 1000 behavior giữ tương đương.
+
+#### Auto Builder recognize-image
+
+`workflows/auto_builder/image_match.py`:
+
+- Builder zone vẫn là logical 0..1000;
+- zone -> frame ROI;
+- custom template reference -> actual frame scale;
+- result center/box -> logical;
+- direct OpenCV được whitelist **chỉ sau khi verifier khóa transform**.
+
+#### Stall / sale scan
+
+Trong khi audit lỗi build, phát hiện thêm blocker runtime mà matcher scan ban đầu không bắt được: `actions/stall.py` còn raw frame slicing và còn reject frame `<800x750`.
+
+Đã sửa trước khi bắt operator live-test:
+
+- slot centers/click centers vẫn logical 1000;
+- coin price ROI -> frame ROI;
+- ngưỡng 120 coin pixels scale theo `frame_sx * frame_sy` (500 -> khoảng 1/4 pixel count);
+- icon fingerprint crop -> frame ROI;
+- `scan_view` chấp nhận canonical 500x500, chỉ fail nếu scale dưới 0.40;
+- fingerprint được lưu theo actual runtime crop để resale inventory so khớp cùng pixel scale;
+- Dọn quầy business/accounting không đổi.
+
+Adaptive verifier hiện khóa luôn Inventory + Builder + Stall, ngoài Vision/Production/XUỐNG.
+
 ## CURRENT STAGE
 
 ```text
-Stage 5 — BUILD [1] + LIVE SMOKE 500x500
+Stage 5 — BUILD [1] RETRY + LIVE SMOKE 500x500
 ```
 
 Chưa được ghi `500x500 LIVE PASS` trước khi operator test.
 
 ### Next exact action
 
-Operator:
+Operator chạy lại:
 
 ```text
-đóng Multi DEV + ClientJS
-→ KVTM_DEV_CONTROL.bat
+KVTM_DEV_CONTROL.bat
 → [1]
 ```
 
-Đầu build phải dùng HEAD mới nhất (đọc branch trước khi yêu cầu operator).
+Không cần tự sửa/xóa source. Build sẽ pull branch mới.
 
-Static build phải thấy marker adaptive resolution ở trên.
+HEAD source trước checkpoint-doc commit này đã được xác nhận:
+
+```text
+20b16bf9763753a335b31fa84ef963061cb838d0
+```
+
+Sau commit tài liệu, đọc branch HEAD mới nhất trước khi kết luận build target.
+
+Static build phải thấy thêm marker:
+
+```text
+AUTO MULTI DEV ADAPTIVE RESOLUTION CONTRACT VERIFIED
+logical_reference=1000x1000
+production_target=500x500
+vision=logical-zone->frame-match->logical-result
+driver=logical-input->actual-client-once
+client_size=500x500-stable-before-bridge
+legacy_adaptive=neutralized-before-bridge
+down_floor=500-scale+logical-center
+production_slots=frame-scaled+logical-dedup
+inventory_fingerprint=current-frame-template+logical-roi-center
+builder_match=logical-zone+frame-scaled-template+logical-result
+stall_scan=logical-crops+area-scaled-coin-threshold+500-accepted
+```
 
 Sau Start AUTO, trước log Bridge V3 phải thấy:
 
@@ -184,7 +250,7 @@ Sau đó smoke theo thứ tự:
 8. nếu thuận tiện tạo kho đầy: `full_kho` -> sale recovery -> same floor;
 9. friend refresh nếu toggle bật.
 
-Nếu FAIL: lấy đoạn log từ `AUTO MULTI DEV display` tới lỗi đầu tiên; sửa đúng detector/template/zone có evidence, không thay business logic hàng loạt.
+Nếu FAIL: lấy đoạn log từ gate/lỗi đầu tiên hoặc từ `AUTO MULTI DEV display` tới lỗi runtime đầu tiên; sửa đúng detector/template/zone có evidence, không thay business logic hàng loạt.
 
 Nếu PASS: cập nhật `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md` + plan/checkpoint thành `500x500 LIVE PASS`.
 
