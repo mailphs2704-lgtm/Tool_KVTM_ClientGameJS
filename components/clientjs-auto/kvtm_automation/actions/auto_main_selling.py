@@ -44,6 +44,7 @@ class AutoMainSellingActions:
         "vai_vang": "vai_vang",
     }
     SELECTED_ITEM_ZONE = (680, 240, 180, 180)
+    SALE_CHANGE_ZONE = (180, 330, 640, 430)
 
     def __init__(
         self,
@@ -72,6 +73,14 @@ class AutoMainSellingActions:
         self._next_item_index = 0
         self._insufficient_item_ids: set[str] = set()
         self._unsafe_item_ids: set[str] = set()
+
+    def _sale_change_crop(self):
+        """Capture the destructive-sale verification ROI in logical 1000 units."""
+        frame = self.selling.vision.frame()
+        x, y, width, height = self.selling.vision.logical_zone_to_frame(
+            self.SALE_CHANGE_ZONE, frame
+        )
+        return frame[y : y + height, x : x + width].copy()
 
     def _open_and_scan_finished_goods(self) -> tuple[VpRecognition, ...]:
         """Click the basket tab and require repeated fresh-frame recognition."""
@@ -218,7 +227,7 @@ class AutoMainSellingActions:
             self._cancel_selected_item()
             return "BELOW_TEN"
 
-        before = self.selling.vision.frame()[330:760, 180:820].copy()
+        before = self._sale_change_crop()
         self.selling.vision.driver.click(*self.selling.PLACE_BUTTON)
         self.selling.waiter.settle(0.20)
         self.selling.vision.find(
@@ -231,7 +240,7 @@ class AutoMainSellingActions:
         best_change = 0.0
         deadline = time.monotonic() + 6.0
         while time.monotonic() < deadline:
-            after = self.selling.vision.frame()[330:760, 180:820].copy()
+            after = self._sale_change_crop()
             best_change = max(best_change, _mean_difference(before, after))
             if best_change >= self.selling.minimum_screen_change:
                 self.context.log(
