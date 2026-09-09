@@ -17,6 +17,7 @@ FILE_FUNCTIONS = (
     "Mất ảnh sản phẩm tạm thời khi chờ không làm dừng AUTO",
     "Phát tín hiệu kho đầy riêng để workflow xuống quầy bán VP rồi quay lại tầng 3",
     "Kéo Vải vàng xuống ô top động đúng chín lần",
+    "Mỗi lần kéo được recheck nhiều frame và retry tối đa ba gesture trước khi fail",
     "Hậu kiểm mỗi lần kéo làm giảm đúng bộ đếm ô trống",
 )
 
@@ -30,6 +31,9 @@ class YellowFabricProductionActions:
     MATERIAL_ERROR_TEMPLATE = "x"
     MATERIAL_ERROR_ZONE = (682, 337, 142, 120)
     REQUIRED_COUNT = 9
+    DRAG_ATTEMPTS = 3
+    VERIFY_RECHECKS = 4
+    VERIFY_RECHECK_SECONDS = 0.18
 
     def __init__(
         self,
@@ -65,6 +69,60 @@ class YellowFabricProductionActions:
         )
         return empty, product_point, top_point
 
+    def _drag_one_with_retry(
+        self,
+        *,
+        ordinal: int,
+        product_point: tuple[int, int],
+        top_point: tuple[int, int],
+        empty_before: int,
+    ) -> int:
+        last_empty = int(empty_before)
+        for drag_attempt in range(1, self.DRAG_ATTEMPTS + 1):
+            self.context.ensure_running()
+            self.vision.driver.swipe_points(
+                (product_point, top_point), duration=0.02
+            )
+            self.waiter.sleep(self.speed_config.vp_production_delay)
+
+            for verify_round in range(1, self.VERIFY_RECHECKS + 1):
+                self.context.ensure_running()
+                missing = self.vision.find(
+                    self.MATERIAL_ERROR_TEMPLATE,
+                    threshold=0.80,
+                    zone=self.MATERIAL_ERROR_ZONE,
+                    scales=(0.90, 1.00, 1.10),
+                    click=False,
+                )
+                if missing is not None:
+                    self.vision.driver.click(*missing.center)
+                    self._close_panel()
+                    raise ScreenTimeout(
+                        f"Thiếu nguyên liệu khi xếp Vải vàng {ordinal}/9"
+                    )
+
+                current = self.slots._count_empty_slots()
+                last_empty = current
+                if current < empty_before:
+                    if drag_attempt > 1 or verify_round > 1:
+                        self.context.log(
+                            f"AUTO Vải vàng • xếp {ordinal}/9 đã phục hồi sau recheck/retry "
+                            f"• drag={drag_attempt}/{self.DRAG_ATTEMPTS} • "
+                            f"verify={verify_round}/{self.VERIFY_RECHECKS} • "
+                            f"ô trống {empty_before}→{current}"
+                        )
+                    return current
+                if verify_round < self.VERIFY_RECHECKS:
+                    self.waiter.sleep(self.VERIFY_RECHECK_SECONDS)
+
+            if drag_attempt < self.DRAG_ATTEMPTS:
+                self.context.log(
+                    f"AUTO Vải vàng • xếp {ordinal}/9 chưa thấy ô trống giảm sau "
+                    f"{self.VERIFY_RECHECKS} frame • thử lại gesture "
+                    f"{drag_attempt + 1}/{self.DRAG_ATTEMPTS}"
+                )
+        return last_empty
+
     def produce_9_yellow_fabrics(
         self, *, close_after_success: bool = True
     ) -> ProductionResult:
@@ -73,30 +131,17 @@ class YellowFabricProductionActions:
 
         for ordinal in range(1, self.REQUIRED_COUNT + 1):
             self.context.ensure_running()
-            self.vision.driver.swipe_points(
-                (product_point, top_point), duration=0.02
+            current = self._drag_one_with_retry(
+                ordinal=ordinal,
+                product_point=product_point,
+                top_point=top_point,
+                empty_before=empty_after,
             )
-            self.waiter.sleep(self.speed_config.vp_production_delay)
-
-            missing = self.vision.find(
-                self.MATERIAL_ERROR_TEMPLATE,
-                threshold=0.80,
-                zone=self.MATERIAL_ERROR_ZONE,
-                scales=(0.90, 1.00, 1.10),
-                click=False,
-            )
-            if missing is not None:
-                self.vision.driver.click(*missing.center)
-                self._close_panel()
-                raise ScreenTimeout(
-                    f"Thiếu nguyên liệu khi xếp Vải vàng {ordinal}/9"
-                )
-
-            current = self.slots._count_empty_slots()
             if current >= empty_after:
                 self._close_panel()
                 raise ScreenTimeout(
-                    f"Kéo Vải vàng {ordinal}/9 không làm giảm ô trống: "
+                    f"Kéo Vải vàng {ordinal}/9 không làm giảm ô trống sau "
+                    f"{self.DRAG_ATTEMPTS} lần kéo x {self.VERIFY_RECHECKS} recheck: "
                     f"trước={empty_after}, sau={current}"
                 )
             empty_after = current
