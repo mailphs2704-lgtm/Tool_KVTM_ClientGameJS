@@ -27,12 +27,12 @@ Chuỗi Function 1 hiện gồm:
 8. nếu probe miss: đóng panel → background-independent exact-main recovery → `goUp(1)x2` → tầng 2;
 9. sản xuất 9 Nước táo;
 10. về main, trồng Bông;
-11. **true AUTO PRO goUp(2) mode 2 tại `(257,416)`** lên tầng 3, không còn hai goUp(1);
+11. **click chậu tầng 4 `(257,191)` từ mốc tầng 1 để camera tới tầng 3**; điểm cũ `(257,416)` đã live-test và chỉ tới tầng 2;
 12. sản xuất 9 Vải vàng;
 13. recovery về main;
 14. PASS 3/3 và tiếp tục scheduler.
 
-Các VP sản xuất dùng true x5 click burst để thu thành phẩm. Panel chỉ được coi là mở khi **ảnh sản phẩm đúng** xuất hiện trong vùng thư viện panel; `o_trong` chỉ là diagnostic và không được phép kết thúc burst sớm.
+Các VP sản xuất dùng true x5 click burst để thu thành phẩm. Panel đúng chỉ được chấp nhận khi **ảnh sản phẩm yêu cầu** xuất hiện trong vùng thư viện panel. `o_trong` chỉ là diagnostic. Nếu panel mở nhưng hiện một VP production khác (`tao_say` / `nuoc_tao` / `vai_vang`) thì runtime đóng panel ngay và recovery về exact-main thay vì tiếp tục click x5.
 
 ### Route Nước táo direct
 
@@ -55,18 +55,39 @@ Các khóa an toàn:
 
 ### Route Bông → Vải vàng
 
-Forensic `adb_controller.goUp` đã xác nhận `num_up` là mode:
+Forensic `adb_controller.goUp` từng ghi nhận:
 
 - mode1 = swipe goUp(1);
-- **mode2 = click `(257,416)`**;
+- mode2 = click `(257,416)`;
 - mode3 = click `(257,191)`;
 - mode4 = swipe goUp(4).
 
-Sau gieo Bông, Function 1 hiện dùng một true mode2:
+**Live correction 2026-09-09:** trong trạng thái Function 1 sau gieo Bông, `(257,416)` chỉ đưa camera lên tầng 2. Muốn tới máy Vải vàng tầng 3 phải click điểm chậu cao hơn ở tầng 4, dùng tọa độ recovered `(257,191)`.
 
-`click (975,316) → click (257,416) → wait 0.70s → wait 0.15s → fresh-frame gate`
+Runtime hiện chạy:
 
-Không được regression về hai lần `goUp(1)`.
+`click (975,316) → click chậu tầng 4 (257,191) → wait 0.70s → wait 0.15s → fresh-frame gate → vai_vang proof`
+
+Không được regression về `(257,416)` hoặc hai lần `goUp(1)`.
+
+### Wrong-machine recovery
+
+Lỗi đã live gặp: panel production đã mở ở **sai tầng**, ví dụ đang cần Vải vàng nhưng panel hiện Nước táo. Logic cũ chỉ thấy target `vai_vang` chưa xuất hiện nên tiếp tục burst x5 vô hạn.
+
+Runtime mới:
+
+1. sau mỗi burst x5, quét target VP trong `PRODUCT_SEARCH_ZONE`;
+2. nếu target đúng → tiếp tục transaction bình thường;
+3. nếu thấy VP production khác trong `tao_say / nuoc_tao / vai_vang` → đóng panel ngay;
+4. phát `WrongProductionMachine`;
+5. không tin tầng dự kiến, dùng unknown-floor recovery `goDown(1)` + nút XUỐNG + main-boundary để chứng minh exact-main;
+6. từ exact-main đi lại đúng tầng sản xuất yêu cầu;
+7. retry đúng production call; lần retry vẫn phải xác minh target VP;
+8. wrong-machine recovery tối đa `3` lần để không lặp vô hạn.
+
+Ví dụ Vải vàng mở nhầm Nước táo:
+
+`vai_vang expected → nuoc_tao detected → close panel → exact-main → main→floor1 → click floor4 pot (257,191) → floor3 candidate → vai_vang proof → production`
 
 ## Exact-main / recovery đa background
 
@@ -192,7 +213,8 @@ Các gate quan trọng phải PASS gồm:
 Production contract hiện phải in thêm:
 
 - `apple_to_juice=direct-goDown4+bounded-nuoc_tao-proof+exact-main-fallback`
-- `cotton_to_fabric=true-auto-pro-goUp2-mode-at-257,416`
+- `wrong_machine=WrongProductionMachine->unknown-floor-exact-main->requested-floor-retry`
+- `cotton_to_fabric=floor4-pot-anchor-at-257,191+vai_vang-proof`
 
 Sau `[1]` PASS mới mở/chạy runtime mới.
 
@@ -202,7 +224,7 @@ Sau `[1]` PASS mới mở/chạy runtime mới.
 - Không retry mù destructive transaction nhiều lần; runtime error phải recover main rồi restart pipeline.
 - Không dùng background account làm exact-main gate.
 - Không click mù nút xuống tầng.
-- Không coi `o_trong` là bằng chứng panel production đã mở.
+- Không coi `o_trong` là bằng chứng panel production đúng máy.
 - Không xóa persistent settings khi rebuild/update.
 - Không click quảng cáo trả phí.
 - Không click ô đang có QC khi kiểm tra quảng cáo.
@@ -210,7 +232,8 @@ Sau `[1]` PASS mới mở/chạy runtime mới.
 - Không quay lại đường vòng `floor6 → main → floor2` khi direct `nuoc_tao` proof đã PASS.
 - Không coi goDown(4) tự chứng minh tầng 2.
 - Không để direct floor probe click vô hạn khi lệch tầng.
-- Không dùng hai goUp(1) cho route Bông → tầng 3; phải giữ true mode2 `(257,416)`.
+- Không dùng `(257,416)` hoặc hai goUp(1) cho route Bông → tầng 3; phải click chậu tầng 4 `(257,191)`.
+- Không để panel production sai máy mở rồi tiếp tục click x5 vô hạn; phải đóng panel và exact-main recovery.
 - Không đụng luồng Dọn quầy ổn định khi sửa AUTO Main.
 
 ## Read-first cho phiên AI kế tiếp
@@ -220,8 +243,8 @@ Sau `[1]` PASS mới mở/chạy runtime mới.
 3. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`
 4. `docs/AUTO_MULTI_DEV_FUNCTION_ONE.md`
 5. `components/clientjs-auto/kvtm_automation/workflows/auto_function_one/workflow.py`
-6. `components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py`
-7. `components/clientjs-auto/kvtm_automation/actions/function_one_pass_three_navigation.py`
-8. `components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/workflow.py`
-9. `components/clientjs-auto/kvtm_automation/actions/stall_advertising.py`
+6. `components/clientjs-auto/kvtm_automation/actions/production.py`
+7. `components/clientjs-auto/kvtm_automation/workflows/production_warehouse_recovery.py`
+8. `components/clientjs-auto/kvtm_automation/actions/function_one_pass_three_navigation.py`
+9. `components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py`
 10. `packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1`
