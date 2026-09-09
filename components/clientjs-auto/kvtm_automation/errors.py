@@ -6,6 +6,10 @@ class AutomationStopped(InterruptedError):
     """Raised when the owning worker requests a cooperative stop."""
 
 
+class ClientRestartRequested(AutomationStopped):
+    """Raised only at a safe AUTO boundary to ask Multi to restart ClientJS."""
+
+
 class ScreenTimeout(AutomationError):
     """Raised when an expected visual state is not reached in time."""
 
