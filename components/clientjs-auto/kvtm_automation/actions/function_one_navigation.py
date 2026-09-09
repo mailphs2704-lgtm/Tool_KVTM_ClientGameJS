@@ -11,6 +11,7 @@ from ..runtime.wait import Waiter
 
 __all__ = ["FunctionOneNavigationActions", "NavigationEvidence"]
 FILE_FUNCTIONS = (
+    "Đi từ màn hình chính lên tầng 1 và từ tầng 1 về main bằng đúng một goUp/goDown(1)",
     "Đi từ tầng 1 lên tầng 6 bằng phần còn lại goUp(4), goUp(1)",
     "Đưa camera từ tầng 6 về màn hình chính bằng chuỗi đối xứng 4,1,1",
     "Đi từ màn hình chính lên tầng 2 bằng hai nhịp goUp(1)",
@@ -63,6 +64,24 @@ class FunctionOneNavigationActions:
         if change < self.MIN_CHANGE:
             raise ScreenTimeout(f"Điều hướng {label} không tạo thay đổi hình ảnh")
         return change
+
+    def floor_1_to_main(self) -> NavigationEvidence:
+        changes = (
+            self._gesture(self.DOWN_ONE, "floor1-goDown(1)-to-main"),
+        )
+        self.context.log(
+            "AUTO điều hướng • tầng 1 → màn hình chính • goDown(1) đã có phản hồi"
+        )
+        return NavigationEvidence("floor1-to-main", changes)
+
+    def main_to_floor_1(self) -> NavigationEvidence:
+        changes = (
+            self._gesture(self.UP_ONE, "main-goUp(1)-to-floor1"),
+        )
+        self.context.log(
+            "AUTO điều hướng • màn hình chính → tầng 1 • goUp(1) đã có phản hồi"
+        )
+        return NavigationEvidence("main-to-floor1", changes)
 
     def floor_1_to_floor_6(self) -> NavigationEvidence:
         changes = (
