@@ -14,10 +14,10 @@ FILE_FUNCTIONS = (
     "Chạy phần Táo sấy đã live-pass và Sửa máy ngay sau production",
     "Chờ chín, thu hoạch và gieo lại ba mươi Táo tầng 1-5",
     "Đi từ tầng 1 lên tầng 6 rồi xử lý đúng hàng dưới cùng",
-    "Chỉ exact-check main sau transition giữa lượt trồng/sản xuất",
+    "Sau tầng 6 đi thẳng goDown(4) tới candidate tầng 2 và xác minh bằng anchor Nước táo",
+    "Nếu direct tầng 2 lệch: đóng panel, recovery exact-main rồi goUp(1)x2 và retry",
     "Nếu kho đầy trong production: xuống quầy bán VP, quay lại đúng tầng và retry đúng máy",
-    "Về màn hình chính, lên tầng 2, sản xuất chín Nước táo rồi Sửa máy",
-    "Về màn hình chính, gieo 27 Bông rồi lên tầng 3 sản xuất chín Vải vàng và Sửa máy",
+    "Sau Nước táo về main, gieo 27 Bông rồi dùng true goUp(2) lên tầng 3",
     "Chỉ PASS 3/3 sau khi hậu kiểm đủ chín Vải vàng và Sửa máy",
     "Sau mỗi vòng: tầng 3 → goDown(1) → click xuống tầng → exact-main PASS",
 )
@@ -44,6 +44,8 @@ class FunctionOneResult:
 class FunctionOneWorkflow:
     """Function 1: verified 9 dried apples + supply chain + 9 yellow fabrics."""
 
+    DIRECT_JUICE_MAIN_RECOVERY_PASSES = 6
+
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
         self.context = automation.context
@@ -61,6 +63,46 @@ class FunctionOneWorkflow:
             )
         self.context.log(
             f"AUTO transition check • {label} • exact main PASS"
+        )
+
+    def _recover_direct_juice_miss_to_floor_2(self) -> None:
+        """Fail-safe for a floor6->floor2 direct route that misses nuoc_tao.
+
+        The failed probe has already closed its panel. Normalize the unknown
+        camera with the existing background-independent goDown/XUỐNG/boundary
+        recovery, require exact main, then use the stable two x goUp(1) route to
+        floor 2. Only then may the normal production transaction retry.
+        """
+        self.context.stage("auto-function-1-direct-juice-floor-fallback")
+        self.context.invalidate_camera_main("direct-juice-floor-anchor-miss")
+        self.context.log(
+            "AUTO Nước táo • direct goDown(4) chưa chứng minh được tầng 2 • "
+            "fallback: exact-main runtime recovery → goUp(1)x2"
+        )
+
+        for attempt in range(1, self.DIRECT_JUICE_MAIN_RECOVERY_PASSES + 1):
+            self.context.ensure_running()
+            if self.auto.popup.is_own_exact_main_screen():
+                break
+            self.auto.function_one_pass_three_navigation.go_down_one_toward_main(
+                f"function1-direct-juice-fallback-{attempt}-of-"
+                f"{self.DIRECT_JUICE_MAIN_RECOVERY_PASSES}"
+            )
+            if self.auto.popup.is_own_exact_main_screen():
+                break
+        else:
+            raise ScreenTimeout(
+                "Fallback Nước táo không chứng minh được exact-main sau "
+                f"{self.DIRECT_JUICE_MAIN_RECOVERY_PASSES} lượt recovery; "
+                "dừng trước khi chọn máy"
+            )
+
+        self._require_main_transition("fallback direct Nước táo → exact-main")
+        self.auto.function_one_navigation.main_to_floor_2()
+        self.context.stage("auto-function-1-direct-juice-floor2-recovered")
+        self.context.log(
+            "AUTO Nước táo • fallback PASS • exact-main → goUp(1)x2 → tầng 2 candidate "
+            "• bàn giao production xác minh nuoc_tao lần nữa"
         )
 
     def _normalize_end_of_loop_to_main(self) -> None:
@@ -101,9 +143,21 @@ class FunctionOneWorkflow:
         floor_6 = self.auto.apple_supply.harvest_and_replant_floor_6_row()
         self.context.stage("auto-apple-floor-6-replanted")
 
-        self.auto.function_one_navigation.floor_6_to_main()
-        self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")
-        self.auto.function_one_navigation.main_to_floor_2()
+        # Fast path: one goDown(4) should land directly at the floor-2 juice
+        # machine. The route is accepted only after a bounded machine probe sees
+        # the exact nuoc_tao product anchor. A miss never loops clicks forever;
+        # it closes the panel and normalizes to exact main before retrying floor 2.
+        self.auto.function_one_navigation.floor_6_to_floor_2()
+        direct_floor_2 = self.auto.apple_juice_production.probe_floor_2_machine()
+        if not direct_floor_2:
+            self._recover_direct_juice_miss_to_floor_2()
+        else:
+            self.context.stage("auto-function-1-direct-juice-floor2-verified")
+            self.context.log(
+                "AUTO chức năng 1 • đường nhanh tầng 6 → tầng 2 PASS bằng anchor nuoc_tao "
+                "• bỏ vòng main không cần thiết"
+            )
+
         juice = self.warehouse_recovery.run_production(
             floor=2,
             label="Nước táo",
