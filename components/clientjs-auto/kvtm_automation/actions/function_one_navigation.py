@@ -16,6 +16,7 @@ FILE_FUNCTIONS = (
     "Đưa camera từ tầng 6 về màn hình chính bằng chuỗi đối xứng 4,1,1",
     "Đi từ màn hình chính lên tầng 2 bằng hai nhịp goUp(1)",
     "Kiểm tra fresh-frame change sau từng gesture và fail-closed",
+    "Đánh dấu exact-main bằng route runtime đã biết, không bằng background",
 )
 
 
@@ -52,6 +53,9 @@ class FunctionOneNavigationActions:
 
     def _gesture(self, points, label: str) -> float:
         self.context.ensure_running()
+        # Any vertical gesture invalidates a previous camera proof before input.
+        # Routes that deterministically end at main mark it again after success.
+        self.context.invalidate_camera_main(f"vertical-gesture:{label}")
         before = self.vision.frame().copy()
         self.vision.driver.click(*self.CLOSE_SIDE)
         self.vision.driver.swipe(
@@ -69,6 +73,7 @@ class FunctionOneNavigationActions:
         changes = (
             self._gesture(self.DOWN_ONE, "floor1-goDown(1)-to-main"),
         )
+        self.context.mark_camera_exact_main("floor1-to-main deterministic route")
         self.context.log(
             "AUTO điều hướng • tầng 1 → màn hình chính • goDown(1) đã có phản hồi"
         )
@@ -99,6 +104,7 @@ class FunctionOneNavigationActions:
             self._gesture(self.DOWN_ONE, "floor2-goDown(1)-to-floor1"),
             self._gesture(self.DOWN_ONE, "floor1-goDown(1)-to-main"),
         )
+        self.context.mark_camera_exact_main("floor6-to-main deterministic route")
         self.context.log("AUTO điều hướng • tầng 6 → màn hình chính đã có phản hồi")
         return NavigationEvidence("floor6-to-main", changes)
 
