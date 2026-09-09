@@ -13,7 +13,7 @@ FILE_FUNCTIONS = (
     "Kiểm tra quảng cáo ở ba mốc đầu/giữa/cuối của mỗi lượt bán VP",
     "Chỉ chọn ô quầy còn listing và chưa có biểu tượng quảng cáo đỏ",
     "Mở chi tiết listing để kiểm tra trạng thái quảng cáo",
-    "Chỉ click Đặt quảng cáo khi nút xanh đã hồi; tuyệt đối không click nút kim cương trả phí",
+    "Chỉ click Đặt quảng cáo khi nút xanh đã hồi; tuyệt đối không click nút kim cương trả phí (paid orange diamond button)",
     "Nếu quảng cáo còn cooldown thì đóng popup bằng X và tiếp tục bán",
     "Sau khi đặt quảng cáo, đóng popup và hậu kiểm biểu tượng quảng cáo trên đúng ô",
     "Mọi center public trả cho driver luôn ở logical 1000 dù color probe chạy trên frame 500",
