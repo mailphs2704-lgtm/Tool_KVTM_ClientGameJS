@@ -11,8 +11,8 @@ from ..runtime.wait import Waiter
 
 __all__ = ["ProductionResult", "ProductionActions"]
 FILE_FUNCTIONS = (
-    "Thu VP bằng burst tối đa năm click và dừng ngay khi panel sản xuất xuất hiện",
-    "Cho phép chỉnh riêng tốc độ click thu VP trước khi panel mở",
+    "Thu VP bằng đúng năm click tức thì cùng tọa độ rồi mới kiểm tra panel sản xuất",
+    "Dùng tốc độ thu VP làm khoảng nghỉ sau mỗi burst x5, không chèn nghỉ giữa năm click",
     "Nhận panel đã mở bằng ô trống hoặc ảnh đúng sản phẩm khi máy đang kín slot",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
     "Mất ảnh sản phẩm tạm thời khi đang chờ chỉ recheck, không dừng AUTO",
@@ -166,6 +166,17 @@ class ProductionActions:
         )
         raise InventoryFull(f"{label}: kho đầy khi thu VP/sản xuất")
 
+    def _send_collect_burst(
+        self,
+        *,
+        machine_point: tuple[int, int],
+    ) -> int:
+        """Send exactly five raw clicks with no intentional gap or vision check."""
+        self.context.ensure_running()
+        for _ in range(self.COLLECT_CLICK_BURST):
+            self.vision.driver.click(*machine_point)
+        return self.COLLECT_CLICK_BURST
+
     def _click_until_panel_open(
         self,
         *,
@@ -174,41 +185,49 @@ class ProductionActions:
         label: str,
         product_threshold: float = 0.70,
     ) -> int:
-        """Send five-click collect bursts until the verified production panel appears.
+        """Send true x5 multi-click bursts, then settle/check exactly once per burst.
 
-        A burst contains at most five clicks. We re-check after every click and
-        stop the burst immediately once the panel is visible, so the remaining
-        clicks can never land inside an already-open production panel.
+        The five driver clicks are back-to-back at one coordinate: no sleep,
+        stop checkpoint, frame capture, template match, or panel check is inserted
+        between them. Only after all five clicks do we wait once and inspect the
+        panel; if it is still closed, another immediate x5 burst is sent.
         """
         click_count = 0
         burst_count = 0
         while True:
+            self.context.ensure_running()
             burst_count += 1
-            for burst_index in range(1, self.COLLECT_CLICK_BURST + 1):
-                self.context.ensure_running()
-                self.vision.driver.click(*machine_point)
-                click_count += 1
-                self.waiter.sleep(self.speed_config.vp_collect_delay)
+            click_count += self._send_collect_burst(machine_point=machine_point)
 
-                warehouse_full, empty_ready = self._panel_state()
-                if warehouse_full:
-                    self._raise_inventory_full(label)
-                product_ready = self._find_product_match(
-                    product_template, threshold=product_threshold
-                ) is not None
-                panel_ready = empty_ready or product_ready
-                if panel_ready:
-                    self.context.log(
-                        f"AUTO {label} • burst thu VP {burst_index}/{self.COLLECT_CLICK_BURST} "
-                        f"• panel đã mở • tổng click={click_count} • "
-                        f"delay={self.speed_config.vp_collect_delay:.3f}s"
-                    )
-                    return click_count
+            self.context.log(
+                f"AUTO {label} • đã phát x5 click tức thì tại cùng tọa độ "
+                f"• burst={burst_count} • tổng click={click_count}"
+            )
+
+            # vp_collect_delay is intentionally a post-burst settle delay.
+            # There is no configured or artificial delay between the five clicks.
+            self.waiter.sleep(self.speed_config.vp_collect_delay)
+            self.context.ensure_running()
+
+            warehouse_full, empty_ready = self._panel_state()
+            if warehouse_full:
+                self._raise_inventory_full(label)
+            product_ready = self._find_product_match(
+                product_template, threshold=product_threshold
+            ) is not None
+            panel_ready = empty_ready or product_ready
+            if panel_ready:
+                self.context.log(
+                    f"AUTO {label} • panel đã mở sau burst x5 "
+                    f"• burst={burst_count} • tổng click={click_count} • "
+                    f"nghỉ sau burst={self.speed_config.vp_collect_delay:.3f}s"
+                )
+                return click_count
 
             if burst_count == 1 or burst_count % 5 == 0:
                 self.context.log(
-                    f"AUTO {label} • đã phát burst {self.COLLECT_CLICK_BURST} click "
-                    f"• panel chưa hiện • tiếp tục thu VP/mở máy • "
+                    f"AUTO {label} • panel chưa hiện sau burst x5 "
+                    "• tiếp tục một burst x5 tức thì mới • "
                     f"burst={burst_count} • tổng click={click_count}"
                 )
 
