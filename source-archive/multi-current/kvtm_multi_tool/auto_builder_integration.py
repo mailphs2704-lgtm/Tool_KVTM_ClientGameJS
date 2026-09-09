@@ -15,7 +15,7 @@ FILE_FUNCTIONS = (
     "Thay khối mô tả AUTO MULTI DEV bằng menu chọn Function + số vòng giữa hai lần bán",
     "Hiển thị trực tiếp thời gian chờ giữa các vòng Function trên AUTO MULTI DEV",
     "Thêm công tắc chung qua nhà bạn #1 sau mỗi ba vòng Function để làm mới scene/item treo",
-    "Restart ClientJS định kỳ nhưng chỉ sau Function đủ vòng và lượt bán VP an toàn hoàn tất",
+    "Restart ClientJS định kỳ 2 giờ nhưng chỉ sau Function đủ vòng và lượt bán VP an toàn hoàn tất",
     "Tự relaunch đúng profile ClientJS rồi gắn lại worker AUTO với cấu hình cũ",
     "Bổ sung Tốc độ thu VP vào đúng cửa sổ Cấu hình tốc độ hiện có",
     "Đưa Log hành động + Log chi tiết xuống hàng riêng dưới nút AUTO MULTI DEV",
@@ -27,7 +27,7 @@ _AUTO_MAIN_FUNCTION_OPTIONS = (
     ("function_1", "9 Táo sấy - 9 Vải vàng"),
 )
 _FRIEND_REFRESH_SETTING_KEY = "auto_multi_dev_friend_refresh_enabled"
-_CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0
+_CLIENT_RESTART_INTERVAL_SECONDS = 7200.0
 _CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"
 
 
@@ -240,7 +240,7 @@ def install_auto_builder_integration(app_class, core) -> None:
             text=(
                 "Vào game + đóng popup → bán VP lần 1 → chạy Function. "
                 "Nếu bật làm mới: sau vòng 3/6/9..., bán đến hạn xong sẽ sang "
-                "nhà bạn đầu tiên rồi quay về. Restart ClientJS đang TEST 1 phút; "
+                "nhà bạn đầu tiên rồi quay về. Restart ClientJS định kỳ 2 giờ; "
                 "đến giờ vẫn chờ Function đủ vòng + bán VP xong mới restart."
             ),
             style="AutoValue.TLabel",
@@ -345,7 +345,7 @@ def install_auto_builder_integration(app_class, core) -> None:
             "sale_every_loops": sale_every,
             "function_loop_delay_seconds": loop_delay,
             "friend_refresh_enabled": friend_refresh_enabled,
-            "client_restart_interval_seconds": _CLIENT_RESTART_TEST_INTERVAL_SECONDS,
+            "client_restart_interval_seconds": _CLIENT_RESTART_INTERVAL_SECONDS,
             "skip_initial_sale_once": False,
         }
         for profile_id in selected:
@@ -359,7 +359,7 @@ def install_auto_builder_integration(app_class, core) -> None:
             f"AUTO MULTI DEV • {label} • bán lại sau {sale_every} vòng • "
             f"chờ giữa vòng {loop_delay:g}s • qua bạn #1/3 vòng="
             f"{'BẬT' if friend_refresh_enabled else 'TẮT'} • "
-            "restart ClientJS=TEST 1 phút/safe-sale-boundary"
+            "restart ClientJS=2 giờ/safe-sale-boundary"
         )
         original_start_clean_session(self)
 
@@ -483,7 +483,7 @@ def install_auto_builder_integration(app_class, core) -> None:
             return
         resume["skip_initial_sale_once"] = True
         resume["client_restart_interval_seconds"] = (
-            _CLIENT_RESTART_TEST_INTERVAL_SECONDS
+            _CLIENT_RESTART_INTERVAL_SECONDS
         )
         self._auto_main_pending_config[profile_id] = dict(resume)
         self._auto_main_active_config[profile_id] = dict(resume)
