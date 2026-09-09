@@ -8,6 +8,7 @@ __all__ = ["CottonPlantingActions"]
 FILE_FUNCTIONS = (
     "Xác minh template bông tồn tại trong clean asset library trước gesture",
     "Tái sử dụng đường gieo 27 chậu đã dùng ở hai pass trước",
+    "Giữ seed match Bông đã xác minh trên cùng frame READY để tránh race frame",
     "Ghi hậu kiểm vùng chậu như diagnostic không chặn, giống logic trồng Táo",
 )
 
@@ -23,15 +24,12 @@ class CottonPlantingActions(PlantingActions):
                 "Thiếu template clean cay_bong; dừng trước mọi gesture gieo Bông"
             )
 
-        baseline = self._open_seed_picker(self.COTTON_TEMPLATE, "Bông")
+        # _open_seed_picker now returns both the detached diagnostic baseline and
+        # the seed match proven on the SAME READY frame. Reusing that match avoids
+        # a second capture racing with the seed-picker animation, and also keeps
+        # baseline as an ndarray instead of accidentally passing the tuple below.
+        baseline, seed = self._open_seed_picker(self.COTTON_TEMPLATE, "Bông")
         self.context.ensure_running()
-        seed = self.vision.find(
-            self.COTTON_TEMPLATE,
-            threshold=0.87,
-            zone=self.SEED_ZONE,
-            scales=(0.80, 0.90, 1.00, 1.10, 1.20),
-            click=False,
-        )
         if seed is None:
             self.vision.driver.click(*self.CLOSE_POINT)
             raise ScreenTimeout(
@@ -40,8 +38,8 @@ class CottonPlantingActions(PlantingActions):
 
         path = (seed.center,) + self.rose_path()[1:]
         self.context.log(
-            "AUTO trồng • chọn Bông • kéo 27 chậu "
-            "từ tầng 1 đến 3 chậu tầng 5"
+            "AUTO trồng • chọn Bông • dùng seed match đã xác minh cùng frame • "
+            "kéo 27 chậu từ tầng 1 đến 3 chậu tầng 5"
         )
         self.vision.driver.swipe_points(
             path, duration=self.speed_config.plant_harvest_duration
