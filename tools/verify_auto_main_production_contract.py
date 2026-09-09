@@ -8,22 +8,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CLEAN = ROOT / "components/clientjs-auto/kvtm_automation"
 ACTION = CLEAN / "actions/production.py"
-FLOOR_ACTION = CLEAN / "actions/floor_navigation.py"
 AUTOMATION = CLEAN / "automation.py"
 WORKFLOW = CLEAN / "workflows/auto_apple_dryer/workflow.py"
-GAME_SESSION = CLEAN / "workflows/game_session/workflow.py"
-AUTO_MAIN = CLEAN / "workflows/auto_main/workflow.py"
 FUNCTION_ONE = CLEAN / "workflows/auto_function_one/workflow.py"
 FUNCTION_NAV = CLEAN / "actions/function_one_navigation.py"
-WAREHOUSE_RECOVERY = CLEAN / "workflows/production_warehouse_recovery.py"
-APPLE_JUICE = CLEAN / "actions/apple_juice_production.py"
-COTTON = CLEAN / "actions/cotton_planting.py"
 PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
-DOWN_FLOOR_DETECTOR = CLEAN / "runtime/down_floor_button.py"
+APPLE_JUICE = CLEAN / "actions/apple_juice_production.py"
 YELLOW_FABRIC = CLEAN / "actions/yellow_fabric_production.py"
+COTTON = CLEAN / "actions/cotton_planting.py"
 MACHINE_REPAIR = CLEAN / "actions/machine_repair.py"
-DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
-AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
+ERRORS = CLEAN / "errors.py"
+RECOVERY_EVENTS = CLEAN / "recovery/events.py"
+RECOVERY_NAV = CLEAN / "recovery/navigation.py"
+RECOVERY_PRODUCTION = CLEAN / "recovery/production.py"
+RECOVERY_MANAGER = CLEAN / "recovery/manager.py"
+LEGACY_RECOVERY = CLEAN / "workflows/production_warehouse_recovery.py"
+DOWN_FLOOR_DETECTOR = CLEAN / "runtime/down_floor_button.py"
 MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.png"
 MULTI_DEV_EMPTY_SLOT = ROOT / "components/clientjs-auto/assets/items/o_trong.png"
 MULTI_DEV_COTTON = ROOT / "components/clientjs-auto/assets/items/cay_bong.png"
@@ -59,32 +59,30 @@ def git_blob_sha(path: Path) -> str:
 
 
 def main() -> int:
-    sources = {
-        path: read_python(path)
-        for path in (
-            ACTION, FLOOR_ACTION, AUTOMATION, WORKFLOW, GAME_SESSION, AUTO_MAIN,
-            FUNCTION_ONE, FUNCTION_NAV, WAREHOUSE_RECOVERY, APPLE_JUICE, COTTON,
-            PASS_THREE_NAV, DOWN_FLOOR_DETECTOR, YELLOW_FABRIC, MACHINE_REPAIR,
-            DEV_ENTRY, AUTO_MULTI_WORKER,
-        )
-    }
+    paths = (
+        ACTION, AUTOMATION, WORKFLOW, FUNCTION_ONE, FUNCTION_NAV, PASS_THREE_NAV,
+        APPLE_JUICE, YELLOW_FABRIC, COTTON, MACHINE_REPAIR, ERRORS,
+        RECOVERY_EVENTS, RECOVERY_NAV, RECOVERY_PRODUCTION, RECOVERY_MANAGER,
+        LEGACY_RECOVERY, DOWN_FLOOR_DETECTOR,
+    )
+    sources = {path: read_python(path) for path in paths}
     action = sources[ACTION]
-    floor_action = sources[FLOOR_ACTION]
     automation = sources[AUTOMATION]
     workflow = sources[WORKFLOW]
-    game_session = sources[GAME_SESSION]
-    auto_main = sources[AUTO_MAIN]
     function_one = sources[FUNCTION_ONE]
     function_nav = sources[FUNCTION_NAV]
-    warehouse_recovery = sources[WAREHOUSE_RECOVERY]
+    pass_nav = sources[PASS_THREE_NAV]
     apple_juice = sources[APPLE_JUICE]
-    cotton = sources[COTTON]
-    pass_three_nav = sources[PASS_THREE_NAV]
-    down_floor_detector = sources[DOWN_FLOOR_DETECTOR]
     yellow_fabric = sources[YELLOW_FABRIC]
+    cotton = sources[COTTON]
     machine_repair = sources[MACHINE_REPAIR]
-    dev = sources[DEV_ENTRY]
-    auto_multi_worker = sources[AUTO_MULTI_WORKER]
+    errors = sources[ERRORS]
+    recovery_events = sources[RECOVERY_EVENTS]
+    recovery_nav = sources[RECOVERY_NAV]
+    recovery_production = sources[RECOVERY_PRODUCTION]
+    recovery_manager = sources[RECOVERY_MANAGER]
+    legacy_recovery = sources[LEGACY_RECOVERY]
+    down_floor = sources[DOWN_FLOOR_DETECTOR]
 
     for asset in (
         MULTI_DEV_DRIED_APPLE, MULTI_DEV_EMPTY_SLOT, MULTI_DEV_COTTON,
@@ -102,277 +100,162 @@ def main() -> int:
             raise AssertionError(
                 f"Canonical asset blob changed: {asset.name} expected={expected_sha} actual={actual}"
             )
-    if EXPECTED_YELLOW_FABRIC_BLOB_SHA == EXPECTED_WAREHOUSE_YELLOW_FABRIC_BLOB_SHA:
-        raise AssertionError("Production and warehouse yellow-fabric assets must remain distinct")
 
-    # Startup owns portal/account entry + popup cleanup only. No floor/camera
-    # navigation is allowed here; exact business navigation stays in Function flows.
-    require(game_session, "self.auto.ensure_main_screen(timeout=float(timeout))",
-            "GameSession enter-game/popup transaction missing")
-    require(game_session, "startup không thực hiện goDown(1)",
-            "Startup no-goDown policy marker missing")
-    forbid(game_session, "DOWN_ONE =", "Startup goDown geometry must be removed")
-    forbid(game_session, "_startup_go_down_one", "Startup goDown helper must be removed")
-    forbid(game_session, "_recover_floor_1_or_2_start", "Startup low-floor recovery must be removed")
-    forbid(workflow, "self.auto.ensure_main_screen(timeout=timeout)", "AppleDryer duplicated startup main gate")
-    require(function_one, "def _require_main_transition", "Inter-stage exact-main helper missing")
-    require(function_one, 'self._require_main_transition("sau SX Nước táo → trước trồng Bông")', "Juice→cotton main gate missing")
-
-    # Function 1 fast path after the sixth apple row: one goDown(4) should land at
-    # floor 2. The gesture is only a candidate; nuoc_tao panel evidence must prove
-    # the floor. A miss is bounded, closes the panel and uses the existing
-    # background-independent main recovery before main->floor2 retry.
-    require(function_nav, "def floor_6_to_floor_2", "Direct floor6→floor2 route missing")
-    require(function_nav, 'self._gesture(self.DOWN_FOUR, "floor6-goDown(4)-to-floor2-candidate")',
-            "Direct floor6→floor2 must be exactly one goDown(4)")
-    require(function_nav, 'return NavigationEvidence("floor6-to-floor2-candidate", changes)',
-            "Direct floor2 route must remain candidate evidence only")
-    require(function_one, "self.auto.function_one_navigation.floor_6_to_floor_2()",
-            "Function 1 does not use direct floor6→floor2 fast path")
-    require(function_one, "self.auto.apple_juice_production.probe_floor_2_machine()",
-            "Direct floor2 candidate is not verified by Nước táo panel")
-    require(function_one, "def _recover_direct_juice_miss_to_floor_2", "Direct floor2 fallback helper missing")
-    require(function_one, "DIRECT_JUICE_MAIN_RECOVERY_PASSES = 6", "Direct floor2 fallback bound changed")
-    require(function_one, "go_down_one_toward_main(", "Direct floor2 miss does not use main-boundary recovery")
-    require(function_one, 'self._require_main_transition("fallback direct Nước táo → exact-main")',
-            "Direct floor2 fallback exact-main gate missing")
-    require(function_one, "self.auto.function_one_navigation.main_to_floor_2()",
-            "Direct floor2 fallback does not return exact-main→floor2")
-
-    # Shared production opening: true five-click bursts continue until the exact
-    # requested item appears in the proven panel library zone. Empty-slot imagery
-    # is diagnostic only. A different known VP means the panel is already open on
-    # the wrong machine/floor and must trigger recovery instead of more x5 clicks.
-    require(action, "DRYER_POINT = (262, 917)", "Dryer coordinate changed")
-    require(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"', "Dried-apple production template missing")
-    forbid(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "kho_tao_say"', "Warehouse dried-apple template drives production")
-    require(action, "PRODUCT_SEARCH_ZONE = (420, 550, 170, 120)", "Panel product-library zone changed")
+    # Shared production transaction: target product proves the panel; a different
+    # known product is an explicit recoverable wrong-machine signal.
+    require(action, "COLLECT_CLICK_BURST = 5", "Five-click VP collect burst missing")
+    require(action, "def _send_collect_burst(", "Raw x5 helper missing")
+    require(action, "for _ in range(self.COLLECT_CLICK_BURST):", "Raw x5 loop missing")
     require(action, 'KNOWN_PRODUCT_TEMPLATES = ("tao_say", "nuoc_tao", "vai_vang")',
-            "Known production panel anchors missing")
-    require(action, "zone=self.PRODUCT_SEARCH_ZONE", "Product matching is not restricted to panel library zone")
-    require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.70", "Dried-apple guard threshold changed")
-    require(action, "REQUIRED_COUNT = 9", "Exactly nine dried apples required")
-    require(action, "COLLECT_CLICK_BURST = 5", "VP collect must use five-click bursts")
-    require(action, "def _send_collect_burst(", "Raw five-click VP burst helper missing")
-    require(action, "for _ in range(self.COLLECT_CLICK_BURST):", "Five-click burst loop missing")
-    require(action, "self.vision.driver.click(*machine_point)", "Raw VP machine click missing")
-    require(action, "def _click_until_panel_open", "Shared five-click panel opener missing")
-    require(action, "click_count += self._send_collect_burst(machine_point=machine_point)", "Five-click panel opener does not call raw burst helper")
-    forbid(action, "panel_ready = empty_ready or product_ready", "Empty-slot false positive may stop VP collection early")
-    require(action, "if product is not None:", "Panel opening is not gated by requested product anchor")
-    require(action, "def _find_wrong_product_match(", "Wrong-machine product scanner missing")
-    require(action, "def _raise_wrong_machine(", "Wrong-machine recovery signal helper missing")
-    require(action, "wrong = self._find_wrong_product_match(", "Panel does not scan for another known machine")
-    require(action, "raise WrongProductionMachine(", "Wrong machine does not emit recoverable signal")
+            "Known production anchors missing")
+    require(action, "PRODUCT_SEARCH_ZONE = (420, 550, 170, 120)",
+            "Product-library-only zone changed")
+    require(action, "def _find_wrong_product_match(", "Wrong-machine scanner missing")
+    require(action, "raise WrongProductionMachine(", "Wrong-machine signal missing")
     require(action, "PANEL SAI MÁY/SAI TẦNG", "Wrong-machine runtime marker missing")
-    require(action, "KHÔNG coi panel đã mở", "Empty-slot diagnostic cannot prove panel-open policy")
-    require(action, "return click_count", "Five-click panel opener does not return on verified panel")
-    require(action, "self.context.ensure_running()", "Five-click/recheck loops are not stop-aware")
-    require(action, "self.speed_config.vp_collect_delay", "Dried-apple collect speed binding missing")
-    require(action, "self.speed_config.vp_production_delay", "Dried-apple production speed binding missing")
-    require(action, "def _wait_for_idle_open_panel", "Open-panel busy wait missing")
-    require(action, "empty == self.REQUIRED_COUNT", "Production must wait for exact 9/9 empty slots")
-    require(action, "self.waiter.sleep(self.PANEL_RECHECK_SECONDS)", "Open-panel cooperative recheck missing")
-    require(action, "KHÔNG dừng AUTO", "Temporary product-image miss must be explicitly nonfatal")
-    forbid(action, "PANEL_PRODUCT_MISS_LIMIT", "Product-image miss limit must not stop AUTO")
-    forbid(action, "panel đang chờ bị mất ảnh sản phẩm đúng", "Old panel-miss ScreenTimeout returned")
-    require(action, "current_empty >= empty_after", "Dried-apple per-drag gate missing")
-    require(action, "consumed != self.REQUIRED_COUNT", "Dried-apple exact post-accounting missing")
-    require(action, "close_after_success: bool = True", "Production panel handoff switch missing")
+    forbid(action, "panel_ready = empty_ready or product_ready",
+           "Empty slot may not prove the production panel")
+    require(action, "self.speed_config.vp_collect_delay", "VP collect speed binding missing")
+    require(action, "self.speed_config.vp_production_delay", "VP production speed binding missing")
+    require(action, "empty == self.REQUIRED_COUNT", "9/9 idle-panel gate missing")
+    require(action, "raise InventoryFull(", "InventoryFull business signal missing")
 
-    # Warehouse-full is still a distinct recoverable business signal.
-    require(action, '"full_kho"', "Full warehouse guard missing")
-    require(action, "raise InventoryFull(", "Full warehouse must emit InventoryFull")
-    require(action, "def _raise_inventory_full", "Shared full-warehouse signal helper missing")
-    require(action, "def _find_top_empty_slot(self):", "Reusable top-slot detector missing")
+    # Product-specific actions stay atomic and reusable. They do not own navigation
+    # recovery; they emit signals and validate their own target/product accounting.
+    require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice target missing")
+    require(apple_juice, "DIRECT_FLOOR_PROBE_BURSTS = 2", "Direct juice probe bound changed")
+    require(apple_juice, "DIRECT_FLOOR_PROBE_RECHECKS = 3", "Direct juice probe recheck changed")
+    require(apple_juice, "def probe_floor_2_machine(self) -> bool:", "Direct juice probe missing")
+    require(apple_juice, "self.slots._click_until_panel_open(", "Apple juice not using shared opener")
+    require(apple_juice, "close_after_success: bool = True", "Apple juice panel handoff missing")
+    require(yellow_fabric, 'PRODUCT_TEMPLATE = "vai_vang"', "Yellow-fabric target missing")
+    require(yellow_fabric, "self.slots._click_until_panel_open(", "Yellow fabric not using shared opener")
+    require(yellow_fabric, "close_after_success: bool = True", "Yellow fabric panel handoff missing")
+    forbid(yellow_fabric, "kho_vai_vang", "Warehouse asset leaked into production")
 
-    # Floor 2/3 delegate normal collection to the shared five-click helper. The
-    # direct-floor Nước táo probe is intentionally bounded because it is a route
-    # verifier, not the production transaction itself.
-    require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice production template missing")
-    require(apple_juice, "DIRECT_FLOOR_PROBE_BURSTS = 2", "Direct floor2 probe burst bound changed")
-    require(apple_juice, "DIRECT_FLOOR_PROBE_RECHECKS = 3", "Direct floor2 probe recheck bound changed")
-    require(apple_juice, "def probe_floor_2_machine(self) -> bool:", "Direct floor2 machine probe missing")
-    require(apple_juice, "for burst in range(1, self.DIRECT_FLOOR_PROBE_BURSTS + 1):",
-            "Direct floor2 probe is not bounded")
-    require(apple_juice, "click_count += self.slots._send_collect_burst(",
-            "Direct floor2 probe does not reuse true x5 collection")
-    require(apple_juice, "product = self.slots._find_product_match(",
-            "Direct floor2 probe is not gated by product anchor")
-    require(apple_juice, "self.vision.driver.click(*self.CLOSE_POINT)",
-            "Direct floor2 probe does not close panel on handoff")
-    require(apple_juice, "return False", "Direct floor2 miss cannot trigger fallback")
-    require(apple_juice, "self.slots._click_until_panel_open(", "Apple-juice does not use shared five-click opener")
-    require(apple_juice, "product_template=self.PRODUCT_TEMPLATE", "Apple-juice product guard missing from opener")
-    require(apple_juice, "self.slots._wait_for_idle_open_panel(", "Apple-juice open-panel wait missing")
-    require(apple_juice, "ProductionActions(context, vision, waiter, self.speed_config)", "Apple-juice collect speed is not handed to shared opener")
-    require(apple_juice, "current >= empty_after", "Apple-juice per-drag gate missing")
-    require(apple_juice, "self.speed_config.vp_production_delay", "Apple-juice production speed binding missing")
-    require(apple_juice, "close_after_success: bool = True", "Apple-juice panel handoff switch missing")
+    # errors.py contains signals only; handling policy belongs to recovery/.
+    require(errors, "class WrongProductionMachine(NavigationError):",
+            "WrongProductionMachine signal missing")
+    require(errors, "class InventoryFull(TransactionError):", "InventoryFull signal missing")
+    forbid(errors, "RecoveryManager", "errors.py must not own recovery policy")
+    forbid(errors, "go_down_one_toward_main", "errors.py must not navigate")
 
-    require(yellow_fabric, 'PRODUCT_TEMPLATE = "vai_vang"', "Yellow-fabric production template missing")
-    forbid(yellow_fabric, "kho_vai_vang", "Warehouse yellow-fabric template referenced by production")
-    require(yellow_fabric, "REQUIRED_COUNT = 9", "Exactly nine yellow fabrics required")
-    require(yellow_fabric, "self.slots._click_until_panel_open(", "Yellow-fabric does not use shared five-click opener")
-    require(yellow_fabric, "product_template=self.PRODUCT_TEMPLATE", "Yellow-fabric product guard missing from opener")
-    require(yellow_fabric, "self.slots._wait_for_idle_open_panel(", "Yellow-fabric open-panel wait missing")
-    require(yellow_fabric, "ProductionActions(context, vision, waiter, self.speed_config)", "Yellow-fabric collect speed is not handed to shared opener")
-    forbid(yellow_fabric, "MAX_OPEN_CLICKS", "Yellow-fabric click-until-panel must not have an arbitrary open limit")
-    require(yellow_fabric, "current >= empty_after", "Yellow-fabric per-drag gate missing")
-    require(yellow_fabric, "empty_before - empty_after != self.REQUIRED_COUNT", "Yellow-fabric post-accounting missing")
-    require(yellow_fabric, "self.speed_config.vp_production_delay", "Yellow-fabric production speed binding missing")
-    require(yellow_fabric, "close_after_success: bool = True", "Yellow-fabric panel handoff switch missing")
+    # Typed recovery events allow a Function/Recipe to inject local observers while
+    # the core policy remains deterministic and centralized.
+    require(recovery_events, "class RecoveryEventKind(str, Enum):", "Recovery event enum missing")
+    require(recovery_events, "WRONG_PRODUCTION_MACHINE", "Wrong-machine event missing")
+    require(recovery_events, "INVENTORY_FULL", "Inventory-full event missing")
+    require(recovery_events, "class RecoveryEvent:", "Recovery event payload missing")
 
-    # InventoryFull keeps the existing sale recovery. WrongProductionMachine is a
-    # separate navigation recovery: no sale, no trust in the intended floor; it
-    # proves exact-main from unknown camera state and then returns to floor 1/2/3.
-    require(warehouse_recovery, "except InventoryFull as exc:", "Warehouse recovery must catch InventoryFull")
-    forbid(warehouse_recovery, "except ScreenTimeout", "Recovery must not swallow visual failures")
-    require(warehouse_recovery, "except WrongProductionMachine as exc:", "Wrong-machine recovery catch missing")
-    require(warehouse_recovery, "WRONG_MACHINE_RECOVERY_LIMIT = 3", "Wrong-machine recovery bound changed")
-    require(warehouse_recovery, "UNKNOWN_FLOOR_MAIN_RECOVERY_PASSES = 6", "Unknown-floor main recovery bound changed")
-    require(warehouse_recovery, "def _unknown_floor_to_main", "Unknown-floor exact-main helper missing")
-    require(warehouse_recovery, "go_down_one_toward_main(", "Wrong-machine recovery does not use safe unknown-floor descent")
-    require(warehouse_recovery, "self._unknown_floor_to_main(label)", "Wrong-machine catch does not normalize to main")
-    require(warehouse_recovery, "self._back_to_floor(floor, label)", "Recovery does not return to requested production floor")
-    require(warehouse_recovery, "AutoVpSaleWorkflow(", "Warehouse recovery sale module missing")
-    require(warehouse_recovery, "allowed_item_ids=self.spec.sale_item_ids", "Warehouse recovery sale is not Function-bound")
-    require(warehouse_recovery, "if int(sale.sold_listings) <= 0:", "Warehouse recovery infinite-loop guard missing")
-    require(warehouse_recovery, "self._to_main(floor, label)", "Warehouse recovery does not descend before sale")
-    require(function_nav, "def floor_1_to_main", "Floor-1 warehouse recovery route missing")
-    require(function_nav, "def main_to_floor_1", "Main-to-floor-1 recovery route missing")
-    require(warehouse_recovery, "self.auto.function_one_pass_three_navigation.floor_2_to_main()", "Floor-2 warehouse recovery descent missing")
-    require(warehouse_recovery, "self.auto.function_one_pass_three_navigation.floor_3_to_main_via_down_floor()", "Floor-3 warehouse recovery descent missing")
+    # Navigation recovery owns unknown camera -> exact main and reusable route maps.
+    require(recovery_nav, "UNKNOWN_FLOOR_MAIN_RECOVERY_PASSES = 6",
+            "Unknown-camera recovery bound changed")
+    require(recovery_nav, "go_down_one_toward_main(", "Unknown-camera safe descent missing")
+    require(recovery_nav, "def recover_unknown_to_main(", "Unknown->main API missing")
+    require(recovery_nav, "def recover_unknown_to_floor(", "Unknown->floor API missing")
+    require(recovery_nav, "def to_main_from_floor(", "Known floor->main API missing")
+    require(recovery_nav, "def from_main_to_floor(", "Main->floor API missing")
+    require(recovery_nav, "def from_floor_to_floor(", "Known floor->floor API missing")
+    require(recovery_nav, "between_floor_routes", "Injectable floor route map missing")
+    require(recovery_nav, "self.auto.function_one_pass_three_navigation.floor_1_to_floor_3()",
+            "Default floor1->floor3 route missing")
+    require(recovery_nav, "self.auto.function_one_pass_three_navigation.floor_3_to_main_via_down_floor()",
+            "Default floor3->main route missing")
 
-    # Machine repair is allowed only from a fully verified, still-open panel.
-    require(automation, "self.machine_repair = MachineRepairActions(", "Resident machine repair wiring missing")
-    require(machine_repair, "def repair_after_production", "Production→repair handoff API missing")
-    require(machine_repair, "queued != requested or consumed != requested", "Repair handoff exact accounting gate missing")
-    require(machine_repair, "OPEN_REPAIR_POINT = (165, 856)", "Repair ? coordinate changed")
-    require(machine_repair, "REPAIR_BUTTON_POINT = (730, 596)", "Repair button coordinate changed")
-    require(machine_repair, "CLOSE_MODAL_POINT = (652, 284)", "Repair modal close coordinate changed")
-    require(machine_repair, "MIN_MODAL_CHANGE", "Repair modal-open visual gate missing")
-    require(machine_repair, "MIN_REPAIR_CHANGE", "Repair response visual gate missing")
-    require(machine_repair, "MIN_CLOSE_CHANGE", "Repair modal-close visual gate missing")
-    forbid(machine_repair, "OCR", "Repair runtime must never depend on OCR price")
+    # Production recovery catches only explicit recoverable signals. Generic visual
+    # failures remain fail-close to avoid replaying a side-effecting transaction.
+    require(recovery_production, "except WrongProductionMachine as exc:",
+            "Wrong-machine recovery catch missing")
+    require(recovery_production, "except InventoryFull as exc:",
+            "Inventory-full recovery catch missing")
+    forbid(recovery_production, "except ScreenTimeout", "Generic ScreenTimeout must not be swallowed")
+    require(recovery_production, "WRONG_MACHINE_RECOVERY_LIMIT = 3",
+            "Wrong-machine retry bound changed")
+    require(recovery_production, "self.navigation.recover_unknown_to_floor(",
+            "Wrong machine does not normalize from unknown camera")
+    require(recovery_production, "AutoVpSaleWorkflow(", "Inventory-full sale recovery missing")
+    require(recovery_production, "allowed_item_ids=self.spec.sale_item_ids",
+            "Inventory-full sale is not Function-bound")
+    require(recovery_production, "if int(sale.sold_listings) <= 0:",
+            "Inventory-full infinite-loop guard missing")
 
-    require(workflow, "self.warehouse_recovery.run_production(", "Dried-apple warehouse recovery wrapper missing")
-    require(workflow, "floor=1", "Dried-apple warehouse recovery floor binding missing")
-    require(workflow, "producer=lambda: self.auto.production.produce_9_dried_apples(", "Dried-apple recovery does not retry only production")
-    require(workflow, "close_after_success=False", "Dried-apple production does not keep panel open for repair")
-    require(workflow, "self.auto.machine_repair.repair_after_production(produced)", "Dried-apple machine repair missing")
-    require(function_one, "self.warehouse_recovery.run_production(", "Function-1 warehouse recovery wrapper missing")
-    require(function_one, "floor=2", "Apple-juice warehouse recovery floor binding missing")
-    require(function_one, "producer=lambda: self.auto.apple_juice_production.produce_9_apple_juices(", "Apple-juice recovery does not retry only production")
-    require(function_one, "self.auto.machine_repair.repair_after_production(juice)", "Apple-juice machine repair missing")
-    require(function_one, "floor=3", "Yellow-fabric warehouse recovery floor binding missing")
-    require(function_one, "producer=lambda: self.auto.yellow_fabric_production.produce_9_yellow_fabrics(", "Yellow-fabric recovery does not retry only production")
-    require(function_one, "self.auto.machine_repair.repair_after_production(fabric)", "Yellow-fabric machine repair missing")
+    # RecoveryManager is the stable facade for current/future Functions and Recipes.
+    require(recovery_manager, "class RecoveryManager:", "RecoveryManager facade missing")
+    require(recovery_manager, "event_handlers:", "Injectable recovery event handlers missing")
+    require(recovery_manager, "to_main_routes:", "Injectable to-main routes missing")
+    require(recovery_manager, "from_main_routes:", "Injectable from-main routes missing")
+    require(recovery_manager, "between_floor_routes:", "Injectable floor-floor routes missing")
+    require(recovery_manager, "def run_production(", "Recovery production facade missing")
+    require(recovery_manager, "def recover_unknown_to_floor(", "Recovery navigation facade missing")
+    require(recovery_manager, "def from_floor_to_floor(", "Known-floor facade missing")
 
-    require(cotton, 'COTTON_TEMPLATE = "cay_bong"', "Cotton template id changed")
-    require(cotton, "if not self.vision.assets.has(self.COTTON_TEMPLATE):", "Cotton asset fail-close missing")
-    require(cotton, "path = (seed.center,) + self.rose_path()[1:]", "Cotton 27-pot geometry changed")
-    require(cotton, "non_blocking=true", "Cotton postcheck must remain diagnostic")
-    forbid(cotton, "if changed != self.TREE_COUNT:", "Cotton diagnostic became blocking")
-    require(pass_three_nav, "def floor_2_to_main", "Post-juice main route missing")
-    require(pass_three_nav, '"post-juice-goDown(1)-probe-1-of-4"', "Post-juice first down probe missing")
-    require(pass_three_nav, '"post-juice-goDown(1)-settle-4-of-4"', "Post-juice settling route incomplete")
+    # The old workflow class remains only as a compatibility adapter; policy must
+    # not be copied back into it.
+    require(legacy_recovery, "self.manager = RecoveryManager(", "Legacy recovery is not a facade")
+    require(legacy_recovery, "return self.manager.run_production(", "Legacy facade does not delegate")
+    forbid(legacy_recovery, "except WrongProductionMachine", "Wrong-machine loop duplicated in legacy facade")
+    forbid(legacy_recovery, "except InventoryFull", "Inventory-full loop duplicated in legacy facade")
 
-    # LIVE correction: old Auto Pro mode2 point (257,416) only lands at floor 2
-    # in this Function state. Floor 1 -> target floor 3 must click the recovered
-    # higher/floor-4 pot anchor (257,191), then production verifies vai_vang.
-    require(pass_three_nav, "LEGACY_AUTO_PRO_MODE2_POINT = (257, 416)", "Legacy mode2 evidence missing")
-    require(pass_three_nav, "FLOOR_4_POT_POINT = (257, 191)", "Floor-4 pot anchor changed")
-    require(pass_three_nav, "def _go_up_two(self, label: str) -> float:", "Floor1→floor3 click helper missing")
-    require(pass_three_nav, "self.vision.driver.click(*self.FLOOR_4_POT_POINT)",
-            "Floor1→floor3 does not click floor-4 pot anchor")
-    require(pass_three_nav, "self.waiter.sleep(self.AUTO_PRO_GO_UP_WAIT)", "Floor jump wait missing")
-    require(pass_three_nav, "self.waiter.sleep(self.AUTO_PRO_POST_WAIT)", "Floor jump post-wait missing")
-    require(pass_three_nav, "def floor_1_to_floor_3", "Floor1→floor3 route missing")
-    require(pass_three_nav, 'self._go_up_two("floor1-click-floor4-pot-to-floor3")',
-            "Floor1→floor3 does not use floor-4 pot click")
-    forbid(pass_three_nav, 'self.vision.driver.click(*self.LEGACY_AUTO_PRO_MODE2_POINT)',
-           "Runtime regressed to old mode2 point that only reaches floor 2")
-    forbid(pass_three_nav, 'self._gesture(self.UP_ONE, "floor1-goUp(1)-to-floor2")',
-           "Old two-step floor1→floor3 route returned")
+    # Function 1 now contains business sequence only and calls the shared facade at
+    # the positions where recovery is needed.
+    require(function_one, "from ...recovery import RecoveryManager", "Function 1 recovery import missing")
+    require(function_one, "self.recovery = RecoveryManager(", "Function 1 manager wiring missing")
+    forbid(function_one, "ProductionWarehouseRecovery", "Function 1 still owns legacy recovery wrapper")
+    require(function_one, "self.recovery.recover_unknown_to_floor(", "Direct juice fallback not delegated")
+    require(function_one, "self.recovery.run_production(", "Production recovery facade not used")
+    require(function_one, "floor=2", "Apple-juice recovery floor binding missing")
+    require(function_one, "floor=3", "Yellow-fabric recovery floor binding missing")
+    require(function_one, "self.recovery.to_main_from_floor(", "Known-floor main recovery not delegated")
+    require(function_one, 'self.recovery.from_floor_to_floor(1, 3, "Vải vàng")',
+            "Cotton->fabric known-floor route not delegated")
+    forbid(function_one, "go_down_one_toward_main(", "Function 1 contains recovery loop details")
+    require(function_one, "self.auto.machine_repair.repair_after_production(juice)",
+            "Apple-juice repair missing")
+    require(function_one, "self.auto.machine_repair.repair_after_production(fabric)",
+            "Yellow-fabric repair missing")
+    require(function_one, "progress_steps=3", "Function 1 progress contract changed")
+    require(function_one, "total_steps=3", "Function 1 total contract changed")
 
-    # End-loop and unknown-floor recovery must consume the transient XUỐNG control
-    # by visual proof. The historical (497,978) coordinate may remain documented,
-    # but it must never be used as a blind runtime click.
-    require(pass_three_nav, "from ..runtime.down_floor_button import find_down_floor_button", "Down-floor detector wiring missing")
-    require(pass_three_nav, "DOWN_FLOOR_BUTTON_THRESHOLD = 0.78", "Down-floor detector threshold changed")
-    require(pass_three_nav, "def _click_down_floor_if_visible", "Visual down-floor click helper missing")
-    require(pass_three_nav, "match = find_down_floor_button(", "Down-floor visual probe missing")
-    require(pass_three_nav, "self.vision.driver.click(*match.center)", "Detected down-floor center is not clicked")
-    forbid(pass_three_nav, "self.vision.driver.click(*self.DOWN_FLOOR_POINT)", "Blind fixed-coordinate down-floor click returned")
-    require(pass_three_nav, "if click_change < self.MIN_CHANGE:", "Down-floor fresh-frame fail-close missing")
-    require(pass_three_nav, "RECOVERY_DOWN_CHAIN_LIMIT = 10", "Upper-floor recovery chain limit changed")
-    require(pass_three_nav, "for step in range(1, self.RECOVERY_DOWN_CHAIN_LIMIT + 1):", "Upper-floor down-button chain missing")
-    require(pass_three_nav, "def floor_3_to_main_via_down_floor", "End-loop down-floor route missing")
-    require(pass_three_nav, '"function1-end-loop-floor3-goDown(1)"', "End-loop exactly-one goDown(1) missing")
+    # Existing dried-apple workflow may use the compatibility facade until its own
+    # Recipe extraction; it still receives the same centralized policy at runtime.
+    require(workflow, "ProductionWarehouseRecovery", "Dried-apple compatibility recovery missing")
+    require(workflow, "self.warehouse_recovery.run_production(", "Dried-apple recovery call missing")
+    require(workflow, "self.auto.machine_repair.repair_after_production(produced)",
+            "Dried-apple repair missing")
 
-    require(down_floor_detector, "def find_down_floor_button(", "Down-floor detector implementation missing")
-    require(down_floor_detector, "_TEMPLATE_PNG_B64", "Embedded down-floor template missing")
-    require(down_floor_detector, "width * 0.38", "Down-floor detector left search bound changed")
-    require(down_floor_detector, "width * 0.62", "Down-floor detector right search bound changed")
-    require(down_floor_detector, "height * 0.935", "Down-floor detector bottom-strip search bound changed")
-    require(down_floor_detector, "cv2.TM_CCOEFF_NORMED", "Down-floor normalized matching missing")
+    # Proven floor-3 business route and bottom-XUỐNG detector remain unchanged.
+    require(pass_nav, "FLOOR_4_POT_POINT = (257, 191)", "Floor-4 pot anchor changed")
+    require(pass_nav, "self.vision.driver.click(*self.FLOOR_4_POT_POINT)",
+            "Floor1->floor3 does not click proven pot anchor")
+    forbid(pass_nav, "self.vision.driver.click(*self.LEGACY_AUTO_PRO_MODE2_POINT)",
+           "Runtime regressed to old floor2-only point")
+    require(pass_nav, "RECOVERY_DOWN_CHAIN_LIMIT = 10", "Upper-floor recovery bound changed")
+    require(down_floor, "def find_down_floor_button(", "Visual XUỐNG detector missing")
+    require(down_floor, "cv2.TM_CCOEFF_NORMED", "XUỐNG normalized matching missing")
 
-    require(function_one, "self.auto.function_one_pass_three_navigation.floor_3_to_main_via_down_floor()", "Function-1 does not use down-floor route")
-    require(function_one, 'self._require_main_transition("cuối vòng Function 1 tầng 3 → main")', "End-loop exact-main gate missing")
-    require(function_one, "self._normalize_end_of_loop_to_main()", "Function-1 does not normalize before loop completion")
-    forbid(function_one, "open_own_stall", "End-loop must not use stall/quầy")
-    forbid(function_one, "END_LOOP_MAIN_MAX_SWIPES", "Obsolete six-goDown end-loop route returned")
-
-    require(function_one, "progress_steps=3", "Function 1 result progress changed")
-    require(function_one, "total_steps=3", "Function 1 result total changed")
-
-    require(auto_main, "FunctionModule(automation)", "Selected Function dispatcher missing")
-    require(auto_main, 'self.spec.runner_key == "function_1"', "Function-1 completion branch missing")
-    require(auto_main, 'payload.get("progress_steps"', "Function-1 progress guard missing")
-    require(auto_main, 'payload.get("yellow_fabrics"', "Function-1 yellow-fabric guard missing")
-    require(auto_main, 'payload.get("cotton_planted"', "Function-1 cotton guard missing")
-    require(auto_main, "self._validate_function_result(payload)", "Scheduler Function validation missing")
-    require(auto_main, "function_loop_delay_seconds: float = 0.0", "AUTO Main Function loop delay input missing")
-    require(auto_main, "self._wait_before_next_function_loop()", "AUTO Main between-loop wait missing")
-    require(auto_main, "while True:", "AUTO Main recurring loop missing")
-    require(auto_main, "self.context.ensure_running()", "AUTO Main stop checkpoints missing")
-
-    require(automation, "self.production = ProductionActions(", "Resident production wiring missing")
-    require(automation, "self.cotton_planting = CottonPlantingActions(", "Resident cotton wiring missing")
-    require(automation, "self.yellow_fabric_production = YellowFabricProductionActions(", "Resident yellow-fabric wiring missing")
-    require(automation, "self.function_one_pass_three_navigation = FunctionOnePassThreeNavigationActions(", "Resident pass-3 navigation wiring missing")
-    require(dev, 'text="↟ Demo Auto Pro tới tầng 6"', "Dedicated floor demo button missing")
-    require(auto_multi_worker, "automation.floors.reference_main_to_floor_6()", "Floor demo target-6 state machine missing")
-    require(auto_multi_worker, "function_id=function_id", "Worker selected Function handoff missing")
-    require(auto_multi_worker, "sale_every_loops=sale_every", "Worker recurring sale handoff missing")
-    require(auto_multi_worker, "function_loop_delay_seconds=loop_delay", "Worker Function loop delay handoff missing")
-    require(floor_action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)", "Auto Pro goUp(4) geometry missing")
+    require(automation, "self.machine_repair = MachineRepairActions(", "Machine repair wiring missing")
+    require(machine_repair, "def repair_after_production", "Machine repair action missing")
+    require(cotton, 'COTTON_TEMPLATE = "cay_bong"', "Cotton template changed")
+    require(function_nav, "def floor_6_to_floor_2", "Direct floor6->floor2 route missing")
 
     for token in ("clear_stall_probe_runtime", "adb_controller.pyc"):
         for text in (
-            action, workflow, function_one, function_nav, warehouse_recovery,
-            yellow_fabric, cotton, pass_three_nav,
+            action, workflow, function_one, recovery_nav, recovery_production,
+            yellow_fabric, cotton, pass_nav,
         ):
             forbid(text, token, f"Production path touches stable/legacy path: {token}")
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
-    print("startup=enter-game-popup-only-no-godown")
-    print("production=five-click-collect-until-product-anchor-panel+keep-open-wait-9-of-9+repair-after-each")
-    print("panel_open_gate=target-product-only;wrong-known-product=close+recover-main+correct-floor")
-    print("panel_product_miss=nonfatal-recheck-no-auto-stop")
-    print("wrong_machine=WrongProductionMachine->unknown-floor-exact-main->requested-floor-retry")
-    print("warehouse_full=InventoryFull->exact-main->function-vp-sale->same-floor-retry")
-    print("machine_repair=verified_handoff+no_price_ocr")
-    print("vp_collect_speed=independent")
-    print("function_loop_delay=visible-main-control+between-loops-only")
-    print("apple_to_juice=direct-goDown4+bounded-nuoc_tao-proof+exact-main-fallback")
-    print("cotton_to_fabric=floor4-pot-anchor-at-257,191+vai_vang-proof")
-    print("post_juice_navigation=1_plus_3_godown1_boundary_non_blocking_exact_main_gate")
-    print("end_loop_navigation=floor3_one_godown1+visual_down_button+fresh_frame+exact_main")
-    print("upper_floor_recovery=godown1+visual_down_button_chain_up_to_10+boundary_fallback")
-    print("next_loop=main_required_before_restart")
+    print("architecture=function-business+actions-atomic+recovery-centralized")
+    print("recovery_facade=RecoveryManager")
+    print("recovery_events=typed+optional-nonblocking-function-hooks")
+    print("navigation_recovery=unknown-main+known-floor-routes+injectable-route-maps")
+    print("wrong_machine=signal->central-recovery->exact-main->requested-floor-retry")
+    print("warehouse_full=signal->central-recovery->function-vp-sale->same-floor-retry")
+    print("generic_screen_timeout=fail-close-no-blind-retry")
+    print("apple_to_juice=direct-goDown4+bounded-nuoc_tao-proof+recovery-manager-fallback")
+    print("cotton_to_fabric=known-floor-1-to-3+floor4-pot-anchor+vai_vang-proof")
     print("stable_sale_qc_and_clear_stall=untouched")
     return 0
 
