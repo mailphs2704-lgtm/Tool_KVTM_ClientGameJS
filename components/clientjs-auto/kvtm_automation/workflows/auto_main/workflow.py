@@ -57,8 +57,8 @@ class AutoMainWorkflow:
     three completed Function loops it visits the first friend and returns home to
     rebuild the game scene and clear stale/floating item layers.
 
-    ClientJS restart is also scheduler-wide. During the temporary live test the
-    deadline is 60 seconds. Reaching the deadline never interrupts an in-progress
+    ClientJS restart is also scheduler-wide. The production interval is 7200
+    seconds (2 hours). Reaching the deadline never interrupts an in-progress
     Function or a sale. The request is emitted only after a periodic sale has
     completed, so the parent Multi process can close/reopen ClientJS and attach a
     fresh worker without cutting a transactional Function in half.
@@ -69,7 +69,7 @@ class AutoMainWorkflow:
     """
 
     FRIEND_REFRESH_EVERY_LOOPS = 3
-    CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0
+    CLIENT_RESTART_INTERVAL_SECONDS = 7200.0
     CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"
 
     def __init__(
@@ -130,7 +130,7 @@ class AutoMainWorkflow:
         or Bridge ownership.
         """
         config: dict[str, object] = {
-            "client_restart_interval_seconds": self.CLIENT_RESTART_TEST_INTERVAL_SECONDS,
+            "client_restart_interval_seconds": self.CLIENT_RESTART_INTERVAL_SECONDS,
             "skip_initial_sale_once": False,
         }
         marker = self.context.work_dir / "auto-main-config.json"
@@ -144,12 +144,12 @@ class AutoMainWorkflow:
             config["client_restart_interval_seconds"] = float(
                 raw.get(
                     "client_restart_interval_seconds",
-                    self.CLIENT_RESTART_TEST_INTERVAL_SECONDS,
+                    self.CLIENT_RESTART_INTERVAL_SECONDS,
                 )
             )
         except (TypeError, ValueError):
             config["client_restart_interval_seconds"] = (
-                self.CLIENT_RESTART_TEST_INTERVAL_SECONDS
+                self.CLIENT_RESTART_INTERVAL_SECONDS
             )
         config["skip_initial_sale_once"] = bool(
             raw.get("skip_initial_sale_once", False)
@@ -284,7 +284,7 @@ class AutoMainWorkflow:
             f"các lần sau mỗi {self.sale_every_loops} vòng • "
             f"refresh nhà bạn mỗi {self.FRIEND_REFRESH_EVERY_LOOPS} vòng="
             f"{'BẬT' if self.friend_refresh_enabled else 'TẮT'} • "
-            f"restart ClientJS TEST={self.client_restart_interval_seconds:.0f}s "
+            f"restart ClientJS={self.client_restart_interval_seconds:.0f}s/2h "
             "(chỉ sau sale boundary) • "
             f"chờ giữa vòng Function={self.function_loop_delay_seconds:.3f}s"
         )
