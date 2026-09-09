@@ -11,13 +11,13 @@ from ..runtime.wait import Waiter
 
 __all__ = ["ProductionResult", "ProductionActions"]
 FILE_FUNCTIONS = (
-    "Click thu VP liên tục đến khi panel máy thực sự mở",
+    "Thu VP bằng burst tối đa năm click và dừng ngay khi panel sản xuất xuất hiện",
     "Cho phép chỉnh riêng tốc độ click thu VP trước khi panel mở",
     "Nhận panel đã mở bằng ô trống hoặc ảnh đúng sản phẩm khi máy đang kín slot",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
+    "Mất ảnh sản phẩm tạm thời khi đang chờ chỉ recheck, không dừng AUTO",
     "Phát tín hiệu InventoryFull riêng khi kho đầy để workflow xuống quầy bán VP",
-    "Chỉ mở máy sấy tầng 1 sau khi đã thu VP và xác minh panel",
-    "Xác minh đúng máy bằng template Táo sấy trước khi thao tác",
+    "Xác minh đúng máy bằng template sản phẩm trước khi thao tác",
     "Đếm ô sản xuất trống bằng template và loại trùng hình học",
     "Kéo đúng chín Táo sấy từ ảnh thư viện xuống tâm ô top",
     "Hậu kiểm số ô trống giảm và dừng an toàn nếu giao dịch không khớp",
@@ -50,7 +50,7 @@ class ProductionActions:
     REQUIRED_COUNT = 9
     MIN_DISTANCE = 34
     PANEL_RECHECK_SECONDS = 1.0
-    PANEL_PRODUCT_MISS_LIMIT = 5
+    COLLECT_CLICK_BURST = 5
 
     def __init__(
         self,
@@ -166,6 +166,52 @@ class ProductionActions:
         )
         raise InventoryFull(f"{label}: kho đầy khi thu VP/sản xuất")
 
+    def _click_until_panel_open(
+        self,
+        *,
+        machine_point: tuple[int, int],
+        product_template: str,
+        label: str,
+        product_threshold: float = 0.70,
+    ) -> int:
+        """Send five-click collect bursts until the verified production panel appears.
+
+        A burst contains at most five clicks. We re-check after every click and
+        stop the burst immediately once the panel is visible, so the remaining
+        clicks can never land inside an already-open production panel.
+        """
+        click_count = 0
+        burst_count = 0
+        while True:
+            burst_count += 1
+            for burst_index in range(1, self.COLLECT_CLICK_BURST + 1):
+                self.context.ensure_running()
+                self.vision.driver.click(*machine_point)
+                click_count += 1
+                self.waiter.sleep(self.speed_config.vp_collect_delay)
+
+                warehouse_full, empty_ready = self._panel_state()
+                if warehouse_full:
+                    self._raise_inventory_full(label)
+                product_ready = self._find_product_match(
+                    product_template, threshold=product_threshold
+                ) is not None
+                panel_ready = empty_ready or product_ready
+                if panel_ready:
+                    self.context.log(
+                        f"AUTO {label} • burst thu VP {burst_index}/{self.COLLECT_CLICK_BURST} "
+                        f"• panel đã mở • tổng click={click_count} • "
+                        f"delay={self.speed_config.vp_collect_delay:.3f}s"
+                    )
+                    return click_count
+
+            if burst_count == 1 or burst_count % 5 == 0:
+                self.context.log(
+                    f"AUTO {label} • đã phát burst {self.COLLECT_CLICK_BURST} click "
+                    f"• panel chưa hiện • tiếp tục thu VP/mở máy • "
+                    f"burst={burst_count} • tổng click={click_count}"
+                )
+
     def _wait_for_idle_open_panel(
         self,
         *,
@@ -178,24 +224,25 @@ class ProductionActions:
         product_misses = 0
         while True:
             self.context.ensure_running()
+
+            warehouse_full, _empty_anchor = self._panel_state()
+            if warehouse_full:
+                self._raise_inventory_full(label)
+
             product = self._find_product_match(
                 product_template, threshold=product_threshold
             )
             if product is None:
                 product_misses += 1
-                if product_misses >= self.PANEL_PRODUCT_MISS_LIMIT:
-                    self.vision.driver.click(*self.CLOSE_POINT)
-                    raise ScreenTimeout(
-                        f"{label}: panel đang chờ bị mất ảnh sản phẩm đúng "
-                        f"sau {product_misses} lần kiểm tra; dừng fail-close"
+                if product_misses == 1 or product_misses % 10 == 0:
+                    self.context.log(
+                        f"AUTO {label} • ảnh sản phẩm tạm chưa khớp khi đang chờ "
+                        f"• misses={product_misses} • KHÔNG dừng AUTO • "
+                        f"giữ trạng thái và recheck sau {self.PANEL_RECHECK_SECONDS:.1f}s"
                     )
-                self.waiter.sleep(0.35)
+                self.waiter.sleep(self.PANEL_RECHECK_SECONDS)
                 continue
             product_misses = 0
-
-            warehouse_full, _empty_anchor = self._panel_state()
-            if warehouse_full:
-                self._raise_inventory_full(label)
 
             top_slot = self._find_top_empty_slot()
             empty = self._count_empty_slots()
@@ -215,35 +262,17 @@ class ProductionActions:
             self.waiter.sleep(self.PANEL_RECHECK_SECONDS)
 
     def _collect_finished_before_open(self) -> None:
-        """Collect finished output first; opening the panel is the verification."""
-
-        click_count = 0
-        while True:
-            self.context.ensure_running()
-            click_count += 1
-            self.vision.driver.click(*self.DRYER_POINT)
-            self.waiter.sleep(self.speed_config.vp_collect_delay)
-            warehouse_full, empty_ready = self._panel_state()
-            product_ready = self._find_product_match(
-                self.DRIED_APPLE_PRODUCTION_TEMPLATE,
-                threshold=self.DRIED_APPLE_GUARD_THRESHOLD,
-            ) is not None
-            panel_ready = empty_ready or product_ready
-            if click_count == 1 or click_count % 5 == 0 or panel_ready:
-                self.context.log(
-                    "AUTO sản xuất • click thu VP/mở máy "
-                    f"• clicks={click_count} • panel={panel_ready} • "
-                    f"fullkho={warehouse_full} • "
-                    f"delay={self.speed_config.vp_collect_delay:.3f}s"
-                )
-            if warehouse_full:
-                self._raise_inventory_full("Táo sấy")
-            if panel_ready:
-                self.context.log(
-                    "AUTO sản xuất • đã mở đúng panel tầng 1; "
-                    "nếu còn ô đang chạy sẽ giữ nguyên panel để chờ"
-                )
-                return
+        """Collect finished output in five-click bursts until the dryer panel opens."""
+        click_count = self._click_until_panel_open(
+            machine_point=self.DRYER_POINT,
+            product_template=self.DRIED_APPLE_PRODUCTION_TEMPLATE,
+            label="Táo sấy",
+            product_threshold=self.DRIED_APPLE_GUARD_THRESHOLD,
+        )
+        self.context.log(
+            "AUTO sản xuất • đã mở đúng panel tầng 1 bằng burst thu VP "
+            f"• tổng click={click_count} • nếu còn ô đang chạy sẽ giữ panel để chờ"
+        )
 
     def _open_verified_dryer(self) -> tuple[int, tuple[int, int], tuple[int, int]]:
         self._collect_finished_before_open()
