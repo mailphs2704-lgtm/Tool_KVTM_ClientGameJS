@@ -21,6 +21,9 @@ AUTOMATION = CLEAN / "automation.py"
 DOWN_FLOOR = CLEAN / "runtime/down_floor_button.py"
 PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
 PRODUCTION = CLEAN / "actions/production.py"
+INVENTORY = CLEAN / "actions/inventory.py"
+STALL = CLEAN / "actions/stall.py"
+BUILDER_MATCH = CLEAN / "workflows/auto_builder/image_match.py"
 
 # Direct OpenCV matching is allowed only in modules explicitly audited for the
 # logical/frame contract. Every normal action should use VisionEngine.find().
@@ -28,6 +31,8 @@ AUDITED_DIRECT_MATCH = {
     Path("runtime/vision.py"),
     Path("runtime/down_floor_button.py"),
     Path("actions/production.py"),
+    Path("actions/inventory.py"),
+    Path("workflows/auto_builder/image_match.py"),
 }
 
 
@@ -76,6 +81,9 @@ def main() -> int:
     down_floor = read_python(DOWN_FLOOR)
     pass_nav = read_python(PASS_THREE_NAV)
     production = read_python(PRODUCTION)
+    inventory = read_python(INVENTORY)
+    stall = read_python(STALL)
+    builder_match = read_python(BUILDER_MATCH)
 
     # Input contract: actions continue sending logical 1000 coordinates. The
     # driver owns the one-and-only final logical -> real client conversion.
@@ -157,6 +165,54 @@ def main() -> int:
     forbid(production, "x, y, width, height = zone",
            "Production returned to direct logical-zone frame slicing")
 
+    # Runtime-captured stall fingerprints are already in current frame pixels.
+    # Only the inventory ROI and returned click center are transformed. This is
+    # intentionally different from static library templates in VisionEngine.
+    require(inventory, "self.vision.logical_zone_to_frame(",
+            "Inventory fingerprint ROI is not logical->frame")
+    require(inventory, "self.INVENTORY_ZONE, frame",
+            "Inventory fingerprint does not map the canonical logical zone")
+    require(inventory, "self.vision.frame_point_to_logical(",
+            "Inventory fingerprint center is not returned logical")
+    forbid(inventory, "x, y, width, height = self.INVENTORY_ZONE",
+           "Inventory regressed to direct logical-zone frame slicing")
+
+    # Builder zones/click geometry are stored as logical 0..1000. Custom Builder
+    # templates use the same reference-space convention and therefore scale into
+    # the actual frame before direct OpenCV matching.
+    require(builder_match, "automation.vision.logical_zone_to_frame(",
+            "Builder recognize-image zone is not resolution-aware")
+    require(builder_match, "automation.vision.frame_scales(source)",
+            "Builder recognize-image frame scale missing")
+    require(builder_match, "image.shape[1] * frame_sx * scale",
+            "Builder template width is not frame-scaled")
+    require(builder_match, "image.shape[0] * frame_sy * scale",
+            "Builder template height is not frame-scaled")
+    require(builder_match, "automation.vision.frame_point_to_logical(",
+            "Builder match center is not logical")
+    require(builder_match, "automation.vision.frame_box_to_logical(",
+            "Builder match box is not logical")
+    forbid(builder_match, "x, y, w, h = map(int, zone)",
+           "Builder regressed to frame-pixel interpretation of logical zone")
+
+    # Sale/friend-stall has direct color/crop logic in addition to VisionEngine.
+    # Those ROIs must be mapped from logical geometry and the old 1000-pixel coin
+    # count must scale by frame area. 500x500 must also be accepted by scan_view.
+    require(stall, "self.vision.logical_zone_to_frame(",
+            "Stall direct crop/color ROI is not resolution-aware")
+    require(stall, "120.0 * frame_sx * frame_sy",
+            "Stall coin pixel threshold is not scaled by frame area")
+    require(stall, "if frame_sx < 0.40 or frame_sy < 0.40:",
+            "Stall scan does not accept canonical 500x500 frames")
+    require(stall, "icon = self.crop_icon(source, local_slot)",
+            "Stall scan bypasses resolution-aware icon crop")
+    require(stall, "def crop_icon(self, frame: Any, local_slot: int):",
+            "Stall logical icon crop helper missing")
+    forbid(stall, "if width < 800 or height < 750:",
+           "Stall still rejects 500x500 runtime")
+    forbid(stall, "roi = frame[top:bottom, cx + 10 : cx + 48]",
+           "Stall price-coin ROI still uses raw logical pixels")
+
     # Dedicated XUỐNG detector already uses proportional ROI and 0.50 base scale
     # for the 500 target. Its public center must be logical before the existing
     # navigation caller sends it to the logical driver.
@@ -182,6 +238,9 @@ def main() -> int:
     print("legacy_adaptive=neutralized-before-bridge")
     print("down_floor=500-scale+logical-center")
     print("production_slots=frame-scaled+logical-dedup")
+    print("inventory_fingerprint=current-frame-template+logical-roi-center")
+    print("builder_match=logical-zone+frame-scaled-template+logical-result")
+    print("stall_scan=logical-crops+area-scaled-coin-threshold+500-accepted")
     return 0
 
 
