@@ -23,16 +23,65 @@ Nước táo là thành phẩm trung gian bắt buộc để sản xuất Vải 
 5. Chờ/thu hoạch/gieo lại Táo theo gate cây chín.
 6. Từ tầng 1 lên tầng 6 bằng route đã prove của Function.
 7. Xử lý hàng Táo ở tầng 6.
-8. Recovery tầng 6 → main.
-9. Main → tầng 2.
-10. Sản xuất đủ 9 Nước táo.
-11. Recovery tầng 2 → main.
-12. Trồng 27 Bông.
-13. Điều hướng tới tầng 3.
-14. Sản xuất đủ 9 Vải vàng.
-15. Recovery tầng 3/upper-floor → exact-main bằng navigation proof.
-16. PASS 3/3 và trả kết quả cho scheduler.
-17. Scheduler bán lại theo số vòng đã cấu hình rồi tiếp tục vòng Function kế tiếp.
+8. **Đường nhanh:** `goDown(4)` thẳng từ tầng 6 tới candidate tầng 2.
+9. Probe máy Nước táo có giới hạn; chỉ khi thấy đúng anchor `nuoc_tao` trong vùng thư viện panel mới chấp nhận tầng 2.
+10. Nếu probe miss/lệch tầng: đóng panel, dùng recovery goDown/XUỐNG/main-boundary không phụ thuộc background để về exact-main, sau đó `goUp(1) x2` về tầng 2 và mới retry production.
+11. Sản xuất đủ 9 Nước táo và Sửa máy.
+12. Recovery tầng 2 → exact-main.
+13. Trồng 27 Bông.
+14. Từ mốc tầng 1 lên tầng 3 bằng **true AUTO PRO `goUp(2)` mode 2**, một command tại `(257,416)`, không còn `goUp(1)` hai lần.
+15. Sản xuất đủ 9 Vải vàng và Sửa máy.
+16. Recovery tầng 3/upper-floor → exact-main bằng navigation proof.
+17. PASS 3/3 và trả kết quả cho scheduler.
+18. Scheduler bán lại theo số vòng đã cấu hình rồi tiếp tục vòng Function kế tiếp.
+
+## Tối ưu route Táo tầng 6 → Nước táo tầng 2
+
+Mục tiêu là bỏ vòng đi dư trước đây:
+
+`floor 6 → goDown(4) → floor 2 → floor 1 → main → floor 1 → floor 2`
+
+Đường bình thường mới:
+
+`floor 6 → goDown(4) → candidate floor 2 → nuoc_tao PASS → production`
+
+`goDown(4)` chỉ là **movement evidence**, tuyệt đối không tự chứng minh đã tới đúng tầng. Gate thật là ảnh `nuoc_tao` trong panel máy.
+
+Probe direct có các ràng buộc:
+
+- tối đa `2` burst x5;
+- mỗi burst có tối đa `3` recheck ngắn;
+- dùng chung true x5 raw-click helper đã PASS;
+- gặp `full_kho` không dùng popup đó làm bằng chứng tầng;
+- không thấy `nuoc_tao` thì đóng panel và fallback, không lặp click vô hạn trên tầng sai.
+
+Fallback direct-floor miss:
+
+1. invalidate mọi exact-main proof cũ;
+2. dùng `go_down_one_toward_main()` và nút `XUỐNG`/main-boundary đã xây;
+3. bắt buộc exact-main PASS;
+4. `main → goUp(1) → floor1 → goUp(1) → floor2`;
+5. production Nước táo chạy lại qua transaction chuẩn;
+6. `InventoryFull` vẫn do warehouse recovery chuẩn xử lý, không bị probe nuốt.
+
+## True AUTO PRO goUp(2) cho Bông → Vải vàng
+
+Forensic bytecode `adb_controller.goUp` đã xác nhận `num_up` là **mode**, không phải count:
+
+- mode 1: swipe `(514,214) → (514,314)`;
+- **mode 2: click `(257,416)`**;
+- mode 3: click `(257,191)`;
+- mode 4: swipe `(387,69) → (387,918)`.
+
+Sau trồng Bông, route tầng 1 → tầng 3 hiện phát đúng một mode 2:
+
+1. click common side-close `(975,316)`;
+2. click mode 2 `(257,416)`;
+3. chờ `0.70s` + post wait `0.15s`;
+4. hậu kiểm fresh-frame change;
+5. fail-closed nếu command không tạo phản hồi hình ảnh.
+
+Không được regression về hai lần `goUp(1)` cho route này.
 
 ## Hợp đồng production đã PASS
 
@@ -132,10 +181,22 @@ Các verifier chính bảo vệ Function 1:
 - `tools/verify_multi_dev_main_boundary_contract.py`
 - `tools/verify_auto_vp_advertising_contract.py`
 
+Production contract hiện khóa thêm:
+
+- direct `floor6 → goDown(4) → floor2 candidate`;
+- bounded `nuoc_tao` proof;
+- exact-main fallback + `goUp(1)x2`;
+- true AUTO PRO `goUp(2)` tại `(257,416)`;
+- cấm route Bông → tầng 3 quay lại hai `goUp(1)`.
+
 ## Quy tắc regression
 
 Không được đưa trở lại các hành vi sau:
 
+- vòng `floor6 → main → floor2` trong đường bình thường khi direct `nuoc_tao` đã PASS;
+- direct goDown(4) tự được coi là tầng 2 mà không có anchor `nuoc_tao`;
+- probe sai tầng click x5 vô hạn;
+- route Bông → Vải vàng dùng hai `goUp(1)` thay cho true mode `goUp(2)`;
 - `o_trong` tự chứng minh panel production đã mở;
 - click mù nút xuống tầng;
 - background farm làm exact-main gate;
