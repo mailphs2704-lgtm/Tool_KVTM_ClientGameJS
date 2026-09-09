@@ -13,7 +13,7 @@ __all__ = ["ProductionResult", "ProductionActions"]
 FILE_FUNCTIONS = (
     "Thu VP bằng đúng năm click tức thì cùng tọa độ rồi mới kiểm tra panel sản xuất",
     "Dùng tốc độ thu VP làm khoảng nghỉ sau mỗi burst x5, không chèn nghỉ giữa năm click",
-    "Nhận panel đã mở bằng ô trống hoặc ảnh đúng sản phẩm khi máy đang kín slot",
+    "Chỉ công nhận panel mở khi ảnh đúng sản phẩm xuất hiện trong vùng thư viện panel",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
     "Mất ảnh sản phẩm tạm thời khi đang chờ chỉ recheck, không dừng AUTO",
     "Phát tín hiệu InventoryFull riêng khi kho đầy để workflow xuống quầy bán VP",
@@ -39,7 +39,11 @@ class ProductionActions:
     DRYER_FLOOR = 1
     DRYER_POINT = (262, 917)
     DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"
-    PRODUCT_SEARCH_ZONE = None
+    # Proven product-library centers from successful panels are around
+    # Nước táo=(464,603), Táo sấy=(528,602), Vải vàng=(529,604). Restricting
+    # matching to this panel-only area prevents farm/slot imagery from being
+    # mistaken for an opened production panel.
+    PRODUCT_SEARCH_ZONE = (420, 550, 170, 120)
     DRIED_APPLE_GUARD_THRESHOLD = 0.70
     EMPTY_SLOT_TEMPLATE = "o_trong"
     TOP_EMPTY_SLOT_ZONE = (335, 650, 130, 135)
@@ -132,7 +136,7 @@ class ProductionActions:
         return self.vision.find(
             name,
             threshold=threshold,
-            zone=None,
+            zone=self.PRODUCT_SEARCH_ZONE,
             scales=(0.75, 0.90, 1.00, 1.10, 1.25),
             click=False,
         )
@@ -185,12 +189,12 @@ class ProductionActions:
         label: str,
         product_threshold: float = 0.70,
     ) -> int:
-        """Send true x5 multi-click bursts, then settle/check exactly once per burst.
+        """Send true x5 bursts until the panel-only product anchor is visible.
 
-        The five driver clicks are back-to-back at one coordinate: no sleep,
-        stop checkpoint, frame capture, template match, or panel check is inserted
-        between them. Only after all five clicks do we wait once and inspect the
-        panel; if it is still closed, another immediate x5 burst is sent.
+        Empty-slot imagery is diagnostic only: it can also appear while the farm
+        screen is still visible and therefore must never stop collection. The
+        panel is accepted only when the requested production item is matched in
+        the proven product-library zone. Until then, another x5 burst is sent.
         """
         click_count = 0
         burst_count = 0
@@ -212,19 +216,25 @@ class ProductionActions:
             warehouse_full, empty_ready = self._panel_state()
             if warehouse_full:
                 self._raise_inventory_full(label)
-            product_ready = self._find_product_match(
+
+            product = self._find_product_match(
                 product_template, threshold=product_threshold
-            ) is not None
-            panel_ready = empty_ready or product_ready
-            if panel_ready:
+            )
+            if product is not None:
                 self.context.log(
-                    f"AUTO {label} • panel đã mở sau burst x5 "
-                    f"• burst={burst_count} • tổng click={click_count} • "
+                    f"AUTO {label} • panel đã mở sau burst x5 và đã xác minh ảnh "
+                    f"{product_template} trong vùng thư viện • burst={burst_count} • "
+                    f"tổng click={click_count} • center={product.center} • "
                     f"nghỉ sau burst={self.speed_config.vp_collect_delay:.3f}s"
                 )
                 return click_count
 
-            if burst_count == 1 or burst_count % 5 == 0:
+            if empty_ready and (burst_count == 1 or burst_count % 5 == 0):
+                self.context.log(
+                    f"AUTO {label} • thấy dấu ô trống nhưng CHƯA có ảnh {product_template} "
+                    "trong vùng thư viện • KHÔNG coi panel đã mở • tiếp tục burst x5"
+                )
+            elif burst_count == 1 or burst_count % 5 == 0:
                 self.context.log(
                     f"AUTO {label} • panel chưa hiện sau burst x5 "
                     "• tiếp tục một burst x5 tức thì mới • "
