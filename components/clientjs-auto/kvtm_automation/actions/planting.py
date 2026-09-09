@@ -84,7 +84,7 @@ class PlantingActions:
         )
 
     def _count_changed_pots(self, before, after) -> int:
-        """Require visible pot changes; sending a swipe alone is never PASS."""
+        """Require visible pot changes using logical 1000 waypoint geometry."""
         centers = (
             (335, 940), (490, 940), (578, 940), (645, 940), (720, 940), (835, 940),
             (835, 725), (665, 725), (595, 725), (505, 725), (430, 725), (335, 725),
@@ -92,13 +92,21 @@ class PlantingActions:
             (835, 280), (665, 280), (595, 280), (505, 280), (430, 280), (335, 280),
             (335, 40), (490, 40), (578, 40),
         )
-        height, width = before.shape[:2]
         changed = 0
-        for x, y in centers:
-            x0, x1 = max(0, x - 24), min(width, x + 24)
-            y0, y1 = max(0, y - 24), min(height, y + 24)
-            old = before[y0:y1, x0:x1].astype("int16")
-            new = after[y0:y1, x0:x1].astype("int16")
+        for center in centers:
+            # The old diagnostic sliced x/y logical values directly from the
+            # captured frame. Once Vision sees true 500x500 that would make most
+            # lower/right pot ROIs empty. Keep the same logical ±24 box and map
+            # it to each actual frame independently.
+            logical_zone = (center[0] - 24, center[1] - 24, 48, 48)
+            bx, by, bw, bh = self.vision.logical_zone_to_frame(
+                logical_zone, before
+            )
+            ax, ay, aw, ah = self.vision.logical_zone_to_frame(
+                logical_zone, after
+            )
+            old = before[by : by + bh, bx : bx + bw].astype("int16")
+            new = after[ay : ay + ah, ax : ax + aw].astype("int16")
             if old.shape == new.shape and old.size:
                 difference = float(abs(new - old).mean())
                 if difference >= 8.0:
@@ -125,9 +133,6 @@ class PlantingActions:
         if harvest is not None:
             return "RIPE", harvest
         if empty is not None and rose is not None:
-            # Keep the exact seed match proven on this same READY frame. Re-capturing
-            # immediately afterwards can land on a short picker animation frame and
-            # falsely turn a 0.99 match into a timeout.
             return "EMPTY", rose
         return "UNKNOWN", None
 
