@@ -19,7 +19,8 @@ FILE_FUNCTIONS = (
     "Mất ảnh sản phẩm tạm thời khi đang chờ chỉ recheck, không dừng AUTO",
     "Phát tín hiệu InventoryFull riêng khi kho đầy để workflow xuống quầy bán VP",
     "Xác minh đúng máy bằng template sản phẩm trước khi thao tác",
-    "Đếm ô sản xuất trống bằng template và loại trùng hình học",
+    "Đếm ô sản xuất trống bằng logical zone/template đã scale theo frame thật",
+    "Loại trùng ô sản xuất theo khoảng cách logical 1000x1000, không theo pixel client",
     "Kéo đúng chín Táo sấy từ ảnh thư viện xuống tâm ô top",
     "Mỗi lần kéo được recheck nhiều frame và retry tối đa ba gesture trước khi fail",
     "Hậu kiểm số ô trống giảm và dừng an toàn nếu giao dịch không khớp",
@@ -80,40 +81,97 @@ class ProductionActions:
         zone: tuple[int, int, int, int],
         threshold: float,
     ) -> int:
+        """Count repeated panel anchors while preserving logical 1000 geometry.
+
+        This path needs every empty-slot match, so it cannot use ``VisionEngine.find``
+        which intentionally returns only the best result. The conversion contract
+        is still shared with VisionEngine: logical ROI -> frame ROI, templates ->
+        frame size, and detected centers -> logical coordinates before geometric
+        de-duplication. This makes MIN_DISTANCE resolution-independent.
+        """
         import cv2
 
         frame = self.vision.frame()
         if frame.ndim == 3 and frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-        x, y, width, height = zone
+
+        x, y, width, height = self.vision.logical_zone_to_frame(zone, frame)
         roi = frame[y:y + height, x:x + width]
+        if roi.size == 0:
+            self.context.detail(
+                f"AUTO production matches | template={name} | count=0 | "
+                f"threshold={threshold:.2f} | logical_zone={zone} | "
+                f"frame_roi={(x, y, width, height)} | empty_roi=true"
+            )
+            return 0
+
+        frame_sx, frame_sy = self.vision.frame_scales(frame)
         centers: list[tuple[int, int, float]] = []
         for path in self.vision.assets.candidates(name):
             template = cv2.imread(str(path), cv2.IMREAD_COLOR)
             if template is None or template.size == 0:
                 continue
-            if template.shape[0] > roi.shape[0] or template.shape[1] > roi.shape[1]:
+
+            template_width = max(
+                2, int(round(template.shape[1] * frame_sx))
+            )
+            template_height = max(
+                2, int(round(template.shape[0] * frame_sy))
+            )
+            if template_height > roi.shape[0] or template_width > roi.shape[1]:
                 continue
-            scores = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+
+            scaled = template
+            if (
+                template_width != template.shape[1]
+                or template_height != template.shape[0]
+            ):
+                interpolation = (
+                    cv2.INTER_AREA
+                    if (
+                        template_width <= template.shape[1]
+                        and template_height <= template.shape[0]
+                    )
+                    else cv2.INTER_CUBIC
+                )
+                scaled = cv2.resize(
+                    template,
+                    (template_width, template_height),
+                    interpolation=interpolation,
+                )
+
+            scores = cv2.matchTemplate(roi, scaled, cv2.TM_CCOEFF_NORMED)
             while True:
                 _minimum, maximum, _min_loc, maximum_location = cv2.minMaxLoc(scores)
                 if float(maximum) < threshold:
                     break
-                cx = x + maximum_location[0] + template.shape[1] // 2
-                cy = y + maximum_location[1] + template.shape[0] // 2
+
+                frame_center = (
+                    x + maximum_location[0] + template_width // 2,
+                    y + maximum_location[1] + template_height // 2,
+                )
+                cx, cy = self.vision.frame_point_to_logical(frame_center, frame)
                 if all(
                     (cx - old_x) ** 2 + (cy - old_y) ** 2 >= self.MIN_DISTANCE ** 2
                     for old_x, old_y, _score in centers
                 ):
                     centers.append((cx, cy, float(maximum)))
-                left = max(0, maximum_location[0] - template.shape[1] // 2)
-                top = max(0, maximum_location[1] - template.shape[0] // 2)
-                right = min(scores.shape[1], maximum_location[0] + template.shape[1] // 2)
-                bottom = min(scores.shape[0], maximum_location[1] + template.shape[0] // 2)
+
+                left = max(0, maximum_location[0] - template_width // 2)
+                top = max(0, maximum_location[1] - template_height // 2)
+                right = min(
+                    scores.shape[1], maximum_location[0] + template_width // 2
+                )
+                bottom = min(
+                    scores.shape[0], maximum_location[1] + template_height // 2
+                )
                 scores[top:bottom, left:right] = -1.0
+
         self.context.detail(
             f"AUTO production matches | template={name} | count={len(centers)} | "
-            f"threshold={threshold:.2f} | zone={zone}"
+            f"threshold={threshold:.2f} | logical_zone={zone} | "
+            f"frame_roi={(x, y, width, height)} | "
+            f"frame_scale=({frame_sx:.4f},{frame_sy:.4f})"
         )
         return len(centers)
 
