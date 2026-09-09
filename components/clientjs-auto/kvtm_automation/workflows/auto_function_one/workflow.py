@@ -6,6 +6,7 @@ import time
 from ...automation import KVAutomation
 from ...errors import ScreenTimeout
 from ..auto_apple_dryer import AppleDryerWorkflow
+from ..production_warehouse_recovery import ProductionWarehouseRecovery
 
 
 __all__ = ["FunctionOneResult", "FunctionOneWorkflow"]
@@ -14,6 +15,7 @@ FILE_FUNCTIONS = (
     "Chờ chín, thu hoạch và gieo lại ba mươi Táo tầng 1-5",
     "Đi từ tầng 1 lên tầng 6 rồi xử lý đúng hàng dưới cùng",
     "Chỉ exact-check main sau transition giữa lượt trồng/sản xuất",
+    "Nếu kho đầy trong production: xuống quầy bán VP, quay lại đúng tầng và retry đúng máy",
     "Về màn hình chính, lên tầng 2, sản xuất chín Nước táo rồi Sửa máy",
     "Về màn hình chính, gieo 27 Bông rồi lên tầng 3 sản xuất chín Vải vàng và Sửa máy",
     "Chỉ PASS 3/3 sau khi hậu kiểm đủ chín Vải vàng và Sửa máy",
@@ -45,6 +47,9 @@ class FunctionOneWorkflow:
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
         self.context = automation.context
+        self.warehouse_recovery = ProductionWarehouseRecovery(
+            automation, function_id="function_1"
+        )
 
     def _require_main_transition(self, label: str) -> None:
         """Exact main gate only after an explicit business floor transition."""
@@ -99,8 +104,12 @@ class FunctionOneWorkflow:
         self.auto.function_one_navigation.floor_6_to_main()
         self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")
         self.auto.function_one_navigation.main_to_floor_2()
-        juice = self.auto.apple_juice_production.produce_9_apple_juices(
-            close_after_success=False
+        juice = self.warehouse_recovery.run_production(
+            floor=2,
+            label="Nước táo",
+            producer=lambda: self.auto.apple_juice_production.produce_9_apple_juices(
+                close_after_success=False
+            ),
         )
         self.auto.machine_repair.repair_after_production(juice)
         self.context.ensure_running()
@@ -121,8 +130,12 @@ class FunctionOneWorkflow:
         )
 
         self.auto.function_one_pass_three_navigation.floor_1_to_floor_3()
-        fabric = self.auto.yellow_fabric_production.produce_9_yellow_fabrics(
-            close_after_success=False
+        fabric = self.warehouse_recovery.run_production(
+            floor=3,
+            label="Vải vàng",
+            producer=lambda: self.auto.yellow_fabric_production.produce_9_yellow_fabrics(
+                close_after_success=False
+            ),
         )
         self.auto.machine_repair.repair_after_production(fabric)
         self.context.ensure_running()
