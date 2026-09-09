@@ -4,9 +4,20 @@ Cập nhật: 2026-09-09
 
 ## Trạng thái
 
-**Function 1 đã được operator chạy nhiều vòng và chốt PASS thực tế.**
+**Function 1 baseline đã được operator chạy nhiều vòng và chốt PASS thực tế.**
 
-Từ mốc này, Function 1 được xem là baseline ổn định. Nếu phát sinh lỗi mới thì xử lý như regression cụ thể; không thay đổi hàng loạt các bước đang PASS nếu không có bằng chứng runtime.
+Hai regression mới nhất đã được sửa source nhưng vẫn cần live-test lại sau build:
+
+- Bông → Vải vàng: điểm `(257,416)` chỉ lên tầng 2; runtime mới click chậu tầng 4 `(257,191)` để tới candidate tầng 3.
+- Production mở nhầm máy/tầng: nếu panel hiện VP khác target thì đóng panel ngay, phát `WrongProductionMachine`, recovery exact-main rồi quay lại đúng tầng.
+
+QC quầy đã được operator chốt PASS. Sale/QC/Dọn quầy đang là vùng ổn định và không được thay đổi khi sửa navigation/production nếu không có bằng chứng regression.
+
+HEAD source trước lần cập nhật tài liệu này:
+
+`ffa9336565d00c5bf18b36ddc0c64e1246db8a2f`
+
+Commit `ffa93365` chỉ sửa static speed verifier để khớp fresh-frame panel scan mới; không thay đổi runtime Function 1.
 
 ## Điều kiện hoàn thành
 
@@ -17,7 +28,7 @@ Nước táo là thành phẩm trung gian bắt buộc để sản xuất Vải 
 ## Chuỗi runtime hiện tại
 
 1. Worker chuẩn hóa về exact-main trước scheduler.
-2. AUTO bán VP đúng catalog của Function 1.
+2. AUTO bán VP đúng catalog của Function 1; QC quầy chạy 3 checkpoint đầu/giữa/cuối.
 3. Từ main lên tầng 1 và trồng 27 Táo.
 4. Sản xuất đủ 9 Táo sấy tại tầng 1.
 5. Chờ/thu hoạch/gieo lại Táo theo gate cây chín.
@@ -30,10 +41,11 @@ Nước táo là thành phẩm trung gian bắt buộc để sản xuất Vải 
 12. Recovery tầng 2 → exact-main.
 13. Trồng 27 Bông.
 14. Từ mốc tầng 1 lên tầng 3 bằng **click chậu tầng 4 tại `(257,191)`**. Điểm cũ `(257,416)` đã live-test và chỉ đưa camera lên tầng 2 nên không được dùng cho bước Vải vàng.
-15. Sản xuất đủ 9 Vải vàng và Sửa máy.
-16. Recovery tầng 3/upper-floor → exact-main bằng navigation proof.
-17. PASS 3/3 và trả kết quả cho scheduler.
-18. Scheduler bán lại theo số vòng đã cấu hình rồi tiếp tục vòng Function kế tiếp.
+15. Production Vải vàng phải xác minh đúng `vai_vang`. Nếu panel mở ra là `nuoc_tao` hoặc `tao_say`, đóng panel và chạy wrong-machine recovery.
+16. Sản xuất đủ 9 Vải vàng và Sửa máy.
+17. Recovery tầng 3/upper-floor → exact-main bằng navigation proof.
+18. PASS 3/3 và trả kết quả cho scheduler.
+19. Scheduler bán lại theo số vòng đã cấu hình rồi tiếp tục vòng Function kế tiếp.
 
 ## Tối ưu route Táo tầng 6 → Nước táo tầng 2
 
@@ -73,7 +85,7 @@ Forensic bytecode `adb_controller.goUp` từng cho thấy các điểm:
 - mode 3: click `(257,191)`;
 - mode 4: swipe `(387,69) → (387,918)`.
 
-**Live test 2026-09-09 đã sửa cách hiểu:** trong trạng thái Function 1 sau gieo Bông, click `(257,416)` chỉ đưa camera tới tầng 2. Để camera tới máy Vải vàng tầng 3, runtime phải click điểm chậu cao hơn ở tầng 4, dùng tọa độ recovered `(257,191)`.
+**Live correction 2026-09-09:** trong trạng thái Function 1 sau gieo Bông, click `(257,416)` chỉ đưa camera tới tầng 2. Để camera tới máy Vải vàng tầng 3, runtime phải click điểm chậu cao hơn ở tầng 4, dùng tọa độ recovered `(257,191)`.
 
 Chuỗi hiện tại:
 
@@ -81,22 +93,29 @@ Chuỗi hiện tại:
 2. click chậu tầng 4 `(257,191)`;
 3. chờ `0.70s` + post wait `0.15s`;
 4. hậu kiểm fresh-frame change;
-5. production Vải vàng tiếp tục xác minh `vai_vang`; nếu panel mở ra là máy khác thì kích hoạt wrong-machine recovery.
+5. production Vải vàng xác minh `vai_vang` trước khi xếp hàng;
+6. nếu panel mở ra là máy khác thì kích hoạt wrong-machine recovery.
 
 Không được regression về `(257,416)` hoặc hai lần `goUp(1)` cho route này.
 
-## Hợp đồng production đã PASS
+## Hợp đồng production
 
 ### Thu VP bằng burst x5
 
 Táo sấy, Nước táo và Vải vàng dùng chung nguyên tắc:
 
 - mỗi burst gửi đúng 5 click tức thì tại cùng tọa độ máy;
-- nghỉ theo `vp_collect_delay` sau burst;
-- tiếp tục burst cho tới khi panel được xác minh mở;
+- không có sleep/capture/check xen giữa 5 click;
+- sau burst mới nghỉ theo `vp_collect_delay`;
+- sau settle lấy **một fresh frame**;
+- `full_kho`, target VP và wrong-machine VP đều được quét trên fresh frame đó;
 - panel đúng chỉ được coi là mở khi **ảnh sản phẩm yêu cầu** xuất hiện trong `PRODUCT_SEARCH_ZONE`;
 - `o_trong` chỉ được dùng làm diagnostic, không được phép tự chứng minh đúng máy;
 - product-image miss tạm thời khi panel đã xác minh đúng là non-blocking và tiếp tục recheck.
+
+Thứ tự bắt buộc:
+
+`x5 raw click → vp_collect_delay → fresh frame → panel_state(frame) → target/wrong-machine scan`
 
 ### Sai máy / sai tầng
 
@@ -111,30 +130,34 @@ runtime phải coi đây là bằng chứng `WrongProductionMachine`, không đ�
 Ví dụ đang cần `vai_vang` nhưng panel hiện `nuoc_tao`:
 
 1. đóng panel SX ngay;
-2. không tin tầng dự kiến hiện tại;
-3. dùng unknown-floor `goDown(1)` + nút `XUỐNG` + main-boundary để chứng minh exact-main;
-4. từ exact-main đi lại đúng tầng 3;
-5. retry production Vải vàng;
-6. lần retry vẫn phải xác minh `vai_vang` trước khi xếp hàng.
+2. phát `WrongProductionMachine`;
+3. không tin tầng dự kiến hiện tại;
+4. invalidate camera exact-main cũ;
+5. dùng unknown-floor `goDown(1)` + nút `XUỐNG` + main-boundary để chứng minh exact-main;
+6. từ exact-main đi lại đúng tầng 3;
+7. retry production Vải vàng;
+8. lần retry vẫn phải xác minh `vai_vang` trước khi xếp hàng.
 
 Wrong-machine recovery giới hạn tối đa `3` lần để không tạo vòng điều hướng vô hạn.
+
+Wrong-machine recovery **không bán VP**. Nó khác hoàn toàn với `InventoryFull` recovery.
+
+### Kho đầy
+
+`InventoryFull` là business signal riêng:
+
+1. quay về exact-main từ tầng đã biết;
+2. chạy sale VP thuộc Function hiện tại;
+3. quay lại đúng tầng sản xuất;
+4. retry đúng production call đang dở.
+
+Không nuốt generic `ScreenTimeout` vào recovery.
 
 ### Kéo sản xuất
 
 - Mỗi gesture phải làm giảm số ô trống theo hậu kiểm.
 - Với render chậm, runtime recheck nhiều frame và retry gesture có giới hạn trước khi báo lỗi.
 - Không retry mù vô hạn destructive gesture.
-
-### Kho đầy
-
-`InventoryFull` là business signal riêng:
-
-1. quay về exact-main;
-2. chạy sale VP thuộc Function hiện tại;
-3. quay lại đúng tầng sản xuất;
-4. retry đúng production call đang dở.
-
-Không nuốt generic `ScreenTimeout` vào recovery.
 
 ## Exact-main và điều hướng đa background
 
@@ -162,7 +185,7 @@ Function 1 mặc định bán:
 
 Mỗi listing phải qua exact-x10 gate và hậu kiểm screen-change trước khi được ghi nhận SOLD.
 
-### Quảng cáo quầy
+### Quảng cáo quầy — LIVE PASS
 
 Mỗi lượt sale có 3 checkpoint QC gần physical slot `1 / 10 / 20`:
 
@@ -174,16 +197,46 @@ Mỗi lượt sale có 3 checkpoint QC gần physical slot `1 / 10 / 20`:
 - lỗi QC là non-blocking;
 - quầy full hoặc kho hết VP vẫn tiếp tục đi hết ba checkpoint QC và thu vàng.
 
-## Cấu hình tốc độ baseline
+Operator đã chốt QC PASS sau live test.
 
-Multi DEV persistent baseline hiện khóa:
+## Cấu hình tốc độ
 
-- kéo tầng: `0.350s`;
-- trồng/thu: `0.035s`;
-- sản xuất VP: `0.070s`;
-- kiểm tra cây: `0.100s`.
+Các speed path độc lập:
 
-Settings operator đã lưu trong `%APPDATA%\KVTM Multi DEV` vẫn là authoritative và không bị rebuild `dist` xóa.
+- `floor_swipe_duration`;
+- `plant_harvest_duration`;
+- `vp_collect_delay`;
+- `vp_production_delay`;
+- `crop_check_interval`.
+
+Persistent settings trong `%APPDATA%\KVTM Multi DEV` là authoritative; rebuild `dist` không được overwrite giá trị operator đã lưu.
+
+## Build verifier sau wrong-machine fix
+
+Sau khi thêm fresh-frame shared scan cho wrong-machine, `verify_auto_speed_config_contract.py` cũ bị stale vì vẫn tìm literal:
+
+`warehouse_full, empty_ready = self._panel_state()`
+
+Runtime đúng đã đổi sang:
+
+`frame = self.vision.frame()`
+
+`warehouse_full, empty_ready = self._panel_state(frame=frame)`
+
+Commit `ffa9336565d00c5bf18b36ddc0c64e1246db8a2f` đã sửa **verifier**, không sửa runtime, và khóa thứ tự:
+
+`x5 → settle → fresh frame → panel check → wrong-machine scan`
+
+Build speed gate sau fix phải PASS với marker:
+
+`AUTO MULTI DEV SPEED CONFIG STATIC CONTRACT VERIFIED`
+
+Verifier phải tiếp tục cấm:
+
+- sleep giữa 5 raw click;
+- capture/check giữa 5 raw click;
+- panel check trước `vp_collect_delay`;
+- bỏ `_find_wrong_product_match()` khỏi shared collect path.
 
 ## Biên thực thi
 
@@ -200,11 +253,12 @@ Các verifier chính bảo vệ Function 1:
 - `tools/verify_auto_main_sale_contract.py`
 - `tools/verify_auto_main_planting_contract.py`
 - `tools/verify_auto_main_production_contract.py`
+- `tools/verify_auto_speed_config_contract.py`
 - `tools/verify_auto_floor_navigation_contract.py`
 - `tools/verify_multi_dev_main_boundary_contract.py`
 - `tools/verify_auto_vp_advertising_contract.py`
 
-Production contract hiện khóa thêm:
+Production/speed contracts hiện khóa thêm:
 
 - direct `floor6 → goDown(4) → floor2 candidate`;
 - bounded `nuoc_tao` proof;
@@ -212,7 +266,8 @@ Production contract hiện khóa thêm:
 - Bông → tầng 3 phải click chậu tầng 4 `(257,191)`;
 - cấm runtime dùng điểm cũ `(257,416)` cho route Vải vàng;
 - panel mở nhưng VP sai máy phải đóng và phát `WrongProductionMachine`;
-- wrong-machine phải recovery unknown-floor → exact-main → đúng tầng rồi retry.
+- wrong-machine phải recovery unknown-floor → exact-main → đúng tầng rồi retry;
+- collect order phải là x5 → settle → fresh-frame → shared panel scan.
 
 ## Quy tắc regression
 
@@ -223,6 +278,8 @@ Không được đưa trở lại các hành vi sau:
 - probe sai tầng click x5 vô hạn;
 - route Bông → Vải vàng dùng `(257,416)` hoặc hai `goUp(1)`;
 - panel đã mở sai máy nhưng AUTO vẫn click thu VP vô hạn;
+- quét target và wrong-machine trên các frame rời nhau sau cùng một burst;
+- sleep/capture/check xen giữa 5 raw click;
 - `o_trong` tự chứng minh panel production đúng máy;
 - click mù nút xuống tầng;
 - background farm làm exact-main gate;
