@@ -135,13 +135,20 @@ def main() -> int:
             "Shared collect helper does not call true x5 burst")
     require(collect, "self.waiter.sleep(self.speed_config.vp_collect_delay)",
             "VP collect post-burst settle delay missing")
-    require(collect, "warehouse_full, empty_ready = self._panel_state()",
-            "VP collect post-burst panel check missing")
+    require(collect, "frame = self.vision.frame()",
+            "VP collect fresh-frame capture missing after settle")
+    require(collect, "warehouse_full, empty_ready = self._panel_state(frame=frame)",
+            "VP collect post-burst panel check must reuse the fresh frame")
+    require(collect, "self._find_wrong_product_match(",
+            "VP collect wrong-machine scan missing after panel opens on another floor")
     burst_call = collect.index("self._send_collect_burst(machine_point=machine_point)")
     settle = collect.index("self.waiter.sleep(self.speed_config.vp_collect_delay)")
-    panel_check = collect.index("warehouse_full, empty_ready = self._panel_state()")
-    if not burst_call < settle < panel_check:
-        raise AssertionError("VP collect order must be x5 -> settle once -> panel check once")
+    fresh_frame = collect.index("frame = self.vision.frame()")
+    panel_check = collect.index("warehouse_full, empty_ready = self._panel_state(frame=frame)")
+    if not burst_call < settle < fresh_frame < panel_check:
+        raise AssertionError(
+            "VP collect order must be x5 -> settle once -> fresh frame -> panel check"
+        )
 
     require(production, "self.speed_config.vp_production_delay",
             "VP production speed not applied to dried apple")
@@ -182,7 +189,7 @@ def main() -> int:
     print("AUTO MULTI DEV SPEED CONFIG STATIC CONTRACT VERIFIED")
     print("floor_swipe=independent")
     print("plant_harvest=independent")
-    print("vp_collect=true-x5-no-inter-click-wait+post-burst-settle")
+    print("vp_collect=true-x5-no-inter-click-wait+post-burst-settle+fresh-frame-panel-scan")
     print("vp_production=independent_reserved")
     print("crop_check_interval=independent_default_0.3s")
     print("stable_sale_and_clear_stall=untouched")
