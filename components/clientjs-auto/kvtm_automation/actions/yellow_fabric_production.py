@@ -11,8 +11,8 @@ from .production import ProductionActions, ProductionResult
 __all__ = ["YellowFabricProductionActions"]
 FILE_FUNCTIONS = (
     "Mở máy tầng 3 và xác minh đúng ảnh sản xuất Vải vàng",
-    "Thu VP bằng burst tối đa năm click và dừng ngay khi panel xuất hiện",
-    "Nhận panel đã mở bằng ô trống hoặc ảnh Vải vàng khi máy đang kín slot",
+    "Thu VP bằng burst x5 liên tục cho tới khi ảnh Vải vàng xuất hiện trong vùng thư viện panel",
+    "Ô trống chỉ là tín hiệu phụ, không được tự xác nhận panel đã mở",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
     "Mất ảnh sản phẩm tạm thời khi chờ không làm dừng AUTO",
     "Phát tín hiệu kho đầy riêng để workflow xuống quầy bán VP rồi quay lại tầng 3",
