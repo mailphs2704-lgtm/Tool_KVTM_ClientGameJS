@@ -88,6 +88,27 @@ def _load_resident_runtime(component_root: Path, auto_root: Path) -> None:
     )
 
 
+def _install_non_modal_error_ui(core) -> None:
+    """Keep Multi DEV runtime errors in status/logs instead of modal dialogs.
+
+    Only ``showerror`` is replaced. Informational/confirmation dialogs remain
+    available for explicit operator actions. AUTO runtime errors are supervised
+    by the isolated worker and should never block all clones behind an OK box.
+    """
+
+    def showerror_no_modal(title, message, *args, **kwargs):
+        del args, kwargs
+        text = str(message).replace("\n", " | ")
+        print(f"[KVTM DEV] UI ERROR NON-MODAL | {title}: {text}", flush=True)
+        return "ok"
+
+    core.messagebox.showerror = showerror_no_modal
+    print(
+        "[KVTM DEV] Error UI: messagebox.showerror disabled; status/log recovery enabled",
+        flush=True,
+    )
+
+
 def _configure_dpi() -> None:
     try:
         ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
@@ -118,6 +139,11 @@ def main() -> int:
         print("[KVTM DEV] Resident host: importing Multi UI AFTER runtime READY...", flush=True)
         import kvtm_multi_dev_entry
         from auto_builder_integration import install_auto_builder_integration
+
+        # Multi DEV is unattended-capable: error dialogs must never block all
+        # running clones. Callers still update note/status and every worker error
+        # remains in action/detail logs.
+        _install_non_modal_error_ui(kvtm_multi_dev_entry.core)
 
         # Builder is DEV-only and is layered onto MultiDevApp after import. This
         # keeps the shared kvtm_multi.py production UI untouched while reusing its
