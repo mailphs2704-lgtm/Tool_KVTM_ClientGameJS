@@ -17,6 +17,7 @@ CORE_GUI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 INTEGRATION = ROOT / "source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 AUTO_MAIN = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py"
+FRIEND_REFRESH = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_main/friend_refresh.py"
 AUTO_MULTI_WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 CATALOG = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_builder/catalog.py"
 
@@ -26,6 +27,8 @@ FILE_FUNCTIONS = (
     "Khóa thứ tự thu vàng, treo VP và hai swipe",
     "Khóa xác minh giao dịch trước khi ghi nhận",
     "Khóa GUI chọn Function + số vòng giữa hai lần bán + chờ giữa vòng Function",
+    "Khóa công tắc qua nhà bạn #1 sau mỗi ba vòng Function và handoff tới worker",
+    "Khóa maintenance dùng navigation Dọn-quầy đã prove nhưng không chạy business Dọn quầy",
     "Khóa vào game/đóng popup trước sale lần 1 và Function loop",
     "Khóa sale lần 2..N chỉ sau đủ số vòng cấu hình",
     "Khóa thời gian chờ chỉ giữa các vòng Function",
@@ -63,6 +66,7 @@ def main() -> int:
     integration = read(INTEGRATION)
     entry = read(DEV_ENTRY)
     auto_main = read(AUTO_MAIN)
+    friend_refresh = read(FRIEND_REFRESH)
     auto_multi_worker = read(AUTO_MULTI_WORKER)
     catalog = read(CATALOG)
 
@@ -125,6 +129,14 @@ def main() -> int:
     require(integration, 'text="SỐ VÒNG GIỮA 2 LẦN BÁN"', "AUTO Main sale interval input missing")
     require(integration, 'text="CHỜ GIỮA VÒNG FUNCTION (GIÂY)"', "Visible Function loop delay input missing")
     require(integration, "self.auto_multi_dev_function_loop_delay", "Function loop delay variable missing")
+    require(integration, 'text="LÀM MỚI ITEM TREO"', "Friend-refresh GUI label missing")
+    require(integration, '"Qua bạn #1 / 3 vòng"', "Friend-refresh toggle button missing")
+    require(integration, '_FRIEND_REFRESH_SETTING_KEY = "auto_multi_dev_friend_refresh_enabled"',
+            "Friend-refresh persistent GUI key missing")
+    require(integration, "self.auto_multi_dev_friend_refresh_enabled", "Friend-refresh BooleanVar missing")
+    require(integration, "self._save_auto_multi_dev_friend_refresh", "Friend-refresh toggle save hook missing")
+    require(integration, '"friend_refresh_enabled": friend_refresh_enabled',
+            "GUI does not persist friend-refresh into per-run marker")
     require(integration, 'start_button.configure(command=self._start_configured_auto_main)', "AUTO Main Start button is not bound to selected Function config")
     require(integration, 'work_dir / "auto-main-config.json"', "Per-run AUTO Main config marker missing")
     require(integration, '"function_id": function_id', "GUI does not persist selected Function id")
@@ -138,20 +150,43 @@ def main() -> int:
     require(auto_main, "FunctionModule(automation)", "AUTO Main Function dispatcher missing")
     require(auto_main, "sale_every_loops: int = 1", "AUTO Main sale interval input missing")
     require(auto_main, "function_loop_delay_seconds: float = 0.0", "AUTO Main Function loop delay input missing")
+    require(auto_main, "friend_refresh_enabled: bool = False", "AUTO Main friend-refresh input missing")
+    require(auto_main, "FRIEND_REFRESH_EVERY_LOOPS = 3", "Friend-refresh interval must remain exactly three loops")
+    require(auto_main, "self.friend_refresh = FriendRefreshWorkflow(", "Common friend-refresh workflow not wired")
     require(auto_main, "self._sale_once(ordinal=1)", "Mandatory sale #1 missing")
     require(auto_main, "while True:", "AUTO Main is not continuous until Stop")
     require(auto_main, "loops_since_sale += 1", "Function loop accounting missing")
     require(auto_main, "if loops_since_sale >= self.sale_every_loops:", "Sale #2..N is not gated by configured Function loop count")
+    require(auto_main, "self.function_loops % self.FRIEND_REFRESH_EVERY_LOOPS != 0",
+            "Friend refresh is not gated by 3 completed Function loops")
+    require(auto_main, "self._friend_refresh_if_due()", "Friend refresh scheduler call missing")
     require(auto_main, "self._wait_before_next_function_loop()", "Between-Function loop wait call missing")
     require(auto_main, "self.auto.wait.sleep(delay)", "Function loop delay must be stop-aware")
     require(auto_main, "allowed_item_ids=self.spec.sale_item_ids", "AUTO Main sale is not bound to selected Function VP policy")
     require(auto_main, "self.context.ensure_running()", "AUTO Main stop checkpoints missing")
     require(auto_main, 'self.spec.runner_key == "function_1"', "Function-1 completion contract missing")
 
+    # Maintenance must reuse the already-proven Dọn-quầy navigation primitives,
+    # but it must never open a friend stall or buy/sell anything.
+    require(friend_refresh, "class FriendRefreshWorkflow:", "FriendRefreshWorkflow missing")
+    require(friend_refresh, "FRIEND_ORDINAL = 1", "Maintenance must use first visible friend")
+    require(friend_refresh, "self.auto.navigation.go_to_friend(", "Friend navigation primitive not reused")
+    require(friend_refresh, "self.auto.navigation.return_home(", "Return-home primitive not reused")
+    require(friend_refresh, "self.context.invalidate_camera_main(", "Leaving home must invalidate exact-main proof")
+    require(friend_refresh, "self.context.mark_camera_exact_main(", "Return-home route does not re-prove exact-main")
+    require(friend_refresh, "self.recovery.recover_unknown_to_main(", "Maintenance recovery does not use central RecoveryManager")
+    forbid(friend_refresh, "open_friend_stall", "Maintenance must not open friend stall")
+    forbid(friend_refresh, "buy_from_listing", "Maintenance must not purchase VP")
+    forbid(friend_refresh, "AutoVpSaleWorkflow", "Maintenance must not trigger sale")
+    forbid(friend_refresh, "clear_stall", "Maintenance must not call Dọn-quầy workflow")
+
     require(auto_multi_worker, 'marker = Path(args.work_dir).resolve() / "auto-main-config.json"', "Worker AUTO Main per-run config loader missing")
     require(auto_multi_worker, 'function_id = str(auto_main_config["function_id"])', "Worker does not load selected Function")
     require(auto_multi_worker, 'sale_every = int(auto_main_config["sale_every_loops"])', "Worker does not load sale interval")
     require(auto_multi_worker, 'loop_delay = float(auto_main_config["function_loop_delay_seconds"])', "Worker does not load Function loop delay")
+    require(auto_multi_worker, 'friend_refresh_enabled = bool(auto_main_config["friend_refresh_enabled"])',
+            "Worker does not load friend-refresh toggle")
+    require(auto_multi_worker, '"friend_refresh_enabled": False', "Worker default friend-refresh must be off")
 
     # The recovery worker now owns two GameSession calls (floor-demo + resilient
     # AUTO Main). Inspect only the continuous AUTO Main segment so the contract
@@ -165,6 +200,7 @@ def main() -> int:
     require(auto_main_runtime, "function_id=function_id", "Worker does not pass selected Function to AUTO Main")
     require(auto_main_runtime, "sale_every_loops=sale_every", "Worker does not pass sale interval to AUTO Main")
     require(auto_main_runtime, "function_loop_delay_seconds=loop_delay", "Worker does not pass Function loop delay")
+    require(auto_main_runtime, "friend_refresh_enabled=friend_refresh_enabled", "Worker does not pass friend-refresh to AUTO Main")
     if auto_main_runtime.index(game_session_call) > auto_main_runtime.index(scheduler_call):
         raise AssertionError("AUTO Main Function must enter game/close popup before scheduler starts")
     require(auto_multi_worker, "runtime_error_policy=recover-main-restart", "AUTO Main runtime recovery policy marker missing")
@@ -174,9 +210,9 @@ def main() -> int:
     require(entry, 'worker_root / "auto_multi_dev_worker.py"', "GUI isolated-worker launch wiring missing")
     require(entry, 'outcome = str(event.pop("outcome", "auto_main_ready"))', "GUI AUTO Main result handling missing")
 
-    for text in (action, workflow):
-        forbid(text, ".pyc", "AUTO Main sale must not load legacy pyc")
-        forbid(text, "clear_stall_probe_runtime", "AUTO Main sale must not call Dọn quầy runtime")
+    for text in (action, workflow, friend_refresh):
+        forbid(text, ".pyc", "AUTO Main runtime must not load legacy pyc")
+        forbid(text, "clear_stall_probe_runtime", "AUTO Main must not call Dọn quầy runtime")
         require(text, "FILE_FUNCTIONS", "Every new AUTO Main module needs FILE_FUNCTIONS")
 
     if verify_auto_builder_contract() != 0:
@@ -185,6 +221,8 @@ def main() -> int:
     print("AUTO MULTI DEV VP SALE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
     print("flow=game-session+sale1+selected-function-loop+sale-every-n-loops")
+    print("friend_refresh=gui-toggle+every3-function-loops+friend1-return-home")
+    print("friend_refresh_navigation=reuse-clean-navigation-assets-no-friend-stall")
     print("function_loop_delay=visible+between-loops-only+stop-aware")
     print("function_select=verified-complete-functions-only")
     print("allowed_items=function-bound-catalog")
