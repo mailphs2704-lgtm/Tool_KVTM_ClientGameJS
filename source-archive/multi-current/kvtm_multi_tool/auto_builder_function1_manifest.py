@@ -6,12 +6,14 @@ FILE_FUNCTIONS = (
     "Mô tả đầy đủ thứ tự thực thi Function 1 đã có để Load Function hiển thị",
     "Giữ riêng blueprint hiển thị với runtime wrapper proven function_1",
     "Liệt kê module, click, swipe, wait, nhận diện, loop/gate theo đúng thứ tự source",
+    "Hiển thị thu VP bằng burst tối đa 5 click và dừng ngay khi panel xuất hiện",
+    "Hiển thị giữ panel chờ 9/9; mất ảnh sản phẩm tạm thời không dừng AUTO",
     "Hiển thị Sửa máy sau cả ba production và tốc độ thu VP độc lập",
     "Hiển thị recovery kho đầy: xuống quầy bán VP rồi quay lại đúng tầng sản xuất",
     "Hiển thị boundary cuối vòng goDown(1) → click xuống tầng → exact main",
 )
 
-MANIFEST_VERSION = 6
+MANIFEST_VERSION = 7
 
 
 def _row(new_step_id, kind: str, detail: str) -> dict:
@@ -59,7 +61,7 @@ def display_steps(new_step_id) -> list[dict]:
     add("gate", "Diagnostic changed_waypoint_regions/27 • non_blocking=true")
 
     add("module", "ProductionActions.produce_9_dried_apples • close_after_success=False")
-    add("loop", "Click thu VP/mở máy sấy tầng 1 cho tới khi panel_ready")
+    add("loop", "Thu VP/mở máy bằng burst tối đa 5 click; check panel sau từng click; panel hiện → dừng burst ngay")
     add("click", "Máy sấy tầng 1 • (262,917)")
     add("wait", "vp_collect_delay sau mỗi click mở/thu VP")
     add("recognize", "full_kho • threshold=0.90 • zone=(333,363,313,115)")
@@ -71,7 +73,7 @@ def display_steps(new_step_id) -> list[dict]:
     add("gate", "Recovery phải treo được ít nhất 1 ô VP; sold_listings == 0 → FAIL-CLOSE")
     add("module", "FunctionOneNavigationActions.main_to_floor_1 → retry đúng máy Táo sấy")
     add("loop", "Giữ nguyên panel; recheck mỗi 1.0s cho tới đúng 9/9 ô trống")
-    add("recognize", "tao_say mỗi recheck • mất ảnh đúng 5 lần → FAIL-CLOSE")
+    add("recognize", "tao_say mỗi recheck • mất ảnh tạm thời → KHÔNG dừng AUTO; tiếp tục recheck")
     add("recognize", "o_trong top slot • threshold=0.82 • zone=(335,650,130,135)")
     add("gate", "Đếm ô trống top+lower • yêu cầu đúng 9/9 trước sản xuất")
     add("loop", "Lặp 9 lần xếp Táo sấy")
@@ -83,7 +85,6 @@ def display_steps(new_step_id) -> list[dict]:
     _add_repair_steps(add, "Táo sấy")
     add("gate", "9 Táo sấy + Sửa máy PASS • tiến độ 1/3")
 
-    # Apple supply refresh and floor 6.
     add("module", "AppleSupplyActions.wait_until_floor_1_ripe")
     add("loop", "Chờ tối đa 120s, kiểm tra cây tầng 1 theo crop_check_interval")
     add("click", "Mở chậu đầu • (388,946)")
@@ -139,7 +140,6 @@ def display_steps(new_step_id) -> list[dict]:
         add("gate", "Fresh-frame change >= 1.0")
     add("gate", "Exact main PASS • sau trồng Táo tầng 6 → trước SX Nước táo")
 
-    # PASS 2 — 9 Nước táo -> Sửa máy.
     add("module", "FunctionOneNavigationActions.main_to_floor_2")
     for label in ("main-goUp(1)-to-floor1", "floor1-goUp(1)-to-floor2"):
         add("click", f"Đóng panel cạnh • (975,316) trước {label}")
@@ -148,7 +148,7 @@ def display_steps(new_step_id) -> list[dict]:
         add("gate", "Fresh-frame change >= 1.0")
 
     add("module", "AppleJuiceProductionActions.produce_9_apple_juices • close_after_success=False")
-    add("loop", "Click thu VP/mở máy tầng 2 cho tới panel_ready")
+    add("loop", "Thu VP/mở máy tầng 2 bằng burst tối đa 5 click; check panel sau từng click; panel hiện → dừng burst ngay")
     add("click", "Máy Nước táo tầng 2 • (262,917)")
     add("wait", "vp_collect_delay sau mỗi click")
     add("recognize", "full_kho + o_trong/nuoc_tao panel state")
@@ -157,7 +157,7 @@ def display_steps(new_step_id) -> list[dict]:
     add("module", "AutoVpSaleWorkflow(function_1) • sold_listings phải > 0")
     add("module", "FunctionOneNavigationActions.main_to_floor_2 → retry đúng Nước táo")
     add("loop", "Giữ nguyên panel; recheck mỗi 1.0s cho tới đúng 9/9 ô trống")
-    add("recognize", "nuoc_tao mỗi recheck • mất ảnh đúng 5 lần → FAIL-CLOSE")
+    add("recognize", "nuoc_tao mỗi recheck • mất ảnh tạm thời → KHÔNG dừng AUTO; tiếp tục recheck")
     add("recognize", "o_trong top slot • threshold=0.82")
     add("gate", "Yêu cầu đúng 9/9 ô trống")
     add("loop", "Lặp 9 lần xếp Nước táo")
@@ -168,7 +168,6 @@ def display_steps(new_step_id) -> list[dict]:
     _add_repair_steps(add, "Nước táo")
     add("gate", "9 Nước táo + Sửa máy PASS • TẠM PASS 2/3")
 
-    # Normalize to main, then PASS 3.
     add("module", "FunctionOnePassThreeNavigationActions.floor_2_to_main")
     add("loop", "4 nhịp goDown(1): probe 1/4 + settle 2/4..4/4")
     for ordinal in range(1, 5):
@@ -211,7 +210,7 @@ def display_steps(new_step_id) -> list[dict]:
         add("gate", "Fresh-frame change >= 1.0")
 
     add("module", "YellowFabricProductionActions.produce_9_yellow_fabrics • close_after_success=False")
-    add("loop", "Tối đa 30 click thu VP/mở máy tầng 3 cho tới panel_ready")
+    add("loop", "Thu VP/mở máy tầng 3 bằng burst tối đa 5 click, lặp không giới hạn tới khi panel xuất hiện hoặc operator bấm Dừng")
     add("click", "Máy Vải vàng tầng 3 • (262,917)")
     add("wait", "vp_collect_delay sau mỗi click")
     add("recognize", "full_kho + o_trong/vai_vang panel state")
@@ -219,9 +218,8 @@ def display_steps(new_step_id) -> list[dict]:
     add("module", "FunctionOnePassThreeNavigationActions.floor_3_to_main_via_down_floor → exact main")
     add("module", "AutoVpSaleWorkflow(function_1) • sold_listings phải > 0")
     add("module", "main_to_floor_1 → floor_1_to_floor_3 → retry đúng Vải vàng")
-    add("gate", "Nếu không panel_ready sau 30 click: FAIL-CLOSE")
     add("loop", "Giữ nguyên panel; recheck mỗi 1.0s cho tới đúng 9/9 ô trống")
-    add("recognize", "vai_vang mỗi recheck • mất ảnh đúng 5 lần → FAIL-CLOSE")
+    add("recognize", "vai_vang mỗi recheck • mất ảnh tạm thời → KHÔNG dừng AUTO; tiếp tục recheck")
     add("recognize", "o_trong top slot • threshold=0.82")
     add("gate", "Yêu cầu đúng 9/9 ô trống")
     add("loop", "Lặp 9 lần xếp Vải vàng")
@@ -233,7 +231,6 @@ def display_steps(new_step_id) -> list[dict]:
     _add_repair_steps(add, "Vải vàng")
     add("gate", "9 Vải vàng + Sửa máy PASS • PASS 3/3")
 
-    # Repeatability boundary: floor 3 -> one goDown(1) -> down-floor -> exact main.
     add("module", "FunctionOneWorkflow._normalize_end_of_loop_to_main")
     add("module", "FunctionOnePassThreeNavigationActions.floor_3_to_main_via_down_floor")
     add("click", "Đóng panel cạnh trước end-loop goDown(1) • (975,316)")
