@@ -236,6 +236,11 @@ class PopupActions:
 
     def ensure_main_screen(self, timeout: float = 90.0) -> None:
         """Ensure own farm/home UI is reachable; camera floor is not normalized."""
+        # This entry point deliberately makes no camera-floor promise. Clearing
+        # any prior proof here prevents an exception on a directly-swiped stage
+        # (for example planting) from carrying stale exact-main state into worker
+        # recovery. The worker must re-prove the lower boundary behaviorally.
+        self.context.invalidate_camera_main("ensure-farm-hud-camera-unknown")
         deadline = time.monotonic() + float(timeout)
         last_status = 0.0
         while time.monotonic() < deadline:
