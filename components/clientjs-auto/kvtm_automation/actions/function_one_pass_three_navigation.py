@@ -10,7 +10,7 @@ FILE_FUNCTIONS = (
     "Đưa camera từ máy Nước táo tầng 2 về màn hình chính bằng 1+3 nhịp goDown(1)",
     "Xác minh biên main bằng hai goDown liên tiếp có frame_change thấp, không dùng background",
     "Cho phép các nhịp settle chạm biên có frame_change thấp nhưng vẫn lấy fresh frame",
-    "Sau khi gieo Bông, đi từ mốc tầng 1 lên tầng 3 bằng đúng mode Auto Pro goUp(2)",
+    "Sau khi gieo Bông, từ mốc tầng 1 click đúng chậu tầng 4 để camera lên tầng 3",
     "Cuối vòng tầng 3: goDown(1) rồi nhận diện/click nút XUỐNG ở mép dưới",
     "Recovery tầng trên: sau mỗi goDown(1), thấy nút XUỐNG thì click ngay",
     "Hậu kiểm click xuống tầng bằng frame-change và ghi runtime exact-main proof",
@@ -20,10 +20,13 @@ FILE_FUNCTIONS = (
 class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
     """Only the routes introduced by Function 1 pass 3."""
 
-    # Forensic AUTO PRO adb_controller.goUp reference (2026-09-07): num_up is a
-    # mode, not a loop count. mode2 is one click at (257,416), preceded by the
-    # common side-close click (975,316), then go_up_wait + 0.15s.
-    AUTO_PRO_GO_UP_2_POINT = (257, 416)
+    # Forensic AUTO PRO adb_controller.goUp reference (2026-09-07):
+    # mode2=(257,416), mode3=(257,191). LIVE 2026-09-09 proved that the old
+    # mode2 point only moved the current Function-1 camera to floor 2. For the
+    # business destination floor 3, the click must target the higher/floor-4 pot
+    # anchor. That recovered point is the old mode3 coordinate below.
+    LEGACY_AUTO_PRO_MODE2_POINT = (257, 416)
+    FLOOR_4_POT_POINT = (257, 191)
     AUTO_PRO_GO_UP_WAIT = 0.70
     AUTO_PRO_POST_WAIT = 0.15
 
@@ -41,28 +44,29 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
     MAIN_BOUNDARY_STABLE_REQUIRED = 2
 
     def _go_up_two(self, label: str) -> float:
-        """Replay the original AUTO PRO goUp mode 2 as one navigation command."""
+        """Reach floor 3 from floor 1 by clicking the proven floor-4 pot anchor."""
         self.context.ensure_running()
-        self.context.invalidate_camera_main(f"auto-pro-goUp(2):{label}")
+        self.context.invalidate_camera_main(f"floor4-pot-jump:{label}")
         before = self.vision.frame().copy()
         self.vision.driver.click(*self.CLOSE_SIDE)
-        self.vision.driver.click(*self.AUTO_PRO_GO_UP_2_POINT)
+        self.vision.driver.click(*self.FLOOR_4_POT_POINT)
         self.waiter.sleep(self.AUTO_PRO_GO_UP_WAIT)
         self.waiter.sleep(self.AUTO_PRO_POST_WAIT)
         after = self.vision.frame().copy()
         change = self._change(before, after)
         self.context.detail(
-            "AUTO route | gesture=goUp(2) | mode=2 | "
-            f"label={label} | point={self.AUTO_PRO_GO_UP_2_POINT} | "
+            "AUTO route | gesture=goUp(2)-floor4-pot-anchor | "
+            f"label={label} | point={self.FLOOR_4_POT_POINT} | "
+            f"legacy_mode2={self.LEGACY_AUTO_PRO_MODE2_POINT} | "
             f"frame_change={change:.2f} | fresh_frame=true"
         )
         if change < self.MIN_CHANGE:
             raise ScreenTimeout(
-                "Điều hướng Auto Pro goUp(2) không tạo thay đổi hình ảnh"
+                "Điều hướng click chậu tầng 4 để tới tầng 3 không tạo thay đổi hình ảnh"
             )
         self.context.log(
-            "AUTO điều hướng • goUp(2) mode Auto Pro đã có phản hồi • "
-            f"frame_change={change:.2f}"
+            "AUTO điều hướng • tầng 1 → tầng 3 bằng click chậu tầng 4 đã có phản hồi • "
+            f"point={self.FLOOR_4_POT_POINT} • frame_change={change:.2f}"
         )
         return change
 
@@ -230,12 +234,12 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         return NavigationEvidence("floor2-to-main-normalized", changes)
 
     def floor_1_to_floor_3(self) -> NavigationEvidence:
-        """Move floor 1 -> floor 3 with the original one-command goUp(2) mode."""
+        """Move floor 1 -> floor 3 by clicking the floor-4 pot anchor once."""
         changes = (
-            self._go_up_two("floor1-goUp(2)-to-floor3"),
+            self._go_up_two("floor1-click-floor4-pot-to-floor3"),
         )
         self.context.log(
-            "AUTO điều hướng • mốc tầng 1 → tầng 3 • true goUp(2) mode Auto Pro "
+            "AUTO điều hướng • mốc tầng 1 → tầng 3 • click chậu tầng 4 một lần "
             "đã có phản hồi"
         )
-        return NavigationEvidence("floor1-to-floor3-goUp2", changes)
+        return NavigationEvidence("floor1-to-floor3-floor4-pot", changes)
