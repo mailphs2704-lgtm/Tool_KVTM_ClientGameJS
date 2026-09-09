@@ -4,7 +4,11 @@ $ErrorActionPreference = "Stop"
 $PackageRoot = (Resolve-Path $PSScriptRoot).Path
 $MultiRoot = Join-Path $PackageRoot "Multi"
 $HostScript = Join-Path $MultiRoot "kvtm_multi_dev_host.py"
-$DataRoot = Join-Path $PackageRoot "data-dev"
+
+# DEV settings must live outside dist/package so git pull + full rebuild can never
+# delete or replace them. The old package-local data-dev folder is migration-only.
+$LegacyDataRoot = Join-Path $PackageRoot "data-dev"
+$DataRoot = Join-Path $env:APPDATA "KVTM Multi DEV"
 $LogRoot = Join-Path $DataRoot "logs"
 
 foreach ($required in @(
@@ -62,6 +66,21 @@ if ([string]::IsNullOrWhiteSpace($python)) {
 }
 
 New-Item -ItemType Directory -Path $DataRoot, $LogRoot -Force | Out-Null
+
+# One-time migration from the historical package-local data-dev. Never overwrite
+# an existing persistent file: after migration %APPDATA% is authoritative.
+foreach ($name in @("profiles.json", "settings.json", "clear-stall-history.jsonl")) {
+    $persistent = Join-Path $DataRoot $name
+    $legacy = Join-Path $LegacyDataRoot $name
+    if (
+        -not (Test-Path -LiteralPath $persistent -PathType Leaf) -and
+        (Test-Path -LiteralPath $legacy -PathType Leaf)
+    ) {
+        Copy-Item -LiteralPath $legacy -Destination $persistent -Force
+        Write-Host ("DEV DATA MIGRATED: {0} -> {1}" -f $legacy, $persistent) -ForegroundColor Cyan
+    }
+}
+
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $stdout = Join-Path $LogRoot ("multi-dev-host-" + $stamp + ".out.log")
 $stderr = Join-Path $LogRoot ("multi-dev-host-" + $stamp + ".err.log")
@@ -96,4 +115,5 @@ if ($process.HasExited) {
     [System.Text.Encoding]::UTF8
 )
 Write-Host ("MULTI DEV SILENT STARTED pid={0}" -f $process.Id) -ForegroundColor Green
+Write-Host ("Persistent DEV data: {0}" -f $DataRoot) -ForegroundColor Cyan
 Write-Host ("Logs: {0}" -f $LogRoot)
