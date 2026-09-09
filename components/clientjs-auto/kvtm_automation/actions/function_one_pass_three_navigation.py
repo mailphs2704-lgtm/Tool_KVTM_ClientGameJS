@@ -10,7 +10,7 @@ FILE_FUNCTIONS = (
     "Đưa camera từ máy Nước táo tầng 2 về màn hình chính bằng 1+3 nhịp goDown(1)",
     "Xác minh biên main bằng hai goDown liên tiếp có frame_change thấp, không dùng background",
     "Cho phép các nhịp settle chạm biên có frame_change thấp nhưng vẫn lấy fresh frame",
-    "Sau khi gieo Bông, đi từ mốc tầng 1 lên tầng 3 bằng hai nhịp goUp(1)",
+    "Sau khi gieo Bông, đi từ mốc tầng 1 lên tầng 3 bằng đúng mode Auto Pro goUp(2)",
     "Cuối vòng tầng 3: goDown(1) rồi nhận diện/click nút XUỐNG ở mép dưới",
     "Recovery tầng trên: sau mỗi goDown(1), thấy nút XUỐNG thì click ngay",
     "Hậu kiểm click xuống tầng bằng frame-change và ghi runtime exact-main proof",
@@ -19,6 +19,13 @@ FILE_FUNCTIONS = (
 
 class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
     """Only the routes introduced by Function 1 pass 3."""
+
+    # Forensic AUTO PRO adb_controller.goUp reference (2026-09-07): num_up is a
+    # mode, not a loop count. mode2 is one click at (257,416), preceded by the
+    # common side-close click (975,316), then go_up_wait + 0.15s.
+    AUTO_PRO_GO_UP_2_POINT = (257, 416)
+    AUTO_PRO_GO_UP_WAIT = 0.70
+    AUTO_PRO_POST_WAIT = 0.15
 
     # User-confirmed ClientJS behavior: the XUỐNG control is transient, centered
     # on the bottom edge and only appears during floor-transition interaction on
@@ -32,6 +39,32 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
     # low-change observations so one stale/quiet frame can never prove main.
     MAIN_BOUNDARY_MAX_CHANGE = 6.0
     MAIN_BOUNDARY_STABLE_REQUIRED = 2
+
+    def _go_up_two(self, label: str) -> float:
+        """Replay the original AUTO PRO goUp mode 2 as one navigation command."""
+        self.context.ensure_running()
+        self.context.invalidate_camera_main(f"auto-pro-goUp(2):{label}")
+        before = self.vision.frame().copy()
+        self.vision.driver.click(*self.CLOSE_SIDE)
+        self.vision.driver.click(*self.AUTO_PRO_GO_UP_2_POINT)
+        self.waiter.sleep(self.AUTO_PRO_GO_UP_WAIT)
+        self.waiter.sleep(self.AUTO_PRO_POST_WAIT)
+        after = self.vision.frame().copy()
+        change = self._change(before, after)
+        self.context.detail(
+            "AUTO route | gesture=goUp(2) | mode=2 | "
+            f"label={label} | point={self.AUTO_PRO_GO_UP_2_POINT} | "
+            f"frame_change={change:.2f} | fresh_frame=true"
+        )
+        if change < self.MIN_CHANGE:
+            raise ScreenTimeout(
+                "Điều hướng Auto Pro goUp(2) không tạo thay đổi hình ảnh"
+            )
+        self.context.log(
+            "AUTO điều hướng • goUp(2) mode Auto Pro đã có phản hồi • "
+            f"frame_change={change:.2f}"
+        )
+        return change
 
     def _settle_down_one(self, label: str) -> float:
         """Send one goDown(1), record fresh-frame change and learn main boundary.
@@ -197,11 +230,12 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         return NavigationEvidence("floor2-to-main-normalized", changes)
 
     def floor_1_to_floor_3(self) -> NavigationEvidence:
+        """Move floor 1 -> floor 3 with the original one-command goUp(2) mode."""
         changes = (
-            self._gesture(self.UP_ONE, "floor1-goUp(1)-to-floor2"),
-            self._gesture(self.UP_ONE, "floor2-goUp(1)-to-floor3"),
+            self._go_up_two("floor1-goUp(2)-to-floor3"),
         )
         self.context.log(
-            "AUTO điều hướng • mốc tầng 1 → tầng 3 • 2 x goUp(1) đã có phản hồi"
+            "AUTO điều hướng • mốc tầng 1 → tầng 3 • true goUp(2) mode Auto Pro "
+            "đã có phản hồi"
         )
-        return NavigationEvidence("floor1-to-floor3", changes)
+        return NavigationEvidence("floor1-to-floor3-goUp2", changes)
