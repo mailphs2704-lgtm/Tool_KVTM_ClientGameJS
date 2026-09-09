@@ -31,9 +31,9 @@ class ProductionWarehouseRecovery:
 
     def _require_main(self, label: str) -> None:
         self.context.ensure_running()
-        if not self.auto.popup.is_own_main_screen():
+        if not self.auto.popup.is_own_exact_main_screen():
             raise ScreenTimeout(
-                f"Recovery kho đầy: {label} chưa xác nhận màn hình chính; "
+                f"Recovery kho đầy: {label} chưa xác nhận exact-main; "
                 "dừng trước khi bán/quay lại máy"
             )
         self.context.log(f"AUTO kho đầy • {label} • exact main PASS")
