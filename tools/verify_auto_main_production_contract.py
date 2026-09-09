@@ -117,12 +117,14 @@ def main() -> int:
     require(function_one, 'self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")', "Apple→juice main gate missing")
     require(function_one, 'self._require_main_transition("sau SX Nước táo → trước trồng Bông")', "Juice→cotton main gate missing")
 
-    # Shared production opening: five-click bursts, early-stop once panel appears,
-    # then keep that panel open until all 9 slots are free. Temporary product-image
-    # misses are nonfatal; Stop remains cooperative through ensure_running().
+    # Shared production opening: true five-click bursts continue until the exact
+    # requested item appears in the proven panel library zone. Empty-slot imagery
+    # is diagnostic only because it can false-positive before the panel opens.
     require(action, "DRYER_POINT = (262, 917)", "Dryer coordinate changed")
     require(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "tao_say"', "Dried-apple production template missing")
     forbid(action, 'DRIED_APPLE_PRODUCTION_TEMPLATE = "kho_tao_say"', "Warehouse dried-apple template drives production")
+    require(action, "PRODUCT_SEARCH_ZONE = (420, 550, 170, 120)", "Panel product-library zone changed")
+    require(action, "zone=self.PRODUCT_SEARCH_ZONE", "Product matching is not restricted to panel library zone")
     require(action, "DRIED_APPLE_GUARD_THRESHOLD = 0.70", "Dried-apple guard threshold changed")
     require(action, "REQUIRED_COUNT = 9", "Exactly nine dried apples required")
     require(action, "COLLECT_CLICK_BURST = 5", "VP collect must use five-click bursts")
@@ -131,8 +133,9 @@ def main() -> int:
     require(action, "self.vision.driver.click(*machine_point)", "Raw VP machine click missing")
     require(action, "def _click_until_panel_open", "Shared five-click panel opener missing")
     require(action, "click_count += self._send_collect_burst(machine_point=machine_point)", "Five-click panel opener does not call raw burst helper")
-    require(action, "panel_ready = empty_ready or product_ready", "Panel recognition must use empty/product anchors")
-    require(action, "if panel_ready:", "Five-click burst does not stop when panel appears")
+    forbid(action, "panel_ready = empty_ready or product_ready", "Empty-slot false positive may stop VP collection early")
+    require(action, "if product is not None:", "Panel opening is not gated by requested product anchor")
+    require(action, "KHÔNG coi panel đã mở", "Empty-slot diagnostic cannot prove panel-open policy")
     require(action, "return click_count", "Five-click panel opener does not return on verified panel")
     require(action, "self.context.ensure_running()", "Five-click/recheck loops are not stop-aware")
     require(action, "self.speed_config.vp_collect_delay", "Dried-apple collect speed binding missing")
@@ -273,7 +276,8 @@ def main() -> int:
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
     print("startup=enter-game-popup-only-no-godown")
-    print("production=five-click-collect-until-panel+keep-open-wait-9-of-9+repair-after-each")
+    print("production=five-click-collect-until-product-anchor-panel+keep-open-wait-9-of-9+repair-after-each")
+    print("panel_open_gate=product-library-zone-only;empty-slot-diagnostic-only")
     print("panel_product_miss=nonfatal-recheck-no-auto-stop")
     print("warehouse_full=InventoryFull->exact-main->function-vp-sale->same-floor-retry")
     print("machine_repair=verified_handoff+no_price_ocr")
