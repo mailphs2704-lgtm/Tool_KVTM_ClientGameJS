@@ -17,8 +17,11 @@ _TEMPLATE_PNG_B64 = (
 @dataclass(frozen=True)
 class DownFloorButtonMatch:
     score: float
+    # Public geometry is logical 1000x1000 because callers pass center to the
+    # shared driver, which owns the final logical->client scaling.
     center: tuple[int, int]
     box: tuple[int, int, int, int]
+    # Actual template/frame scale used by this dedicated detector.
     scale: float
 
 
@@ -34,6 +37,41 @@ def _template_gray():
     return image
 
 
+def _frame_point_to_logical(
+    point: tuple[int | float, int | float],
+    *,
+    width: int,
+    height: int,
+) -> tuple[int, int]:
+    if width <= 0 or height <= 0:
+        raise ValueError("Frame XUỐNG không có kích thước hợp lệ")
+    return (
+        int(round(float(point[0]) * 1000.0 / float(width))),
+        int(round(float(point[1]) * 1000.0 / float(height))),
+    )
+
+
+def _frame_box_to_logical(
+    box: tuple[int, int, int, int],
+    *,
+    width: int,
+    height: int,
+) -> tuple[int, int, int, int]:
+    left, top, box_width, box_height = box
+    logical_left, logical_top = _frame_point_to_logical(
+        (left, top), width=width, height=height
+    )
+    logical_right, logical_bottom = _frame_point_to_logical(
+        (left + box_width, top + box_height), width=width, height=height
+    )
+    return (
+        logical_left,
+        logical_top,
+        max(1, logical_right - logical_left),
+        max(1, logical_bottom - logical_top),
+    )
+
+
 def find_down_floor_button(
     frame,
     *,
@@ -44,6 +82,10 @@ def find_down_floor_button(
     The operator-confirmed behavior is important: this control only appears
     during floor-transition interaction on upper floors and is absent on floor 1.
     Search is therefore intentionally restricted to the bottom-center strip.
+
+    Matching occurs in real frame pixels, but the returned center/box are mapped
+    back to logical 1000x1000. This keeps the existing caller safe at 500x500:
+    ``driver.click(*match.center)`` performs exactly one resolution conversion.
     """
     import cv2
 
@@ -67,6 +109,8 @@ def find_down_floor_button(
         return None
 
     template = _template_gray()
+    # 500x500 maps to exactly 0.50; keep the proven lower bound for this
+    # migration. Smaller production sizes require a separate live proof.
     base_scale = max(0.50, min(2.00, min(width, height) / 1000.0))
     best: DownFloorButtonMatch | None = None
     for factor in (0.90, 0.95, 1.00, 1.05, 1.10):
@@ -87,10 +131,16 @@ def find_down_floor_button(
         score = float(max_value)
         left = x0 + int(max_loc[0])
         top = y0 + int(max_loc[1])
+        frame_box = (left, top, tw, th)
+        frame_center = (left + tw // 2, top + th // 2)
         match = DownFloorButtonMatch(
             score=score,
-            center=(left + tw // 2, top + th // 2),
-            box=(left, top, tw, th),
+            center=_frame_point_to_logical(
+                frame_center, width=width, height=height
+            ),
+            box=_frame_box_to_logical(
+                frame_box, width=width, height=height
+            ),
             scale=scale,
         )
         if best is None or match.score > best.score:
