@@ -11,11 +11,11 @@ from .production import ProductionActions, ProductionResult
 __all__ = ["YellowFabricProductionActions"]
 FILE_FUNCTIONS = (
     "Mở máy tầng 3 và xác minh đúng ảnh sản xuất Vải vàng",
-    "Thu VP/mở panel theo tốc độ thu VP cấu hình riêng",
+    "Thu VP bằng burst tối đa năm click và dừng ngay khi panel xuất hiện",
     "Nhận panel đã mở bằng ô trống hoặc ảnh Vải vàng khi máy đang kín slot",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
+    "Mất ảnh sản phẩm tạm thời khi chờ không làm dừng AUTO",
     "Phát tín hiệu kho đầy riêng để workflow xuống quầy bán VP rồi quay lại tầng 3",
-    "Dùng bộ đếm chín ô trống đã live-pass của hai pass trước",
     "Kéo Vải vàng xuống ô top động đúng chín lần",
     "Hậu kiểm mỗi lần kéo làm giảm đúng bộ đếm ô trống",
 )
@@ -30,7 +30,6 @@ class YellowFabricProductionActions:
     MATERIAL_ERROR_TEMPLATE = "x"
     MATERIAL_ERROR_ZONE = (682, 337, 142, 120)
     REQUIRED_COUNT = 9
-    MAX_OPEN_CLICKS = 30
 
     def __init__(
         self,
@@ -49,36 +48,12 @@ class YellowFabricProductionActions:
         self.vision.driver.click(*self.CLOSE_POINT)
 
     def _open_verified(self) -> tuple[int, tuple[int, int], tuple[int, int]]:
-        click_count = 0
-        panel_ready = False
-        for click_count in range(1, self.MAX_OPEN_CLICKS + 1):
-            self.context.ensure_running()
-            self.vision.driver.click(*self.MACHINE_POINT)
-            self.waiter.sleep(self.speed_config.vp_collect_delay)
-            warehouse_full, empty_ready = self.slots._panel_state()
-            product_ready = self.slots._find_product_match(
-                self.PRODUCT_TEMPLATE, threshold=0.70
-            ) is not None
-            panel_ready = empty_ready or product_ready
-            if click_count == 1 or click_count % 5 == 0 or panel_ready:
-                self.context.log(
-                    "AUTO Vải vàng • click thu VP/mở máy tầng 3 "
-                    f"• clicks={click_count} • panel={panel_ready} • "
-                    f"fullkho={warehouse_full} • "
-                    f"delay={self.speed_config.vp_collect_delay:.3f}s"
-                )
-            if warehouse_full:
-                self.slots._raise_inventory_full("Vải vàng")
-            if panel_ready:
-                break
-
-        if not panel_ready:
-            self._close_panel()
-            raise ScreenTimeout(
-                "Không mở/xác minh được panel Vải vàng sau "
-                f"{self.MAX_OPEN_CLICKS} lần click; dừng fail-close"
-            )
-
+        click_count = self.slots._click_until_panel_open(
+            machine_point=self.MACHINE_POINT,
+            product_template=self.PRODUCT_TEMPLATE,
+            label="Vải vàng",
+            product_threshold=0.70,
+        )
         empty, product_point, top_point = self.slots._wait_for_idle_open_panel(
             product_template=self.PRODUCT_TEMPLATE,
             label="Vải vàng",
@@ -86,7 +61,7 @@ class YellowFabricProductionActions:
         )
         self.context.log(
             "AUTO Vải vàng • panel giữ nguyên READY • "
-            f"clicks={click_count} • đường kéo={product_point} → {top_point}"
+            f"tổng click thu VP={click_count} • đường kéo={product_point} → {top_point}"
         )
         return empty, product_point, top_point
 
