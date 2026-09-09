@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..context import AutomationContext
-from ..errors import InventoryFull, ScreenTimeout
+from ..errors import InventoryFull, ScreenTimeout, WrongProductionMachine
 from ..runtime.auto_speed_config import AutoSpeedConfig
 from ..runtime.vision import VisionEngine
 from ..runtime.wait import Waiter
@@ -14,6 +14,7 @@ FILE_FUNCTIONS = (
     "Thu VP bằng đúng năm click tức thì cùng tọa độ rồi mới kiểm tra panel sản xuất",
     "Dùng tốc độ thu VP làm khoảng nghỉ sau mỗi burst x5, không chèn nghỉ giữa năm click",
     "Chỉ công nhận panel mở khi ảnh đúng sản phẩm xuất hiện trong vùng thư viện panel",
+    "Nếu panel mở nhưng thấy VP của máy khác thì đóng panel và phát tín hiệu sai máy/sai tầng",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
     "Mất ảnh sản phẩm tạm thời khi đang chờ chỉ recheck, không dừng AUTO",
     "Phát tín hiệu InventoryFull riêng khi kho đầy để workflow xuống quầy bán VP",
@@ -45,6 +46,7 @@ class ProductionActions:
     # matching to this panel-only area prevents farm/slot imagery from being
     # mistaken for an opened production panel.
     PRODUCT_SEARCH_ZONE = (420, 550, 170, 120)
+    KNOWN_PRODUCT_TEMPLATES = ("tao_say", "nuoc_tao", "vai_vang")
     DRIED_APPLE_GUARD_THRESHOLD = 0.70
     EMPTY_SLOT_TEMPLATE = "o_trong"
     TOP_EMPTY_SLOT_ZONE = (335, 650, 130, 135)
@@ -136,24 +138,59 @@ class ProductionActions:
         )
         return total
 
-    def _find_product_match(self, name: str, *, threshold: float = 0.70):
+    def _find_product_match(
+        self,
+        name: str,
+        *,
+        threshold: float = 0.70,
+        frame=None,
+    ):
         return self.vision.find(
             name,
             threshold=threshold,
             zone=self.PRODUCT_SEARCH_ZONE,
             scales=(0.75, 0.90, 1.00, 1.10, 1.25),
             click=False,
+            frame=frame,
         )
 
-    def _panel_state(self) -> tuple[bool, bool]:
-        frame = self.vision.frame()
+    def _find_wrong_product_match(
+        self,
+        expected_template: str,
+        *,
+        threshold: float = 0.70,
+        frame=None,
+    ):
+        """Return another known production item visible in the same open panel."""
+        source = self.vision.frame() if frame is None else frame
+        best_name = None
+        best_match = None
+        for candidate in self.KNOWN_PRODUCT_TEMPLATES:
+            if candidate == expected_template:
+                continue
+            match = self._find_product_match(
+                candidate,
+                threshold=threshold,
+                frame=source,
+            )
+            if match is not None and (
+                best_match is None or match.score > best_match.score
+            ):
+                best_name = candidate
+                best_match = match
+        if best_match is None:
+            return None
+        return best_name, best_match
+
+    def _panel_state(self, frame=None) -> tuple[bool, bool]:
+        source = self.vision.frame() if frame is None else frame
         warehouse_full = self.vision.find(
             "full_kho",
             threshold=0.90,
             zone=(333, 363, 313, 115),
             scales=(0.90, 1.00, 1.10),
             click=False,
-            frame=frame,
+            frame=source,
         )
         empty_ready = self.vision.find(
             self.EMPTY_SLOT_TEMPLATE,
@@ -161,7 +198,7 @@ class ProductionActions:
             zone=self.EMPTY_SLOT_ZONE,
             scales=(0.90, 1.00, 1.10),
             click=False,
-            frame=frame,
+            frame=source,
         )
         return warehouse_full is not None, empty_ready is not None
 
@@ -173,6 +210,26 @@ class ProductionActions:
             "bàn giao workflow xuống quầy bán VP"
         )
         raise InventoryFull(f"{label}: kho đầy khi thu VP/sản xuất")
+
+    def _raise_wrong_machine(
+        self,
+        *,
+        label: str,
+        expected_template: str,
+        actual_template: str,
+        actual_center: tuple[int, int],
+    ) -> None:
+        self.vision.driver.click(*self.CLOSE_POINT)
+        self.waiter.sleep(0.25)
+        self.context.stage("auto-production-wrong-machine")
+        self.context.log(
+            f"AUTO {label} • PANEL SAI MÁY/SAI TẦNG • cần={expected_template} "
+            f"nhưng thấy={actual_template} tại {actual_center} • đóng bảng SX ngay • "
+            "bàn giao recovery về exact-main rồi lên lại đúng tầng"
+        )
+        raise WrongProductionMachine(
+            f"{label}: cần {expected_template} nhưng panel đang mở là {actual_template}"
+        )
 
     def _send_collect_burst(
         self,
@@ -193,12 +250,12 @@ class ProductionActions:
         label: str,
         product_threshold: float = 0.70,
     ) -> int:
-        """Send true x5 bursts until the panel-only product anchor is visible.
+        """Send true x5 bursts until the exact requested production panel opens.
 
-        Empty-slot imagery is diagnostic only: it can also appear while the farm
-        screen is still visible and therefore must never stop collection. The
-        panel is accepted only when the requested production item is matched in
-        the proven product-library zone. Until then, another x5 burst is sent.
+        Empty-slot imagery is diagnostic only. When another known production item
+        is visible in the panel library zone, the panel is already open but the
+        camera is at the wrong machine/floor; close it immediately and hand off a
+        recoverable WrongProductionMachine signal instead of clicking forever.
         """
         click_count = 0
         burst_count = 0
@@ -217,12 +274,15 @@ class ProductionActions:
             self.waiter.sleep(self.speed_config.vp_collect_delay)
             self.context.ensure_running()
 
-            warehouse_full, empty_ready = self._panel_state()
+            frame = self.vision.frame()
+            warehouse_full, empty_ready = self._panel_state(frame=frame)
             if warehouse_full:
                 self._raise_inventory_full(label)
 
             product = self._find_product_match(
-                product_template, threshold=product_threshold
+                product_template,
+                threshold=product_threshold,
+                frame=frame,
             )
             if product is not None:
                 self.context.log(
@@ -232,6 +292,20 @@ class ProductionActions:
                     f"nghỉ sau burst={self.speed_config.vp_collect_delay:.3f}s"
                 )
                 return click_count
+
+            wrong = self._find_wrong_product_match(
+                product_template,
+                threshold=product_threshold,
+                frame=frame,
+            )
+            if wrong is not None:
+                actual_template, actual_match = wrong
+                self._raise_wrong_machine(
+                    label=label,
+                    expected_template=product_template,
+                    actual_template=actual_template,
+                    actual_center=actual_match.center,
+                )
 
             if empty_ready and (burst_count == 1 or burst_count % 5 == 0):
                 self.context.log(
