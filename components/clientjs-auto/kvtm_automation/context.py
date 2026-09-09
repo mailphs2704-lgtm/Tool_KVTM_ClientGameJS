@@ -18,6 +18,7 @@ FILE_FUNCTIONS = (
     "Ghi log hành động",
     "Ghi log kỹ thuật chi tiết",
     "Báo stage nghiệp vụ",
+    "Giữ bằng chứng camera exact-main theo runtime, không theo background tài khoản",
     "Dừng tác vụ theo stop-event",
 )
 
@@ -28,6 +29,12 @@ class AutomationContext:
 
     No AUTO PRO object is stored here. The context owns only the selected
     ClientJS process/profile, paths, cancellation signal and reporting hooks.
+
+    ``camera_exact_main_proven`` is deliberately runtime evidence instead of an
+    image/template classification. KVTM accounts may use different farm
+    backgrounds, so a world-space object such as the stall must never be the
+    exact-main gate. Navigation owns this proof and invalidates it whenever the
+    vertical camera is moved.
     """
 
     pid: int
@@ -41,6 +48,8 @@ class AutomationContext:
     detail_logger: LogFn | None = None
     profile_file: Path | None = None
     started_at: float = field(default_factory=time.time)
+    camera_exact_main_proven: bool = field(default=False, init=False, repr=False)
+    camera_main_boundary_streak: int = field(default=0, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.pid = int(self.pid)
@@ -63,6 +72,55 @@ class AutomationContext:
         if self.stage_reporter is not None:
             self.stage_reporter(str(name))
         self.log(str(name))
+
+    def invalidate_camera_main(self, reason: str = "") -> None:
+        """Forget exact-main proof before/after any camera state uncertainty."""
+        self.camera_exact_main_proven = False
+        self.camera_main_boundary_streak = 0
+        if reason:
+            self.detail(f"AUTO camera proof | exact_main=false | reason={reason}")
+
+    def mark_camera_exact_main(self, reason: str) -> None:
+        """Record exact-main only after a deterministic route/boundary proof."""
+        self.camera_exact_main_proven = True
+        self.camera_main_boundary_streak = 0
+        self.detail(
+            f"AUTO camera proof | exact_main=true | source=runtime-route | reason={reason}"
+        )
+
+    def observe_camera_down_boundary(
+        self,
+        change: float,
+        *,
+        max_change: float,
+        stable_required: int,
+        reason: str,
+    ) -> bool:
+        """Accumulate consecutive no-motion goDown evidence for the main boundary.
+
+        This intentionally uses the result of an input gesture, not any farm
+        artwork. A real vertical move resets the streak; repeated low-change
+        goDown gestures at the lower boundary prove exact-main for any account
+        background.
+        """
+        value = float(change)
+        if value <= float(max_change):
+            self.camera_main_boundary_streak += 1
+        else:
+            self.camera_main_boundary_streak = 0
+            self.camera_exact_main_proven = False
+
+        if self.camera_main_boundary_streak >= int(stable_required):
+            self.camera_exact_main_proven = True
+
+        self.detail(
+            "AUTO camera boundary | "
+            f"reason={reason} | frame_change={value:.2f} | "
+            f"max_change={float(max_change):.2f} | "
+            f"stable={self.camera_main_boundary_streak}/{int(stable_required)} | "
+            f"exact_main={str(self.camera_exact_main_proven).lower()}"
+        )
+        return bool(self.camera_exact_main_proven)
 
     def ensure_running(self) -> None:
         if self.stop_event.is_set():
