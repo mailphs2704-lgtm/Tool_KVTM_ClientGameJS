@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CLEAN = ROOT / "components/clientjs-auto/kvtm_automation"
 VISION = CLEAN / "runtime/vision.py"
 DRIVER_FACTORY = CLEAN / "runtime/driver.py"
+RESOLUTION = CLEAN / "runtime/resolution.py"
+AUTOMATION = CLEAN / "automation.py"
 DOWN_FLOOR = CLEAN / "runtime/down_floor_button.py"
 PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
 PRODUCTION = CLEAN / "actions/production.py"
@@ -67,6 +69,8 @@ def _scan_direct_matchers() -> None:
 def main() -> int:
     vision = read_python(VISION)
     driver = read_python(DRIVER_FACTORY)
+    resolution = read_python(RESOLUTION)
+    automation = read_python(AUTOMATION)
     down_floor = read_python(DOWN_FLOOR)
     pass_nav = read_python(PASS_THREE_NAV)
     production = read_python(PRODUCTION)
@@ -76,6 +80,39 @@ def main() -> int:
     if driver.count("reference_size=(1000, 1000)") < 2:
         raise AssertionError(
             "Both raw and Bridge V3 drivers must keep logical reference_size=1000x1000"
+        )
+
+    # Production-size normalization is scoped to AUTO MULTI DEV and must happen
+    # before Bridge V3 is constructed. The stable window catches Multi's delayed
+    # generic display callback when an offline profile was just launched.
+    require(resolution, "LOGICAL_REFERENCE_SIZE = (1000, 1000)",
+            "Resolution logical reference changed")
+    require(resolution, "PRODUCTION_CLIENT_SIZE = (500, 500)",
+            "Production ClientJS target must be 500x500")
+    require(resolution, "def ensure_production_client_size(",
+            "Production client-size normalizer missing")
+    require(resolution, "stable_seconds: float = 2.0", 
+            "Production resize stability guard missing")
+    require(resolution, "def disable_legacy_adaptive_matching()", 
+            "Legacy adaptive matcher neutralizer missing")
+    require(resolution, "cv2.matchTemplate = original", 
+            "Legacy adaptive matcher is not restored to native OpenCV")
+    require(automation, 'str(part).casefold() == "auto-multi-dev"',
+            "500 production resize is not scoped to AUTO MULTI DEV work-dir")
+    require(automation, "disable_legacy_adaptive_matching()",
+            "AUTO MULTI DEV does not neutralize legacy double scaling")
+    require(automation, "ensure_production_client_size(",
+            "AUTO MULTI DEV does not enforce production client size")
+    require(automation, "target=PRODUCTION_CLIENT_SIZE",
+            "AUTO MULTI DEV normalizer is not bound to canonical 500 target")
+    require(automation, "resize ổn định trước Bridge V3",
+            "Production resolution readiness log missing")
+    disable_at = automation.index("disable_legacy_adaptive_matching()")
+    normalize_at = automation.index("ensure_production_client_size(")
+    bridge_at = automation.index("bundle = self.driver_factory.engine(")
+    if not (disable_at < normalize_at < bridge_at):
+        raise AssertionError(
+            "Legacy adaptive removal and 500 normalization must finish before Bridge V3"
         )
 
     # Central vision transform.
@@ -139,6 +176,8 @@ def main() -> int:
     print("production_target=500x500")
     print("vision=logical-zone->frame-match->logical-result")
     print("driver=logical-input->actual-client-once")
+    print("client_size=500x500-stable-before-bridge")
+    print("legacy_adaptive=neutralized-before-bridge")
     print("down_floor=500-scale+logical-center")
     print("production_slots=frame-scaled+logical-dedup")
     return 0
