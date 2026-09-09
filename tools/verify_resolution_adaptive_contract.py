@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-"""Static contract for logical-1000 / resizable ClientJS AUTO runtime.
+"""Static contract for logical-1000 / native-500 ClientJS AUTO runtime.
 
-The production target of this migration is 500x500, but business coordinates
-must stay in the established 1000x1000 logical space. This verifier intentionally
-checks architecture rather than image scores; live template quality is proven by
-operator smoke after packaging.
+Production runs ClientJS at 500x500, while all business coordinates remain in
+logical 1000x1000 space. The Bridge must expose its *native* 500 frame to
+VisionEngine; upscaling back to 1000 before matching is forbidden because it
+softens small templates and hides resolution mistakes.
 """
 
 import ast
@@ -23,6 +23,10 @@ PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
 PRODUCTION = CLEAN / "actions/production.py"
 INVENTORY = CLEAN / "actions/inventory.py"
 STALL = CLEAN / "actions/stall.py"
+STALL_AD = CLEAN / "actions/stall_advertising.py"
+PLANTING = CLEAN / "actions/planting.py"
+AUTO_MAIN_SELLING = CLEAN / "actions/auto_main_selling.py"
+SELLING = CLEAN / "actions/selling.py"
 BUILDER_MATCH = CLEAN / "workflows/auto_builder/image_match.py"
 
 # Direct OpenCV matching is allowed only in modules explicitly audited for the
@@ -83,18 +87,22 @@ def main() -> int:
     production = read_python(PRODUCTION)
     inventory = read_python(INVENTORY)
     stall = read_python(STALL)
+    stall_ad = read_python(STALL_AD)
+    planting = read_python(PLANTING)
+    auto_main_selling = read_python(AUTO_MAIN_SELLING)
+    selling = read_python(SELLING)
     builder_match = read_python(BUILDER_MATCH)
 
-    # Input contract: actions continue sending logical 1000 coordinates. The
-    # driver owns the one-and-only final logical -> real client conversion.
+    # Input contract stays logical 1000. Native Bridge INPUT4 owns the final
+    # logical->actual-client conversion, so changing driver reference to 500
+    # would double-scale or invalidate existing business geometry.
     if driver.count("reference_size=(1000, 1000)") < 2:
         raise AssertionError(
             "Both raw and Bridge V3 drivers must keep logical reference_size=1000x1000"
         )
 
-    # Production-size normalization is scoped to AUTO MULTI DEV and must happen
-    # before Bridge V3 is constructed. The stable window catches Multi's delayed
-    # generic display callback when an offline profile was just launched.
+    # Production-size normalization is scoped to AUTO MULTI DEV and finishes
+    # before Bridge construction.
     require(resolution, "LOGICAL_REFERENCE_SIZE = (1000, 1000)",
             "Resolution logical reference changed")
     require(resolution, "PRODUCTION_CLIENT_SIZE = (500, 500)",
@@ -125,6 +133,38 @@ def main() -> int:
             "Legacy adaptive removal and 500 normalization must finish before Bridge V3"
         )
 
+    # First live 500 smoke proved the window was 500 but legacy EngineDriver
+    # expanded CAPTURE3 back to 1000 before Vision. Lock the repair: read the
+    # writer-bound raw capture, require exactly 500, never resize it, and wrap
+    # the driver before VisionEngine exists.
+    require(resolution, "class NativeCaptureDriver:",
+            "Native 500 capture adapter missing")
+    require(resolution, 'capture = getattr(self._driver, "_capture_shared_bgra", None)',
+            "Native adapter does not reuse writer-bound CAPTURE3")
+    require(resolution, "if actual != self.expected_size:",
+            "Native CAPTURE3 size does not fail closed")
+    require(resolution, "Dừng trước khi click để tránh lệch tọa độ",
+            "Native capture size mismatch fail-close message missing")
+    require(resolution, "reshape(\n                (actual[1], actual[0], 4)",
+            "Native OpenCV frame is not built from actual capture dimensions")
+    forbid(resolution, "cv2.resize(",
+           "NativeCaptureDriver must not upscale CAPTURE3 before VisionEngine")
+    require(automation, "NativeCaptureDriver(",
+            "AUTO MULTI DEV does not wrap EngineDriver with native capture adapter")
+    require(automation, 'native_probe = self.driver.screenshot(format="opencv")',
+            "Native 500 capture is not proven before Vision construction")
+    require(automation, "native CAPTURE3=",
+            "Native capture runtime evidence log missing")
+    require(automation, "không upscale về 1000 trước matching",
+            "No-upscale runtime marker missing")
+    native_wrap_at = automation.index("self.driver = NativeCaptureDriver(")
+    native_probe_at = automation.index('native_probe = self.driver.screenshot(format="opencv")')
+    vision_at = automation.index("self.vision = VisionEngine(")
+    if not (bridge_at < native_wrap_at < native_probe_at < vision_at):
+        raise AssertionError(
+            "Bridge -> native 500 adapter -> native probe -> Vision ordering changed"
+        )
+
     # Central vision transform.
     require(vision, "REFERENCE_SIZE = (1000, 1000)",
             "Vision logical reference changed")
@@ -152,9 +192,7 @@ def main() -> int:
     forbid(vision, "x, y, w, h = map(int, zone)",
            "Legacy frame-pixel interpretation of logical zone returned")
 
-    # Repeated empty-slot counter is a special direct matcher. It must reuse the
-    # same transforms and de-duplicate in logical units, otherwise 500x500 would
-    # under-count slots because MIN_DISTANCE would accidentally remain 34 pixels.
+    # Repeated production-slot direct matcher.
     require(production, "self.vision.logical_zone_to_frame(zone, frame)",
             "Production repeated-slot ROI is not resolution-aware")
     require(production, "self.vision.frame_scales(frame)",
@@ -165,9 +203,7 @@ def main() -> int:
     forbid(production, "x, y, width, height = zone",
            "Production returned to direct logical-zone frame slicing")
 
-    # Runtime-captured stall fingerprints are already in current frame pixels.
-    # Only the inventory ROI and returned click center are transformed. This is
-    # intentionally different from static library templates in VisionEngine.
+    # Runtime-captured stall fingerprints are already current-frame templates.
     require(inventory, "self.vision.logical_zone_to_frame(",
             "Inventory fingerprint ROI is not logical->frame")
     require(inventory, "self.INVENTORY_ZONE, frame",
@@ -177,9 +213,7 @@ def main() -> int:
     forbid(inventory, "x, y, width, height = self.INVENTORY_ZONE",
            "Inventory regressed to direct logical-zone frame slicing")
 
-    # Builder zones/click geometry are stored as logical 0..1000. Custom Builder
-    # templates use the same reference-space convention and therefore scale into
-    # the actual frame before direct OpenCV matching.
+    # Builder custom templates use the same logical 1000 convention.
     require(builder_match, "automation.vision.logical_zone_to_frame(",
             "Builder recognize-image zone is not resolution-aware")
     require(builder_match, "automation.vision.frame_scales(source)",
@@ -195,9 +229,7 @@ def main() -> int:
     forbid(builder_match, "x, y, w, h = map(int, zone)",
            "Builder regressed to frame-pixel interpretation of logical zone")
 
-    # Sale/friend-stall has direct color/crop logic in addition to VisionEngine.
-    # Those ROIs must be mapped from logical geometry and the old 1000-pixel coin
-    # count must scale by frame area. 500x500 must also be accepted by scan_view.
+    # Stall scanning has direct color/crop logic.
     require(stall, "self.vision.logical_zone_to_frame(",
             "Stall direct crop/color ROI is not resolution-aware")
     require(stall, "120.0 * frame_sx * frame_sy",
@@ -206,16 +238,48 @@ def main() -> int:
             "Stall scan does not accept canonical 500x500 frames")
     require(stall, "icon = self.crop_icon(source, local_slot)",
             "Stall scan bypasses resolution-aware icon crop")
-    require(stall, "def crop_icon(self, frame: Any, local_slot: int):",
-            "Stall logical icon crop helper missing")
     forbid(stall, "if width < 800 or height < 750:",
            "Stall still rejects 500x500 runtime")
     forbid(stall, "roi = frame[top:bottom, cx + 10 : cx + 48]",
            "Stall price-coin ROI still uses raw logical pixels")
 
-    # Dedicated XUỐNG detector already uses proportional ROI and 0.50 base scale
-    # for the 500 target. Its public center must be logical before the existing
-    # navigation caller sends it to the logical driver.
+    # QC/ad color probes operate in frame pixels but all centers sent to the
+    # driver must return to logical space. The ready button is already a logical
+    # constant and must not be pre-scaled.
+    require(stall_ad, "self.vision.logical_zone_to_frame(zone, frame)",
+            "QC generic color zone is not logical->frame")
+    require(stall_ad, "self.vision.frame_point_to_logical(frame_center, frame)",
+            "QC detected modal X center is not returned logical")
+    require(stall_ad, "return self.READY_BUTTON_POINT",
+            "QC free-ad click point is not kept logical")
+    forbid(stall_ad, "READY_BUTTON_POINT[0] * width / 1000.0",
+           "QC free-ad center is pre-scaled before logical driver")
+
+    # Planting match paths use VisionEngine. Its post-action waypoint diagnostic
+    # also needs logical->frame crop conversion once native 500 frames are exposed.
+    require(planting, "self.vision.logical_zone_to_frame(\n                logical_zone, before",
+            "Planting before-frame waypoint diagnostic is not resolution-aware")
+    require(planting, "self.vision.logical_zone_to_frame(\n                logical_zone, after",
+            "Planting after-frame waypoint diagnostic is not resolution-aware")
+    forbid(planting, "old = before[y0:y1, x0:x1]",
+           "Planting diagnostic still slices logical coordinates from actual frame")
+
+    # Both AUTO Main sale and clear-stall resale use a destructive screen-change
+    # proof. Their old direct 1000 pixel slice would become wrong at native 500.
+    for label, source in (
+        ("AUTO Main sale", auto_main_selling),
+        ("Selling/resale", selling),
+    ):
+        require(source, "SALE_CHANGE_ZONE = (180, 330, 640, 430)",
+                f"{label} logical screen-change zone missing")
+        require(source, "def _sale_change_crop(self):",
+                f"{label} resolution-aware change crop missing")
+        require(source, "logical_zone_to_frame(",
+                f"{label} change crop is not logical->frame")
+        forbid(source, "frame()[330:760, 180:820]",
+               f"{label} regressed to raw 1000-pixel screen-change slice")
+
+    # Dedicated XUỐNG detector uses proportional ROI and 0.50 base scale.
     require(down_floor, "base_scale = max(0.50",
             "XUỐNG detector no longer supports 500 template scale")
     require(down_floor, "def _frame_point_to_logical(",
@@ -232,7 +296,8 @@ def main() -> int:
     print("AUTO MULTI DEV ADAPTIVE RESOLUTION CONTRACT VERIFIED")
     print("logical_reference=1000x1000")
     print("production_target=500x500")
-    print("vision=logical-zone->frame-match->logical-result")
+    print("bridge_capture=native-500-no-reference-upscale+size-fail-close")
+    print("vision=logical-zone->native-frame-match->logical-result")
     print("driver=logical-input->actual-client-once")
     print("client_size=500x500-stable-before-bridge")
     print("legacy_adaptive=neutralized-before-bridge")
@@ -241,6 +306,9 @@ def main() -> int:
     print("inventory_fingerprint=current-frame-template+logical-roi-center")
     print("builder_match=logical-zone+frame-scaled-template+logical-result")
     print("stall_scan=logical-crops+area-scaled-coin-threshold+500-accepted")
+    print("qc_color_probes=frame-roi+logical-click-centers")
+    print("planting_diagnostic=logical-waypoint-crops")
+    print("sale_change_verify=logical-roi-on-native-frame")
     return 0
 
 
