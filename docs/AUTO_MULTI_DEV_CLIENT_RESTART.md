@@ -4,12 +4,14 @@
 
 Cơ chế restart ClientJS là maintenance chung của AUTO Main, không thuộc riêng Function 1 hay một Recipe.
 
-**LIVE TEST hiện tại: 60 giây/lần.** Sau khi test PASS, đổi hằng số test sang **7200 giây (2 giờ)**.
+**LIVE TEST 60 giây đã được operator PASS. Production interval hiện là 7200 giây = 2 giờ.**
 
-Các hằng số test đang được khóa ở:
+Hai hằng số production phải đồng bộ:
 
-- `AutoMainWorkflow.CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0`
-- `_CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0` trong `auto_builder_integration.py`
+- `AutoMainWorkflow.CLIENT_RESTART_INTERVAL_SECONDS = 7200.0`
+- `_CLIENT_RESTART_INTERVAL_SECONDS = 7200.0` trong `auto_builder_integration.py`
+
+Static contract khóa đúng hai giá trị này; không được tự ý quay lại 60 giây hoặc đổi một phía mà không đổi phía còn lại.
 
 ## Safe boundary
 
@@ -18,7 +20,7 @@ Timer đến hạn **không được phép cắt ngang Function, production, pla
 Luồng chuẩn:
 
 ```text
-đến hạn restart
+đến hạn restart 2 giờ
 → nếu Function đang chạy: chỉ ghi pending
 → tiếp tục cho đủ số vòng giữa hai lần bán
 → chạy lượt bán VP/QC đến khi hoàn tất và đóng quầy
@@ -48,7 +50,7 @@ Function PASS đủ vòng cấu hình
 → ClientRestartRequested
 ```
 
-Nếu `sale_every_loops=3`, timer hết trong vòng 1 thì AUTO vẫn hoàn thành vòng 1, 2, 3 và lượt bán sau vòng 3 rồi mới restart.
+Ví dụ `sale_every_loops=3`: nếu mốc 2 giờ đến trong vòng 1 thì AUTO vẫn hoàn thành vòng 1, 2, 3 và lượt bán sau vòng 3 rồi mới restart.
 
 ## Handoff worker → Multi
 
@@ -64,7 +66,8 @@ Multi giữ `active_config` của profile, ghi lại marker `auto-main-config.js
 
 ```json
 {
-  "skip_initial_sale_once": true
+  "skip_initial_sale_once": true,
+  "client_restart_interval_seconds": 7200
 }
 ```
 
@@ -80,9 +83,24 @@ Multi phải chờ `old_thread.is_alive() == false`, sau đó mới xóa ownersh
 
 Nếu operator bấm Dừng trong lúc đang chờ restart/relaunch, pending restart và active resume config phải bị hủy trước khi gọi lifecycle Stop cũ. AUTO không được tự mở ClientJS lại sau lệnh Stop của operator.
 
-## Log live-test cần thấy
+## Live evidence đã PASS ở test 60 giây
 
-Khi timer 60 giây đến giữa Function:
+Operator đã xác nhận PASS toàn chuỗi:
+
+1. timer đến hạn giữa Function không đóng ClientJS ngay;
+2. AUTO hoàn thành Function/sale boundary trước restart;
+3. chỉ đúng ClientJS/profile yêu cầu bị đóng;
+4. ClientJS được mở lại tự động;
+5. worker mới nhận Bridge V3 và vào lại game;
+6. không có hai worker cùng profile chạy đồng thời;
+7. run sau restart không lặp sale đầu ngay lập tức;
+8. AUTO tiếp tục Function bình thường.
+
+Sau PASS này interval đã được promote từ `60.0` lên `7200.0`.
+
+## Log production cần thấy
+
+Nếu mốc 2 giờ đến giữa Function:
 
 ```text
 AUTO MULTI DEV • đến giờ restart ClientJS nhưng chưa ở safe boundary
@@ -109,18 +127,12 @@ Worker mới:
 AUTO MULTI DEV • resume sau restart ClientJS • bỏ sale đầu một lần
 ```
 
-Sau đó phải đi thẳng vào Function loop tiếp theo của scheduler mới.
+## Không được regression
 
-## Điều kiện PASS test 1 phút
-
-1. Timer đến hạn giữa Function không đóng ClientJS ngay.
-2. AUTO hoàn thành đủ vòng cấu hình và lượt bán VP trước restart.
-3. Chỉ đúng ClientJS/profile yêu cầu bị đóng.
-4. ClientJS được mở lại tự động.
-5. Worker mới kết nối Bridge V3 và vào lại game thành công.
-6. Không có hai worker cùng profile chạy đồng thời.
-7. Run sau restart không lặp lại sale đầu ngay lập tức.
-8. Function tiếp tục chạy bình thường sau relaunch.
-9. Nút Dừng trong lúc pending restart phải hủy relaunch.
-
-Sau khi đủ các điều kiện trên, đổi `60.0` thành `7200.0` ở hai hằng số được nêu đầu tài liệu và chạy lại static contract + smoke test.
+- Không restart ngay khi timer hết nếu Function/sale chưa tới safe boundary.
+- Không reset timer bằng cách tạo loop nội bộ giữa Function; timer thuộc scheduler run.
+- Không dùng kill cứng worker trước cooperative handoff trừ fallback process không thoát.
+- Không relaunch tất cả account khi chỉ một profile đến hạn.
+- Không chạy sale đầu thêm lần nữa ngay sau restart.
+- Không bỏ race guard `old_thread.is_alive()`.
+- Không đổi 2 giờ chỉ ở integration hoặc chỉ ở workflow; hai phía phải đồng bộ.
