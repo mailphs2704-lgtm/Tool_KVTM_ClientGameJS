@@ -19,6 +19,15 @@ class PopupActions:
     HOME_ZONE = (900, 900, 100, 100)
     FRIEND_ZONE = (0, 920, 100, 80)
 
+    # IMPORTANT: friend_off/cua_hang are farm-HUD anchors and remain visible on
+    # upper farm floors. They prove "own farm" but do NOT prove camera=main.
+    # quay_hang is the world-space own-stall anchor used by StallActions before
+    # clicking (636,857); it is visible only when the camera is at the bottom/main
+    # farm view. Keep this region away from the fixed HUD corners.
+    EXACT_MAIN_STALL_ZONE = (430, 680, 410, 300)
+    EXACT_MAIN_STALL_THRESHOLD = 0.74
+    EXACT_MAIN_STALL_SCALES = (0.85, 0.90, 1.00, 1.10, 1.20)
+
     def __init__(
         self,
         context: AutomationContext,
@@ -86,11 +95,13 @@ class PopupActions:
         return True
 
     def is_own_main_screen(self) -> bool:
-        """Confirm the clone's own farm, not a friend's visited home."""
-        # Home classification must be atomic relative to CAPTURE3. Previously
-        # icon_home used this frame but friend_off/cua_hang each captured a newer
-        # frame, so one decision could mix three renderer moments. Reuse exactly
-        # one snapshot for every mutually-exclusive home anchor.
+        """Confirm own-farm HUD, regardless of the current vertical farm floor.
+
+        Historical callers use this method as an own-home classifier. Do not use
+        it as an exact camera-main gate: friend_off/cua_hang remain visible while
+        the camera is on floor 1/2/3/... and caused recovery to falsely accept
+        floor 2 as main.
+        """
         frame = self.vision.frame()
         if self._blocking_modal_geometry(frame)[0]:
             return False
@@ -106,6 +117,37 @@ class PopupActions:
                 "cua_hang", threshold=0.78, zone=self.HOME_ZONE, frame=frame
             )
         )
+
+    def is_own_exact_main_screen(self) -> bool:
+        """Confirm own farm AND the bottom/main camera using the stall world anchor."""
+        frame = self.vision.frame()
+        if self._blocking_modal_geometry(frame)[0]:
+            return False
+        if self.vision.find(
+            "icon_home", threshold=0.80, zone=self.HOME_ZONE, frame=frame
+        ) is not None:
+            return False
+
+        own_hud = bool(
+            self.vision.find(
+                "friend_off", threshold=0.76, zone=self.FRIEND_ZONE, frame=frame
+            )
+            or self.vision.find(
+                "cua_hang", threshold=0.78, zone=self.HOME_ZONE, frame=frame
+            )
+        )
+        if not own_hud:
+            return False
+
+        stall = self.vision.find(
+            "quay_hang",
+            threshold=self.EXACT_MAIN_STALL_THRESHOLD,
+            zone=self.EXACT_MAIN_STALL_ZONE,
+            scales=self.EXACT_MAIN_STALL_SCALES,
+            click=False,
+            frame=frame,
+        )
+        return stall is not None
 
     # Compatibility name used by a few generic callers.
     def is_main_screen(self) -> bool:
@@ -210,6 +252,7 @@ class PopupActions:
         return True
 
     def ensure_main_screen(self, timeout: float = 90.0) -> None:
+        """Ensure own farm/home UI is reachable; camera floor is not normalized."""
         deadline = time.monotonic() + float(timeout)
         last_status = 0.0
         while time.monotonic() < deadline:
@@ -217,13 +260,13 @@ class PopupActions:
 
             # A modal can leave farm HUD visible/dimmed behind it. Always give
             # modal dismissal priority so HUD templates cannot create a false
-            # main-screen success while input is still blocked.
+            # farm-ready success while input is still blocked.
             if self.dismiss_one():
                 continue
             if self._return_from_visited_home():
                 continue
             if self.is_own_main_screen():
-                self.context.log("Đã xác nhận màn hình farm của clone")
+                self.context.log("Đã xác nhận farm HUD của clone")
                 return
             if self._handle_portal_entry():
                 continue
@@ -231,11 +274,11 @@ class PopupActions:
             now = time.monotonic()
             if now - last_status >= 5.0:
                 self.context.log(
-                    "Đang đưa ClientJS về màn hình farm • "
+                    "Đang đưa ClientJS về farm của clone • "
                     f"còn {max(0, int(deadline - now))}s"
                 )
                 last_status = now
             self.waiter.sleep(0.65)
         raise ScreenTimeout(
-            f"Không đưa được ClientJS về màn hình farm sau {timeout:.0f}s"
+            f"Không đưa được ClientJS về farm của clone sau {timeout:.0f}s"
         )
