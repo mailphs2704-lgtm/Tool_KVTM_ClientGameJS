@@ -18,10 +18,10 @@ RecoveryEventHandler = Callable[[RecoveryEvent], None]
 class RecoveryManager:
     """Facade consumed by Functions/Recipes instead of embedding recovery logic.
 
-    A Function normally calls only ``ensure_main``, ``recover_unknown_to_floor``
-    and ``run_production``. Optional event handlers let a specific Function add
-    bookkeeping at a recovery position. Optional route maps let a future Function
-    add new floor routes without changing the core recovery algorithms.
+    A Function normally calls only high-level recovery methods and
+    ``run_production``. Optional event handlers let a specific Function add
+    bookkeeping at one recovery position. Optional route maps let future
+    Functions add new floors without copying recovery algorithms.
     """
 
     def __init__(
@@ -34,6 +34,7 @@ class RecoveryManager:
         ] | None = None,
         to_main_routes: Mapping[int, RouteHandler] | None = None,
         from_main_routes: Mapping[int, RouteHandler] | None = None,
+        between_floor_routes: Mapping[tuple[int, int], RouteHandler] | None = None,
     ) -> None:
         self.auto = automation
         self.context = automation.context
@@ -48,6 +49,7 @@ class RecoveryManager:
             emit=self._emit,
             to_main_routes=to_main_routes,
             from_main_routes=from_main_routes,
+            between_floor_routes=between_floor_routes,
         )
         self.production = ProductionRecovery(
             automation,
@@ -55,8 +57,6 @@ class RecoveryManager:
             emit=self._emit,
             function_id=self.function_id,
         )
-        # Compatibility for older code that read ``spec`` from the former
-        # ProductionWarehouseRecovery object.
         self.spec = self.production.spec
 
     def _emit(self, event: RecoveryEvent) -> None:
@@ -70,8 +70,6 @@ class RecoveryManager:
             handler = self._event_handlers.get("*")
         if handler is None:
             return
-        # Hooks are intentionally observers. A bad optional hook must not alter
-        # the deterministic core recovery policy or block all other accounts.
         try:
             handler(event)
         except Exception as exc:
@@ -116,6 +114,14 @@ class RecoveryManager:
 
     def from_main_to_floor(self, floor: int, label: str) -> None:
         self.navigation.from_main_to_floor(floor, label)
+
+    def from_floor_to_floor(
+        self,
+        source_floor: int,
+        target_floor: int,
+        label: str,
+    ) -> None:
+        self.navigation.from_floor_to_floor(source_floor, target_floor, label)
 
     def run_production(
         self,
