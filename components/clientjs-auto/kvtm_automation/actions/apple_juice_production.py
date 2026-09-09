@@ -11,7 +11,7 @@ from .production import ProductionActions, ProductionResult
 __all__ = ["AppleJuiceProductionActions"]
 FILE_FUNCTIONS = (
     "Mở máy tầng 2 và xác minh đúng ảnh sản xuất Nước táo",
-    "Probe bounded candidate tầng 2 sau goDown(4), không lặp click vô hạn khi lệch tầng",
+    "Probe bounded candidate tầng 2 sau goDown(4), đủ cửa sổ click để panel Nước táo kịp mở nhưng vẫn chặn sai tầng",
     "Thu VP bằng burst x5 liên tục cho tới khi ảnh Nước táo xuất hiện trong vùng thư viện panel",
     "Ô trống chỉ là tín hiệu phụ, không được tự xác nhận panel đã mở",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
@@ -34,11 +34,16 @@ class AppleJuiceProductionActions:
     VERIFY_RECHECKS = 4
     VERIFY_RECHECK_SECONDS = 0.18
 
-    # The direct floor6->floor2 route is only a candidate until the production
-    # item itself proves the destination. Two x5 bursts are enough to clear a
-    # full nine-output queue and expose the panel, while remaining bounded on a
-    # wrong floor so recovery can take over instead of clicking forever.
+    # Keep the original two x5 bursts as the base probe contract, then allow two
+    # additional bounded bursts for the live Nước táo panel which can need more
+    # than ten raw clicks before the product-library anchor is actually rendered.
+    # The probe therefore gets at most 4 x5 = 20 clicks, never an unbounded loop.
+    # A wrong known product is detected on the same fresh frame and aborts early.
     DIRECT_FLOOR_PROBE_BURSTS = 2
+    DIRECT_FLOOR_PROBE_EXTRA_BURSTS = 2
+    DIRECT_FLOOR_PROBE_MAX_BURSTS = (
+        DIRECT_FLOOR_PROBE_BURSTS + DIRECT_FLOOR_PROBE_EXTRA_BURSTS
+    )
     DIRECT_FLOOR_PROBE_RECHECKS = 3
     DIRECT_FLOOR_PROBE_RECHECK_SECONDS = 0.18
 
@@ -54,29 +59,30 @@ class AppleJuiceProductionActions:
         """Bounded proof that the fast goDown(4) landed at the Nước táo machine.
 
         This is deliberately separate from the normal production opener, which is
-        allowed to keep collecting until the requested panel opens. A wrong-floor
-        route must never inherit that unbounded behavior. On success or failure we
-        close the probe panel and let the normal production transaction start from
-        a clean state. ``full_kho`` is not accepted as floor proof; it falls back
-        to exact-main normalization, after which the normal warehouse recovery can
-        handle InventoryFull on the verified floor 2.
+        allowed to keep collecting until the requested panel opens. The direct
+        candidate gets up to four true x5 bursts so normal Nước táo output
+        collection/render latency does not create a false floor miss. A wrong-floor
+        panel is still fail-fast: if another known production item is visible on
+        the same fresh frame, close it immediately and hand control to exact-main
+        recovery. ``full_kho`` is not accepted as floor proof.
         """
         click_count = 0
-        for burst in range(1, self.DIRECT_FLOOR_PROBE_BURSTS + 1):
+        for burst in range(1, self.DIRECT_FLOOR_PROBE_MAX_BURSTS + 1):
             self.context.ensure_running()
             click_count += self.slots._send_collect_burst(
                 machine_point=self.MACHINE_POINT
             )
             self.context.log(
                 "AUTO Nước táo • probe candidate tầng 2 • "
-                f"burst={burst}/{self.DIRECT_FLOOR_PROBE_BURSTS} • "
+                f"burst={burst}/{self.DIRECT_FLOOR_PROBE_MAX_BURSTS} • "
                 f"tổng click={click_count}"
             )
             self.waiter.sleep(self.speed_config.vp_collect_delay)
 
             for recheck in range(1, self.DIRECT_FLOOR_PROBE_RECHECKS + 1):
                 self.context.ensure_running()
-                warehouse_full, _empty_ready = self.slots._panel_state()
+                frame = self.vision.frame()
+                warehouse_full, _empty_ready = self.slots._panel_state(frame=frame)
                 if warehouse_full:
                     self.vision.driver.click(*self.CLOSE_POINT)
                     self.waiter.sleep(0.25)
@@ -87,28 +93,48 @@ class AppleJuiceProductionActions:
                     return False
 
                 product = self.slots._find_product_match(
-                    self.PRODUCT_TEMPLATE, threshold=0.70
+                    self.PRODUCT_TEMPLATE,
+                    threshold=0.70,
+                    frame=frame,
                 )
                 if product is not None:
                     self.context.log(
                         "AUTO Nước táo • direct floor 2 PASS • "
                         f"đã thấy anchor {self.PRODUCT_TEMPLATE} trong panel • "
-                        f"center={product.center} • burst={burst} • recheck={recheck}"
+                        f"center={product.center} • burst={burst} • recheck={recheck} • "
+                        f"tổng click={click_count}"
                     )
                     self.vision.driver.click(*self.CLOSE_POINT)
                     self.waiter.sleep(0.25)
                     return True
 
+                wrong = self.slots._find_wrong_product_match(
+                    self.PRODUCT_TEMPLATE,
+                    threshold=0.70,
+                    frame=frame,
+                )
+                if wrong is not None:
+                    actual_template, actual_match = wrong
+                    self.vision.driver.click(*self.CLOSE_POINT)
+                    self.waiter.sleep(0.25)
+                    self.context.log(
+                        "AUTO Nước táo • probe candidate SAI MÁY/SAI TẦNG • "
+                        f"thấy={actual_template} tại {actual_match.center} • "
+                        f"dừng sớm ở burst={burst} thay vì click đủ probe • fallback exact-main"
+                    )
+                    return False
+
                 if recheck < self.DIRECT_FLOOR_PROBE_RECHECKS:
                     self.waiter.sleep(self.DIRECT_FLOOR_PROBE_RECHECK_SECONDS)
 
-        # Wrong floor / transient route miss: close anything that may have opened
-        # and hand control back to the background-independent main recovery.
+        # Still bounded: after four x5 bursts without target/wrong-product proof,
+        # close anything that may have opened and normalize through exact-main.
         self.vision.driver.click(*self.CLOSE_POINT)
         self.waiter.sleep(0.25)
         self.context.log(
             "AUTO Nước táo • direct floor 2 MISS • không thấy anchor nuoc_tao sau "
-            f"{self.DIRECT_FLOOR_PROBE_BURSTS} burst x5 • đóng panel và fallback exact-main"
+            f"{self.DIRECT_FLOOR_PROBE_MAX_BURSTS} burst x5 ({click_count} click) • "
+            "đóng panel và fallback exact-main"
         )
         return False
 
