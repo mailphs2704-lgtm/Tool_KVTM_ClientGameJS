@@ -87,15 +87,29 @@ def main() -> int:
             "Plant/harvest speed not applied")
     require(apple_supply, "self.speed_config.crop_check_interval",
             "Crop check interval not applied")
+
+    # VP collection is now centralized in ProductionActions so all three
+    # machines share one five-click burst implementation and one speed source.
+    require(production, "def _click_until_panel_open(",
+            "Shared VP collect helper missing")
+    require(production, "COLLECT_CLICK_BURST = 5",
+            "Five-click VP collect burst contract missing")
+    require(production, "self.waiter.sleep(self.speed_config.vp_collect_delay)",
+            "VP collect speed not applied inside shared collect helper")
+    require(production, "self.speed_config.vp_production_delay",
+            "VP production speed not applied to dried apple")
+
     for text, label in (
-        (production, "dried apple"),
         (apple_juice, "apple juice"),
         (yellow_fabric, "yellow fabric"),
     ):
-        require(text, "self.speed_config.vp_collect_delay",
-                f"VP collect speed not applied to {label}")
+        require(text, "self.slots = ProductionActions(context, vision, waiter, self.speed_config)",
+                f"Shared speed config not delegated to {label} production helper")
+        require(text, "self.slots._click_until_panel_open(",
+                f"Shared VP collect helper not used by {label}")
         require(text, "self.speed_config.vp_production_delay",
                 f"VP production speed not applied to {label}")
+
     require(apple_supply, 'allow_empty=True, label="hàng dưới cùng tầng 6"',
             "Floor 6 must allow immediate planting on empty pots")
     require(automation, "AutoSpeedConfig.from_mapping",
@@ -107,7 +121,7 @@ def main() -> int:
     require(gui, "def _auto_multi_dev_configure",
             "Dedicated Multi DEV speed dialog missing")
     require(gui, "keys=MULTI_DEV_TUNING_KEYS",
-            "Multi DEV dialog must only show its own settings")
+            "Multi Dev dialog must only show its own settings")
     require(gui, "keys=AUTO_LEGACY_TUNING_KEYS",
             "Legacy AUTO dialog must use a separate setting group")
     require(gui, "command=self._auto_multi_dev_configure",
@@ -121,7 +135,7 @@ def main() -> int:
     print("AUTO MULTI DEV SPEED CONFIG STATIC CONTRACT VERIFIED")
     print("floor_swipe=independent")
     print("plant_harvest=independent")
-    print("vp_collect=independent_default_0.3s")
+    print("vp_collect=shared-five-click-helper+independent_default_0.3s")
     print("vp_production=independent_reserved")
     print("crop_check_interval=independent_default_0.3s")
     print("stable_sale_and_clear_stall=untouched")
