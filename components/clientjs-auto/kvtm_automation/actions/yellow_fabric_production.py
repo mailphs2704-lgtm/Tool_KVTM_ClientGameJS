@@ -14,6 +14,7 @@ FILE_FUNCTIONS = (
     "Thu VP/mở panel theo tốc độ thu VP cấu hình riêng",
     "Nhận panel đã mở bằng ô trống hoặc ảnh Vải vàng khi máy đang kín slot",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
+    "Phát tín hiệu kho đầy riêng để workflow xuống quầy bán VP rồi quay lại tầng 3",
     "Dùng bộ đếm chín ô trống đã live-pass của hai pass trước",
     "Kéo Vải vàng xuống ô top động đúng chín lần",
     "Hậu kiểm mỗi lần kéo làm giảm đúng bộ đếm ô trống",
@@ -67,10 +68,7 @@ class YellowFabricProductionActions:
                     f"delay={self.speed_config.vp_collect_delay:.3f}s"
                 )
             if warehouse_full:
-                self._close_panel()
-                raise ScreenTimeout(
-                    "Đã thu VP trước máy Vải vàng nhưng kho đang đầy"
-                )
+                self.slots._raise_inventory_full("Vải vàng")
             if panel_ready:
                 break
 
