@@ -19,11 +19,11 @@ class PopupActions:
     HOME_ZONE = (900, 900, 100, 100)
     FRIEND_ZONE = (0, 920, 100, 80)
 
-    # IMPORTANT: friend_off/cua_hang are farm-HUD anchors and remain visible on
-    # upper farm floors. They prove "own farm" but do NOT prove camera=main.
-    # quay_hang is the world-space own-stall anchor used by StallActions before
-    # clicking (636,857); it is visible only when the camera is at the bottom/main
-    # farm view. Keep this region away from the fixed HUD corners.
+    # LEGACY DIAGNOSTIC ONLY. Different accounts can render different farm
+    # backgrounds/world objects, so quay_hang must never gate exact-main again.
+    # Keep the old metadata temporarily for offline diagnostics/contracts while
+    # runtime exact-main is proved only by navigation state + goDown boundary.
+    LEGACY_EXACT_MAIN_STALL_TEMPLATE = "quay_hang"
     EXACT_MAIN_STALL_ZONE = (430, 680, 410, 300)
     EXACT_MAIN_STALL_THRESHOLD = 0.74
     EXACT_MAIN_STALL_SCALES = (0.85, 0.90, 1.00, 1.10, 1.20)
@@ -97,10 +97,9 @@ class PopupActions:
     def is_own_main_screen(self) -> bool:
         """Confirm own-farm HUD, regardless of the current vertical farm floor.
 
-        Historical callers use this method as an own-home classifier. Do not use
-        it as an exact camera-main gate: friend_off/cua_hang remain visible while
-        the camera is on floor 1/2/3/... and caused recovery to falsely accept
-        floor 2 as main.
+        friend_off/cua_hang are fixed HUD anchors shared across account
+        backgrounds. They prove "own farm" but intentionally do not prove the
+        vertical camera is at the bottom/main boundary.
         """
         frame = self.vision.frame()
         if self._blocking_modal_geometry(frame)[0]:
@@ -119,35 +118,15 @@ class PopupActions:
         )
 
     def is_own_exact_main_screen(self) -> bool:
-        """Confirm own farm AND the bottom/main camera using the stall world anchor."""
-        frame = self.vision.frame()
-        if self._blocking_modal_geometry(frame)[0]:
-            return False
-        if self.vision.find(
-            "icon_home", threshold=0.80, zone=self.HOME_ZONE, frame=frame
-        ) is not None:
-            return False
+        """Confirm own farm plus runtime-proved bottom/main camera state.
 
-        own_hud = bool(
-            self.vision.find(
-                "friend_off", threshold=0.76, zone=self.FRIEND_ZONE, frame=frame
-            )
-            or self.vision.find(
-                "cua_hang", threshold=0.78, zone=self.HOME_ZONE, frame=frame
-            )
-        )
-        if not own_hud:
+        Exact-main is no longer inferred from any world/background template.
+        Navigation marks ``camera_exact_main_proven`` after a deterministic route
+        to main or after consecutive goDown no-motion boundary observations.
+        """
+        if not bool(self.context.camera_exact_main_proven):
             return False
-
-        stall = self.vision.find(
-            "quay_hang",
-            threshold=self.EXACT_MAIN_STALL_THRESHOLD,
-            zone=self.EXACT_MAIN_STALL_ZONE,
-            scales=self.EXACT_MAIN_STALL_SCALES,
-            click=False,
-            frame=frame,
-        )
-        return stall is not None
+        return self.is_own_main_screen()
 
     # Compatibility name used by a few generic callers.
     def is_main_screen(self) -> bool:
@@ -218,6 +197,7 @@ class PopupActions:
         """Enter the game/account using only template-guarded portal actions."""
         match = self.vision.find("tai_khoan", threshold=0.78, click=True)
         if match is not None:
+            self.context.invalidate_camera_main("portal-account-select")
             self.waiter.sleep(0.35)
             # AUTO_PRO_REFERENCE: account row after opening account selector.
             self.vision.driver.click(984, 341)
@@ -226,12 +206,14 @@ class PopupActions:
             return True
         match = self.vision.find("tai_khoan_on", threshold=0.78)
         if match is not None:
+            self.context.invalidate_camera_main("portal-online-account-select")
             self.vision.driver.click(981, 338)
             self.context.log("Đã chọn tài khoản đang online")
             self.waiter.sleep(0.8)
             return True
         match = self.vision.find("icon_game", threshold=0.76, click=True)
         if match is not None:
+            self.context.invalidate_camera_main("portal-open-game")
             self.context.log("Đã mở KVTM từ portal ClientJS")
             self.waiter.sleep(1.0)
             return True
@@ -247,6 +229,7 @@ class PopupActions:
         )
         if match is None:
             return False
+        self.context.invalidate_camera_main("return-from-visited-home")
         self.context.log("ClientJS đang ở nhà bạn • quay về nhà clone trước")
         self.waiter.sleep(0.8)
         return True
