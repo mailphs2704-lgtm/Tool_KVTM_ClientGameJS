@@ -13,6 +13,7 @@ ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/auto_main_sell
 WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/workflow.py"
 INIT = ROOT / "components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/__init__.py"
 RECOGNITION = ROOT / "components/clientjs-auto/kvtm_automation/actions/item_recognition.py"
+ERRORS = ROOT / "components/clientjs-auto/kvtm_automation/errors.py"
 CORE_GUI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 INTEGRATION = ROOT / "source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
@@ -29,6 +30,8 @@ FILE_FUNCTIONS = (
     "Khóa GUI chọn Function + số vòng giữa hai lần bán + chờ giữa vòng Function",
     "Khóa công tắc qua nhà bạn #1 sau mỗi ba vòng Function và handoff tới worker",
     "Khóa maintenance dùng navigation Dọn-quầy đã prove nhưng không chạy business Dọn quầy",
+    "Khóa restart ClientJS chỉ tại safe boundary sau Function đủ vòng + sale hoàn tất",
+    "Khóa relaunch đúng profile và resume worker mà không sale lặp ngay sau restart",
     "Khóa vào game/đóng popup trước sale lần 1 và Function loop",
     "Khóa sale lần 2..N chỉ sau đủ số vòng cấu hình",
     "Khóa thời gian chờ chỉ giữa các vòng Function",
@@ -62,6 +65,7 @@ def main() -> int:
     workflow = read(WORKFLOW)
     read(INIT)
     recognition = read(RECOGNITION)
+    errors = read(ERRORS)
     gui = read(CORE_GUI)
     integration = read(INTEGRATION)
     entry = read(DEV_ENTRY)
@@ -137,6 +141,26 @@ def main() -> int:
     require(integration, "self._save_auto_multi_dev_friend_refresh", "Friend-refresh toggle save hook missing")
     require(integration, '"friend_refresh_enabled": friend_refresh_enabled',
             "GUI does not persist friend-refresh into per-run marker")
+    require(integration, '_CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0',
+            "ClientJS restart live-test interval must remain 60 seconds until PASS")
+    require(integration, '_CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"',
+            "ClientJS restart handoff prefix missing")
+    require(integration, '"client_restart_interval_seconds": _CLIENT_RESTART_TEST_INTERVAL_SECONDS',
+            "GUI run marker does not carry ClientJS restart interval")
+    require(integration, '"skip_initial_sale_once": False',
+            "Initial AUTO run must keep sale #1")
+    require(integration, 'resume["skip_initial_sale_once"] = True',
+            "Post-restart AUTO must suppress duplicate immediate sale")
+    require(integration, "self._auto_main_active_config", "Active AUTO config is not retained across ClientJS restart")
+    require(integration, "self._auto_main_restart_pending", "Pending ClientJS restart ownership state missing")
+    require(integration, 'outcome == "stopped" and reason.startswith(_CLIENT_RESTART_REQUEST_PREFIX)',
+            "Multi does not intercept cooperative restart handoff")
+    require(integration, "proc.terminate()", "Multi does not terminate old ClientJS at safe restart")
+    require(integration, "old_thread.is_alive()", "Relaunch does not wait for old AUTO supervisor to exit")
+    require(integration, "self._start_clean_auto_profile_only(profile_id)",
+            "ClientJS restart does not relaunch only the requesting profile")
+    require(integration, "original_stop_clean_session(self)",
+            "Operator Stop no longer reaches proven worker stop lifecycle")
     require(integration, 'start_button.configure(command=self._start_configured_auto_main)', "AUTO Main Start button is not bound to selected Function config")
     require(integration, 'work_dir / "auto-main-config.json"', "Per-run AUTO Main config marker missing")
     require(integration, '"function_id": function_id', "GUI does not persist selected Function id")
@@ -153,10 +177,29 @@ def main() -> int:
     require(auto_main, "friend_refresh_enabled: bool = False", "AUTO Main friend-refresh input missing")
     require(auto_main, "FRIEND_REFRESH_EVERY_LOOPS = 3", "Friend-refresh interval must remain exactly three loops")
     require(auto_main, "self.friend_refresh = FriendRefreshWorkflow(", "Common friend-refresh workflow not wired")
+    require(auto_main, "CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0",
+            "Scheduler ClientJS restart live-test interval changed before PASS")
+    require(auto_main, "CLIENT_RESTART_REQUEST_PREFIX = \"CLIENT_RESTART_REQUESTED\"",
+            "Scheduler restart request prefix missing")
+    require(auto_main, "self._load_runtime_maintenance_config()",
+            "Scheduler does not read per-run restart/resume marker")
+    require(auto_main, "self.skip_initial_sale_once", "Post-restart duplicate-sale guard missing")
+    require(auto_main, "raise ClientRestartRequested(", "Scheduler does not emit cooperative ClientJS restart signal")
+    require(auto_main, "self._announce_client_restart_deferred(",
+            "Restart deadline is not deferred while Function cycle is incomplete")
+    require(auto_main, "self._request_client_restart_after_sale()",
+            "Safe restart request after sale missing")
+    require(errors, "class ClientRestartRequested(AutomationStopped):",
+            "Client restart must remain a cooperative stop signal")
     require(auto_main, "self._sale_once(ordinal=1)", "Mandatory sale #1 missing")
     require(auto_main, "while True:", "AUTO Main is not continuous until Stop")
     require(auto_main, "loops_since_sale += 1", "Function loop accounting missing")
     require(auto_main, "if loops_since_sale >= self.sale_every_loops:", "Sale #2..N is not gated by configured Function loop count")
+    sale_boundary = auto_main.index("if loops_since_sale >= self.sale_every_loops:")
+    sale_call = auto_main.index("self._sale_once(ordinal=self.sale_calls + 1)", sale_boundary)
+    restart_call = auto_main.index("self._request_client_restart_after_sale()", sale_boundary)
+    if restart_call <= sale_call:
+        raise AssertionError("ClientJS restart must happen only after the periodic sale returns")
     require(auto_main, "self.function_loops % self.FRIEND_REFRESH_EVERY_LOOPS != 0",
             "Friend refresh is not gated by 3 completed Function loops")
     require(auto_main, "self._friend_refresh_if_due()", "Friend refresh scheduler call missing")
@@ -187,6 +230,10 @@ def main() -> int:
     require(auto_multi_worker, 'friend_refresh_enabled = bool(auto_main_config["friend_refresh_enabled"])',
             "Worker does not load friend-refresh toggle")
     require(auto_multi_worker, '"friend_refresh_enabled": False', "Worker default friend-refresh must be off")
+    require(auto_multi_worker, "except AutomationStopped as exc:",
+            "Worker does not preserve cooperative stop/restart handoff")
+    require(auto_multi_worker, "reason=str(exc)",
+            "Worker does not return cooperative restart reason to Multi")
 
     # The recovery worker now owns two GameSession calls (floor-demo + resilient
     # AUTO Main). Inspect only the continuous AUTO Main segment so the contract
@@ -223,6 +270,8 @@ def main() -> int:
     print("flow=game-session+sale1+selected-function-loop+sale-every-n-loops")
     print("friend_refresh=gui-toggle+every3-function-loops+friend1-return-home")
     print("friend_refresh_navigation=reuse-clean-navigation-assets-no-friend-stall")
+    print("client_restart=TEST60s+defer-until-function-sale-boundary+same-profile-relaunch")
+    print("client_restart_resume=skip-duplicate-initial-sale+new-worker+new-bridge-generation")
     print("function_loop_delay=visible+between-loops-only+stop-aware")
     print("function_select=verified-complete-functions-only")
     print("allowed_items=function-bound-catalog")
