@@ -14,6 +14,7 @@ MANAGER = CLEAN / "recovery/manager.py"
 LEGACY = CLEAN / "workflows/production_warehouse_recovery.py"
 FUNCTION_ONE = CLEAN / "workflows/auto_function_one/workflow.py"
 RECIPE_BOOK = CLEAN / "recipes/book.py"
+AUTO_BUILDER_INIT = CLEAN / "workflows/auto_builder/__init__.py"
 
 
 def read(path: Path) -> str:
@@ -34,6 +35,13 @@ def forbid(text: str, token: str, message: str) -> None:
         raise AssertionError(message)
 
 
+def forbid_top_level_import_from(text: str, module_name: str, message: str) -> None:
+    tree = ast.parse(text)
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module == module_name:
+            raise AssertionError(message)
+
+
 def main() -> int:
     errors = read(ERRORS)
     events = read(EVENTS)
@@ -43,6 +51,7 @@ def main() -> int:
     legacy = read(LEGACY)
     function_one = read(FUNCTION_ONE)
     recipe_book = read(RECIPE_BOOK)
+    auto_builder_init = read(AUTO_BUILDER_INIT)
 
     # errors.py declares signals only.
     require(errors, "class WrongProductionMachine(NavigationError):", "Wrong-machine signal missing")
@@ -79,6 +88,22 @@ def main() -> int:
     require(production, "self.navigation.recover_unknown_to_floor(", "Wrong machine not routed through nav recovery")
     require(production, "AutoVpSaleWorkflow(", "Warehouse-full sale recovery missing")
 
+    # Recovery imports auto_builder.catalog for Function sale metadata. The
+    # package initializer must stay side-effect free: eagerly importing runner
+    # creates recovery -> runner -> FunctionOne -> recipes -> recovery.
+    require(auto_builder_init, "def __getattr__(name: str):", "AUTO Builder lazy export hook missing")
+    require(auto_builder_init, "install_function_loop_delay(AutoBuilderRunner)", "Lazy Builder runner patch missing")
+    forbid_top_level_import_from(
+        auto_builder_init,
+        "runner",
+        "AUTO Builder __init__ eagerly imports runner and can recreate recovery circular import",
+    )
+    forbid_top_level_import_from(
+        auto_builder_init,
+        "loop_delay_patch",
+        "AUTO Builder __init__ eagerly imports loop-delay patch; keep Builder runtime lazy",
+    )
+
     # Manager is the one recovery facade consumed directly by RecipeBook. Functions
     # receive the same manager through their RecipeBook instead of rebuilding policy.
     require(manager, "class RecoveryManager:", "RecoveryManager missing")
@@ -108,6 +133,7 @@ def main() -> int:
     print("events=typed-observer-hooks")
     print("navigation=centralized+injectable-routes")
     print("production=explicit-signals-only+no-generic-screen-timeout-retry")
+    print("auto_builder_import=lazy-runner-no-recovery-cycle")
     print("recipes=share-one-RecoveryManager-per-function")
     print("functions=business-flow-composes-RecipeBook")
     print("legacy-recovery=compatibility-facade-only")
