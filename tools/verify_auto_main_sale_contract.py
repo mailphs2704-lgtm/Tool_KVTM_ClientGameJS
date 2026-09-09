@@ -29,6 +29,7 @@ FILE_FUNCTIONS = (
     "Khóa vào game/đóng popup trước sale lần 1 và Function loop",
     "Khóa sale lần 2..N chỉ sau đủ số vòng cấu hình",
     "Khóa thời gian chờ chỉ giữa các vòng Function",
+    "Khóa recovery restart: exact-main trước khi chạy lại scheduler",
     "Chạy thêm static contract AUTO Builder",
     "Cấm phụ thuộc pyc và gọi workflow Dọn quầy",
 )
@@ -151,11 +152,24 @@ def main() -> int:
     require(auto_multi_worker, 'function_id = str(auto_main_config["function_id"])', "Worker does not load selected Function")
     require(auto_multi_worker, 'sale_every = int(auto_main_config["sale_every_loops"])', "Worker does not load sale interval")
     require(auto_multi_worker, 'loop_delay = float(auto_main_config["function_loop_delay_seconds"])', "Worker does not load Function loop delay")
-    require(auto_multi_worker, "GameSessionWorkflow(automation).run(timeout=args.timeout)", "Mandatory enter-game/close-popup prefix missing")
-    require(auto_multi_worker, "AutoMainWorkflow(\n            automation,\n            function_id=function_id,\n            sale_every_loops=sale_every,", "Worker does not pass selected Function schedule to AUTO Main")
-    require(auto_multi_worker, "function_loop_delay_seconds=loop_delay", "Worker does not pass Function loop delay")
-    if auto_multi_worker.index("GameSessionWorkflow(automation).run(timeout=args.timeout)") > auto_multi_worker.index("from kvtm_automation.workflows.auto_main import AutoMainWorkflow"):
+
+    # The recovery worker now owns two GameSession calls (floor-demo + resilient
+    # AUTO Main). Inspect only the continuous AUTO Main segment so the contract
+    # verifies the actual restart loop rather than matching the earlier demo call.
+    require(auto_multi_worker, 'last_error_signature = ""', "AUTO Main recovery loop marker missing")
+    auto_main_runtime = auto_multi_worker.split('last_error_signature = ""', 1)[1]
+    game_session_call = "GameSessionWorkflow(automation).run(timeout=args.timeout)"
+    scheduler_call = "result = AutoMainWorkflow("
+    require(auto_main_runtime, game_session_call, "Mandatory enter-game/close-popup prefix missing from resilient AUTO Main loop")
+    require(auto_main_runtime, scheduler_call, "Worker AUTO Main scheduler call missing")
+    require(auto_main_runtime, "function_id=function_id", "Worker does not pass selected Function to AUTO Main")
+    require(auto_main_runtime, "sale_every_loops=sale_every", "Worker does not pass sale interval to AUTO Main")
+    require(auto_main_runtime, "function_loop_delay_seconds=loop_delay", "Worker does not pass Function loop delay")
+    if auto_main_runtime.index(game_session_call) > auto_main_runtime.index(scheduler_call):
         raise AssertionError("AUTO Main Function must enter game/close popup before scheduler starts")
+    require(auto_multi_worker, "runtime_error_policy=recover-main-restart", "AUTO Main runtime recovery policy marker missing")
+    require(auto_multi_worker, "_recover_auto_main_to_main_screen", "AUTO Main exact-main recovery helper missing")
+    require(auto_multi_worker, "same_error_count", "AUTO Main repeated-error circuit breaker missing")
     require(auto_multi_worker, 'outcome="auto_main_ready"', "Worker AUTO Main result marker missing")
     require(entry, 'worker_root / "auto_multi_dev_worker.py"', "GUI isolated-worker launch wiring missing")
     require(entry, 'outcome = str(event.pop("outcome", "auto_main_ready"))', "GUI AUTO Main result handling missing")
@@ -174,6 +188,7 @@ def main() -> int:
     print("function_loop_delay=visible+between-loops-only+stop-aware")
     print("function_select=verified-complete-functions-only")
     print("allowed_items=function-bound-catalog")
+    print("runtime_error_policy=recover-main-restart")
     print("auto_builder=verified")
     print("clear_stall_runtime=untouched")
     return 0
