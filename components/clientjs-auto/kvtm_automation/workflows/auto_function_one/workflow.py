@@ -16,7 +16,7 @@ FILE_FUNCTIONS = (
     "Đi từ tầng 1 lên tầng 6 rồi xử lý đúng hàng dưới cùng",
     "Sau tầng 6 đi thẳng goDown(4) tới candidate tầng 2 và xác minh bằng anchor Nước táo",
     "Mọi sai tầng/sai máy/kho đầy gọi RecoveryManager thay vì nhúng recovery loop trong Function",
-    "Sau Nước táo về main, gieo 27 Bông rồi click chậu tầng 4 lên candidate tầng 3",
+    "Sau Nước táo về main, gieo 27 Bông rồi gọi route known-floor tầng 1→3",
     "Chỉ PASS 3/3 sau khi hậu kiểm đủ chín Vải vàng và Sửa máy",
     "Sau mỗi vòng dùng RecoveryManager đưa tầng 3 về exact-main",
 )
@@ -43,9 +43,6 @@ class FunctionOneResult:
 class FunctionOneWorkflow:
     """Function 1: business flow only; reusable recovery lives under recovery/."""
 
-    # Compatibility/audit value for the direct-juice fallback. The algorithm and
-    # default bound are owned by NavigationRecovery; Function 1 only supplies the
-    # business position where that recovery is needed.
     DIRECT_JUICE_MAIN_RECOVERY_PASSES = 6
 
     def __init__(self, automation: KVAutomation) -> None:
@@ -119,8 +116,6 @@ class FunctionOneWorkflow:
         floor_6 = self.auto.apple_supply.harvest_and_replant_floor_6_row()
         self.context.stage("auto-apple-floor-6-replanted")
 
-        # Business fast path. The route itself remains candidate evidence until
-        # the Nước táo panel proves the requested machine.
         self.auto.function_one_navigation.floor_6_to_floor_2()
         direct_floor_2 = self.auto.apple_juice_production.probe_floor_2_machine()
         if not direct_floor_2:
@@ -160,9 +155,9 @@ class FunctionOneWorkflow:
             "AUTO chức năng 1 • đã gieo 27 Bông • tầng 1-4 đủ 24 chậu + 3 chậu tầng 5"
         )
 
-        # The business flow requests floor 3; navigation details and any later
-        # wrong-machine correction are handled outside the Function.
-        self.recovery.from_main_to_floor(3, "Vải vàng")
+        # CottonPlantingActions intentionally starts from main with goUp(1), so
+        # after planting the navigation business anchor is floor 1, not main.
+        self.recovery.from_floor_to_floor(1, 3, "Vải vàng")
         fabric = self.recovery.run_production(
             floor=3,
             label="Vải vàng",
