@@ -30,7 +30,7 @@ FILE_FUNCTIONS = (
     "Khóa module nghiệp vụ độc lập và Function metadata",
     "Khóa Function tự tạo nhiều tab/load/save/call graph + Function 1 full source view",
     "Khóa Function 1 load hiển thị module/click/swipe đúng thứ tự nhưng runtime vẫn proven wrapper",
-    "Khóa Function 1 source view có Sửa máy + recovery kho đầy bán VP + down-floor exact-main boundary",
+    "Khóa Function 1 source view có burst 5 click, nonfatal panel wait, Sửa máy, recovery kho đầy và down-floor boundary",
     "Khóa Swipe nhiều điểm liên tục qua native swipe_points/BATCH_SWIPE",
     "Khóa thư viện ảnh Multi DEV và import AUTO PRO vào thư viện",
     "Khóa custom image/click/swipe/wait fail-close",
@@ -111,7 +111,6 @@ def main() -> int:
     require(image_match, "cv2.matchTemplate", "Custom recognition matcher missing")
     require(runner, "raise ScreenTimeout", "Recognition failure is not fail-closed")
 
-    # Reusable Function library + prior built-in Function exposed in Load Function.
     require(model, 'self.functions_dir = self.root / "functions"',
             "Persistent Function library missing")
     require(model, "def save_function", "Builder cannot save reusable Functions")
@@ -146,13 +145,15 @@ def main() -> int:
     require(model, '"type": "enter_game_popup"', "Default plan enter-game block missing")
     require(model, '"type": "sell_function_vp"', "Default plan sale module missing")
 
-    require(function1_manifest, "MANIFEST_VERSION = 6",
+    require(function1_manifest, "MANIFEST_VERSION = 7",
             "Function-1 execution manifest version is not current")
     require(function1_manifest, 'return {"id": new_step_id(), "type": f"trace_{kind}"',
             "Function-1 manifest rows are not typed for ordered UI display")
     for token in (
         "PlantingActions.plant_27_apples",
         "ProductionActions.produce_9_dried_apples",
+        "burst tối đa 5 click",
+        "KHÔNG dừng AUTO",
         "ProductionWarehouseRecovery",
         "AutoVpSaleWorkflow(function_1)",
         "sold_listings == 0 → FAIL-CLOSE",
@@ -177,6 +178,8 @@ def main() -> int:
         '"function_id": "function_1"',
     ):
         require(function1_manifest, token, f"Function-1 full source view missing token: {token}")
+    forbid(function1_manifest, "mất ảnh đúng 5 lần → FAIL-CLOSE",
+           "Obsolete product-image-miss fail-close returned to Function-1 manifest")
     forbid(function1_manifest, "Tối đa 6 nhịp goDown(1)",
            "Obsolete six-goDown Function-1 end-loop manifest returned")
 
@@ -189,7 +192,6 @@ def main() -> int:
     require(ui, 'if document.get("inspection_only"):',
             "Built-in inspection document is not guarded from edits/saves")
 
-    # Recognition images: Multi DEV library is first-class; AUTO PRO is import-only.
     require(model, 'self.image_library_dir = self.root / "image-library"',
             "Persistent Multi DEV image library missing")
     require(model, "def list_library_images", "Multi DEV image library cannot be listed")
@@ -209,7 +211,6 @@ def main() -> int:
     require(dialogs, 'step["image_source"] = source',
             "Recognition step does not record source provenance")
 
-    # Swipe v1.2 is one ordered multi-point gesture, not N independent swipes.
     require(dialogs, "pick_swipe_on_game", "Swipe dialog is not wired to live picker")
     require(dialogs, 'step_type == "call_saved_function"',
             "Saved Function call configuration missing")
@@ -298,7 +299,7 @@ def main() -> int:
     print("AUTO MULTI DEV AUTO BUILDER STATIC CONTRACT VERIFIED")
     print("ui=multi-dev-native-style-multi-tab-function-editor")
     print("functions=create-save-load-call-nested-no-recursion+builtin-function1-full-source-view")
-    print("function1_load=full-source+repair-after-each+warehouse-full-sale-recovery+down-floor-main-boundary+proven-runtime-wrapper")
+    print("function1_load=full-source+five-click-collect+nonfatal-panel-wait+repair+warehouse-full-sale-recovery+main-boundary+proven-runtime-wrapper")
     print("gesture_picker=multi-segment-opengl-drag-to-logical-1000-no-hwnd-fallback")
     print("swipe_runtime=one-native-swipe-points-batch")
     print("image_library=multi-dev-primary-auto-pro-import-only")
