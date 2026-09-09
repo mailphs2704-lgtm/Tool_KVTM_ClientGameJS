@@ -54,7 +54,9 @@ def _scan_direct_matchers() -> None:
     for path in CLEAN.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
         ast.parse(text, filename=str(path))
-        if "cv2.matchTemplate" not in text:
+        # Assignment/restoration such as ``cv2.matchTemplate = original`` is not
+        # a direct matcher. Only executable calls bypassing VisionEngine matter.
+        if "cv2.matchTemplate(" not in text:
             continue
         relative = path.relative_to(CLEAN)
         if relative not in AUDITED_DIRECT_MATCH:
@@ -91,11 +93,11 @@ def main() -> int:
             "Production ClientJS target must be 500x500")
     require(resolution, "def ensure_production_client_size(",
             "Production client-size normalizer missing")
-    require(resolution, "stable_seconds: float = 2.0", 
+    require(resolution, "stable_seconds: float = 2.0",
             "Production resize stability guard missing")
-    require(resolution, "def disable_legacy_adaptive_matching()", 
+    require(resolution, "def disable_legacy_adaptive_matching()",
             "Legacy adaptive matcher neutralizer missing")
-    require(resolution, "cv2.matchTemplate = original", 
+    require(resolution, "cv2.matchTemplate = original",
             "Legacy adaptive matcher is not restored to native OpenCV")
     require(automation, 'str(part).casefold() == "auto-multi-dev"',
             "500 production resize is not scoped to AUTO MULTI DEV work-dir")
