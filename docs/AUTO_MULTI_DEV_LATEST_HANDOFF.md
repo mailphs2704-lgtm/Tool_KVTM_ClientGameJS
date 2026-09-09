@@ -7,34 +7,41 @@ Tài liệu này là mốc đọc đầu tiên cho phiên AI kế tiếp của b
 ## Trạng thái hiện tại
 
 - Branch runtime: `develop/multi-auto-dev`.
-- Function 1: **operator đã chạy nhiều vòng và chốt PASS thực tế**. Nếu phát sinh regression mới thì xử lý như lỗi riêng, không mở lại toàn bộ Function 1 theo mặc định.
+- Function 1 baseline: **operator đã chạy nhiều vòng và chốt PASS thực tế** trước các regression mới nhất.
+- QC quầy: **operator đã chốt PASS live**.
+- Hai regression mới nhất đã được sửa source nhưng cần live-test lại sau build:
+  - Bông → Vải vàng: `(257,416)` chỉ lên tầng 2; runtime mới click chậu tầng 4 `(257,191)`.
+  - Panel production mở sai máy/tầng: runtime mới phát `WrongProductionMachine`, đóng panel, exact-main recovery rồi quay lại đúng tầng.
 - Runtime: isolated worker + Bridge V3.
 - Dọn quầy: giữ ổn định, không được trộn logic Dọn quầy vào AUTO Main.
 - Cấu hình Multi DEV: lưu persistent tại `%APPDATA%\KVTM Multi DEV`, không phụ thuộc thư mục `dist`.
 - Cleanup/repository normalization nếu tiếp tục phải tách khỏi runtime đang PASS; không xóa source chỉ dựa trên tên `source-archive`/`test-candidates` vì builder hiện vẫn có dependency thật ở các vùng đó.
 
-## Function 1 đã PASS + route tối ưu mới
+Mốc code quan trọng trước lần cập nhật tài liệu này:
 
-Chuỗi Function 1 hiện gồm:
+`ffa9336565d00c5bf18b36ddc0c64e1246db8a2f` — `Fix speed verifier for shared fresh-frame panel scan`.
+
+Commit này chỉ sửa verifier stale sau wrong-machine fix, không thay đổi runtime Function 1.
+
+## Function 1 — chuỗi hiện tại
 
 1. exact-main trước scheduler;
-2. sale VP của Function;
+2. sale VP của Function + QC đầu/giữa/cuối quầy;
 3. trồng/thu Táo;
 4. sản xuất 9 Táo sấy;
 5. lên tầng 6 xử lý Táo;
 6. **goDown(4) thẳng tầng 6 → candidate tầng 2**;
 7. bounded probe máy Nước táo, chỉ PASS khi thấy `nuoc_tao` trong vùng thư viện panel;
 8. nếu probe miss: đóng panel → background-independent exact-main recovery → `goUp(1)x2` → tầng 2;
-9. sản xuất 9 Nước táo;
-10. về main, trồng Bông;
-11. **click chậu tầng 4 `(257,191)` từ mốc tầng 1 để camera tới tầng 3**; điểm cũ `(257,416)` đã live-test và chỉ tới tầng 2;
-12. sản xuất 9 Vải vàng;
-13. recovery về main;
-14. PASS 3/3 và tiếp tục scheduler.
+9. sản xuất 9 Nước táo + Sửa máy;
+10. về exact-main, trồng Bông;
+11. **click chậu tầng 4 `(257,191)` từ mốc tầng 1 để camera tới candidate tầng 3**; điểm `(257,416)` đã live-test và chỉ tới tầng 2;
+12. production Vải vàng phải thấy đúng `vai_vang`; nếu panel hiện VP khác thì wrong-machine recovery;
+13. sản xuất 9 Vải vàng + Sửa máy;
+14. recovery về main;
+15. PASS 3/3 và tiếp tục scheduler.
 
-Các VP sản xuất dùng true x5 click burst để thu thành phẩm. Panel đúng chỉ được chấp nhận khi **ảnh sản phẩm yêu cầu** xuất hiện trong vùng thư viện panel. `o_trong` chỉ là diagnostic. Nếu panel mở nhưng hiện một VP production khác (`tao_say` / `nuoc_tao` / `vai_vang`) thì runtime đóng panel ngay và recovery về exact-main thay vì tiếp tục click x5.
-
-### Route Nước táo direct
+## Route Nước táo direct
 
 Đường cũ tốn thời gian:
 
@@ -53,7 +60,7 @@ Các khóa an toàn:
 - exact-main phải PASS trước `main_to_floor_2()`;
 - warehouse-full recovery chuẩn vẫn giữ nguyên cho production thật.
 
-### Route Bông → Vải vàng
+## Route Bông → Vải vàng
 
 Forensic `adb_controller.goUp` từng ghi nhận:
 
@@ -70,24 +77,50 @@ Runtime hiện chạy:
 
 Không được regression về `(257,416)` hoặc hai lần `goUp(1)`.
 
-### Wrong-machine recovery
+## Shared production panel contract
 
-Lỗi đã live gặp: panel production đã mở ở **sai tầng**, ví dụ đang cần Vải vàng nhưng panel hiện Nước táo. Logic cũ chỉ thấy target `vai_vang` chưa xuất hiện nên tiếp tục burst x5 vô hạn.
+Táo sấy, Nước táo và Vải vàng dùng chung true x5 collection.
+
+Thứ tự bắt buộc sau mỗi burst:
+
+`x5 raw click → vp_collect_delay → fresh frame → panel_state(frame) → target/wrong-machine scan`
+
+Ràng buộc:
+
+- không sleep/capture/check giữa 5 raw click;
+- cùng fresh frame sau settle được dùng cho `full_kho`, target VP và wrong-machine VP;
+- panel đúng chỉ PASS khi thấy target VP trong `PRODUCT_SEARCH_ZONE`;
+- `o_trong` chỉ diagnostic, không chứng minh đúng máy;
+- product-image miss tạm thời sau khi đúng panel đã được xác minh vẫn là non-blocking recheck.
+
+Known production anchors hiện gồm:
+
+- `tao_say`;
+- `nuoc_tao`;
+- `vai_vang`.
+
+## Wrong-machine recovery
+
+Lỗi live đã gặp: panel production đã mở ở **sai tầng**, ví dụ đang cần Vải vàng nhưng panel hiện Nước táo. Logic cũ chỉ thấy `vai_vang` chưa xuất hiện nên tiếp tục burst x5 vô hạn.
 
 Runtime mới:
 
-1. sau mỗi burst x5, quét target VP trong `PRODUCT_SEARCH_ZONE`;
-2. nếu target đúng → tiếp tục transaction bình thường;
+1. sau mỗi burst x5 + settle, lấy fresh frame;
+2. nếu target VP đúng → tiếp tục transaction bình thường;
 3. nếu thấy VP production khác trong `tao_say / nuoc_tao / vai_vang` → đóng panel ngay;
 4. phát `WrongProductionMachine`;
-5. không tin tầng dự kiến, dùng unknown-floor recovery `goDown(1)` + nút XUỐNG + main-boundary để chứng minh exact-main;
-6. từ exact-main đi lại đúng tầng sản xuất yêu cầu;
-7. retry đúng production call; lần retry vẫn phải xác minh target VP;
-8. wrong-machine recovery tối đa `3` lần để không lặp vô hạn.
+5. không tin tầng dự kiến hiện tại;
+6. invalidate exact-main proof cũ;
+7. dùng unknown-floor recovery `goDown(1)` + nút XUỐNG + main-boundary để chứng minh exact-main;
+8. từ exact-main đi lại đúng tầng sản xuất yêu cầu;
+9. retry đúng production call; lần retry vẫn phải xác minh target VP;
+10. wrong-machine recovery tối đa `3` lần để không lặp vô hạn.
 
 Ví dụ Vải vàng mở nhầm Nước táo:
 
 `vai_vang expected → nuoc_tao detected → close panel → exact-main → main→floor1 → click floor4 pot (257,191) → floor3 candidate → vai_vang proof → production`
+
+Wrong-machine recovery **không chạy sale**. `InventoryFull` vẫn là business recovery riêng: exact-main → sale Function VP → quay lại đúng tầng → retry production.
 
 ## Exact-main / recovery đa background
 
@@ -108,9 +141,9 @@ Build contract phải giữ:
 - background world anchor không được quay lại làm runtime exact-main gate;
 - blind fixed-coordinate down-floor click bị cấm.
 
-## AUTO bán VP + quảng cáo quầy
+## AUTO bán VP + quảng cáo quầy — LIVE PASS
 
-Mỗi lượt bán VP có thêm ba checkpoint quảng cáo phân bố đầu/giữa/cuối quầy, xấp xỉ physical slot `1 / 10 / 20`.
+Mỗi lượt bán VP có ba checkpoint quảng cáo phân bố đầu/giữa/cuối quầy, xấp xỉ physical slot `1 / 10 / 20`.
 
 Tại mỗi checkpoint:
 
@@ -122,7 +155,7 @@ Tại mỗi checkpoint:
 6. nếu còn cooldown thì đóng popup bằng X và tiếp tục bán;
 7. lỗi nhận diện QC là non-blocking, không được phá sale đã PASS.
 
-Trường hợp quầy full/no empty slot vẫn phải tiếp tục đi hết ba checkpoint quảng cáo và thu vàng. Mục tiêu là tránh quầy đầy nhưng không có listing được quảng cáo nên không lên bảng tin.
+Trường hợp quầy full/no empty slot vẫn phải tiếp tục đi hết ba checkpoint quảng cáo và thu vàng.
 
 Contract build riêng:
 
@@ -133,8 +166,6 @@ Kỳ vọng log build:
 `AUTO MULTI DEV VP ADVERTISING CONTRACT VERIFIED`
 
 ## Persistent settings
-
-Multi DEV không lưu settings chính trong `dist` nữa.
 
 Nguồn persistent:
 
@@ -148,14 +179,45 @@ Các file quan trọng:
 
 Migration từ package-local `data-dev` chỉ chạy một lần khi persistent file chưa tồn tại và **không overwrite** dữ liệu đã có.
 
-Baseline speed được source khóa:
+Các speed key độc lập:
 
-- floor swipe: `0.350`;
-- plant/harvest: `0.035`;
-- VP production: `0.070`;
-- crop check: `0.100`.
+- `floor_swipe_duration`;
+- `plant_harvest_duration`;
+- `vp_collect_delay`;
+- `vp_production_delay`;
+- `crop_check_interval`.
 
-Dọn quầy có baseline self-heal nhưng setting profile đã lưu luôn được ưu tiên.
+Saved operator values trong APPDATA là authoritative.
+
+## Speed verifier stale fix — `ffa93365`
+
+Sau khi shared production đổi sang một fresh frame cho cả target/wrong-machine scan, `verify_auto_speed_config_contract.py` cũ vẫn yêu cầu literal:
+
+`warehouse_full, empty_ready = self._panel_state()`
+
+Runtime mới đúng là:
+
+`frame = self.vision.frame()`
+
+`warehouse_full, empty_ready = self._panel_state(frame=frame)`
+
+Vì vậy build ở HEAD `5478129` fail tại speed contract dù runtime logic đúng.
+
+Commit:
+
+`ffa9336565d00c5bf18b36ddc0c64e1246db8a2f`
+
+đã cập nhật verifier để khóa thứ tự:
+
+`x5 → settle → fresh frame → panel check`
+
+và bắt buộc `_find_wrong_product_match()` tồn tại trong shared collect path.
+
+Sau fix, speed gate phải PASS với:
+
+`AUTO MULTI DEV SPEED CONFIG STATIC CONTRACT VERIFIED`
+
+Lần sửa này không đổi Function 1 runtime.
 
 ## Fix build khi `dist\...\Multi` bị lock
 
@@ -163,29 +225,12 @@ Lỗi đã gặp trên Windows:
 
 `Remove-Item ... dist\KVTM-ClientJS-Suite-Multi-DEV\Multi ... because it is being used by another process`
 
-Root cause chính: visible Multi có thể đã đóng nhưng hidden `python/pythonw` resident host hoặc worker cũ vẫn thuộc package output và giữ handle/cwd trong `dist\...\Multi`. Builder cũ chỉ đóng một số `GameClientJS`, chưa release toàn bộ packaged runtime trước khi xóa output.
+Builder hiện có hai lớp bảo vệ:
 
-`packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1` hiện có hai lớp bảo vệ:
+1. process ownership release trước build — chỉ đóng process thuộc đúng package output;
+2. bounded output cleanup retry — tối đa 20 lần, cách 350 ms.
 
-1. **process ownership release trước build**
-   - chỉ chọn process có `CommandLine` hoặc `ExecutablePath` nằm dưới đúng `$OutputRoot`;
-   - thêm descendants của các process đó;
-   - không kill Python/ClientJS ngoài project;
-   - force-stop packaged runtime cũ và chờ handle release;
-2. **bounded output cleanup retry**
-   - runtime copy thay one-shot `Remove-Item` bằng tối đa 20 lần retry;
-   - mỗi lần cách 350 ms;
-   - nếu vẫn fail mới báo rõ external lock/Explorer/antivirus.
-
-Kỳ vọng đầu build sau fix:
-
-- `[DEV] Giai phong ... process runtime cu truoc build...` nếu còn process cũ;
-- `[DEV] Packaged runtime handles: RELEASED`;
-- `AUTO MULTI DEV old-runtime release: READY`;
-- `AUTO MULTI DEV output cleanup retry: READY`;
-- `[DEV] Old package output removed after attempt N/20.`
-
-Không cần operator tự Task Manager kill toàn bộ Python nếu process thuộc package cũ; `[1]` phải tự xử lý.
+Không cần operator tự Task Manager kill toàn bộ Python nếu process thuộc package cũ.
 
 ## Build flow chuẩn
 
@@ -210,11 +255,18 @@ Các gate quan trọng phải PASS gồm:
 - production contract;
 - asset contract.
 
-Production contract hiện phải in thêm:
+Production contract phải in:
 
 - `apple_to_juice=direct-goDown4+bounded-nuoc_tao-proof+exact-main-fallback`
 - `wrong_machine=WrongProductionMachine->unknown-floor-exact-main->requested-floor-retry`
 - `cotton_to_fabric=floor4-pot-anchor-at-257,191+vai_vang-proof`
+
+Speed contract phải bảo vệ:
+
+- true x5 không inter-click wait/check;
+- post-burst `vp_collect_delay`;
+- fresh-frame panel scan;
+- wrong-machine scan sau settle.
 
 Sau `[1]` PASS mới mở/chạy runtime mới.
 
@@ -234,6 +286,7 @@ Sau `[1]` PASS mới mở/chạy runtime mới.
 - Không để direct floor probe click vô hạn khi lệch tầng.
 - Không dùng `(257,416)` hoặc hai goUp(1) cho route Bông → tầng 3; phải click chậu tầng 4 `(257,191)`.
 - Không để panel production sai máy mở rồi tiếp tục click x5 vô hạn; phải đóng panel và exact-main recovery.
+- Không quét target/wrong-machine trên các frame khác nhau sau cùng một burst nếu có thể dùng một fresh frame chung.
 - Không đụng luồng Dọn quầy ổn định khi sửa AUTO Main.
 
 ## Read-first cho phiên AI kế tiếp
@@ -247,4 +300,6 @@ Sau `[1]` PASS mới mở/chạy runtime mới.
 7. `components/clientjs-auto/kvtm_automation/workflows/production_warehouse_recovery.py`
 8. `components/clientjs-auto/kvtm_automation/actions/function_one_pass_three_navigation.py`
 9. `components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py`
-10. `packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1`
+10. `tools/verify_auto_main_production_contract.py`
+11. `tools/verify_auto_speed_config_contract.py`
+12. `packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1`
