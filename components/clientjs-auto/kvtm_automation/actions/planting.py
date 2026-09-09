@@ -125,7 +125,10 @@ class PlantingActions:
         if harvest is not None:
             return "RIPE", harvest
         if empty is not None and rose is not None:
-            return "EMPTY", empty
+            # Keep the exact seed match proven on this same READY frame. Re-capturing
+            # immediately afterwards can land on a short picker animation frame and
+            # falsely turn a 0.99 match into a timeout.
+            return "EMPTY", rose
         return "UNKNOWN", None
 
     def _harvest_27(self) -> None:
@@ -141,12 +144,13 @@ class PlantingActions:
         self._go_up_one()
         baseline = self.vision.frame().copy()
         for attempt in range(1, 6):
-            state, _match = self._scan_first_pot_state(seed_template)
+            state, match = self._scan_first_pot_state(seed_template)
             if state == "EMPTY":
                 self.context.log(
-                    f"AUTO trồng • chậu trống và bảng hạt READY • lần {attempt}/5"
+                    f"AUTO trồng • chậu trống và bảng hạt READY • lần {attempt}/5 • "
+                    "giữ seed match từ cùng frame đã xác minh"
                 )
-                return baseline
+                return baseline, match
             if state == "RIPE":
                 self._harvest_27()
                 continue
@@ -160,12 +164,8 @@ class PlantingActions:
         )
 
     def _plant_27(self, seed_template: str, item_label: str) -> int:
-        baseline = self._open_seed_picker(seed_template, item_label)
+        baseline, seed = self._open_seed_picker(seed_template, item_label)
         self.context.ensure_running()
-        seed = self.vision.find(
-            seed_template, threshold=0.87, zone=self.SEED_ZONE,
-            scales=(0.80, 0.90, 1.00, 1.10, 1.20), click=False,
-        )
         if seed is None:
             self.vision.driver.click(*self.CLOSE_POINT)
             raise ScreenTimeout(
@@ -173,8 +173,8 @@ class PlantingActions:
             )
         path = (seed.center,) + self.rose_path()[1:]
         self.context.log(
-            f"AUTO trồng • chọn {item_label} • kéo 27 chậu "
-            "từ tầng 1 đến 3 chậu tầng 5"
+            f"AUTO trồng • chọn {item_label} • dùng seed match đã xác minh cùng frame • "
+            "kéo 27 chậu từ tầng 1 đến 3 chậu tầng 5"
         )
         self.vision.driver.swipe_points(
             path, duration=self.speed_config.plant_harvest_duration
