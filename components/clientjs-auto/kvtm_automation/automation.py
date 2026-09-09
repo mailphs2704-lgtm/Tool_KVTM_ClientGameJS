@@ -28,6 +28,12 @@ from .runtime.assets import AssetLibrary
 from .runtime.auto_speed_config import AutoSpeedConfig
 from .runtime.bootstrap import install_binary_dependencies
 from .runtime.driver import ClientJSDriverFactory
+from .runtime.resolution import (
+    LOGICAL_REFERENCE_SIZE,
+    PRODUCTION_CLIENT_SIZE,
+    disable_legacy_adaptive_matching,
+    ensure_production_client_size,
+)
 from .runtime.vision import VisionEngine
 from .runtime.wait import Waiter
 
@@ -44,6 +50,19 @@ def _load_image_runtime(context: AutomationContext) -> float:
     context.log("Thư viện ảnh: cold-load đồng bộ trên worker main thread")
     install_binary_dependencies(context.auto_root, logger=context.log)
     return time.monotonic() - started
+
+
+def _is_auto_multi_dev_context(context: AutomationContext) -> bool:
+    """Scope the 500 production size to AUTO MULTI DEV only.
+
+    KVAutomation is also reusable by diagnostics/other clean workflows. Their
+    window-size behavior must not change as a side effect of this migration.
+    Multi DEV gives the isolated main worker a stable `auto-multi-dev` work-dir.
+    """
+    return any(
+        str(part).casefold() == "auto-multi-dev"
+        for part in Path(context.work_dir).parts
+    )
 
 
 class KVAutomation:
@@ -88,6 +107,26 @@ class KVAutomation:
             context.stage("clean-image-runtime-ready")
 
         if driver is None:
+            if _is_auto_multi_dev_context(context):
+                context.stage("clientjs-production-resolution-normalizing")
+                legacy_disabled = disable_legacy_adaptive_matching()
+                if legacy_disabled:
+                    context.detail(
+                        "AUTO MULTI DEV resolution • legacy adaptive_cv matcher "
+                        "đã gỡ trong isolated worker • VisionEngine sở hữu scale"
+                    )
+                measured = ensure_production_client_size(
+                    context.pid,
+                    target=PRODUCTION_CLIENT_SIZE,
+                )
+                context.log(
+                    "AUTO MULTI DEV display • production client="
+                    f"{measured[0]}x{measured[1]} • logical reference="
+                    f"{LOGICAL_REFERENCE_SIZE[0]}x{LOGICAL_REFERENCE_SIZE[1]} • "
+                    "resize ổn định trước Bridge V3"
+                )
+                context.stage("clientjs-production-resolution-ready")
+
             context.stage("clientjs-dll-bridge-connecting")
             bundle = self.driver_factory.engine(
                 context.pid,
