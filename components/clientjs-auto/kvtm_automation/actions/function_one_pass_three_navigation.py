@@ -116,11 +116,27 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         )
         return click_change
 
+    RECOVERY_DOWN_CHAIN_LIMIT = 10
+
     def go_down_one_toward_main(self, label: str) -> float:
-        """Recovery step: goDown(1), then consume XUỐNG immediately if it appears."""
-        swipe_change = self._settle_down_one(label)
-        self._click_down_floor_if_visible(label)
-        return swipe_change
+        """Recovery chain for unknown floors 3..10.
+
+        Repeatedly issue goDown(1). Whenever the transient bottom XUỐNG control
+        appears, click it immediately and continue with the next lower floor.
+        Floor 1 is the natural stop because that control is not exposed there.
+        The outer worker still performs the final exact-main proof.
+        """
+        changes: list[float] = []
+        for step in range(1, self.RECOVERY_DOWN_CHAIN_LIMIT + 1):
+            chained_label = (
+                f"{label}-chain-{step}-of-{self.RECOVERY_DOWN_CHAIN_LIMIT}"
+            )
+            changes.append(self._settle_down_one(chained_label))
+            click_change = self._click_down_floor_if_visible(chained_label)
+            if click_change is None:
+                break
+            changes.append(click_change)
+        return max(changes) if changes else 0.0
 
     def floor_3_to_main_via_down_floor(self) -> NavigationEvidence:
         """Run the operator-confirmed end-loop route from floor 3 to main.
