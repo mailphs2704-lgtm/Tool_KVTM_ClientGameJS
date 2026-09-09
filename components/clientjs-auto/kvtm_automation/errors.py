@@ -18,6 +18,10 @@ class NavigationError(AutomationError):
     """Raised when a navigation state cannot be verified."""
 
 
+class WrongProductionMachine(NavigationError):
+    """A production panel opened, but it belongs to a different machine/floor."""
+
+
 class TransactionError(AutomationError):
     """Raised when a purchase/resale action cannot be verified safely."""
 
