@@ -2,304 +2,244 @@
 
 Cập nhật: 2026-09-09
 
-Tài liệu này là mốc đọc đầu tiên cho phiên AI kế tiếp của branch `develop/multi-auto-dev`.
+Tài liệu này là mốc đọc đầu tiên cho branch `develop/multi-auto-dev`.
 
-## Trạng thái hiện tại
+## Trạng thái
 
-- Branch runtime: `develop/multi-auto-dev`.
-- Function 1 baseline: **operator đã chạy nhiều vòng và chốt PASS thực tế** trước các regression mới nhất.
-- QC quầy: **operator đã chốt PASS live**.
-- Hai regression mới nhất đã được sửa source nhưng cần live-test lại sau build:
-  - Bông → Vải vàng: `(257,416)` chỉ lên tầng 2; runtime mới click chậu tầng 4 `(257,191)`.
-  - Panel production mở sai máy/tầng: runtime mới phát `WrongProductionMachine`, đóng panel, exact-main recovery rồi quay lại đúng tầng.
+- Function 1 baseline: operator đã PASS nhiều vòng trước Recipe refactor.
+- QC quầy: LIVE PASS.
+- Recovery/Event/Error refactor: operator PASS.
+- Recipe refactor: source đã hoàn tất, cần `[1]` + live smoke để chốt PASS.
 - Runtime: isolated worker + Bridge V3.
-- Dọn quầy: giữ ổn định, không được trộn logic Dọn quầy vào AUTO Main.
-- Cấu hình Multi DEV: lưu persistent tại `%APPDATA%\KVTM Multi DEV`, không phụ thuộc thư mục `dist`.
-- Cleanup/repository normalization nếu tiếp tục phải tách khỏi runtime đang PASS; không xóa source chỉ dựa trên tên `source-archive`/`test-candidates` vì builder hiện vẫn có dependency thật ở các vùng đó.
+- Dọn quầy / Sale / QC là vùng ổn định, không thay đổi trong refactor Recipe.
+- Settings chính ở `%APPDATA%\KVTM Multi DEV`; rebuild không overwrite saved operator values.
 
-Mốc code quan trọng trước lần cập nhật tài liệu này:
+## Kiến trúc chuẩn mới
 
-`ffa9336565d00c5bf18b36ddc0c64e1246db8a2f` — `Fix speed verifier for shared fresh-frame panel scan`.
+Luồng source:
 
-Commit này chỉ sửa verifier stale sau wrong-machine fix, không thay đổi runtime Function 1.
+`Function → RecipeBook → Product Recipe → Atomic Action + RecoveryManager`
 
-## Function 1 — chuỗi hiện tại
+`errors.py` chỉ chứa typed signal.
 
-1. exact-main trước scheduler;
-2. sale VP của Function + QC đầu/giữa/cuối quầy;
-3. trồng/thu Táo;
-4. sản xuất 9 Táo sấy;
-5. lên tầng 6 xử lý Táo;
-6. **goDown(4) thẳng tầng 6 → candidate tầng 2**;
-7. bounded probe máy Nước táo, chỉ PASS khi thấy `nuoc_tao` trong vùng thư viện panel;
-8. nếu probe miss: đóng panel → background-independent exact-main recovery → `goUp(1)x2` → tầng 2;
-9. sản xuất 9 Nước táo + Sửa máy;
-10. về exact-main, trồng Bông;
-11. **click chậu tầng 4 `(257,191)` từ mốc tầng 1 để camera tới candidate tầng 3**; điểm `(257,416)` đã live-test và chỉ tới tầng 2;
-12. production Vải vàng phải thấy đúng `vai_vang`; nếu panel hiện VP khác thì wrong-machine recovery;
-13. sản xuất 9 Vải vàng + Sửa máy;
-14. recovery về main;
-15. PASS 3/3 và tiếp tục scheduler.
+### Recovery
 
-## Route Nước táo direct
+Package:
 
-Đường cũ tốn thời gian:
+`components/clientjs-auto/kvtm_automation/recovery/`
 
-`floor6 → goDown(4) → floor2 → floor1 → main → floor1 → floor2`
+Chứa:
 
-Đường bình thường mới:
+- `events.py` — typed recovery event;
+- `navigation.py` — unknown/main/floor routes;
+- `production.py` — WrongProductionMachine + InventoryFull;
+- `manager.py` — facade dùng chung.
 
-`floor6 → goDown(4) → floor2 candidate → nuoc_tao proof → production`
+Generic `ScreenTimeout` không được retry mù.
 
-Các khóa an toàn:
+### Recipes
 
-- `goDown(4)` không tự chứng minh tầng;
-- direct probe tối đa `2` burst x5, mỗi burst `3` recheck;
-- miss hoặc `full_kho` trong probe đều đóng panel và fallback, không dùng làm floor proof;
-- fallback dùng `go_down_one_toward_main()` + nút XUỐNG + main-boundary hiện tại;
-- exact-main phải PASS trước `main_to_floor_2()`;
-- warehouse-full recovery chuẩn vẫn giữ nguyên cho production thật.
+Package:
 
-## Route Bông → Vải vàng
+`components/clientjs-auto/kvtm_automation/recipes/`
 
-Forensic `adb_controller.goUp` từng ghi nhận:
+Chứa:
 
-- mode1 = swipe goUp(1);
-- mode2 = click `(257,416)`;
-- mode3 = click `(257,191)`;
-- mode4 = swipe goUp(4).
+- `dried_apple.py`;
+- `apple_juice.py`;
+- `yellow_fabric.py`;
+- `book.py`.
 
-**Live correction 2026-09-09:** trong trạng thái Function 1 sau gieo Bông, `(257,416)` chỉ đưa camera lên tầng 2. Muốn tới máy Vải vàng tầng 3 phải click điểm chậu cao hơn ở tầng 4, dùng tọa độ recovered `(257,191)`.
+Mỗi `RecipeBook(function_id=...)` dùng một shared `RecoveryManager` cho toàn Function.
 
-Runtime hiện chạy:
+Chi tiết:
 
-`click (975,316) → click chậu tầng 4 (257,191) → wait 0.70s → wait 0.15s → fresh-frame gate → vai_vang proof`
+`docs/AUTO_MULTI_DEV_RECIPE_ARCHITECTURE.md`
 
-Không được regression về `(257,416)` hoặc hai lần `goUp(1)`.
+## Function 1 sau Recipe refactor
 
-## Shared production panel contract
+Function 1 hiện chỉ ghép nghiệp vụ:
 
-Táo sấy, Nước táo và Vải vàng dùng chung true x5 collection.
+1. `DriedAppleRecipe.run_from_session(count=9)`;
+2. supply Táo riêng của Function 1 qua 5 tầng + tầng 6;
+3. tạo candidate floor2 bằng `goDown(4)`;
+4. `AppleJuiceRecipe.run_from_candidate_floor_2(count=9)`;
+5. `YellowFabricRecipe.run_after_floor_2(count=9)`;
+6. RecoveryManager normalize tầng 3 → exact-main;
+7. PASS 3/3.
 
-Thứ tự bắt buộc sau mỗi burst:
+Function 1 không còn gọi trực tiếp:
 
-`x5 raw click → vp_collect_delay → fresh frame → panel_state(frame) → target/wrong-machine scan`
+- `produce_9_apple_juices()`;
+- `produce_9_yellow_fabrics()`;
+- Sửa máy cho Nước táo/Vải vàng;
+- WrongProductionMachine loop;
+- InventoryFull loop.
 
-Ràng buộc:
+## AppleJuiceRecipe độc lập
 
-- không sleep/capture/check giữa 5 raw click;
-- cùng fresh frame sau settle được dùng cho `full_kho`, target VP và wrong-machine VP;
-- panel đúng chỉ PASS khi thấy target VP trong `PRODUCT_SEARCH_ZONE`;
-- `o_trong` chỉ diagnostic, không chứng minh đúng máy;
-- product-image miss tạm thời sau khi đúng panel đã được xác minh vẫn là non-blocking recheck.
+Có thể gọi riêng từ main:
 
-Known production anchors hiện gồm:
+```python
+recipes.apple_juice.run_from_main(count=9)
+```
+
+Nó không phụ thuộc Vải vàng.
+
+Entry khác:
+
+- `run_current_floor_2(count=9)`;
+- `run_from_candidate_floor_2(count=9)`.
+
+Candidate floor2 không được tin từ movement; Recipe vẫn bounded probe `nuoc_tao`. MISS → RecoveryManager unknown → exact-main → floor2.
+
+## YellowFabricRecipe
+
+Khi Nước táo đã có và đang known floor2:
+
+```python
+recipes.yellow_fabric.run_after_floor_2(count=9)
+```
+
+Chuỗi:
+
+`floor2 → main → trồng 27 Bông → known floor1 → floor3 → vai_vang proof → SX9 → Sửa máy`
+
+Standalone có dependency Nước táo:
+
+```python
+recipes.yellow_fabric.run_from_main(
+    count=9,
+    include_apple_juice_dependency=True,
+)
+```
+
+Dependency là explicit. `False` không được tự sản xuất Nước táo.
+
+## Route Vải vàng đã live correction
+
+- `(257,416)` chỉ tới tầng 2.
+- route floor1 → floor3 dùng click chậu tầng 4 `(257,191)`.
+- production vẫn phải thấy `vai_vang`; movement không tự chứng minh đúng tầng.
+
+## Wrong-machine recovery
+
+Shared production quét known anchors:
 
 - `tao_say`;
 - `nuoc_tao`;
 - `vai_vang`.
 
-## Wrong-machine recovery
+Ví dụ cần `vai_vang` nhưng thấy `nuoc_tao`:
 
-Lỗi live đã gặp: panel production đã mở ở **sai tầng**, ví dụ đang cần Vải vàng nhưng panel hiện Nước táo. Logic cũ chỉ thấy `vai_vang` chưa xuất hiện nên tiếp tục burst x5 vô hạn.
+`close panel → WrongProductionMachine → unknown-camera recovery → exact-main → floor3 → retry`
 
-Runtime mới:
+Tối đa 3 wrong-machine recovery.
 
-1. sau mỗi burst x5 + settle, lấy fresh frame;
-2. nếu target VP đúng → tiếp tục transaction bình thường;
-3. nếu thấy VP production khác trong `tao_say / nuoc_tao / vai_vang` → đóng panel ngay;
-4. phát `WrongProductionMachine`;
-5. không tin tầng dự kiến hiện tại;
-6. invalidate exact-main proof cũ;
-7. dùng unknown-floor recovery `goDown(1)` + nút XUỐNG + main-boundary để chứng minh exact-main;
-8. từ exact-main đi lại đúng tầng sản xuất yêu cầu;
-9. retry đúng production call; lần retry vẫn phải xác minh target VP;
-10. wrong-machine recovery tối đa `3` lần để không lặp vô hạn.
+Wrong-machine không sale VP.
 
-Ví dụ Vải vàng mở nhầm Nước táo:
+## InventoryFull recovery
 
-`vai_vang expected → nuoc_tao detected → close panel → exact-main → main→floor1 → click floor4 pot (257,191) → floor3 candidate → vai_vang proof → production`
+`known floor → exact-main → Function-bound VP sale → same requested floor → retry production`
 
-Wrong-machine recovery **không chạy sale**. `InventoryFull` vẫn là business recovery riêng: exact-main → sale Function VP → quay lại đúng tầng → retry production.
+Nếu sale không treo được listing nào thì fail-close.
 
-## Exact-main / recovery đa background
+## Shared production order
 
-Không được dùng background/quầy nhà làm gate exact-main vì mỗi account có background khác nhau.
+Bắt buộc:
 
-Hợp đồng hiện tại:
+`x5 raw click → vp_collect_delay → fresh frame → panel_state(frame) → target/wrong-machine scan`
 
-- own farm: fixed HUD (`friend_off` / tín hiệu HUD ổn định);
-- exact-main: bằng chứng điều hướng runtime;
-- camera không rõ tầng: goDown có kiểm soát;
-- hai nhịp goDown liên tiếp có `frame_change <= 6.0` là fallback biên dưới;
-- tầng trên có UI `XUỐNG`: sau `goDown(1)` phải **nhận diện nút XUỐNG ở mép dưới rồi click đúng tâm match**, không click mù `(497,978)`;
-- recovery chain hỗ trợ tối đa 10 tầng;
-- tầng 1 không có nút XUỐNG là trạng thái bình thường.
+Không được:
 
-Build contract phải giữ:
+- sleep/capture/check giữa x5;
+- dùng `o_trong` để chứng minh đúng machine;
+- click vô hạn khi panel mở sai machine.
 
-- background world anchor không được quay lại làm runtime exact-main gate;
-- blind fixed-coordinate down-floor click bị cấm.
+## Exact-main
 
-## AUTO bán VP + quảng cáo quầy — LIVE PASS
+Không phụ thuộc background account.
 
-Mỗi lượt bán VP có ba checkpoint quảng cáo phân bố đầu/giữa/cuối quầy, xấp xỉ physical slot `1 / 10 / 20`.
+- fixed own-farm HUD;
+- runtime navigation proof;
+- unknown camera → bounded goDown;
+- boundary fallback = 2 low-change frame liên tiếp, threshold 6.0;
+- upper floor dùng visual `XUỐNG` detector và click `match.center`;
+- không blind click `(497,978)`;
+- chain upper-floor tối đa 10 bước.
 
-Tại mỗi checkpoint:
+## QC quầy — LIVE PASS
 
-1. tìm listing còn tồn tại;
-2. nếu listing đã có dấu QC đỏ thì **không click**;
-3. nếu chưa QC thì click listing để mở popup;
-4. nếu nút xanh `Đặt quảng cáo` đã hồi thì click đúng nút miễn phí;
-5. tuyệt đối không click nút quảng cáo trả phí/kim cương;
-6. nếu còn cooldown thì đóng popup bằng X và tiếp tục bán;
-7. lỗi nhận diện QC là non-blocking, không được phá sale đã PASS.
+Ba checkpoint gần physical slot `1 / 10 / 20`:
 
-Trường hợp quầy full/no empty slot vẫn phải tiếp tục đi hết ba checkpoint quảng cáo và thu vàng.
+- đã QC đỏ → skip không click;
+- chưa QC → mở listing;
+- nút xanh miễn phí hồi → đặt QC;
+- cooldown → đóng X;
+- không click nút kim cương;
+- quầy full vẫn đi hết checkpoint;
+- QC error non-blocking.
 
-Contract build riêng:
+## Count contract Recipe
 
-`tools/verify_auto_vp_advertising_contract.py`
+Public Recipe API có `count`, nhưng action hiện prove batch 9.
 
-Kỳ vọng log build:
+- `count=9`: hỗ trợ;
+- khác 9: fail-close;
+- chưa giả vờ hỗ trợ dynamic count.
 
-`AUTO MULTI DEV VP ADVERTISING CONTRACT VERIFIED`
+## Static contracts
 
-## Persistent settings
+Build `[1]` đang chạy `tools/verify_auto_main_production_contract.py`; verifier này đã khóa cả Recipe + Recovery architecture.
 
-Nguồn persistent:
+Contract chuyên biệt cũng có:
 
-`%APPDATA%\KVTM Multi DEV`
+- `tools/verify_recipe_architecture_contract.py`;
+- `tools/verify_recovery_architecture_contract.py`.
 
-Các file quan trọng:
+Production gate kỳ vọng marker mới:
 
-- `profiles.json`;
-- `settings.json`;
-- `clear-stall-history.jsonl`.
+```text
+AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED
+architecture=function-business+recipes-reusable+actions-atomic+recovery-centralized
+recipe_book=shared-recovery-per-function
+recipe_dried_apple=plant-apples+produce9+repair
+recipe_apple_juice=standalone-main-or-candidate-floor2+proof+recover+produce9+repair
+recipe_yellow_fabric=optional-apple-juice-dependency+cotton27+floor3+produce9+repair
+```
 
-Migration từ package-local `data-dev` chỉ chạy một lần khi persistent file chưa tồn tại và **không overwrite** dữ liệu đã có.
+## Build flow
 
-Các speed key độc lập:
+Operator:
 
-- `floor_swipe_duration`;
-- `plant_harvest_duration`;
-- `vp_collect_delay`;
-- `vp_production_delay`;
-- `crop_check_interval`.
+`KVTM_DEV_CONTROL.bat → [1] Cap nhat source + build runtime DEV`
 
-Saved operator values trong APPDATA là authoritative.
-
-## Speed verifier stale fix — `ffa93365`
-
-Sau khi shared production đổi sang một fresh frame cho cả target/wrong-machine scan, `verify_auto_speed_config_contract.py` cũ vẫn yêu cầu literal:
-
-`warehouse_full, empty_ready = self._panel_state()`
-
-Runtime mới đúng là:
-
-`frame = self.vision.frame()`
-
-`warehouse_full, empty_ready = self._panel_state(frame=frame)`
-
-Vì vậy build ở HEAD `5478129` fail tại speed contract dù runtime logic đúng.
-
-Commit:
-
-`ffa9336565d00c5bf18b36ddc0c64e1246db8a2f`
-
-đã cập nhật verifier để khóa thứ tự:
-
-`x5 → settle → fresh frame → panel check`
-
-và bắt buộc `_find_wrong_product_match()` tồn tại trong shared collect path.
-
-Sau fix, speed gate phải PASS với:
-
-`AUTO MULTI DEV SPEED CONFIG STATIC CONTRACT VERIFIED`
-
-Lần sửa này không đổi Function 1 runtime.
-
-## Fix build khi `dist\...\Multi` bị lock
-
-Lỗi đã gặp trên Windows:
-
-`Remove-Item ... dist\KVTM-ClientJS-Suite-Multi-DEV\Multi ... because it is being used by another process`
-
-Builder hiện có hai lớp bảo vệ:
-
-1. process ownership release trước build — chỉ đóng process thuộc đúng package output;
-2. bounded output cleanup retry — tối đa 20 lần, cách 350 ms.
-
-Không cần operator tự Task Manager kill toàn bộ Python nếu process thuộc package cũ.
-
-## Build flow chuẩn
-
-Operator dùng:
-
-`KVTM_DEV_CONTROL.bat` → `[1] Cap nhat source + build runtime DEV`
-
-Không sửa `dist` thủ công.
-
-Các gate quan trọng phải PASS gồm:
-
-- persistent settings contract;
-- main-boundary contract;
-- VP advertising contract;
-- clear-stall contract;
-- AUTO Builder contract;
-- AUTO Main sale contract;
-- planting contract;
-- speed contract;
-- floor navigation contract;
-- Bridge V3 contract;
-- production contract;
-- asset contract.
-
-Production contract phải in:
-
-- `apple_to_juice=direct-goDown4+bounded-nuoc_tao-proof+exact-main-fallback`
-- `wrong_machine=WrongProductionMachine->unknown-floor-exact-main->requested-floor-retry`
-- `cotton_to_fabric=floor4-pot-anchor-at-257,191+vai_vang-proof`
-
-Speed contract phải bảo vệ:
-
-- true x5 không inter-click wait/check;
-- post-burst `vp_collect_delay`;
-- fresh-frame panel scan;
-- wrong-machine scan sau settle.
-
-Sau `[1]` PASS mới mở/chạy runtime mới.
+Sau static/build PASS mới live smoke Function 1.
 
 ## Không được regression
 
-- Không popup lỗi blocking cho AUTO Multi DEV.
-- Không retry mù destructive transaction nhiều lần; runtime error phải recover main rồi restart pipeline.
-- Không dùng background account làm exact-main gate.
-- Không click mù nút xuống tầng.
-- Không coi `o_trong` là bằng chứng panel production đúng máy.
-- Không xóa persistent settings khi rebuild/update.
-- Không click quảng cáo trả phí.
-- Không click ô đang có QC khi kiểm tra quảng cáo.
-- Không dừng advertisement traversal chỉ vì quầy full hoặc kho hết VP.
-- Không quay lại đường vòng `floor6 → main → floor2` khi direct `nuoc_tao` proof đã PASS.
-- Không coi goDown(4) tự chứng minh tầng 2.
-- Không để direct floor probe click vô hạn khi lệch tầng.
-- Không dùng `(257,416)` hoặc hai goUp(1) cho route Bông → tầng 3; phải click chậu tầng 4 `(257,191)`.
-- Không để panel production sai máy mở rồi tiếp tục click x5 vô hạn; phải đóng panel và exact-main recovery.
-- Không quét target/wrong-machine trên các frame khác nhau sau cùng một burst nếu có thể dùng một fresh frame chung.
-- Không đụng luồng Dọn quầy ổn định khi sửa AUTO Main.
+- Function copy production/recovery đã nằm trong Recipe/RecoveryManager.
+- AppleJuiceRecipe phụ thuộc Vải vàng.
+- YellowFabricRecipe luôn sản xuất Nước táo khi flag=false.
+- Function giả định sau trồng Bông là main.
+- dùng `(257,416)` cho Vải vàng.
+- panel sai machine vẫn x5 vô hạn.
+- generic ScreenTimeout blind retry.
+- background làm exact-main gate.
+- blind click XUỐNG.
+- thay đổi Sale/QC/Dọn quầy khi không có regression evidence.
 
-## Read-first cho phiên AI kế tiếp
+## Read-first
 
-1. `AGENTS.md`
-2. `AI_COORDINATION.md`
-3. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`
+1. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`
+2. `docs/AUTO_MULTI_DEV_RECIPE_ARCHITECTURE.md`
+3. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`
 4. `docs/AUTO_MULTI_DEV_FUNCTION_ONE.md`
-5. `components/clientjs-auto/kvtm_automation/workflows/auto_function_one/workflow.py`
-6. `components/clientjs-auto/kvtm_automation/actions/production.py`
-7. `components/clientjs-auto/kvtm_automation/workflows/production_warehouse_recovery.py`
-8. `components/clientjs-auto/kvtm_automation/actions/function_one_pass_three_navigation.py`
-9. `components/clientjs-auto/kvtm_automation/actions/apple_juice_production.py`
-10. `tools/verify_auto_main_production_contract.py`
-11. `tools/verify_auto_speed_config_contract.py`
-12. `packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1`
+5. `components/clientjs-auto/kvtm_automation/recipes/book.py`
+6. `components/clientjs-auto/kvtm_automation/recipes/apple_juice.py`
+7. `components/clientjs-auto/kvtm_automation/recipes/yellow_fabric.py`
+8. `components/clientjs-auto/kvtm_automation/recovery/manager.py`
+9. `components/clientjs-auto/kvtm_automation/recovery/production.py`
+10. `components/clientjs-auto/kvtm_automation/workflows/auto_function_one/workflow.py`
+11. `tools/verify_auto_main_production_contract.py`
+12. `tools/verify_recipe_architecture_contract.py`
