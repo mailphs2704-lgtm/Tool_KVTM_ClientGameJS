@@ -59,6 +59,13 @@ def main() -> int:
     forbid(popup, "stall = self.vision.find(", "World-space stall image returned as exact-main runtime gate")
     forbid(popup, "return stall is not None", "Exact-main still depends on account background artwork")
 
+    # Native AUTO MULTI DEV capture is 500x500. The blocking-modal detector uses
+    # proportional geometry and therefore must not reject canonical production
+    # frames using the old 900px reference-size guard.
+    require(popup, "if width < 200 or height < 200:", "Popup blocker detector does not accept native 500 frames")
+    require(popup, "int(height * 0.28):int(height * 0.72)", "Popup center geometry is no longer proportional")
+    forbid(popup, "if width < 900 or height < 900:", "Popup blocker detector still rejects native 500 capture")
+
     # Every normal vertical gesture invalidates old proof; only deterministic
     # routes ending at main may mark it true again.
     require(function_nav, "self.context.invalidate_camera_main", "Vertical gesture does not invalidate camera proof")
@@ -102,6 +109,7 @@ def main() -> int:
     print("exact_main=runtime_navigation_proof")
     print("unknown_camera=bounded_godown_until_two_low_change_frames")
     print("sale_entry=exact-main-proof->fixed-own-stall-point->quay_hang_on")
+    print("popup_blocker=native-500-proportional")
     print("background_world_anchor=forbidden_as_runtime_gate")
     print("boundary_change_max=6.0")
     print("boundary_stable_required=2")
