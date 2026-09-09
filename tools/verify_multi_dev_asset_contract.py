@@ -3,6 +3,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from verify_resolution_adaptive_contract import main as verify_resolution_adaptive_contract
+
+
 ROOT = Path(__file__).resolve().parents[1]
 ASSET_ROOT = ROOT / "components/clientjs-auto/assets/items"
 ASSET_LIBRARY = ROOT / "components/clientjs-auto/kvtm_automation/runtime/assets.py"
@@ -60,10 +63,18 @@ def main() -> int:
     ]
     if missing:
         raise AssertionError("Missing Multi Dev assets: " + ", ".join(missing))
+
+    # The package builder already treats this verifier as a mandatory gate. Keep
+    # resolution compatibility in the same mandatory chain so both PowerShell
+    # build paths get the 500/adaptive contract without duplicating builder logic.
+    if verify_resolution_adaptive_contract() != 0:
+        raise AssertionError("AUTO MULTI DEV adaptive resolution contract failed")
+
     print("AUTO MULTI DEV SELF-CONTAINED ASSET CONTRACT VERIFIED")
     print(f"asset_count={len(REQUIRED_ASSETS)}")
     print("function_one_pass3_asset=cay_bong")
     print("auto_pro_asset_fallback=false")
+    print("adaptive_resolution=verified-via-package-asset-gate")
     return 0
 
 
