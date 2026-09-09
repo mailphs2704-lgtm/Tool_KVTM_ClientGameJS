@@ -14,6 +14,7 @@ FILE_FUNCTIONS = (
     "Thu VP/mở panel theo tốc độ thu VP cấu hình riêng",
     "Nhận panel đã mở bằng ô trống hoặc ảnh Nước táo khi máy đang kín slot",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
+    "Phát tín hiệu kho đầy riêng để workflow xuống quầy bán VP rồi quay lại tầng 2",
     "Dùng bộ đếm chín ô trống đã live-pass của máy sấy",
     "Kéo Nước táo xuống ô top động đúng chín lần",
     "Hậu kiểm mỗi lần kéo làm giảm đúng bộ đếm ô trống",
@@ -55,10 +56,7 @@ class AppleJuiceProductionActions:
                     f"delay={self.speed_config.vp_collect_delay:.3f}s"
                 )
             if warehouse_full:
-                self.vision.driver.click(*self.CLOSE_POINT)
-                raise ScreenTimeout(
-                    "Đã thu VP trước máy Nước táo nhưng kho đang đầy"
-                )
+                self.slots._raise_inventory_full("Nước táo")
             if panel_ready:
                 break
 
