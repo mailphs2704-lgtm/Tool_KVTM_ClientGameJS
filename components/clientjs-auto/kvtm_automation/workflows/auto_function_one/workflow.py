@@ -54,9 +54,9 @@ class FunctionOneWorkflow:
     def _require_main_transition(self, label: str) -> None:
         """Exact main gate only after an explicit business floor transition."""
         self.context.ensure_running()
-        if not self.auto.popup.is_own_main_screen():
+        if not self.auto.popup.is_own_exact_main_screen():
             raise ScreenTimeout(
-                f"Điều hướng {label} đã kết thúc nhưng chưa xác nhận màn hình chính; "
+                f"Điều hướng {label} đã kết thúc nhưng chưa xác nhận exact-main; "
                 "dừng trước lượt trồng/sản xuất kế tiếp"
             )
         self.context.log(
