@@ -43,7 +43,10 @@ class PopupActions:
         """Detect a blocking center modal without depending on popup names/text."""
         try:
             height, width = frame.shape[:2]
-            if width < 900 or height < 900:
+            # Geometry below is fully proportional. Native AUTO MULTI DEV capture
+            # is 500x500, so rejecting every frame below the old 900px reference
+            # silently disabled this blocker detector after the resolution migration.
+            if width < 200 or height < 200:
                 return False, 0.0, 255.0
             center = frame[
                 int(height * 0.28):int(height * 0.72),
