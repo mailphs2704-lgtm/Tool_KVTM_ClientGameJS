@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, TypeVar
+
+from .events import RecoveryEvent, RecoveryEventKind
+from .navigation import NavigationRecovery, RouteHandler
+from .production import ProductionRecovery
+
+if TYPE_CHECKING:
+    from ..automation import KVAutomation
+
+
+_T = TypeVar("_T")
+RecoveryEventHandler = Callable[[RecoveryEvent], None]
+
+
+class RecoveryManager:
+    """Facade consumed by Functions/Recipes instead of embedding recovery logic.
+
+    A Function normally calls only ``ensure_main``, ``recover_unknown_to_floor``
+    and ``run_production``. Optional event handlers let a specific Function add
+    bookkeeping at a recovery position. Optional route maps let a future Function
+    add new floor routes without changing the core recovery algorithms.
+    """
+
+    def __init__(
+        self,
+        automation: KVAutomation,
+        *,
+        function_id: str,
+        event_handlers: Mapping[
+            RecoveryEventKind | str, RecoveryEventHandler
+        ] | None = None,
+        to_main_routes: Mapping[int, RouteHandler] | None = None,
+        from_main_routes: Mapping[int, RouteHandler] | None = None,
+    ) -> None:
+        self.auto = automation
+        self.context = automation.context
+        self.function_id = str(function_id)
+        self._event_handlers: dict[str, RecoveryEventHandler] = {}
+        for key, handler in dict(event_handlers or {}).items():
+            normalized = key.value if isinstance(key, RecoveryEventKind) else str(key)
+            self._event_handlers[normalized] = handler
+
+        self.navigation = NavigationRecovery(
+            automation,
+            emit=self._emit,
+            to_main_routes=to_main_routes,
+            from_main_routes=from_main_routes,
+        )
+        self.production = ProductionRecovery(
+            automation,
+            navigation=self.navigation,
+            emit=self._emit,
+            function_id=self.function_id,
+        )
+        # Compatibility for older code that read ``spec`` from the former
+        # ProductionWarehouseRecovery object.
+        self.spec = self.production.spec
+
+    def _emit(self, event: RecoveryEvent) -> None:
+        self.context.detail(
+            "AUTO recovery event | "
+            f"kind={event.kind.value} | label={event.label} | "
+            f"floor={event.floor} | attempt={event.attempt} | error={event.error}"
+        )
+        handler = self._event_handlers.get(event.kind.value)
+        if handler is None:
+            handler = self._event_handlers.get("*")
+        if handler is None:
+            return
+        # Hooks are intentionally observers. A bad optional hook must not alter
+        # the deterministic core recovery policy or block all other accounts.
+        try:
+            handler(event)
+        except Exception as exc:
+            self.context.log(
+                "AUTO recovery hook • bỏ qua lỗi hook non-blocking • "
+                f"event={event.kind.value} • {exc!r}"
+            )
+
+    def ensure_main(self, label: str) -> None:
+        self.navigation.ensure_main(label)
+
+    def recover_unknown_to_main(
+        self,
+        label: str,
+        *,
+        reason: str,
+        max_passes: int | None = None,
+    ) -> None:
+        self.navigation.recover_unknown_to_main(
+            label,
+            reason=reason,
+            max_passes=max_passes,
+        )
+
+    def recover_unknown_to_floor(
+        self,
+        floor: int,
+        label: str,
+        *,
+        reason: str,
+        max_passes: int | None = None,
+    ) -> None:
+        self.navigation.recover_unknown_to_floor(
+            floor,
+            label,
+            reason=reason,
+            max_passes=max_passes,
+        )
+
+    def to_main_from_floor(self, floor: int, label: str) -> None:
+        self.navigation.to_main_from_floor(floor, label)
+
+    def from_main_to_floor(self, floor: int, label: str) -> None:
+        self.navigation.from_main_to_floor(floor, label)
+
+    def run_production(
+        self,
+        *,
+        floor: int,
+        label: str,
+        producer: Callable[[], _T],
+    ) -> _T:
+        return self.production.run_production(
+            floor=floor,
+            label=label,
+            producer=producer,
+        )
