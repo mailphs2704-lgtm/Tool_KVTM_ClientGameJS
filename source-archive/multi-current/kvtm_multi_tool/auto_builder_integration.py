@@ -15,6 +15,8 @@ FILE_FUNCTIONS = (
     "Thay khối mô tả AUTO MULTI DEV bằng menu chọn Function + số vòng giữa hai lần bán",
     "Hiển thị trực tiếp thời gian chờ giữa các vòng Function trên AUTO MULTI DEV",
     "Thêm công tắc chung qua nhà bạn #1 sau mỗi ba vòng Function để làm mới scene/item treo",
+    "Restart ClientJS định kỳ nhưng chỉ sau Function đủ vòng và lượt bán VP an toàn hoàn tất",
+    "Tự relaunch đúng profile ClientJS rồi gắn lại worker AUTO với cấu hình cũ",
     "Bổ sung Tốc độ thu VP vào đúng cửa sổ Cấu hình tốc độ hiện có",
     "Đưa Log hành động + Log chi tiết xuống hàng riêng dưới nút AUTO MULTI DEV",
     "Ghi cấu hình Function AUTO Main theo từng run mà không thay Bridge/capture ownership",
@@ -25,6 +27,8 @@ _AUTO_MAIN_FUNCTION_OPTIONS = (
     ("function_1", "9 Táo sấy - 9 Vải vàng"),
 )
 _FRIEND_REFRESH_SETTING_KEY = "auto_multi_dev_friend_refresh_enabled"
+_CLIENT_RESTART_TEST_INTERVAL_SECONDS = 60.0
+_CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"
 
 
 def _install_vp_collect_speed_control(core) -> None:
@@ -59,6 +63,7 @@ def install_auto_builder_integration(app_class, core) -> None:
     original_start_clean_session = app_class._start_clean_auto_session
     original_run_thread = app_class._run_clean_main_thread
     original_finish = app_class._finish_clean_main
+    original_stop_clean_session = app_class._stop_clean_auto_session
 
     def _select_auto_multi_dev_function(self, function_id: str) -> None:
         options = dict(_AUTO_MAIN_FUNCTION_OPTIONS)
@@ -237,12 +242,13 @@ def install_auto_builder_integration(app_class, core) -> None:
             text=(
                 "Vào game + đóng popup → bán VP lần 1 → chạy Function. "
                 "Nếu bật làm mới: sau vòng 3/6/9..., bán đến hạn xong sẽ sang "
-                "nhà bạn đầu tiên rồi quay về nhà trước vòng kế tiếp."
+                "nhà bạn đầu tiên rồi quay về. Restart ClientJS đang TEST 1 phút; "
+                "đến giờ vẫn chờ Function đủ vòng + bán VP xong mới restart."
             ),
             style="AutoValue.TLabel",
             anchor="w",
             justify="left",
-            wraplength=330,
+            wraplength=350,
         ).pack(fill="x", pady=(17, 0))
 
         start_button.configure(command=self._start_configured_auto_main)
@@ -286,6 +292,8 @@ def install_auto_builder_integration(app_class, core) -> None:
         original_build(self)
         self._auto_builder_pending_plans: dict[str, dict] = {}
         self._auto_main_pending_config: dict[str, dict] = {}
+        self._auto_main_active_config: dict[str, dict] = {}
+        self._auto_main_restart_pending: set[str] = set()
         _apply_requested_dev_layout(self)
         install_auto_builder_tab(self, core)
 
@@ -339,15 +347,21 @@ def install_auto_builder_integration(app_class, core) -> None:
             "sale_every_loops": sale_every,
             "function_loop_delay_seconds": loop_delay,
             "friend_refresh_enabled": friend_refresh_enabled,
+            "client_restart_interval_seconds": _CLIENT_RESTART_TEST_INTERVAL_SECONDS,
+            "skip_initial_sale_once": False,
         }
         for profile_id in selected:
-            self._auto_main_pending_config[profile_id] = dict(config)
+            frozen = dict(config)
+            self._auto_main_pending_config[profile_id] = frozen
+            self._auto_main_active_config[profile_id] = dict(frozen)
+            self._auto_main_restart_pending.discard(profile_id)
 
         label = dict(_AUTO_MAIN_FUNCTION_OPTIONS)[function_id]
         self.note.set(
             f"AUTO MULTI DEV • {label} • bán lại sau {sale_every} vòng • "
             f"chờ giữa vòng {loop_delay:g}s • qua bạn #1/3 vòng="
-            f"{'BẬT' if friend_refresh_enabled else 'TẮT'}"
+            f"{'BẬT' if friend_refresh_enabled else 'TẮT'} • "
+            "restart ClientJS=TEST 1 phút/safe-sale-boundary"
         )
         original_start_clean_session(self)
 
@@ -371,9 +385,140 @@ def install_auto_builder_integration(app_class, core) -> None:
                     json.dumps(config, ensure_ascii=False, indent=2) + "\n",
                     encoding="utf-8",
                 )
+                self._auto_main_active_config[profile_id] = dict(config)
         return original_run_thread(self, *args, **kwargs)
 
+    def _start_clean_auto_profile_only(self, profile_id: str) -> None:
+        """Reuse the proven DEV launcher while limiting one restart to one profile."""
+        had_override = "selected_ids" in self.__dict__
+        previous_override = self.__dict__.get("selected_ids")
+        self.selected_ids = lambda: [str(profile_id)]
+        try:
+            original_start_clean_session(self)
+        finally:
+            if had_override:
+                self.selected_ids = previous_override
+            else:
+                try:
+                    del self.selected_ids
+                except AttributeError:
+                    pass
+
+    def _resume_auto_after_client_restart(
+        self, profile_id: str, attempt: int = 0
+    ) -> None:
+        profile_id = str(profile_id)
+        if profile_id not in self._auto_main_restart_pending:
+            return
+        profile = next(
+            (
+                item for item in self.profiles
+                if str(item.get("id") or "") == profile_id
+            ),
+            None,
+        )
+        if profile is None:
+            self._auto_main_restart_pending.discard(profile_id)
+            self._auto_main_active_config.pop(profile_id, None)
+            self.auto_multi_dev_status.set(
+                "LỖI • restart ClientJS: profile không còn tồn tại"
+            )
+            return
+
+        proc = self.processes.get(profile_id)
+        try:
+            alive = bool(proc and proc.poll() is None)
+        except Exception:
+            alive = False
+
+        if alive:
+            if attempt >= 20:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            if attempt >= 26:
+                self._auto_main_restart_pending.discard(profile_id)
+                self.auto_multi_dev_status.set(
+                    "LỖI • restart ClientJS: process cũ không thoát sau retry"
+                )
+                return
+            self.after(
+                300,
+                lambda pid=profile_id, n=attempt + 1:
+                self._resume_auto_after_client_restart(pid, n),
+            )
+            return
+
+        # Old ClientJS is now fully gone. Remove its dead process object so the
+        # proven launcher creates a fresh client and therefore a fresh Bridge V3
+        # mapping/writer generation.
+        self.processes.pop(profile_id, None)
+        resume = dict(self._auto_main_active_config.get(profile_id, {}))
+        if not resume:
+            self._auto_main_restart_pending.discard(profile_id)
+            self.auto_multi_dev_status.set(
+                "LỖI • restart ClientJS: mất cấu hình AUTO để resume"
+            )
+            return
+        resume["skip_initial_sale_once"] = True
+        resume["client_restart_interval_seconds"] = (
+            _CLIENT_RESTART_TEST_INTERVAL_SECONDS
+        )
+        self._auto_main_pending_config[profile_id] = dict(resume)
+        self._auto_main_active_config[profile_id] = dict(resume)
+
+        self.auto_multi_dev_status.set(
+            "AUTO MULTI DEV • ClientJS cũ đã đóng • đang mở lại đúng tài khoản"
+        )
+        self.note.set(
+            "Restart ClientJS • relaunch profile → worker mới → vào game → tiếp tục AUTO"
+        )
+        self._start_clean_auto_profile_only(profile_id)
+
+        if self._clean_main_alive(profile_id):
+            self._auto_main_restart_pending.discard(profile_id)
+            self.auto_multi_dev_status.set(
+                "AUTO MULTI DEV • ClientJS đã restart • worker mới đang nhận lại AUTO"
+            )
+        else:
+            self._auto_main_restart_pending.discard(profile_id)
+            self.auto_multi_dev_status.set(
+                "LỖI • ClientJS đã đóng nhưng AUTO không relaunch được worker"
+            )
+
     def finish_clean_main(self, profile_id: str, outcome: str, payload: dict) -> None:
+        profile_id = str(profile_id)
+        reason = str(payload.get("reason") or "")
+        if outcome == "stopped" and reason.startswith(_CLIENT_RESTART_REQUEST_PREFIX):
+            # Worker has already exited its scheduler at a sale-safe boundary.
+            # Do not show Stop state; hand ownership back to Multi, recycle only
+            # this profile's ClientJS, then launch the normal worker again.
+            self._clean_main_threads.pop(profile_id, None)
+            self._clean_main_workers.pop(profile_id, None)
+            self._clean_main_stop_events.pop(profile_id, None)
+            self._auto_main_restart_pending.add(profile_id)
+
+            proc = self.processes.get(profile_id)
+            if proc is not None:
+                try:
+                    if proc.poll() is None:
+                        proc.terminate()
+                except Exception:
+                    pass
+
+            self.auto_multi_dev_status.set(
+                "AUTO MULTI DEV • SAFE RESTART • đã bán VP xong • đang đóng ClientJS"
+            )
+            self.note.set(
+                "Đến hạn restart • Function/sale đã hoàn tất • không cắt ngang transaction"
+            )
+            self.after(
+                500,
+                lambda pid=profile_id: self._resume_auto_after_client_restart(pid, 0),
+            )
+            return
+
         if outcome != "auto_builder_ready":
             return original_finish(self, profile_id, outcome, payload)
 
@@ -392,6 +537,19 @@ def install_auto_builder_integration(app_class, core) -> None:
         controller = getattr(self, "auto_builder_ui", None)
         if controller is not None and controller.status_var is not None:
             controller.status_var.set(status)
+
+    def stop_clean_auto_session(self) -> None:
+        selected = set(map(str, self.selected_ids()))
+        targets = (
+            selected
+            if selected
+            else set(self._auto_main_restart_pending) | set(self._auto_main_active_config)
+        )
+        for profile_id in targets:
+            self._auto_main_restart_pending.discard(profile_id)
+            self._auto_main_pending_config.pop(profile_id, None)
+            self._auto_main_active_config.pop(profile_id, None)
+        original_stop_clean_session(self)
 
     def start_auto_builder_plan(self, plan: dict) -> None:
         selected = list(map(str, self.selected_ids()))
@@ -439,9 +597,12 @@ def install_auto_builder_integration(app_class, core) -> None:
     app_class._build_auto_panel = build_auto_panel
     app_class._run_clean_main_thread = run_clean_main_thread
     app_class._finish_clean_main = finish_clean_main
+    app_class._stop_clean_auto_session = stop_clean_auto_session
     app_class._start_auto_builder_plan = start_auto_builder_plan
     app_class._select_auto_multi_dev_function = _select_auto_multi_dev_function
     app_class._save_auto_multi_dev_friend_refresh = _save_auto_multi_dev_friend_refresh
     app_class._load_friend_refresh_setting = _load_friend_refresh_setting
+    app_class._start_clean_auto_profile_only = _start_clean_auto_profile_only
+    app_class._resume_auto_after_client_restart = _resume_auto_after_client_restart
     app_class._start_configured_auto_main = start_configured_auto_main
     app_class._kvtm_auto_builder_installed = True
