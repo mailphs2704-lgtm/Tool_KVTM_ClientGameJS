@@ -48,6 +48,19 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO MULTI DEV persistent settings contract: VERIFIED" -ForegroundColor Green
 
+# Exact-main must work across account-specific farm backgrounds. Lock the runtime
+# contract to fixed own-farm HUD + behavioral goDown boundary evidence and reject
+# any future return to a quay_hang/world-image exact-main gate.
+$MainBoundaryVerifier = Join-Path $RepoRoot "tools\verify_multi_dev_main_boundary_contract.py"
+if (-not (Test-Path -LiteralPath $MainBoundaryVerifier -PathType Leaf)) {
+    throw "Missing main-boundary verifier: $MainBoundaryVerifier"
+}
+& py.exe -3.11 $MainBoundaryVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw "AUTO MULTI DEV main-boundary contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "AUTO MULTI DEV main-boundary contract: VERIFIED" -ForegroundColor Green
+
 # BUILD_FULL_PACKAGE.ps1 was written for newer PowerShell semantics and checks
 # LASTEXITCODE after piping native git output through Select-Object. On Windows
 # PowerShell 5.1 that value can become stale/-1 even though git succeeded.
