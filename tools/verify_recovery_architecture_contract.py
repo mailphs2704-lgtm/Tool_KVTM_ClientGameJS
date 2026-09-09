@@ -13,6 +13,7 @@ PRODUCTION = CLEAN / "recovery/production.py"
 MANAGER = CLEAN / "recovery/manager.py"
 LEGACY = CLEAN / "workflows/production_warehouse_recovery.py"
 FUNCTION_ONE = CLEAN / "workflows/auto_function_one/workflow.py"
+RECIPE_BOOK = CLEAN / "recipes/book.py"
 
 
 def read(path: Path) -> str:
@@ -41,6 +42,7 @@ def main() -> int:
     manager = read(MANAGER)
     legacy = read(LEGACY)
     function_one = read(FUNCTION_ONE)
+    recipe_book = read(RECIPE_BOOK)
 
     # errors.py declares signals only.
     require(errors, "class WrongProductionMachine(NavigationError):", "Wrong-machine signal missing")
@@ -77,7 +79,8 @@ def main() -> int:
     require(production, "self.navigation.recover_unknown_to_floor(", "Wrong machine not routed through nav recovery")
     require(production, "AutoVpSaleWorkflow(", "Warehouse-full sale recovery missing")
 
-    # Manager is the one facade Functions/Recipes should import.
+    # Manager is the one recovery facade consumed directly by RecipeBook. Functions
+    # receive the same manager through their RecipeBook instead of rebuilding policy.
     require(manager, "class RecoveryManager:", "RecoveryManager missing")
     require(manager, "event_handlers:", "Per-Function event injection missing")
     require(manager, "between_floor_routes:", "Per-Function route injection missing")
@@ -85,20 +88,28 @@ def main() -> int:
     require(manager, "def from_floor_to_floor(", "Manager known-floor facade missing")
     require(manager, "def run_production(", "Manager production facade missing")
 
-    # Old class remains adapter only; new Functions must not depend on it.
+    require(recipe_book, "from ..recovery import RecoveryManager", "RecipeBook recovery import missing")
+    require(recipe_book, "self.recovery = recovery or RecoveryManager(",
+            "RecipeBook does not share one RecoveryManager")
+
+    # Old class remains adapter only; new Function 1 must compose RecipeBook and
+    # must not duplicate unknown-camera or production recovery loops.
     require(legacy, "self.manager = RecoveryManager(", "Legacy adapter is not delegated")
     forbid(legacy, "except WrongProductionMachine", "Wrong-machine policy duplicated in legacy adapter")
     forbid(legacy, "except InventoryFull", "Inventory-full policy duplicated in legacy adapter")
-    require(function_one, "from ...recovery import RecoveryManager", "Function 1 does not use standardized recovery")
+    require(function_one, "from ...recipes import RecipeBook", "Function 1 does not use standardized recipes")
+    require(function_one, "self.recovery = self.recipes.recovery", "Function 1 does not share recipe recovery")
     forbid(function_one, "ProductionWarehouseRecovery", "Function 1 still imports legacy recovery")
     forbid(function_one, "go_down_one_toward_main(", "Function 1 embeds unknown-camera algorithm")
+    forbid(function_one, "self.recovery.run_production(", "Function 1 embeds production recovery")
 
     print("AUTO MULTI DEV RECOVERY ARCHITECTURE CONTRACT VERIFIED")
     print("errors=signals-only")
     print("events=typed-observer-hooks")
     print("navigation=centralized+injectable-routes")
     print("production=explicit-signals-only+no-generic-screen-timeout-retry")
-    print("functions=business-flow-calls-RecoveryManager")
+    print("recipes=share-one-RecoveryManager-per-function")
+    print("functions=business-flow-composes-RecipeBook")
     print("legacy-recovery=compatibility-facade-only")
     return 0
 
