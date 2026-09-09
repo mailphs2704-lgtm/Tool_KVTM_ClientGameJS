@@ -81,8 +81,6 @@ def install_auto_builder_integration(app_class, core) -> None:
                 enabled = bool(raw.get(_FRIEND_REFRESH_SETTING_KEY, False))
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             enabled = False
-        # Reinsert into the in-memory settings object so every later native
-        # save_settings(self.settings) call preserves this integration key.
         self.settings[_FRIEND_REFRESH_SETTING_KEY] = enabled
         return enabled
 
@@ -425,6 +423,31 @@ def install_auto_builder_integration(app_class, core) -> None:
             )
             return
 
+        # finish_clean_main is called on the Tk thread before the old supervisor
+        # thread has necessarily reached its finally block. Never start the new
+        # worker while that old thread is alive, otherwise its finally could pop
+        # the replacement worker from the ownership maps.
+        old_thread = self._clean_main_threads.get(profile_id)
+        if old_thread is not None and old_thread.is_alive():
+            if attempt >= 40:
+                self._auto_main_restart_pending.discard(profile_id)
+                self.auto_multi_dev_status.set(
+                    "LỖI • restart ClientJS: supervisor cũ không kết thúc sau retry"
+                )
+                return
+            self.after(
+                200,
+                lambda pid=profile_id, n=attempt + 1:
+                self._resume_auto_after_client_restart(pid, n),
+            )
+            return
+
+        # Only after the old supervisor is fully gone may we clear its maps and
+        # consider creating a fresh ClientJS/worker ownership chain.
+        self._clean_main_threads.pop(profile_id, None)
+        self._clean_main_workers.pop(profile_id, None)
+        self._clean_main_stop_events.pop(profile_id, None)
+
         proc = self.processes.get(profile_id)
         try:
             alive = bool(proc and proc.poll() is None)
@@ -437,7 +460,7 @@ def install_auto_builder_integration(app_class, core) -> None:
                     proc.kill()
                 except Exception:
                     pass
-            if attempt >= 26:
+            if attempt >= 46:
                 self._auto_main_restart_pending.discard(profile_id)
                 self.auto_multi_dev_status.set(
                     "LỖI • restart ClientJS: process cũ không thoát sau retry"
@@ -450,9 +473,6 @@ def install_auto_builder_integration(app_class, core) -> None:
             )
             return
 
-        # Old ClientJS is now fully gone. Remove its dead process object so the
-        # proven launcher creates a fresh client and therefore a fresh Bridge V3
-        # mapping/writer generation.
         self.processes.pop(profile_id, None)
         resume = dict(self._auto_main_active_config.get(profile_id, {}))
         if not resume:
@@ -491,12 +511,9 @@ def install_auto_builder_integration(app_class, core) -> None:
         profile_id = str(profile_id)
         reason = str(payload.get("reason") or "")
         if outcome == "stopped" and reason.startswith(_CLIENT_RESTART_REQUEST_PREFIX):
-            # Worker has already exited its scheduler at a sale-safe boundary.
-            # Do not show Stop state; hand ownership back to Multi, recycle only
-            # this profile's ClientJS, then launch the normal worker again.
-            self._clean_main_threads.pop(profile_id, None)
-            self._clean_main_workers.pop(profile_id, None)
-            self._clean_main_stop_events.pop(profile_id, None)
+            # Keep the old supervisor thread registered until its finally block
+            # exits. _resume_auto_after_client_restart waits on it before any
+            # replacement worker is allowed to start.
             self._auto_main_restart_pending.add(profile_id)
 
             proc = self.processes.get(profile_id)
