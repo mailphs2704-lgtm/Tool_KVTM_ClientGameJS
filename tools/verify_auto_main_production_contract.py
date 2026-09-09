@@ -116,8 +116,28 @@ def main() -> int:
     forbid(game_session, "_recover_floor_1_or_2_start", "Startup low-floor recovery must be removed")
     forbid(workflow, "self.auto.ensure_main_screen(timeout=timeout)", "AppleDryer duplicated startup main gate")
     require(function_one, "def _require_main_transition", "Inter-stage exact-main helper missing")
-    require(function_one, 'self._require_main_transition("sau trồng Táo tầng 6 → trước SX Nước táo")', "Apple→juice main gate missing")
     require(function_one, 'self._require_main_transition("sau SX Nước táo → trước trồng Bông")', "Juice→cotton main gate missing")
+
+    # Function 1 fast path after the sixth apple row: one goDown(4) should land at
+    # floor 2. The gesture is only a candidate; nuoc_tao panel evidence must prove
+    # the floor. A miss is bounded, closes the panel and uses the existing
+    # background-independent main recovery before main->floor2 retry.
+    require(function_nav, "def floor_6_to_floor_2", "Direct floor6→floor2 route missing")
+    require(function_nav, 'self._gesture(self.DOWN_FOUR, "floor6-goDown(4)-to-floor2-candidate")',
+            "Direct floor6→floor2 must be exactly one goDown(4)")
+    require(function_nav, 'return NavigationEvidence("floor6-to-floor2-candidate", changes)',
+            "Direct floor2 route must remain candidate evidence only")
+    require(function_one, "self.auto.function_one_navigation.floor_6_to_floor_2()",
+            "Function 1 does not use direct floor6→floor2 fast path")
+    require(function_one, "self.auto.apple_juice_production.probe_floor_2_machine()",
+            "Direct floor2 candidate is not verified by Nước táo panel")
+    require(function_one, "def _recover_direct_juice_miss_to_floor_2", "Direct floor2 fallback helper missing")
+    require(function_one, "DIRECT_JUICE_MAIN_RECOVERY_PASSES = 6", "Direct floor2 fallback bound changed")
+    require(function_one, "go_down_one_toward_main(", "Direct floor2 miss does not use main-boundary recovery")
+    require(function_one, 'self._require_main_transition("fallback direct Nước táo → exact-main")',
+            "Direct floor2 fallback exact-main gate missing")
+    require(function_one, "self.auto.function_one_navigation.main_to_floor_2()",
+            "Direct floor2 fallback does not return exact-main→floor2")
 
     # Shared production opening: true five-click bursts continue until the exact
     # requested item appears in the proven panel library zone. Empty-slot imagery
@@ -158,9 +178,22 @@ def main() -> int:
     require(action, "def _raise_inventory_full", "Shared full-warehouse signal helper missing")
     require(action, "def _find_top_empty_slot(self):", "Reusable top-slot detector missing")
 
-    # Floor 2/3 must delegate collection to the same five-click helper; no local
-    # bounded click loops may reintroduce stop-on-open-timeout behavior.
+    # Floor 2/3 delegate normal collection to the shared five-click helper. The
+    # direct-floor Nước táo probe is intentionally bounded because it is a route
+    # verifier, not the production transaction itself.
     require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice production template missing")
+    require(apple_juice, "DIRECT_FLOOR_PROBE_BURSTS = 2", "Direct floor2 probe burst bound changed")
+    require(apple_juice, "DIRECT_FLOOR_PROBE_RECHECKS = 3", "Direct floor2 probe recheck bound changed")
+    require(apple_juice, "def probe_floor_2_machine(self) -> bool:", "Direct floor2 machine probe missing")
+    require(apple_juice, "for burst in range(1, self.DIRECT_FLOOR_PROBE_BURSTS + 1):",
+            "Direct floor2 probe is not bounded")
+    require(apple_juice, "click_count += self.slots._send_collect_burst(",
+            "Direct floor2 probe does not reuse true x5 collection")
+    require(apple_juice, "product = self.slots._find_product_match(",
+            "Direct floor2 probe is not gated by product anchor")
+    require(apple_juice, "self.vision.driver.click(*self.CLOSE_POINT)",
+            "Direct floor2 probe does not close panel on handoff")
+    require(apple_juice, "return False", "Direct floor2 miss cannot trigger fallback")
     require(apple_juice, "self.slots._click_until_panel_open(", "Apple-juice does not use shared five-click opener")
     require(apple_juice, "product_template=self.PRODUCT_TEMPLATE", "Apple-juice product guard missing from opener")
     require(apple_juice, "self.slots._wait_for_idle_open_panel(", "Apple-juice open-panel wait missing")
@@ -230,7 +263,20 @@ def main() -> int:
     require(pass_three_nav, "def floor_2_to_main", "Post-juice main route missing")
     require(pass_three_nav, '"post-juice-goDown(1)-probe-1-of-4"', "Post-juice first down probe missing")
     require(pass_three_nav, '"post-juice-goDown(1)-settle-4-of-4"', "Post-juice settling route incomplete")
+
+    # Cotton->yellow-fabric navigation must use the original AUTO PRO mode2, not
+    # two separate goUp(1) gestures. Forensic bytecode: mode2 click=(257,416).
+    require(pass_three_nav, "AUTO_PRO_GO_UP_2_POINT = (257, 416)", "Auto Pro goUp(2) point changed")
+    require(pass_three_nav, "def _go_up_two(self, label: str) -> float:", "True goUp(2) helper missing")
+    require(pass_three_nav, "self.vision.driver.click(*self.AUTO_PRO_GO_UP_2_POINT)",
+            "True goUp(2) does not click original mode2 control")
+    require(pass_three_nav, "self.waiter.sleep(self.AUTO_PRO_GO_UP_WAIT)", "goUp(2) wait missing")
+    require(pass_three_nav, "self.waiter.sleep(self.AUTO_PRO_POST_WAIT)", "goUp(2) post-wait missing")
     require(pass_three_nav, "def floor_1_to_floor_3", "Floor1→floor3 route missing")
+    require(pass_three_nav, 'self._go_up_two("floor1-goUp(2)-to-floor3")',
+            "Floor1→floor3 does not use one true goUp(2)")
+    forbid(pass_three_nav, 'self._gesture(self.UP_ONE, "floor1-goUp(1)-to-floor2")',
+           "Old two-step floor1→floor3 route returned")
 
     # End-loop and unknown-floor recovery must consume the transient XUỐNG control
     # by visual proof. The historical (497,978) coordinate may remain documented,
@@ -302,11 +348,13 @@ def main() -> int:
     print("machine_repair=verified_handoff+no_price_ocr")
     print("vp_collect_speed=independent")
     print("function_loop_delay=visible-main-control+between-loops-only")
+    print("apple_to_juice=direct-goDown4+bounded-nuoc_tao-proof+exact-main-fallback")
+    print("cotton_to_fabric=true-auto-pro-goUp2-mode-at-257,416")
     print("post_juice_navigation=1_plus_3_godown1_boundary_non_blocking_exact_main_gate")
     print("end_loop_navigation=floor3_one_godown1+visual_down_button+fresh_frame+exact_main")
     print("upper_floor_recovery=godown1+visual_down_button_chain_up_to_10+boundary_fallback")
     print("next_loop=main_required_before_restart")
-    print("stable_sale_and_clear_stall=untouched")
+    print("stable_sale_qc_and_clear_stall=untouched")
     return 0
 
 
