@@ -17,9 +17,9 @@ RouteHandler = Callable[[str], None]
 class NavigationRecovery:
     """Reusable camera/floor recovery shared by every Function and Recipe.
 
-    The default routes cover the currently proven floors 1..3. Future Functions
-    can inject ``to_main_routes`` and ``from_main_routes`` for additional floors
-    without copying the unknown-camera/main-boundary policy into business code.
+    Default routes cover the currently proven floors 1..3. Future Functions can
+    inject main/floor or floor/floor routes without copying unknown-camera,
+    XUỐNG-button, exact-main, or retry policy into business code.
     """
 
     UNKNOWN_FLOOR_MAIN_RECOVERY_PASSES = 6
@@ -31,12 +31,14 @@ class NavigationRecovery:
         emit: EventSink,
         to_main_routes: Mapping[int, RouteHandler] | None = None,
         from_main_routes: Mapping[int, RouteHandler] | None = None,
+        between_floor_routes: Mapping[tuple[int, int], RouteHandler] | None = None,
     ) -> None:
         self.auto = automation
         self.context = automation.context
         self.emit = emit
         self._to_main_routes = dict(to_main_routes or {})
         self._from_main_routes = dict(from_main_routes or {})
+        self._between_floor_routes = dict(between_floor_routes or {})
 
     def ensure_main(self, label: str) -> None:
         self.context.ensure_running()
@@ -139,6 +141,45 @@ class NavigationRecovery:
         self.context.log(
             f"AUTO recovery • đã vào candidate tầng {floor} cho {label}; "
             "business action vẫn phải tự xác minh đúng target"
+        )
+
+    def from_floor_to_floor(
+        self,
+        source_floor: int,
+        target_floor: int,
+        label: str,
+    ) -> None:
+        """Move between two known floors without pretending the source is main.
+
+        This is used after planting actions that deliberately leave the camera at
+        a known floor. The target is still only a candidate until the next
+        business action proves its own machine/product anchor.
+        """
+        source = int(source_floor)
+        target = int(target_floor)
+        self.context.ensure_running()
+        self.context.stage(f"auto-recovery-floor-{source}-to-floor-{target}")
+        custom = self._between_floor_routes.get((source, target))
+        if custom is not None:
+            custom(label)
+        elif (source, target) == (1, 3):
+            self.auto.function_one_pass_three_navigation.floor_1_to_floor_3()
+        else:
+            raise ValueError(
+                f"Chưa có route tầng {source} → tầng {target}; "
+                "Function/Recipe phải inject between_floor_routes"
+            )
+        self.emit(
+            RecoveryEvent(
+                RecoveryEventKind.FLOOR_REENTERED,
+                label=label,
+                floor=target,
+                details={"source_floor": source},
+            )
+        )
+        self.context.log(
+            f"AUTO recovery • candidate tầng {source} → tầng {target} cho {label}; "
+            "target business action sẽ xác minh lại"
         )
 
     def recover_unknown_to_floor(
