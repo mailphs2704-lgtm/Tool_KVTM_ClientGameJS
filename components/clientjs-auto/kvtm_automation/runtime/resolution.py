@@ -5,11 +5,13 @@ from ctypes import wintypes
 import os
 import sys
 import time
+from typing import Any
 
 
 __all__ = [
     "LOGICAL_REFERENCE_SIZE",
     "PRODUCTION_CLIENT_SIZE",
+    "NativeCaptureDriver",
     "disable_legacy_adaptive_matching",
     "ensure_production_client_size",
 ]
@@ -18,6 +20,8 @@ FILE_FUNCTIONS = (
     "Giữ source AUTO ở hệ logical 1000x1000",
     "Đặt riêng ClientJS của worker hiện tại về client-area 500x500 trước Bridge V3",
     "Giữ 500x500 ổn định đủ lâu để thắng callback display cũ của Multi khi client vừa launch",
+    "Giữ CAPTURE3 ở kích thước render thật 500x500 thay vì bị EngineDriver phóng ngược lên 1000",
+    "Fail-close nếu Bridge gắn nhầm HWND/kích thước native không còn đúng 500x500",
     "Không di chuyển cửa sổ và không đụng ClientJS/profile khác",
     "Gỡ monkeypatch adaptive_cv cũ trong isolated worker để tránh scale template/frame lần hai",
 )
@@ -53,6 +57,85 @@ def disable_legacy_adaptive_matching() -> bool:
     except Exception:
         pass
     return True
+
+
+class NativeCaptureDriver:
+    """AUTO MULTI DEV view of EngineDriver that keeps CAPTURE3 at native size.
+
+    Legacy ``EngineDriver.screenshot()`` always expands the raw bridge capture
+    back to ``reference_size`` (1000x1000). That behavior hid the real 500x500
+    frame from ``VisionEngine`` and forced template matching against an upscaled,
+    softened image. The result was visible in the first 500 smoke: the window was
+    confirmed 500x500 before Bridge, yet every Vision trace still reported
+    ``Frame: 1000x1000`` and small anchors fell just below their old thresholds.
+
+    This adapter is installed only for AUTO MULTI DEV. It reads the already
+    writer-bound ``_capture_shared_bgra`` implementation, validates that the
+    native Bridge frame is still exactly the production size, and exposes those
+    pixels without any reference-size resize. All input methods/attributes are
+    delegated unchanged to the underlying EngineDriver, whose native INPUT4 path
+    already scales logical 1000 coordinates by the actual ClientJS client area.
+    """
+
+    def __init__(
+        self,
+        driver: Any,
+        *,
+        expected_size: tuple[int, int] = PRODUCTION_CLIENT_SIZE,
+    ) -> None:
+        self._driver = driver
+        self.expected_size = tuple(map(int, expected_size))
+        self.reference_size = tuple(
+            map(int, getattr(driver, "reference_size", LOGICAL_REFERENCE_SIZE))
+        )
+
+    def __getattr__(self, name: str):
+        return getattr(self._driver, name)
+
+    def screenshot(self, format: str | None = None):
+        refresh = getattr(self._driver, "_refresh_profile_pid", None)
+        if callable(refresh):
+            refresh()
+        capture = getattr(self._driver, "_capture_shared_bgra", None)
+        if not callable(capture):
+            raise RuntimeError(
+                "Bridge V3 driver thiếu raw CAPTURE3 API; không thể giữ native 500x500"
+            )
+
+        raw, width, height = capture()
+        actual = (int(width), int(height))
+        if actual != self.expected_size:
+            raise RuntimeError(
+                "AUTO MULTI DEV native CAPTURE3 không còn đúng production size "
+                f"{self.expected_size[0]}x{self.expected_size[1]}: actual="
+                f"{actual[0]}x{actual[1]}. Dừng trước khi click để tránh lệch tọa độ."
+            )
+
+        # Keep legacy capture-scale observers coherent even though the adaptive
+        # matcher itself was disabled above. No resizing is performed here.
+        try:
+            from adaptive_cv import set_capture_scale
+
+            set_capture_scale(min(
+                actual[0] / float(self.reference_size[0]),
+                actual[1] / float(self.reference_size[1]),
+                1.0,
+            ))
+        except Exception:
+            pass
+
+        if format == "opencv":
+            import numpy as np
+
+            return np.frombuffer(raw, dtype=np.uint8).reshape(
+                (actual[1], actual[0], 4)
+            )[:, :, :3].copy()
+
+        from PIL import Image
+
+        return Image.frombuffer(
+            "RGBA", actual, raw, "raw", "BGRA", 0, 1
+        ).convert("RGB")
 
 
 def _find_window(pid: int) -> int | None:
