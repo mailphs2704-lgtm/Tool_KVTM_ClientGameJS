@@ -23,6 +23,10 @@ RECOVERY_NAV = CLEAN / "recovery/navigation.py"
 RECOVERY_PRODUCTION = CLEAN / "recovery/production.py"
 RECOVERY_MANAGER = CLEAN / "recovery/manager.py"
 LEGACY_RECOVERY = CLEAN / "workflows/production_warehouse_recovery.py"
+RECIPE_BOOK = CLEAN / "recipes/book.py"
+RECIPE_DRIED_APPLE = CLEAN / "recipes/dried_apple.py"
+RECIPE_APPLE_JUICE = CLEAN / "recipes/apple_juice.py"
+RECIPE_YELLOW_FABRIC = CLEAN / "recipes/yellow_fabric.py"
 DOWN_FLOOR_DETECTOR = CLEAN / "runtime/down_floor_button.py"
 MULTI_DEV_DRIED_APPLE = ROOT / "components/clientjs-auto/assets/items/tao_say.png"
 MULTI_DEV_EMPTY_SLOT = ROOT / "components/clientjs-auto/assets/items/o_trong.png"
@@ -63,7 +67,8 @@ def main() -> int:
         ACTION, AUTOMATION, WORKFLOW, FUNCTION_ONE, FUNCTION_NAV, PASS_THREE_NAV,
         APPLE_JUICE, YELLOW_FABRIC, COTTON, MACHINE_REPAIR, ERRORS,
         RECOVERY_EVENTS, RECOVERY_NAV, RECOVERY_PRODUCTION, RECOVERY_MANAGER,
-        LEGACY_RECOVERY, DOWN_FLOOR_DETECTOR,
+        LEGACY_RECOVERY, RECIPE_BOOK, RECIPE_DRIED_APPLE, RECIPE_APPLE_JUICE,
+        RECIPE_YELLOW_FABRIC, DOWN_FLOOR_DETECTOR,
     )
     sources = {path: read_python(path) for path in paths}
     action = sources[ACTION]
@@ -82,6 +87,10 @@ def main() -> int:
     recovery_production = sources[RECOVERY_PRODUCTION]
     recovery_manager = sources[RECOVERY_MANAGER]
     legacy_recovery = sources[LEGACY_RECOVERY]
+    recipe_book = sources[RECIPE_BOOK]
+    recipe_dried = sources[RECIPE_DRIED_APPLE]
+    recipe_juice = sources[RECIPE_APPLE_JUICE]
+    recipe_fabric = sources[RECIPE_YELLOW_FABRIC]
     down_floor = sources[DOWN_FLOOR_DETECTOR]
 
     for asset in (
@@ -120,8 +129,8 @@ def main() -> int:
     require(action, "empty == self.REQUIRED_COUNT", "9/9 idle-panel gate missing")
     require(action, "raise InventoryFull(", "InventoryFull business signal missing")
 
-    # Product-specific actions stay atomic and reusable. They do not own navigation
-    # recovery; they emit signals and validate their own target/product accounting.
+    # Product-specific actions remain atomic. Recipes own orchestration; actions
+    # only validate/open/queue the requested product and emit typed signals.
     require(apple_juice, 'PRODUCT_TEMPLATE = "nuoc_tao"', "Apple-juice target missing")
     require(apple_juice, "DIRECT_FLOOR_PROBE_BURSTS = 2", "Direct juice probe bound changed")
     require(apple_juice, "DIRECT_FLOOR_PROBE_RECHECKS = 3", "Direct juice probe recheck changed")
@@ -179,7 +188,6 @@ def main() -> int:
     require(recovery_production, "if int(sale.sold_listings) <= 0:",
             "Inventory-full infinite-loop guard missing")
 
-    # RecoveryManager is the stable facade for current/future Functions and Recipes.
     require(recovery_manager, "class RecoveryManager:", "RecoveryManager facade missing")
     require(recovery_manager, "event_handlers:", "Injectable recovery event handlers missing")
     require(recovery_manager, "to_main_routes:", "Injectable to-main routes missing")
@@ -189,41 +197,83 @@ def main() -> int:
     require(recovery_manager, "def recover_unknown_to_floor(", "Recovery navigation facade missing")
     require(recovery_manager, "def from_floor_to_floor(", "Known-floor facade missing")
 
-    # The old workflow class remains only as a compatibility adapter; policy must
-    # not be copied back into it.
+    # RecipeBook is per-Function and shares one recovery policy across product
+    # recipes. This is the stable business-composition layer for future Functions.
+    require(recipe_book, "class RecipeBook:", "RecipeBook facade missing")
+    require(recipe_book, "self.recovery = recovery or RecoveryManager(",
+            "RecipeBook does not own/share one RecoveryManager")
+    require(recipe_book, "self.dried_apple = DriedAppleRecipe(", "Dried-apple recipe wiring missing")
+    require(recipe_book, "self.apple_juice = AppleJuiceRecipe(", "Apple-juice recipe wiring missing")
+    require(recipe_book, "self.yellow_fabric = YellowFabricRecipe(", "Yellow-fabric recipe wiring missing")
+    require(recipe_book, "apple_juice=self.apple_juice", "Yellow-fabric dependency is not reusable")
+
+    require(recipe_dried, "class DriedAppleRecipe:", "DriedAppleRecipe missing")
+    require(recipe_dried, "self.auto.planting.plant_27_apples()", "Dried recipe does not own apple planting")
+    require(recipe_dried, "self.recovery.run_production(", "Dried recipe does not use centralized recovery")
+    require(recipe_dried, "floor=1", "Dried recipe floor binding missing")
+    require(recipe_dried, "self.auto.machine_repair.repair_after_production(produced)",
+            "Dried recipe repair missing")
+
+    require(recipe_juice, "class AppleJuiceRecipe:", "AppleJuiceRecipe missing")
+    require(recipe_juice, "def run_from_main(", "Standalone apple-juice recipe entry missing")
+    require(recipe_juice, "def run_from_candidate_floor_2(", "Optimized candidate apple-juice entry missing")
+    require(recipe_juice, "probe_floor_2_machine()", "Apple-juice candidate proof missing")
+    require(recipe_juice, "self.recovery.recover_unknown_to_floor(",
+            "Apple-juice candidate miss not delegated to recovery")
+    require(recipe_juice, "self.recovery.run_production(", "Apple-juice recipe recovery missing")
+    require(recipe_juice, "floor=2", "Apple-juice recipe floor binding missing")
+    require(recipe_juice, "self.auto.machine_repair.repair_after_production(produced)",
+            "Apple-juice recipe repair missing")
+
+    require(recipe_fabric, "class YellowFabricRecipe:", "YellowFabricRecipe missing")
+    require(recipe_fabric, "include_apple_juice_dependency", "Optional juice dependency missing")
+    require(recipe_fabric, "self.apple_juice.run_from_main(count=count)",
+            "Yellow-fabric recipe cannot call reusable apple-juice recipe")
+    require(recipe_fabric, "def run_after_floor_2(", "Function-1 yellow-fabric entry missing")
+    require(recipe_fabric, "self.auto.cotton_planting.plant_27_cotton()", "Yellow recipe does not own cotton planting")
+    require(recipe_fabric, 'self.recovery.from_floor_to_floor(1, 3, "Vải vàng recipe")',
+            "Yellow recipe does not own known floor1->3 transition")
+    require(recipe_fabric, "self.recovery.run_production(", "Yellow recipe recovery missing")
+    require(recipe_fabric, "floor=3", "Yellow recipe floor binding missing")
+    require(recipe_fabric, "self.auto.machine_repair.repair_after_production(produced)",
+            "Yellow recipe repair missing")
+
+    # Legacy recovery remains a compatibility adapter only.
     require(legacy_recovery, "self.manager = RecoveryManager(", "Legacy recovery is not a facade")
     require(legacy_recovery, "return self.manager.run_production(", "Legacy facade does not delegate")
     forbid(legacy_recovery, "except WrongProductionMachine", "Wrong-machine loop duplicated in legacy facade")
     forbid(legacy_recovery, "except InventoryFull", "Inventory-full loop duplicated in legacy facade")
 
-    # Function 1 now contains business sequence only and calls the shared facade at
-    # the positions where recovery is needed.
-    require(function_one, "from ...recovery import RecoveryManager", "Function 1 recovery import missing")
-    require(function_one, "self.recovery = RecoveryManager(", "Function 1 manager wiring missing")
-    forbid(function_one, "ProductionWarehouseRecovery", "Function 1 still owns legacy recovery wrapper")
-    require(function_one, "self.recovery.recover_unknown_to_floor(", "Direct juice fallback not delegated")
-    require(function_one, "self.recovery.run_production(", "Production recovery facade not used")
-    require(function_one, "floor=2", "Apple-juice recovery floor binding missing")
-    require(function_one, "floor=3", "Yellow-fabric recovery floor binding missing")
-    require(function_one, "self.recovery.to_main_from_floor(", "Known-floor main recovery not delegated")
-    require(function_one, 'self.recovery.from_floor_to_floor(1, 3, "Vải vàng")',
-            "Cotton->fabric known-floor route not delegated")
+    # Function 1 must now be recipe composition, not a second implementation of
+    # planting/production/recovery. It may keep only Function-specific supply and
+    # optimized movement that prepares a recipe entry state.
+    require(function_one, "from ...recipes import RecipeBook", "Function 1 RecipeBook import missing")
+    require(function_one, "self.recipes = RecipeBook(", "Function 1 recipe wiring missing")
+    require(function_one, "self.recovery = self.recipes.recovery", "Function 1 does not share recipe recovery")
+    require(function_one, "self.recipes.dried_apple.run_from_session(count=9)",
+            "Function 1 does not call DriedAppleRecipe")
+    require(function_one, "self.auto.function_one_navigation.floor_6_to_floor_2()",
+            "Function 1 optimized floor6->floor2 candidate movement missing")
+    require(function_one, "self.recipes.apple_juice.run_from_candidate_floor_2(count=9)",
+            "Function 1 does not delegate Nước táo to recipe")
+    require(function_one, "self.recipes.yellow_fabric.run_after_floor_2(count=9)",
+            "Function 1 does not delegate Vải vàng to recipe")
+    forbid(function_one, "self.recovery.run_production(",
+           "Function 1 reintroduced production recovery details")
+    forbid(function_one, "self.auto.machine_repair.repair_after_production(",
+           "Function 1 reintroduced machine-repair transaction details")
     forbid(function_one, "go_down_one_toward_main(", "Function 1 contains recovery loop details")
-    require(function_one, "self.auto.machine_repair.repair_after_production(juice)",
-            "Apple-juice repair missing")
-    require(function_one, "self.auto.machine_repair.repair_after_production(fabric)",
-            "Yellow-fabric repair missing")
     require(function_one, "progress_steps=3", "Function 1 progress contract changed")
     require(function_one, "total_steps=3", "Function 1 total contract changed")
 
-    # Existing dried-apple workflow may use the compatibility facade until its own
-    # Recipe extraction; it still receives the same centralized policy at runtime.
+    # Existing AppleDryerWorkflow remains compatible for external callers while
+    # Function 1 itself uses the new recipe layer.
     require(workflow, "ProductionWarehouseRecovery", "Dried-apple compatibility recovery missing")
-    require(workflow, "self.warehouse_recovery.run_production(", "Dried-apple recovery call missing")
+    require(workflow, "self.warehouse_recovery.run_production(", "Dried-apple compatibility recovery call missing")
     require(workflow, "self.auto.machine_repair.repair_after_production(produced)",
-            "Dried-apple repair missing")
+            "Dried-apple compatibility repair missing")
 
-    # Proven floor-3 business route and bottom-XUỐNG detector remain unchanged.
+    # Proven navigation primitives stay unchanged under recovery/recipe layers.
     require(pass_nav, "FLOOR_4_POT_POINT = (257, 191)", "Floor-4 pot anchor changed")
     require(pass_nav, "self.vision.driver.click(*self.FLOOR_4_POT_POINT)",
             "Floor1->floor3 does not click proven pot anchor")
@@ -241,21 +291,22 @@ def main() -> int:
     for token in ("clear_stall_probe_runtime", "adb_controller.pyc"):
         for text in (
             action, workflow, function_one, recovery_nav, recovery_production,
-            yellow_fabric, cotton, pass_nav,
+            recipe_dried, recipe_juice, recipe_fabric, yellow_fabric, cotton, pass_nav,
         ):
             forbid(text, token, f"Production path touches stable/legacy path: {token}")
 
     print("AUTO MULTI DEV FUNCTION ONE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
-    print("architecture=function-business+actions-atomic+recovery-centralized")
+    print("architecture=function-business+recipes-reusable+actions-atomic+recovery-centralized")
+    print("recipe_book=shared-recovery-per-function")
+    print("recipe_dried_apple=plant-apples+produce9+repair")
+    print("recipe_apple_juice=standalone-main-or-candidate-floor2+proof+recover+produce9+repair")
+    print("recipe_yellow_fabric=optional-apple-juice-dependency+cotton27+floor3+produce9+repair")
     print("recovery_facade=RecoveryManager")
     print("recovery_events=typed+optional-nonblocking-function-hooks")
-    print("navigation_recovery=unknown-main+known-floor-routes+injectable-route-maps")
     print("wrong_machine=signal->central-recovery->exact-main->requested-floor-retry")
     print("warehouse_full=signal->central-recovery->function-vp-sale->same-floor-retry")
     print("generic_screen_timeout=fail-close-no-blind-retry")
-    print("apple_to_juice=direct-goDown4+bounded-nuoc_tao-proof+recovery-manager-fallback")
-    print("cotton_to_fabric=known-floor-1-to-3+floor4-pot-anchor+vai_vang-proof")
     print("stable_sale_qc_and_clear_stall=untouched")
     return 0
 
