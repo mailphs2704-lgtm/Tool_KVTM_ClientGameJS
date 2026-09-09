@@ -31,6 +31,7 @@ from .runtime.driver import ClientJSDriverFactory
 from .runtime.resolution import (
     LOGICAL_REFERENCE_SIZE,
     PRODUCTION_CLIENT_SIZE,
+    NativeCaptureDriver,
     disable_legacy_adaptive_matching,
     ensure_production_client_size,
 )
@@ -93,6 +94,7 @@ class KVAutomation:
             self.component_root,
             context.auto_root,
         )
+        auto_multi_resolution = _is_auto_multi_dev_context(context)
 
         if image_runtime_ready:
             context.stage("clean-image-runtime-ready")
@@ -107,7 +109,7 @@ class KVAutomation:
             context.stage("clean-image-runtime-ready")
 
         if driver is None:
-            if _is_auto_multi_dev_context(context):
+            if auto_multi_resolution:
                 context.stage("clientjs-production-resolution-normalizing")
                 legacy_disabled = disable_legacy_adaptive_matching()
                 if legacy_disabled:
@@ -135,6 +137,22 @@ class KVAutomation:
                 profile_file=context.profile_file,
             )
             self.driver = bundle.driver
+            if auto_multi_resolution:
+                # EngineDriver historically upscaled every CAPTURE3 frame back
+                # to reference_size=1000 before callers saw it. That defeats the
+                # new VisionEngine logical->frame transform and softens all small
+                # templates. Keep the real 500 frame and prove it immediately.
+                self.driver = NativeCaptureDriver(
+                    self.driver,
+                    expected_size=PRODUCTION_CLIENT_SIZE,
+                )
+                native_probe = self.driver.screenshot(format="opencv")
+                native_height, native_width = native_probe.shape[:2]
+                context.log(
+                    "AUTO MULTI DEV capture • native CAPTURE3="
+                    f"{native_width}x{native_height} • VisionEngine nhận frame thật • "
+                    "không upscale về 1000 trước matching"
+                )
             self.bridge_root = bundle.bridge_root
             self.bridge_mode = bundle.mode
             context.stage("clientjs-dll-bridge-ready")
