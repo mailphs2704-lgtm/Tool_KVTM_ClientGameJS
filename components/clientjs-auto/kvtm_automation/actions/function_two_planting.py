@@ -3,16 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..errors import ScreenTimeout
-from .floor_navigation import FloorNavigationActions
+from .function_one_navigation import FunctionOneNavigationActions
+from .function_one_pass_three_navigation import FunctionOnePassThreeNavigationActions
 from .planting import PlantingActions
 
 
 __all__ = ["FunctionTwoPlantingActions", "FunctionTwoPlantingResult"]
 FILE_FUNCTIONS = (
     "Khoá riêng Function 2 ở native ClientJS 1000x1000",
-    "Thu hoạch/gieo lại 30 Hoa hồng trên nhóm tầng 1-5 bằng một lượt kéo",
-    "Đi từ candidate tầng 1 lên tầng 6 rồi thu hoạch/gieo lại 5 Hoa hồng",
-    "Đi tiếp lên candidate tầng 7 rồi thu hoạch/gieo lại 28 Cây tuyết qua năm tầng",
+    "Trồng/thu hoạch 30 Hoa hồng trên năm tầng đầu bằng một lượt kéo",
+    "Tái sử dụng route Function 1: main goUp(1), floor1 goUp(4), goUp(1) tới tầng 6",
+    "Sau Hồng tầng 6: goDown(1) + nhận diện/click XUỐNG để về main",
+    "Từ main lên lại tầng 1 rồi trồng/thu hoạch 28 Cây tuyết qua năm tầng",
+    "Sau Tuyết đi thẳng floor1 goUp(4) tới candidate tầng 5 để bàn giao TDHH",
     "Giữ Function 1 và contract 500x500 hoàn toàn không đổi",
 )
 
@@ -29,15 +32,20 @@ class FunctionTwoPlantingResult:
 class FunctionTwoPlantingActions(PlantingActions):
     """Function-2-only 1000x1000 material planting choreography.
 
-    The recovered 27-pot geometry proves six pots per visible farm row and the
-    five-row zig-zag. Function 2 extends that same geometry without changing the
-    legacy Function 1 planting path:
+    Rose:
+      exact-main -> goUp(1) -> floor 1
+      5 rows x 6 = 30
+      floor1 -> goUp(4) -> floor5 -> goUp(1) -> floor6
+      floor6 row = 5
+      floor6 -> goDown(1) -> visual XUỐNG -> main
 
-      Rose: floors 1..5 = 5 x 6, then floor 6 = 5  => 35
-      Snow: floors 7..10 = 4 x 6, floor 11 = 4   => 28
+    Snow:
+      exact-main -> goUp(1) -> floor 1
+      4 rows x 6 + 1 row x 4 = 28
+      floor1 -> goUp(4) -> candidate floor5
 
-    The second crop starts at candidate floor 7 so it never overwrites the rose
-    group. Every segment still requires the AUTO PRO seed template before drag.
+    The recipe receives candidate floor5 directly; it must not route through
+    invented floor7/floor11 states.
     """
 
     SNOW_TEMPLATE = "cay_tuyet"
@@ -65,9 +73,16 @@ class FunctionTwoPlantingActions(PlantingActions):
         (335, 40), (645, 40),
     )
 
-    def __init__(self, *args, floors: FloorNavigationActions, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        function_one_navigation: FunctionOneNavigationActions,
+        pass_three_navigation: FunctionOnePassThreeNavigationActions,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
-        self.floors = floors
+        self.function_one_navigation = function_one_navigation
+        self.pass_three_navigation = pass_three_navigation
 
     def _require_native_1000(self) -> None:
         frame = self.vision.frame()
@@ -90,14 +105,11 @@ class FunctionTwoPlantingActions(PlantingActions):
         count: int,
         segment_label: str,
     ) -> tuple[int, int]:
-        """Harvest a ripe segment when present, then replant exactly that segment."""
         harvested = 0
         for attempt in range(1, 7):
             self.context.ensure_running()
             state, match = self._scan_first_pot_state(seed_template)
             if state == "RIPE" and match is not None:
-                # Keep the recovered AUTO PRO harvest contract: the harvest icon
-                # proves readiness, but the actual farm drag starts at START_POINT.
                 self.context.log(
                     f"AUTO Function 2 • {segment_label} • cây chín READY • "
                     f"thu hoạch {count} chậu từ farm start"
@@ -111,8 +123,6 @@ class FunctionTwoPlantingActions(PlantingActions):
                 continue
 
             if state == "EMPTY" and match is not None:
-                # Seed selection is the opposite contract: start exactly from the
-                # verified seed template center, then traverse the target pots.
                 plant_path = (match.center,) + tuple(path[1:])
                 self.context.log(
                     f"AUTO Function 2 • {segment_label} • hạt {item_label} READY • "
@@ -146,20 +156,17 @@ class FunctionTwoPlantingActions(PlantingActions):
         self._require_native_1000()
         self.context.stage("auto-function-2-materials-start")
 
-        # Exact-main -> candidate floor 1. This is the same recovered goUp(1)
-        # entry used by the proven planting action; only the Function-2 paths are new.
-        self._go_up_one()
+        # HỒNG: exact-main -> floor1, then use the same proven Function-1
+        # navigation composition as the 36-apple supply: goUp(1), goUp(4), goUp(1).
+        self.function_one_navigation.main_to_floor_1()
         rose_harvest_30, rose_plant_30 = self._harvest_and_replant_current_view(
             seed_template=self.ROSE_TEMPLATE,
             item_label="Hoa hồng",
             path=self.PATH_30,
             count=30,
-            segment_label="Hồng tầng 1-5",
+            segment_label="Hồng 5 tầng đầu",
         )
-
-        # Camera anchor is still floor 1 after the five-row drag. Advance five
-        # proven one-floor moves to candidate floor 6, then plant only five pots.
-        self.floors.up(5)
+        self.function_one_navigation.floor_1_to_floor_6()
         rose_harvest_5, rose_plant_5 = self._harvest_and_replant_current_view(
             seed_template=self.ROSE_TEMPLATE,
             item_label="Hoa hồng",
@@ -168,16 +175,26 @@ class FunctionTwoPlantingActions(PlantingActions):
             segment_label="Hồng tầng 6",
         )
 
-        # Keep rose and snow on disjoint physical floors. Candidate floor 7 is the
-        # anchor for one five-row snow drag: 6+6+6+6+4 = 28.
-        self.floors.up(1)
+        self.context.stage("auto-function-2-rose-return-main")
+        self.pass_three_navigation.known_upper_floor_to_main_via_down_floor(
+            "Function 2 Hồng tầng 6 → main"
+        )
+
+        # TUYẾT: always restart from exact-main -> floor1. Never continue upward
+        # from the Rose floor6 camera and never invent a floor7 snow group.
+        self.context.stage("auto-function-2-snow-start-from-main")
+        self.function_one_navigation.main_to_floor_1()
         snow_harvest, snow_plant = self._harvest_and_replant_current_view(
             seed_template=self.SNOW_TEMPLATE,
             item_label="Cây tuyết",
             path=self.PATH_28,
             count=28,
-            segment_label="Tuyết tầng 7-11",
+            segment_label="Tuyết 4x6 + 1x4",
         )
+
+        # Snow finishes with the same floor1 camera anchor. Go straight up(4)
+        # to floor5 and hand that candidate directly to TDHH production.
+        self.function_one_navigation.floor_1_to_floor_5()
 
         roses_planted = rose_plant_30 + rose_plant_5
         roses_harvested = rose_harvest_30 + rose_harvest_5
@@ -191,12 +208,12 @@ class FunctionTwoPlantingActions(PlantingActions):
         self.context.stage("auto-function-2-materials-pass")
         self.context.log(
             "AUTO Function 2 • material planting PASS • "
-            f"Hồng={roses_planted}/35 • Tuyết={snow_plant}/28 • candidate_floor=7"
+            f"Hồng={roses_planted}/35 • Tuyết={snow_plant}/28 • candidate_floor=5"
         )
         return FunctionTwoPlantingResult(
             roses_planted=roses_planted,
             snow_planted=snow_plant,
             roses_harvested=roses_harvested,
             snow_harvested=snow_harvest,
-            end_floor=7,
+            end_floor=5,
         )
