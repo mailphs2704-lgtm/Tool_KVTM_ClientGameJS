@@ -16,6 +16,7 @@ FILE_FUNCTIONS = (
     "AppleJuiceRecipe tự probe nuoc_tao, fallback exact-main, xử lý sai máy/kho đầy và Sửa máy",
     "YellowFabricRecipe nhận trạng thái sau Nước táo, về main, trồng Bông, vào tầng 3, SX và Sửa máy",
     "Sau mỗi vòng RecoveryManager đưa tầng 3 về exact-main trước khi PASS",
+    "Cho phép Function 2 inject RecipeBook để toàn chuỗi dùng chung recovery/sale policy function_2",
 )
 
 
@@ -40,13 +41,21 @@ class FunctionOneResult:
 class FunctionOneWorkflow:
     """Function 1 business flow composed from reusable product recipes."""
 
-    def __init__(self, automation: KVAutomation) -> None:
+    def __init__(
+        self,
+        automation: KVAutomation,
+        *,
+        recipes: RecipeBook | None = None,
+    ) -> None:
         self.auto = automation
         self.context = automation.context
-        self.recipes = RecipeBook(
-            automation,
-            function_id="function_1",
-        )
+        if recipes is None:
+            self.recipes = RecipeBook(
+                automation,
+                function_id="function_1",
+            )
+        else:
+            self.recipes = recipes
         self.recovery = self.recipes.recovery
 
     def _require_main_transition(self, label: str) -> None:

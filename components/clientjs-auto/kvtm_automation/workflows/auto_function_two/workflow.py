@@ -5,7 +5,7 @@ import time
 
 from ...automation import KVAutomation
 from ...errors import ScreenTimeout
-from ...recipes.rose_oil import RoseOilRecipe
+from ...recipes import RecipeBook
 from ..auto_function_one import FunctionOneWorkflow
 
 
@@ -13,6 +13,7 @@ __all__ = ["FunctionTwoResult", "FunctionTwoWorkflow"]
 FILE_FUNCTIONS = (
     "Kế thừa nguyên vòng Function 1 đã xác minh",
     "Yêu cầu Function 1 PASS đầy đủ trước khi thêm nhánh TDHH",
+    "Dùng một RecipeBook function_2 để toàn chuỗi chia sẻ đúng RecoveryManager/sale policy",
     "Từ exact-main trồng/thu hồi đủ 35 Hồng + 28 Tuyết",
     "Đi candidate tầng 7 về tầng 5 và sản xuất đúng 7 TDHH",
     "Sửa máy TDHH rồi trả camera về exact-main trước PASS",
@@ -44,8 +45,18 @@ class FunctionTwoWorkflow:
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
         self.context = automation.context
-        self.base = FunctionOneWorkflow(automation)
-        self.rose_oil = RoseOilRecipe(automation)
+        self.recipes = RecipeBook(
+            automation,
+            function_id="function_2",
+        )
+        self.base = FunctionOneWorkflow(
+            automation,
+            recipes=self.recipes,
+        )
+        self.recovery = self.recipes.recovery
+        self.rose_oil = self.recipes.rose_oil
+        if self.rose_oil is None:
+            raise RuntimeError("Function 2 RecipeBook thiếu RoseOilRecipe")
 
     @staticmethod
     def _validate_base(result) -> None:
