@@ -77,8 +77,37 @@ def main() -> int:
     require(workflow, "self._check_advertisement_checkpoint(view)", "Per-view QC checkpoint call missing")
     require(workflow, "except AutomationStopped:", "Stop signal must not be swallowed by optional QC")
     require(workflow, "lỗi non-blocking", "Optional QC failure must remain non-blocking")
-    require(workflow, "if not depleted:", "Depleted inventory must stop only listing, not stall traversal")
-    forbid(workflow, "if depleted:\n                    break", "Inventory depletion still aborts middle/end QC checks")
+
+    # Empty/depleted finished-goods inventory is now a scheduler boundary. Once
+    # the current view proves there is no Function-allowed x10 VP to list, sale
+    # must stop traversing the stall and return immediately so Function loops and
+    # their configured between-loop delay can run. Full-stall NO_EMPTY_SLOT is
+    # different: traversal remains legal so QC checkpoints can still be reached.
+    require(
+        workflow,
+        '"NO_ALLOWED_ITEM",\n                        "NO_EXACT_TEN_ITEMS",\n                        "NO_SAFE_EXACT_TEN_ITEMS",',
+        "Depleted inventory status set changed",
+    )
+    require(
+        workflow,
+        'self.context.stage(\n                            "auto-vp-sale-inventory-depleted-return-scheduler"\n                        )',
+        "Depleted inventory scheduler-return stage missing",
+    )
+    require(
+        workflow,
+        "KẾT THÚC SALE PASS NGAY",
+        "Depleted inventory immediate-return policy marker missing",
+    )
+    require(
+        workflow,
+        "if depleted:\n                    break",
+        "Depleted inventory must stop stall traversal and return scheduler",
+    )
+    forbid(
+        workflow,
+        "if not depleted:",
+        "Legacy depleted-inventory continue-traversal policy returned",
+    )
 
     advert_call = workflow.index("self._check_advertisement_checkpoint(view)")
     gold_call = workflow.index("collected += self.auto.stall.collect_own_stall_gold")
@@ -93,6 +122,7 @@ def main() -> int:
     print("ready=green-free-button-only")
     print("paid_diamond=never-click")
     print("full_stall=advertising-checks-still-run")
+    print("inventory_depleted=close-sale-return-scheduler-immediately")
     print("ad_failure=non-blocking")
     return 0
 
