@@ -26,6 +26,7 @@ class SellingActions:
     PLACE_BUTTON = (771, 692)
     PLACE_BUTTON_ZONE = (700, 650, 180, 90)
     SALE_CHANGE_ZONE = (180, 330, 640, 430)
+    OWN_STALL_ACTIVE_ZONE = (319, 249, 386, 120)
 
     # Native-500 live calibration. ``dat_ban`` was captured from the old logical
     # reference and can miss after VisionEngine scales it down. The orange button
@@ -141,17 +142,29 @@ class SellingActions:
         self.context.log("Đã mở kho bán ở chế độ READ-ONLY")
 
     def close_inventory_read_only(self, timeout: float = 6.0) -> None:
-        """Close the item-picker X and verify the READ-ONLY inventory vanished."""
+        """Close item picker and prove the parent own-stall panel is visible again.
+
+        Do not use the active ``kho_thanh_pham`` icon as a close gate. On native
+        500 its score changes when storage2 is selected (live ~0.508), which made
+        the old 0.72 test report "closed" while the inventory was still open.
+        The own-stall marker is the correct parent-state proof: it is strong when
+        the picker is closed and hidden while the picker overlays the stall.
+        """
         deadline = time.monotonic() + float(timeout)
         attempts = 0
         while time.monotonic() < deadline:
             self.context.ensure_running()
-            if self.vision.find(
-                "kho_thanh_pham",
-                threshold=0.72,
-                zone=self.inventory.STORAGE_ZONE,
-            ) is None:
-                self.context.log("Đã đóng kho kiểm tra READ-ONLY")
+            parent = self.vision.find(
+                "quay_hang_on",
+                threshold=0.80,
+                zone=self.OWN_STALL_ACTIVE_ZONE,
+                click=False,
+            )
+            if parent is not None:
+                self.context.log(
+                    "Đã đóng kho kiểm tra READ-ONLY • "
+                    f"quay_hang_on={parent.score:.3f}"
+                )
                 return
 
             attempts += 1
@@ -164,10 +177,15 @@ class SellingActions:
             if close_match is None:
                 # Logical 1000x1000 item-picker X shown at the top-right.
                 self.vision.driver.click(968, 28)
+            self.context.detail(
+                f"AUTO kho • đóng READ-ONLY • attempt={attempts} • "
+                f"source={'template-x' if close_match is not None else 'fallback-x'}"
+            )
             self.waiter.sleep(0.35)
 
         raise ScreenTimeout(
-            f"Không đóng được kho READ-ONLY bằng nút X sau {attempts} lần"
+            "Không đóng được kho READ-ONLY về quầy clone sau "
+            f"{attempts} lần; quay_hang_on chưa trở lại"
         )
 
     def _find_empty_slot(self) -> bool:
