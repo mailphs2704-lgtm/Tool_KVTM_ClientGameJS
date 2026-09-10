@@ -11,6 +11,8 @@ POPUP = CLEAN / "actions/popup.py"
 FUNCTION_NAV = CLEAN / "actions/function_one_navigation.py"
 PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
 ACTIONS_INIT = CLEAN / "actions/__init__.py"
+SELLING = CLEAN / "actions/selling.py"
+AUTO_MAIN_SELLING = CLEAN / "actions/auto_main_selling.py"
 MATERIAL_SIGNAL = CLEAN / "material_shortage.py"
 MATERIAL_ACTIONS = CLEAN / "actions/material_shortage_production.py"
 RECOVERY_INIT = CLEAN / "recovery/__init__.py"
@@ -47,6 +49,8 @@ def main() -> int:
     function_nav = read(FUNCTION_NAV)
     pass_nav = read(PASS_THREE_NAV)
     actions_init = read(ACTIONS_INIT)
+    selling = read(SELLING)
+    auto_main_selling = read(AUTO_MAIN_SELLING)
     material_signal = read(MATERIAL_SIGNAL)
     material_actions = read(MATERIAL_ACTIONS)
     recovery_init = read(RECOVERY_INIT)
@@ -108,6 +112,35 @@ def main() -> int:
     require(auto_vp_sale, "background_gate=disabled", "Own-stall background-exclusion marker missing")
     forbid(auto_vp_sale, "self.auto.stall.open_own_stall()", "Sale returned to legacy quay_hang-gated stall entry")
 
+    # The supplied live 500x500 sale dialog showed the correct VP selected and the
+    # orange Đặt bán button visible, while the old mandatory dat_ban 0.78 gate did
+    # not advance. Lock a two-proof policy: template with native scale tolerance
+    # OR orange geometry in the canonical button zone. The click remains fixed in
+    # logical 1000 coordinates and destructive success is still screen-change gated.
+    require(selling, "PLACE_BUTTON = (771, 692)", "Canonical sale click point changed")
+    require(selling, "PLACE_BUTTON_ZONE = (700, 650, 180, 90)", "Native sale-button geometry zone missing")
+    require(selling, "SALE_DIALOG_TEMPLATE_THRESHOLD = 0.68", "Sale dialog template threshold changed")
+    require(selling, "SALE_BUTTON_ORANGE_MIN = 0.08", "Native orange sale-button threshold changed")
+    require(selling, "def _sale_button_orange_ratio", "Native sale-button color proof missing")
+    require(selling, "def is_sale_dialog_ready", "Sale dialog dual proof missing")
+    require(selling, "source=native-500-orange-button", "Native sale-button runtime evidence missing")
+    require(selling, "def wait_sale_dialog_ready", "Bounded sale-dialog waiter missing")
+    require(selling, "self.vision.driver.click(*self.PLACE_BUTTON)", "Sale no longer clicks canonical logical place button")
+    require(selling, "best_change >= self.minimum_screen_change", "Destructive sale screen-change postcheck missing")
+
+    # AUTO Main must also stop treating the tiny sl10 sprite as a 0.95 exact-pixel
+    # match after native scaling. It remains fail-closed: two consecutive multi-
+    # scale matches are required before the Đặt bán click.
+    require(auto_main_selling, "EXACT_TEN_THRESHOLD = 0.78", "AUTO Main x10 threshold changed")
+    require(auto_main_selling, "EXACT_TEN_REQUIRED_PASSES = 2", "AUTO Main x10 two-frame proof missing")
+    require(auto_main_selling, "EXACT_TEN_SCALES = (0.75, 0.90, 1.00, 1.10, 1.25, 1.40, 1.55)", "AUTO Main x10 native scales changed")
+    require(auto_main_selling, "self.selling.wait_sale_dialog_ready(", "AUTO Main still requires direct dat_ban-only gate")
+    require(auto_main_selling, "threshold=self.EXACT_TEN_THRESHOLD", "AUTO Main x10 proof does not use calibrated threshold")
+    require(auto_main_selling, "scales=self.EXACT_TEN_SCALES", "AUTO Main x10 proof does not use calibrated scales")
+    require(auto_main_selling, "sale dialog READY + x10 PASS", "AUTO Main pre-click proof log missing")
+    require(auto_main_selling, "best_change >= self.selling.minimum_screen_change", "AUTO Main destructive screen-change postcheck missing")
+    forbid(auto_main_selling, '"sl10",\n                threshold=0.95', "Legacy 0.95 sl10 gate returned")
+
     # The two live shortage popups supplied at native 500 are now one typed
     # production boundary. Product context selects the crop: Táo sấy/Nước táo ->
     # cay_tao, Vải vàng -> cay_bong. LOW_STOCK may have already accepted the drag,
@@ -160,6 +193,9 @@ def main() -> int:
     print("exact_main=runtime_navigation_proof")
     print("unknown_camera=bounded_godown_until_two_low_change_frames")
     print("sale_entry=exact-main-proof->fixed-own-stall-point->quay_hang_on")
+    print("sale_dialog=dat_ban-template|native-500-orange-button")
+    print("sale_x10=multi-scale-two-frame-proof")
+    print("sale_postcheck=destructive-screen-change")
     print("popup_blocker=native-500-proportional")
     print("material_shortage=NOT_ENOUGH+LOW_STOCK->typed-crop-recovery")
     print("material_dispatch=cay_tao|cay_bong")
