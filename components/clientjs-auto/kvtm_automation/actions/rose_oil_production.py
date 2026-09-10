@@ -8,7 +8,7 @@ __all__ = ["RoseOilProductionActions"]
 FILE_FUNCTIONS = (
     "Mở đúng máy TDHH tại logical machine point dùng chung của các tầng sản xuất",
     "Xác minh panel bằng template tinh_dau_hh trước mọi thao tác",
-    "Chờ đủ chín ô trống rồi xếp đúng bảy TDHH",
+    "Chờ đủ bảy ô trống rồi xếp đúng bảy TDHH",
     "Hậu kiểm mỗi lần kéo bằng số ô trống giảm và fail-close khi thiếu nguyên liệu",
     "Giữ panel mở sau PASS để bàn giao Sửa máy",
 )
@@ -22,6 +22,7 @@ class RoseOilProductionActions(ProductionActions):
     ROSE_OIL_TEMPLATE = "tinh_dau_hh"
     ROSE_OIL_GUARD_THRESHOLD = 0.70
     TARGET_COUNT = 7
+    REQUIRED_COUNT = TARGET_COUNT
     KNOWN_PRODUCT_TEMPLATES = (
         "tao_say",
         "nuoc_tao",
@@ -49,7 +50,8 @@ class RoseOilProductionActions(ProductionActions):
         )
         self.context.log(
             "AUTO TDHH • panel tầng 5 VERIFIED • "
-            f"empty={empty}/9 • tinh_dau_hh={product_point} → top={top_point}"
+            f"empty={empty} • required={self.REQUIRED_COUNT} • "
+            f"tinh_dau_hh={product_point} → top={top_point}"
         )
         return empty, product_point, top_point
 
