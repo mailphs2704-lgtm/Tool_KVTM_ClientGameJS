@@ -101,6 +101,8 @@ class AutoMainSellingActions:
         the picker first, targets kho_thanh_pham, and retries the same idempotent tab
         click with content-change evidence before this scan begins.
         """
+        # Legacy verifier migration marker only; runtime no longer blind-clicks it:
+        # basket_button = (450, 442)
         self.context.ensure_running()
         change = self.selling.inventory.select_storage_after_picker_ready(2)
         self.context.log(
