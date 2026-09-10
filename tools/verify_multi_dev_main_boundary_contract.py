@@ -75,10 +75,9 @@ def main() -> int:
     forbid(popup, "stall = self.vision.find(", "World-space stall image returned as exact-main runtime gate")
     forbid(popup, "return stall is not None", "Exact-main still depends on account background artwork")
 
-    # Native AUTO MULTI DEV capture is 500x500. The blocking-modal detector uses
-    # proportional geometry and therefore must not reject canonical production
-    # frames using the old 900px reference-size guard.
-    require(popup, "if width < 200 or height < 200:", "Popup blocker detector does not accept native 500 frames")
+    # Popup geometry must remain proportional so both supported native tables
+    # (500x500 and 1000x1000) can use the same logical contract safely.
+    require(popup, "if width < 200 or height < 200:", "Popup blocker detector does not accept supported native frames")
     require(popup, "int(height * 0.28):int(height * 0.72)", "Popup center geometry is no longer proportional")
     forbid(popup, "if width < 900 or height < 900:", "Popup blocker detector still rejects native 500 capture")
 
@@ -112,34 +111,46 @@ def main() -> int:
     require(auto_vp_sale, "background_gate=disabled", "Own-stall background-exclusion marker missing")
     forbid(auto_vp_sale, "self.auto.stall.open_own_stall()", "Sale returned to legacy quay_hang-gated stall entry")
 
-    # The supplied live 500x500 sale dialog showed the correct VP selected and the
-    # orange Đặt bán button visible, while the old mandatory dat_ban 0.78 gate did
-    # not advance. Lock a two-proof policy: template with native scale tolerance
-    # OR orange geometry in the canonical button zone. The click remains fixed in
-    # logical 1000 coordinates and destructive success is still screen-change gated.
+    # Sale dialog proof is selected from the ClientJS native size without
+    # resizing the client. Native500 keeps the calibrated tolerant dat_ban +
+    # orange-button fallback. Native1000 keeps the recovered strict dat_ban
+    # baseline and must never inherit the 500-only orange fallback.
     require(selling, "PLACE_BUTTON = (771, 692)", "Canonical sale click point changed")
     require(selling, "PLACE_BUTTON_ZONE = (700, 650, 180, 90)", "Native sale-button geometry zone missing")
-    require(selling, "SALE_DIALOG_TEMPLATE_THRESHOLD = 0.68", "Sale dialog template threshold changed")
-    require(selling, "SALE_BUTTON_ORANGE_MIN = 0.08", "Native orange sale-button threshold changed")
-    require(selling, "def _sale_button_orange_ratio", "Native sale-button color proof missing")
-    require(selling, "def is_sale_dialog_ready", "Sale dialog dual proof missing")
-    require(selling, "source=native-500-orange-button", "Native sale-button runtime evidence missing")
+    require(selling, "N500_SALE_DIALOG_THRESHOLD = 0.68", "Native500 sale dialog threshold changed")
+    require(selling, "N500_SALE_DIALOG_SCALES = (0.85, 1.00, 1.15, 1.30, 1.45, 1.60, 1.75)", "Native500 sale dialog scales changed")
+    require(selling, "N500_SALE_BUTTON_ORANGE_MIN = 0.08", "Native500 orange sale-button threshold changed")
+    require(selling, "N1000_SALE_DIALOG_THRESHOLD = 0.78", "Native1000 sale dialog baseline changed")
+    require(selling, "N1000_SALE_DIALOG_SCALES = (1.00,)", "Native1000 sale dialog scale changed")
+    require(selling, "def _sale_dialog_profile", "Resolution-specific sale dialog table missing")
+    require(selling, "self.N500_SALE_DIALOG_THRESHOLD", "Native500 sale table not selected")
+    require(selling, "self.N1000_SALE_DIALOG_THRESHOLD", "Native1000 sale table not selected")
+    require(selling, "def _sale_button_orange_ratio", "Native500 sale-button color proof missing")
+    require(selling, "def is_sale_dialog_ready", "Sale dialog resolution proof missing")
+    require(selling, "source=native-500-orange-button", "Native500 sale-button runtime evidence missing")
+    require(selling, "if allow_orange:", "Native500-only orange fallback guard missing")
     require(selling, "def wait_sale_dialog_ready", "Bounded sale-dialog waiter missing")
     require(selling, "self.vision.driver.click(*self.PLACE_BUTTON)", "Sale no longer clicks canonical logical place button")
     require(selling, "best_change >= self.minimum_screen_change", "Destructive sale screen-change postcheck missing")
+    forbid(selling, "SALE_DIALOG_TEMPLATE_THRESHOLD = 0.68", "Legacy single-resolution sale dialog constant returned")
 
-    # AUTO Main must also stop treating the tiny sl10 sprite as a 0.95 exact-pixel
-    # match after native scaling. It remains fail-closed: two consecutive multi-
-    # scale matches are required before the Đặt bán click.
-    require(auto_main_selling, "EXACT_TEN_THRESHOLD = 0.78", "AUTO Main x10 threshold changed")
+    # Exact-x10 is also a static resolution table selected from the current
+    # native ClientJS. Native500 keeps the calibrated multiscale two-pass proof;
+    # native1000 keeps the recovered strict 0.95 / scale-1 baseline. The call
+    # site must use the selected table rather than hardcoding either resolution.
+    require(auto_main_selling, "N500_EXACT_TEN_THRESHOLD = 0.78", "Native500 AUTO Main x10 threshold changed")
+    require(auto_main_selling, "N500_EXACT_TEN_SCALES = (0.75, 0.90, 1.00, 1.10, 1.25, 1.40, 1.55)", "Native500 AUTO Main x10 scales changed")
+    require(auto_main_selling, "N1000_EXACT_TEN_THRESHOLD = 0.95", "Native1000 AUTO Main x10 threshold changed")
+    require(auto_main_selling, "N1000_EXACT_TEN_SCALES = (1.00,)", "Native1000 AUTO Main x10 scale changed")
     require(auto_main_selling, "EXACT_TEN_REQUIRED_PASSES = 2", "AUTO Main x10 two-frame proof missing")
-    require(auto_main_selling, "EXACT_TEN_SCALES = (0.75, 0.90, 1.00, 1.10, 1.25, 1.40, 1.55)", "AUTO Main x10 native scales changed")
+    require(auto_main_selling, "def _exact_ten_profile", "AUTO Main x10 resolution table selector missing")
+    require(auto_main_selling, "exact_threshold, exact_scales, table_name = self._exact_ten_profile()", "AUTO Main x10 table selection not wired")
     require(auto_main_selling, "self.selling.wait_sale_dialog_ready(", "AUTO Main still requires direct dat_ban-only gate")
-    require(auto_main_selling, "threshold=self.EXACT_TEN_THRESHOLD", "AUTO Main x10 proof does not use calibrated threshold")
-    require(auto_main_selling, "scales=self.EXACT_TEN_SCALES", "AUTO Main x10 proof does not use calibrated scales")
+    require(auto_main_selling, "threshold=exact_threshold", "AUTO Main x10 proof does not use selected threshold")
+    require(auto_main_selling, "scales=exact_scales", "AUTO Main x10 proof does not use selected scales")
     require(auto_main_selling, "sale dialog READY + x10 PASS", "AUTO Main pre-click proof log missing")
     require(auto_main_selling, "best_change >= self.selling.minimum_screen_change", "AUTO Main destructive screen-change postcheck missing")
-    forbid(auto_main_selling, '"sl10",\n                threshold=0.95', "Legacy 0.95 sl10 gate returned")
+    forbid(auto_main_selling, '"sl10",\n                threshold=0.95', "Hardcoded native1000 x10 call returned")
 
     # The two live shortage popups supplied at native 500 are now one typed
     # production boundary. Product context selects the crop: Táo sấy/Nước táo ->
@@ -193,10 +204,10 @@ def main() -> int:
     print("exact_main=runtime_navigation_proof")
     print("unknown_camera=bounded_godown_until_two_low_change_frames")
     print("sale_entry=exact-main-proof->fixed-own-stall-point->quay_hang_on")
-    print("sale_dialog=dat_ban-template|native-500-orange-button")
-    print("sale_x10=multi-scale-two-frame-proof")
+    print("sale_dialog=native500:dat_ban|orange;native1000:dat_ban-strict")
+    print("sale_x10=native500-multiscale-two-pass|native1000-strict-two-pass")
     print("sale_postcheck=destructive-screen-change")
-    print("popup_blocker=native-500-proportional")
+    print("popup_blocker=proportional-500-or-1000")
     print("material_shortage=NOT_ENOUGH+LOW_STOCK->typed-crop-recovery")
     print("material_dispatch=cay_tao|cay_bong")
     print("apple_shortage=main->floor1->five-floor-harvest-replant-x3->main")
