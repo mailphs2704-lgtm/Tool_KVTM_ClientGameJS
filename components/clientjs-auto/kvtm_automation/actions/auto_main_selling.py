@@ -11,6 +11,7 @@ from .selling import SellingActions, _mean_difference
 __all__ = ["AutoSaleAttempt", "AutoMainSellingActions"]
 FILE_FUNCTIONS = (
     "Bắt buộc OWN_STALL READY trước khi tìm ô trống",
+    "Native 1000 cho phép OWN_STALL/x10 một-pass khi fresh score >=0.99; score thấp hơn giữ hai-pass cũ",
     "Nhận diện ô trống READ-ONLY rồi click đúng một lần",
     "Chờ picker Kho thành state READY; tuyệt đối không retry click ô trống",
     "Chọn storage2 bằng contract 500 hoặc baseline 1000 theo native ClientJS",
@@ -20,6 +21,7 @@ FILE_FUNCTIONS = (
     "Hủy dialog rồi khôi phục picker bằng state proof, không đoán theo một icon",
     "Xác minh sale dialog + selected item + x10 trước Đặt bán",
     "Sau screen-change bắt buộc POST_SALE OWN_STALL READY trước listing tiếp theo",
+    "Giữ nguyên toàn bộ threshold/scale native 500",
 )
 
 
@@ -47,6 +49,7 @@ class AutoMainSellingActions:
     N500_EXACT_TEN_SCALES = (0.75, 0.90, 1.00, 1.10, 1.25, 1.40, 1.55)
     N1000_EXACT_TEN_THRESHOLD = 0.95
     N1000_EXACT_TEN_SCALES = (1.00,)
+    N1000_FAST_CONFIDENCE_THRESHOLD = 0.99
     EXACT_TEN_REQUIRED_PASSES = 2
     FINISHED_GOODS_SCAN_ATTEMPTS = 3
     SALE_PICKER_READY_TIMEOUT = 3.0
@@ -94,6 +97,43 @@ class AutoMainSellingActions:
             "1000-table",
         )
 
+    def _wait_own_stall_ready_auto(
+        self,
+        *,
+        timeout: float,
+        description: str,
+    ):
+        """Fast-path only a near-perfect native-1000 own-stall proof.
+
+        Native 500 never enters this path. A native-1000 score below 0.99 also
+        falls back to the existing two-consecutive-proof contract unchanged.
+        """
+        native = self._native_size()
+        if native == (1000, 1000):
+            self.context.ensure_running()
+            frame = self.selling.vision.frame()
+            marker = self.selling.vision.find(
+                "quay_hang_on",
+                threshold=self.N1000_FAST_CONFIDENCE_THRESHOLD,
+                zone=self.selling.OWN_STALL_ACTIVE_ZONE,
+                click=False,
+                frame=frame,
+            )
+            dialog_open = self.selling.is_sale_dialog_ready(frame=frame)
+            if marker is not None and not dialog_open:
+                self.context.log(
+                    "AUTO bán VP • OWN_STALL FAST READY • "
+                    f"native=1000x1000 • score={marker.score:.3f} • "
+                    f"fast_threshold={self.N1000_FAST_CONFIDENCE_THRESHOLD:.2f}"
+                )
+                return marker
+
+        return self.selling.wait_own_stall_ready(
+            timeout=timeout,
+            required_passes=2,
+            description=description,
+        )
+
     def _sale_change_crop(self):
         frame = self.selling.vision.frame()
         x, y, width, height = self.selling.vision.logical_zone_to_frame(
@@ -102,20 +142,11 @@ class AutoMainSellingActions:
         return frame[y : y + height, x : x + width].copy()
 
     def _open_empty_slot_picker_verified(self) -> bool:
-        """OWN_STALL -> EMPTY_SLOT -> PICKER with exactly one slot click.
-
-        The prior native-500 repair retried the empty-slot click whenever picker
-        templates had not rendered quickly enough. A valid first click could then
-        be followed by a second click at the same logical coordinate after the
-        picker was already opening, producing the observed wrong-click behavior.
-        This transition never re-clicks. It waits for the destination state or
-        restores the own-stall state safely.
-        """
+        """OWN_STALL -> EMPTY_SLOT -> PICKER with exactly one slot click."""
         self.context.ensure_running()
         try:
-            own = self.selling.wait_own_stall_ready(
+            own = self._wait_own_stall_ready_auto(
                 timeout=4.0,
-                required_passes=2,
                 description="OWN_STALL trước mở Kho",
             )
         except ScreenTimeout:
@@ -159,7 +190,6 @@ class AutoMainSellingActions:
 
     def _open_and_scan_finished_goods(self) -> tuple[VpRecognition, ...]:
         """Picker proven -> storage2 proven/click-once -> fresh Function VP scans."""
-        # Reference point retained for source audit only; runtime never blind-clicks it.
         basket_button = (450, 442)
         self.context.ensure_running()
         change = self.selling.inventory.select_storage_after_picker_ready(2)
@@ -303,8 +333,10 @@ class AutoMainSellingActions:
             return "WRONG_ITEM"
 
         exact_threshold, exact_scales, table_name = self._exact_ten_profile()
+        native = self._native_size()
         quantity_passes = 0
         best_quantity_score = 0.0
+        fast_confidence = False
         for quantity_attempt in range(1, 4):
             quantity_marker = self.selling.vision.find(
                 "sl10",
@@ -316,24 +348,36 @@ class AutoMainSellingActions:
             if quantity_marker is not None:
                 quantity_passes += 1
                 best_quantity_score = max(best_quantity_score, float(quantity_marker.score))
+                fast_confidence = (
+                    native == (1000, 1000)
+                    and quantity_marker.score >= self.N1000_FAST_CONFIDENCE_THRESHOLD
+                )
                 self.context.detail(
                     "AUTO sale x10 proof | "
                     f"table={table_name} | attempt={quantity_attempt}/3 | "
                     f"passes={quantity_passes}/{self.EXACT_TEN_REQUIRED_PASSES} | "
-                    f"score={quantity_marker.score:.3f} | threshold={exact_threshold:.2f}"
+                    f"score={quantity_marker.score:.3f} | threshold={exact_threshold:.2f} | "
+                    f"fast_confidence={str(fast_confidence).lower()}"
                 )
             else:
                 quantity_passes = 0
+                fast_confidence = False
                 self.context.detail(
                     "AUTO sale x10 proof | "
                     f"table={table_name} | attempt={quantity_attempt}/3 | "
                     "passes reset=0 | marker=MISS"
                 )
-            if quantity_passes >= self.EXACT_TEN_REQUIRED_PASSES:
+            if fast_confidence or quantity_passes >= self.EXACT_TEN_REQUIRED_PASSES:
+                if fast_confidence:
+                    self.context.log(
+                        "AUTO bán VP • x10 FAST READY • native=1000x1000 • "
+                        f"score={quantity_marker.score:.3f} • "
+                        f"fast_threshold={self.N1000_FAST_CONFIDENCE_THRESHOLD:.2f}"
+                    )
                 break
             if quantity_attempt < 3:
                 self.selling.waiter.sleep(0.20)
-        if quantity_passes < self.EXACT_TEN_REQUIRED_PASSES:
+        if not fast_confidence and quantity_passes < self.EXACT_TEN_REQUIRED_PASSES:
             self.context.log(
                 f"AUTO bán VP • {item.label} chưa chứng minh được x10 • "
                 f"table={table_name} • best_score={best_quantity_score:.3f} • "
@@ -369,9 +413,8 @@ class AutoMainSellingActions:
                     f"change={best_change:.2f}) • chờ POST_SALE OWN_STALL"
                 )
                 try:
-                    self.selling.wait_own_stall_ready(
+                    self._wait_own_stall_ready_auto(
                         timeout=self.POST_SALE_OWN_STALL_TIMEOUT,
-                        required_passes=2,
                         description="POST_SALE OWN_STALL",
                     )
                 except ScreenTimeout as exc:
