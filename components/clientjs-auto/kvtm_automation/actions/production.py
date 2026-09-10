@@ -15,7 +15,7 @@ FILE_FUNCTIONS = (
     "Dùng tốc độ thu VP làm khoảng nghỉ sau mỗi burst x5, không chèn nghỉ giữa năm click",
     "Chỉ công nhận panel mở khi ảnh đúng sản phẩm xuất hiện trong vùng thư viện panel",
     "Nếu panel mở nhưng thấy VP của máy khác thì đóng panel và phát tín hiệu sai máy/sai tầng",
-    "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
+    "Giữ nguyên panel cho tới khi số ô trống đủ số VP cần sản xuất của lượt hiện tại",
     "Mất ảnh sản phẩm tạm thời khi đang chờ chỉ recheck, không dừng AUTO",
     "Phát tín hiệu InventoryFull riêng khi kho đầy để workflow xuống quầy bán VP",
     "Xác minh đúng máy bằng template sản phẩm trước khi thao tác",
@@ -384,7 +384,7 @@ class ProductionActions:
         label: str,
         product_threshold: float = 0.70,
     ) -> tuple[int, tuple[int, int], tuple[int, int]]:
-        """Keep the verified production panel open until all 9 slots are empty."""
+        """Keep the verified production panel open until enough slots are empty."""
         wait_round = 0
         product_misses = 0
         while True:
@@ -411,9 +411,10 @@ class ProductionActions:
 
             top_slot = self._find_top_empty_slot()
             empty = self._count_empty_slots()
-            if top_slot is not None and empty == self.REQUIRED_COUNT:
+            if top_slot is not None and empty >= self.REQUIRED_COUNT:
                 self.context.log(
-                    f"AUTO {label} • panel giữ nguyên đã READY • đủ {empty}/9 ô trống"
+                    f"AUTO {label} • panel giữ nguyên đã READY • "
+                    f"đủ {empty} ô trống / cần {self.REQUIRED_COUNT}"
                 )
                 return empty, product.center, top_slot.center
 
@@ -421,8 +422,9 @@ class ProductionActions:
             if wait_round == 1 or wait_round % 10 == 0:
                 self.context.log(
                     f"AUTO {label} • giữ nguyên panel sản xuất • "
-                    f"đang có {empty}/9 ô trống • chờ máy chạy xong • "
-                    f"recheck={self.PANEL_RECHECK_SECONDS:.1f}s • vòng={wait_round}"
+                    f"đang có {empty} ô trống / cần {self.REQUIRED_COUNT} • "
+                    f"chờ máy chạy xong • recheck={self.PANEL_RECHECK_SECONDS:.1f}s • "
+                    f"vòng={wait_round}"
                 )
             self.waiter.sleep(self.PANEL_RECHECK_SECONDS)
 
