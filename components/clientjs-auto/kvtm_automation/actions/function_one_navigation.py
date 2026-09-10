@@ -12,6 +12,7 @@ from ..runtime.wait import Waiter
 __all__ = ["FunctionOneNavigationActions", "NavigationEvidence"]
 FILE_FUNCTIONS = (
     "Đi từ màn hình chính lên tầng 1 và từ tầng 1 về main bằng đúng một goUp/goDown(1)",
+    "Đi từ tầng 1 lên tầng 5 bằng nhánh goUp(4) AUTO PRO",
     "Đi từ tầng 1 lên tầng 6 bằng phần còn lại goUp(4), goUp(1)",
     "Đi thẳng từ tầng 6 xuống candidate tầng 2 bằng đúng goDown(4)",
     "Giữ route tầng 6 về main đối xứng 4,1,1 cho recovery cũ",
@@ -54,8 +55,6 @@ class FunctionOneNavigationActions:
 
     def _gesture(self, points, label: str) -> float:
         self.context.ensure_running()
-        # Any vertical gesture invalidates a previous camera proof before input.
-        # Routes that deterministically end at main mark it again after success.
         self.context.invalidate_camera_main(f"vertical-gesture:{label}")
         before = self.vision.frame().copy()
         self.vision.driver.click(*self.CLOSE_SIDE)
@@ -89,6 +88,15 @@ class FunctionOneNavigationActions:
         )
         return NavigationEvidence("main-to-floor1", changes)
 
+    def floor_1_to_floor_5(self) -> NavigationEvidence:
+        changes = (
+            self._gesture(self.UP_FOUR, "floor1-goUp(4)-to-floor5"),
+        )
+        self.context.log(
+            "AUTO điều hướng • tầng 1 → tầng 5 • goUp(4) AUTO PRO đã có phản hồi"
+        )
+        return NavigationEvidence("floor1-to-floor5", changes)
+
     def floor_1_to_floor_6(self) -> NavigationEvidence:
         changes = (
             self._gesture(self.UP_FOUR, "floor1-goUp(4)-to-floor5"),
@@ -100,12 +108,7 @@ class FunctionOneNavigationActions:
         return NavigationEvidence("floor1-to-floor6", changes)
 
     def floor_6_to_floor_2(self) -> NavigationEvidence:
-        """Fast Function-1 route: floor 6 -> candidate floor 2 with one goDown(4).
-
-        The gesture itself is movement evidence only. The caller must prove the
-        destination by opening the Nước táo machine and matching ``nuoc_tao`` in
-        the panel library before production is allowed to continue.
-        """
+        """Fast Function-1 route: floor 6 -> candidate floor 2 with one goDown(4)."""
         changes = (
             self._gesture(self.DOWN_FOUR, "floor6-goDown(4)-to-floor2-candidate"),
         )
