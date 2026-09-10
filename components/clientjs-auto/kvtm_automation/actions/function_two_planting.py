@@ -96,13 +96,14 @@ class FunctionTwoPlantingActions(PlantingActions):
             self.context.ensure_running()
             state, match = self._scan_first_pot_state(seed_template)
             if state == "RIPE" and match is not None:
-                harvest_path = (match.center,) + tuple(path[1:])
+                # Keep the recovered AUTO PRO harvest contract: the harvest icon
+                # proves readiness, but the actual farm drag starts at START_POINT.
                 self.context.log(
                     f"AUTO Function 2 • {segment_label} • cây chín READY • "
-                    f"thu hoạch {count} chậu"
+                    f"thu hoạch {count} chậu từ farm start"
                 )
                 self.vision.driver.swipe_points(
-                    harvest_path,
+                    tuple(path),
                     duration=self.speed_config.plant_harvest_duration,
                 )
                 harvested = count
@@ -110,6 +111,8 @@ class FunctionTwoPlantingActions(PlantingActions):
                 continue
 
             if state == "EMPTY" and match is not None:
+                # Seed selection is the opposite contract: start exactly from the
+                # verified seed template center, then traverse the target pots.
                 plant_path = (match.center,) + tuple(path[1:])
                 self.context.log(
                     f"AUTO Function 2 • {segment_label} • hạt {item_label} READY • "
