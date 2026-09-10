@@ -126,7 +126,7 @@ def main() -> int:
            "Empty slot may not prove the production panel")
     require(action, "self.speed_config.vp_collect_delay", "VP collect speed binding missing")
     require(action, "self.speed_config.vp_production_delay", "VP production speed binding missing")
-    require(action, "empty == self.REQUIRED_COUNT", "9/9 idle-panel gate missing")
+    require(action, "empty >= self.REQUIRED_COUNT", "dynamic idle-panel gate missing")
     require(action, "raise InventoryFull(", "InventoryFull business signal missing")
 
     # Product-specific actions remain atomic. Recipes own orchestration; actions
