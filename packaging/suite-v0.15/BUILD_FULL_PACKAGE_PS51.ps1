@@ -92,9 +92,6 @@ function Stop-KvtmPackagedRuntimeProcesses {
     }
 
     Write-Host ("[DEV] Giai phong {0} process runtime cu truoc build..." -f $owned.Count) -ForegroundColor Yellow
-    # Stop descendants/large PIDs first, then parents. Stop-Process -Force is
-    # intentional here: [1] is a rebuild transaction and the old runtime must not
-    # keep executable/script handles inside the directory being replaced.
     foreach ($ownedPid in @($owned | Sort-Object -Descending)) {
         $candidate = Get-Process -Id $ownedPid -ErrorAction SilentlyContinue
         if ($null -eq $candidate) { continue }
@@ -144,14 +141,36 @@ if ($probeExit -ne 0 -or [string]::IsNullOrWhiteSpace($probeHead)) {
 }
 Write-Host "Git HEAD preflight: $($probeHead.Trim())" -ForegroundColor Green
 
-# Stop only runtime processes that are proven to belong to the old packaged
-# output. This fixes rebuilds where the hidden Multi host keeps dist\...\Multi
-# locked even after the operator closes the visible window.
+# The old standalone recorder BAT is intentionally gone. The GUI recorder is a
+# required package source and uses the resident cv2 runtime already shipped by
+# AUTO_PRO. Block the build if the integrated recorder contract disappears.
+$VideoRecorderSource = Join-Path $RepoRoot "source-archive\multi-current\kvtm_multi_tool\client_video_recorder.py"
+if (-not (Test-Path -LiteralPath $VideoRecorderSource -PathType Leaf)) {
+    throw "Missing integrated ClientJS MP4 recorder: $VideoRecorderSource"
+}
+$VideoRecorderText = Get-Content -LiteralPath $VideoRecorderSource -Raw -Encoding UTF8
+foreach ($token in @(
+    'VIDEO_WIDTH = 1920',
+    'VIDEO_HEIGHT = 1080',
+    'VIDEO_FPS = 60.0',
+    'VIDEO_CODEC = "mp4v"',
+    'VIDEO_EXTENSION = ".mp4"',
+    'capture_bgra',
+    'Chụp ảnh',
+    'Quay MP4'
+)) {
+    if (-not $VideoRecorderText.Contains($token)) {
+        throw "Integrated ClientJS MP4 recorder missing contract token '$token'"
+    }
+}
+if (Test-Path -LiteralPath (Join-Path $RepoRoot "KVTM_QUAY_VIDEO_60FPS.bat") -PathType Leaf) {
+    throw "Legacy KVTM_QUAY_VIDEO_60FPS.bat must stay deleted; GUI MP4 recorder owns recording"
+}
+Write-Host "VIDEO GUI contract: MP4 1920x1080@60 + legacy BAT removed" -ForegroundColor Green
+
+# Stop only runtime processes that are proven to belong to the old packaged output.
 Stop-KvtmPackagedRuntimeProcesses -OutputRoot $OutputRoot
 
-# Persistent DEV settings are a build contract. This protects Dọn quầy profile
-# settings and the proven Multi speed baseline from being silently regressed by a
-# later source update.
 $PersistentSettingsVerifier = Join-Path $RepoRoot "tools\verify_multi_dev_persistent_settings_contract.py"
 if (-not (Test-Path -LiteralPath $PersistentSettingsVerifier -PathType Leaf)) {
     throw "Missing persistent settings verifier: $PersistentSettingsVerifier"
@@ -162,9 +181,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO MULTI DEV persistent settings contract: VERIFIED" -ForegroundColor Green
 
-# Exact-main must work across account-specific farm backgrounds. Lock the runtime
-# contract to fixed own-farm HUD + behavioral goDown boundary evidence and reject
-# any future return to a quay_hang/world-image exact-main gate.
 $MainBoundaryVerifier = Join-Path $RepoRoot "tools\verify_multi_dev_main_boundary_contract.py"
 if (-not (Test-Path -LiteralPath $MainBoundaryVerifier -PathType Leaf)) {
     throw "Missing main-boundary verifier: $MainBoundaryVerifier"
@@ -185,12 +201,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO MULTI DEV VP advertising contract: VERIFIED" -ForegroundColor Green
 
-# BUILD_FULL_PACKAGE.ps1 was written for newer PowerShell semantics and checks
-# LASTEXITCODE after piping native git output through Select-Object. On Windows
-# PowerShell 5.1 that value can become stale/-1 even though git succeeded.
-# Create a temporary sibling copy so PSScriptRoot stays identical and patch only
-# compatibility-sensitive blocks. The authoritative builder file itself remains
-# untouched.
+# BUILD_FULL_PACKAGE.ps1 is kept source-compatible. Patch its runtime copy for
+# Windows PowerShell 5.1 plus the integrated GUI recorder migration.
 $source = Get-Content -LiteralPath $Builder -Raw -Encoding UTF8
 $oldBlock = @'
 $head = (& git -C $RepoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
@@ -211,9 +223,6 @@ if (-not $source.Contains($oldBlock)) {
 }
 $patched = $source.Replace($oldBlock, $newBlock)
 
-# Windows can release a directory handle a few hundred milliseconds after its
-# owning process exits. Replace the one-shot output deletion in the runtime copy
-# with a bounded retry so a transient handle/AV scan cannot waste the whole build.
 $oldOutputCleanup = @'
 if (Test-Path -LiteralPath $OutputRoot) {
     Remove-Item -LiteralPath $OutputRoot -Recurse -Force
@@ -255,10 +264,6 @@ if (-not $patched.Contains($oldOutputCleanup)) {
 }
 $patched = $patched.Replace($oldOutputCleanup, $newOutputCleanup)
 
-# The clear-stall verifier predates the independent AUTO MULTI DEV image runtime
-# and still contains one obsolete assertion that requires local_launcher. Keep
-# every other clear-stall safety check active by routing only this build through
-# a migration-aware adapter. The dedicated Bridge V3 verifier remains mandatory.
 $ClearStallAdapter = Join-Path $RepoRoot "tools\verify_clear_stall_contract_build.py"
 if (-not (Test-Path -LiteralPath $ClearStallAdapter -PathType Leaf)) {
     throw "Missing migration-aware clear-stall verifier: $ClearStallAdapter"
@@ -269,6 +274,51 @@ if (-not $patched.Contains($oldClearStallVerifier)) {
     throw "Clear-stall verifier patch target not found in BUILD_FULL_PACKAGE.ps1."
 }
 $patched = $patched.Replace($oldClearStallVerifier, $newClearStallVerifier)
+
+# Remove the obsolete standalone recorder packaging block from the runtime build.
+$oldRecorderBlock = @'
+$RecorderBat = Join-Path $RepoRoot "KVTM_QUAY_VIDEO_60FPS.bat"
+$RecorderScript = Join-Path $RepoRoot "tools\KVTM_SCREEN_RECORDER.ps1"
+if (-not (Test-Path -LiteralPath $RecorderBat -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $RecorderScript -PathType Leaf)) {
+    throw "Missing standalone MP4 recorder files"
+}
+$RecorderToolsOut = Join-Path $OutputRoot "tools"
+New-Item -ItemType Directory -Path $RecorderToolsOut -Force | Out-Null
+Copy-Item -LiteralPath $RecorderBat -Destination $OutputRoot -Force
+Copy-Item -LiteralPath $RecorderScript -Destination $RecorderToolsOut -Force
+'@
+$newRecorderBlock = @'
+# ClientJS recording is integrated into Multi/client_video_recorder.py.
+# No standalone recorder BAT/PowerShell files are shipped in the DEV package.
+Write-Host "Integrated GUI MP4 recorder: PACKAGED" -ForegroundColor Green
+'@
+if (-not $patched.Contains($oldRecorderBlock)) {
+    throw "Legacy recorder packaging block not found in BUILD_FULL_PACKAGE.ps1."
+}
+$patched = $patched.Replace($oldRecorderBlock, $newRecorderBlock)
+
+# Make the integrated recorder an explicit source and output contract in addition
+# to the existing wildcard copy of kvtm_multi_tool.
+$oldRequiredHost = '(Join-Path $MultiSource "kvtm_multi_dev_host.py"),'
+$newRequiredHost = @'
+(Join-Path $MultiSource "kvtm_multi_dev_host.py"),
+    (Join-Path $MultiSource "client_video_recorder.py"),
+'@.TrimEnd()
+if (-not $patched.Contains($oldRequiredHost)) {
+    throw "Multi source required-file patch target not found"
+}
+$patched = $patched.Replace($oldRequiredHost, $newRequiredHost)
+
+$oldPackagedHost = '(Join-Path $MultiOut "kvtm_multi_dev_host.py"),'
+$newPackagedHost = @'
+(Join-Path $MultiOut "kvtm_multi_dev_host.py"),
+    (Join-Path $MultiOut "client_video_recorder.py"),
+'@.TrimEnd()
+if (-not $patched.Contains($oldPackagedHost)) {
+    throw "Multi output required-file patch target not found"
+}
+$patched = $patched.Replace($oldPackagedHost, $newPackagedHost)
 
 $RuntimeBuilder = Join-Path $PSScriptRoot "BUILD_FULL_PACKAGE_PS51.runtime.ps1"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -281,6 +331,7 @@ try {
     Write-Host "AUTO MULTI DEV old-runtime release: READY" -ForegroundColor Green
     Write-Host "AUTO MULTI DEV output cleanup retry: READY" -ForegroundColor Green
     Write-Host "AUTO MULTI DEV clear-stall migration gate: READY" -ForegroundColor Green
+    Write-Host "AUTO MULTI DEV integrated MP4 recorder packaging: READY" -ForegroundColor Green
     & $RuntimeBuilder -OutputName $OutputName
 }
 finally {
