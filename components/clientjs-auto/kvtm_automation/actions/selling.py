@@ -16,9 +16,8 @@ from .inventory import InventoryActions
 
 
 class SellingActions:
-    """Place a verified purchased VP stack using the recovered sale order."""
+    """Place verified VP stacks while keeping logical 1000 geometry canonical."""
 
-    # AUTO_PRO_REFERENCE: fixed logical 1000x1000 regions/click point.
     EMPTY_STALL_ZONE = (196, 340, 599, 395)
     DAT_BAN_ZONE = (662, 598, 231, 145)
     SL10_ZONE = (737, 426, 81, 81)
@@ -28,20 +27,17 @@ class SellingActions:
     SALE_CHANGE_ZONE = (180, 330, 640, 430)
     OWN_STALL_ACTIVE_ZONE = (319, 249, 386, 120)
 
-    # Native-500 live calibration. ``dat_ban`` was captured from the old logical
-    # reference and can miss after VisionEngine scales it down. The orange button
-    # geometry is stable in the supplied 500x500 sale screenshot, so it is a
-    # second proof only inside the canonical button zone. The destructive click
-    # remains guarded by post-click screen-change verification below.
-    SALE_DIALOG_TEMPLATE_THRESHOLD = 0.68
-    SALE_DIALOG_TEMPLATE_SCALES = (
-        0.85, 1.00, 1.15, 1.30, 1.45, 1.60, 1.75,
-    )
-    SALE_BUTTON_ORANGE_MIN = 0.08
+    # Native-500 keeps the live-calibrated tolerant sale-dialog proof.
+    N500_SALE_DIALOG_THRESHOLD = 0.68
+    N500_SALE_DIALOG_SCALES = (0.85, 1.00, 1.15, 1.30, 1.45, 1.60, 1.75)
+    N500_SALE_BUTTON_ORANGE_MIN = 0.08
+    N500_OWN_STALL_THRESHOLD = 0.80
 
-    # LIVE_CALIBRATED 20260903-195708: the last two verified x10 batches
-    # matched at 0.612 and 0.605 after the own-stall view transition. 0.60 is
-    # the smallest calibration that accepts both while retaining provenance.
+    # Native-1000 follows the recovered pre-500 AUTO-PRO contract.
+    N1000_SALE_DIALOG_THRESHOLD = 0.78
+    N1000_SALE_DIALOG_SCALES = (1.00,)
+    N1000_OWN_STALL_THRESHOLD = 0.90
+
     EXACT_PURCHASE_MATCH_THRESHOLD = 0.60
 
     def __init__(
@@ -59,8 +55,31 @@ class SellingActions:
         self.inventory = inventory
         self.minimum_screen_change = float(minimum_screen_change)
 
+    def native_size(self) -> tuple[int, int]:
+        size = getattr(self.vision.driver, "native_size", None)
+        if size is not None:
+            return tuple(map(int, size))
+        frame = self.vision.frame()
+        height, width = frame.shape[:2]
+        return int(width), int(height)
+
+    def _is_native_500(self) -> bool:
+        return self.native_size() == (500, 500)
+
+    def _sale_dialog_profile(self) -> tuple[float, tuple[float, ...], bool]:
+        if self._is_native_500():
+            return (
+                self.N500_SALE_DIALOG_THRESHOLD,
+                self.N500_SALE_DIALOG_SCALES,
+                True,
+            )
+        return (
+            self.N1000_SALE_DIALOG_THRESHOLD,
+            self.N1000_SALE_DIALOG_SCALES,
+            False,
+        )
+
     def _sale_change_crop(self):
-        """Capture destructive-sale verification ROI at the actual frame size."""
         frame = self.vision.frame()
         x, y, width, height = self.vision.logical_zone_to_frame(
             self.SALE_CHANGE_ZONE, frame
@@ -68,7 +87,6 @@ class SellingActions:
         return frame[y : y + height, x : x + width].copy()
 
     def _sale_button_orange_ratio(self, frame=None) -> float:
-        """Measure the live orange Đặt bán button only in its canonical zone."""
         import numpy as np
 
         source = self.vision.frame() if frame is None else frame
@@ -78,10 +96,6 @@ class SellingActions:
         roi = source[y : y + height, x : x + width]
         if roi is None or getattr(roi, "size", 0) == 0 or roi.ndim < 3:
             return 0.0
-
-        # Vision frames are OpenCV BGR/BGRA. These loose channel relationships
-        # intentionally follow the orange/gold button rather than exact RGB, so
-        # native scaling/antialiasing does not break the proof.
         blue = roi[:, :, 0].astype("int16")
         green = roi[:, :, 1].astype("int16")
         red = roi[:, :, 2].astype("int16")
@@ -96,35 +110,42 @@ class SellingActions:
         return float(np.mean(orange))
 
     def is_sale_dialog_ready(self, frame=None) -> bool:
-        """Prove the sale dialog by template OR live native-500 button geometry."""
+        """Use the recognition table that matches the current native ClientJS."""
         source = self.vision.frame() if frame is None else frame
+        threshold, scales, allow_orange = self._sale_dialog_profile()
         marker = self.vision.find(
             "dat_ban",
-            threshold=self.SALE_DIALOG_TEMPLATE_THRESHOLD,
+            threshold=threshold,
             zone=self.DAT_BAN_ZONE,
-            scales=self.SALE_DIALOG_TEMPLATE_SCALES,
+            scales=scales,
             click=False,
             frame=source,
         )
         if marker is not None:
             self.context.detail(
                 "AUTO sale dialog proof | source=dat_ban-template | "
-                f"score={marker.score:.3f} | center={marker.center}"
+                f"native={self.native_size()[0]}x{self.native_size()[1]} | "
+                f"score={marker.score:.3f} | threshold={threshold:.2f}"
             )
             return True
 
-        orange_ratio = self._sale_button_orange_ratio(source)
-        if orange_ratio >= self.SALE_BUTTON_ORANGE_MIN:
-            self.context.detail(
-                "AUTO sale dialog proof | source=native-500-orange-button | "
-                f"orange_ratio={orange_ratio:.3f} | "
-                f"min={self.SALE_BUTTON_ORANGE_MIN:.3f}"
-            )
-            return True
+        if allow_orange:
+            orange_ratio = self._sale_button_orange_ratio(source)
+            if orange_ratio >= self.N500_SALE_BUTTON_ORANGE_MIN:
+                self.context.detail(
+                    "AUTO sale dialog proof | source=native-500-orange-button | "
+                    f"orange_ratio={orange_ratio:.3f} | "
+                    f"min={self.N500_SALE_BUTTON_ORANGE_MIN:.3f}"
+                )
+                return True
         return False
 
-    def wait_sale_dialog_ready(self, *, timeout: float = 4.0, description: str = "màn hình đặt bán") -> None:
-        """Wait for a safe sale-dialog proof without making the button template mandatory."""
+    def wait_sale_dialog_ready(
+        self,
+        *,
+        timeout: float = 4.0,
+        description: str = "màn hình đặt bán",
+    ) -> None:
         self.waiter.until(
             lambda: self.is_sale_dialog_ready(),
             timeout=float(timeout),
@@ -132,8 +153,79 @@ class SellingActions:
             description=description,
         )
 
+    def find_empty_slot(self, *, click: bool = False):
+        """Find an empty stall slot; AUTO Main can prove first then click once."""
+        for name in ("quaytrong", "quay_trong"):
+            match = self.vision.find(
+                name,
+                threshold=0.66,
+                zone=self.EMPTY_STALL_ZONE,
+                scales=(0.85, 0.92, 1.0, 1.08, 1.15),
+                click=False,
+            )
+            if match is None:
+                continue
+            if click:
+                self.vision.driver.click(*match.center)
+            return match
+        return None
+
+    def _find_empty_slot(self) -> bool:
+        """Compatibility wrapper for existing non-AUTO-Main transactions."""
+        return self.find_empty_slot(click=True) is not None
+
+    def wait_own_stall_ready(
+        self,
+        *,
+        timeout: float = 4.0,
+        required_passes: int = 2,
+        description: str = "quầy clone sẵn sàng",
+    ):
+        """Require stable own-stall state before an empty-slot click is allowed."""
+        native = self.native_size()
+        threshold = (
+            self.N500_OWN_STALL_THRESHOLD
+            if native == (500, 500)
+            else self.N1000_OWN_STALL_THRESHOLD
+        )
+        deadline = time.monotonic() + float(timeout)
+        passes = 0
+        best = None
+        while time.monotonic() < deadline:
+            self.context.ensure_running()
+            frame = self.vision.frame()
+            marker = self.vision.find(
+                "quay_hang_on",
+                threshold=threshold,
+                zone=self.OWN_STALL_ACTIVE_ZONE,
+                click=False,
+                frame=frame,
+            )
+            dialog_open = self.is_sale_dialog_ready(frame=frame)
+            if marker is not None and not dialog_open:
+                passes += 1
+                if best is None or marker.score > best.score:
+                    best = marker
+                self.context.detail(
+                    "AUTO bán VP • OWN_STALL proof • "
+                    f"native={native[0]}x{native[1]} • "
+                    f"passes={passes}/{required_passes} • score={marker.score:.3f}"
+                )
+                if passes >= max(1, int(required_passes)):
+                    self.context.log(
+                        "AUTO bán VP • OWN_STALL READY • "
+                        f"native={native[0]}x{native[1]} • score={best.score:.3f}"
+                    )
+                    return best
+            else:
+                passes = 0
+            self.waiter.sleep(0.15)
+        raise ScreenTimeout(
+            f"Không đạt {description} sau {float(timeout):.1f}s; "
+            f"native={native[0]}x{native[1]}"
+        )
+
     def open_inventory_read_only(self, *, storage_id: int = 2) -> None:
-        """Open the sale inventory without selecting or listing any VP."""
         self.context.ensure_running()
         if not self._find_empty_slot():
             raise NoEmptyStallSlot("Quầy clone không còn ô trống để mở kho")
@@ -142,21 +234,17 @@ class SellingActions:
         self.context.log("Đã mở kho bán ở chế độ READ-ONLY")
 
     def close_inventory_read_only(self, timeout: float = 6.0) -> None:
-        """Close item picker and prove the parent own-stall panel is visible again.
-
-        Do not use the active ``kho_thanh_pham`` icon as a close gate. On native
-        500 its score changes when storage2 is selected (live ~0.508), which made
-        the old 0.72 test report "closed" while the inventory was still open.
-        The own-stall marker is the correct parent-state proof: it is strong when
-        the picker is closed and hidden while the picker overlays the stall.
-        """
         deadline = time.monotonic() + float(timeout)
         attempts = 0
         while time.monotonic() < deadline:
             self.context.ensure_running()
             parent = self.vision.find(
                 "quay_hang_on",
-                threshold=0.80,
+                threshold=(
+                    self.N500_OWN_STALL_THRESHOLD
+                    if self._is_native_500()
+                    else self.N1000_OWN_STALL_THRESHOLD
+                ),
                 zone=self.OWN_STALL_ACTIVE_ZONE,
                 click=False,
             )
@@ -175,7 +263,6 @@ class SellingActions:
                 click=True,
             )
             if close_match is None:
-                # Logical 1000x1000 item-picker X shown at the top-right.
                 self.vision.driver.click(968, 28)
             self.context.detail(
                 f"AUTO kho • đóng READ-ONLY • attempt={attempts} • "
@@ -188,24 +275,11 @@ class SellingActions:
             f"{attempts} lần; quay_hang_on chưa trở lại"
         )
 
-    def _find_empty_slot(self) -> bool:
-        for name in ("quaytrong", "quay_trong"):
-            if self.vision.find(
-                name,
-                threshold=0.66,
-                zone=self.EMPTY_STALL_ZONE,
-                scales=(0.85, 0.92, 1.0, 1.08, 1.15),
-                click=True,
-            ) is not None:
-                return True
-        return False
-
     def _finish_batch_from_match(
         self,
         center: tuple[int, int],
         score: float,
     ) -> None:
-        """Finish the sale after one exact purchased inventory match is selected."""
         self.vision.driver.click(*center)
         self.waiter.sleep(0.30)
 
@@ -215,10 +289,6 @@ class SellingActions:
             self._cancel_dialog()
             raise TransactionError("VP không mở được màn hình đặt bán") from exc
 
-        # Do not require the fragile "sl10" marker. The selected inventory
-        # item is already constrained by a fingerprint from a verified purchase
-        # in this run. Keep the game's current stack quantity and original price;
-        # screen change below remains the destructive-action verification gate.
         quantity_marker = self.vision.find(
             "sl10", threshold=0.62, zone=self.SL10_ZONE
         )
@@ -229,9 +299,6 @@ class SellingActions:
 
         before = self._sale_change_crop()
         self.vision.driver.click(*self.PLACE_BUTTON)
-
-        # The destructive click has already been sent. Keep accounting atomic
-        # until the screen-change verification finishes.
         self.waiter.settle(0.20)
         self.vision.find(
             "dong_y",
@@ -280,12 +347,6 @@ class SellingActions:
         *,
         storage_id: int,
     ) -> VisualFingerprint:
-        """Sell one x10 batch chosen only from this run's verified purchases.
-
-        The empty stall slot is opened before scanning the inventory. This is
-        important: the inventory item grid does not exist on the own-stall
-        screen, so a pre-scan there can never reliably identify the item.
-        """
         self.context.ensure_running()
         if not fingerprints:
             raise TransactionError("Không có dấu vân tay VP đã mua trong lượt này")
@@ -307,10 +368,6 @@ class SellingActions:
                 f"sha={fingerprint.sha256[:12]} score={score:.3f} "
                 f"threshold={self.EXACT_PURCHASE_MATCH_THRESHOLD:.3f}"
             )
-            # The template is a normalized item core with stall background and
-            # quantity text removed. Only fingerprints proven by a successful
-            # purchase in this run enter this loop; screen change is verified
-            # again after placement before the token is consumed.
             if match is None or score < self.EXACT_PURCHASE_MATCH_THRESHOLD:
                 continue
             center, score = match
