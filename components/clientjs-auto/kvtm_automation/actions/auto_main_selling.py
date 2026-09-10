@@ -14,9 +14,10 @@ FILE_FUNCTIONS = (
     "Bấm chính xác nút kho thành phẩm có biểu tượng giỏ hàng",
     "Chờ và quét lại nhiều frame trước khi kết luận hết VP",
     "Chỉ chọn VP được Function hiện tại cho phép",
-    "Bắt buộc xác nhận số lượng x10 trước khi đặt bán",
+    "Bắt buộc xác nhận số lượng x10 bằng template đa scale trên hai frame trước khi đặt bán",
     "Bỏ qua loại còn dưới x10 và chuyển sang loại kế tiếp",
     "Hủy dialog có xác minh rồi tiếp tục trong cùng kho đang mở",
+    "Xác minh màn hình đặt bán bằng dat_ban hoặc nút cam native-500 rồi mới click",
     "Xác minh màn hình thay đổi trước khi ghi nhận đã treo",
     "Trả trạng thái rõ ràng cho workflow điều phối",
 )
@@ -45,6 +46,14 @@ class AutoMainSellingActions:
     }
     SELECTED_ITEM_ZONE = (680, 240, 180, 180)
     SALE_CHANGE_ZONE = (180, 330, 640, 430)
+
+    # sl10 is a small reference asset. At native 500 the exact 0.95 single-scale
+    # gate was too brittle even when the live quantity field visibly showed 10.
+    # Keep it fail-closed by requiring two consecutive matches, but permit the
+    # expected native scaling/antialiasing range.
+    EXACT_TEN_THRESHOLD = 0.78
+    EXACT_TEN_SCALES = (0.75, 0.90, 1.00, 1.10, 1.25, 1.40, 1.55)
+    EXACT_TEN_REQUIRED_PASSES = 2
 
     def __init__(
         self,
@@ -141,12 +150,7 @@ class AutoMainSellingActions:
                 self.selling.vision.driver.click(968, 28)
             self.selling.waiter.sleep(0.45)
 
-            dialog_open = self.selling.vision.find(
-                "dat_ban",
-                threshold=0.78,
-                zone=self.selling.DAT_BAN_ZONE,
-            )
-            if dialog_open is not None:
+            if self.selling.is_sale_dialog_ready():
                 continue
 
             inventory_open = self.selling.vision.find(
@@ -174,14 +178,8 @@ class AutoMainSellingActions:
         self.selling.vision.driver.click(*item.center)
         self.selling.waiter.sleep(0.30)
         try:
-            self.selling.waiter.until(
-                lambda: self.selling.vision.find(
-                    "dat_ban",
-                    threshold=0.78,
-                    zone=self.selling.DAT_BAN_ZONE,
-                ),
+            self.selling.wait_sale_dialog_ready(
                 timeout=4.0,
-                interval=0.20,
                 description="màn hình đặt bán AUTO",
             )
         except ScreenTimeout as exc:
@@ -206,27 +204,51 @@ class AutoMainSellingActions:
             return "WRONG_ITEM"
 
         quantity_passes = 0
+        best_quantity_score = 0.0
         for quantity_attempt in range(1, 4):
             quantity_marker = self.selling.vision.find(
                 "sl10",
-                threshold=0.95,
+                threshold=self.EXACT_TEN_THRESHOLD,
                 zone=self.selling.SL10_ZONE,
+                scales=self.EXACT_TEN_SCALES,
+                click=False,
             )
-            quantity_passes = (
-                quantity_passes + 1 if quantity_marker is not None else 0
-            )
-            if quantity_passes >= 2:
+            if quantity_marker is not None:
+                quantity_passes += 1
+                best_quantity_score = max(
+                    best_quantity_score,
+                    float(quantity_marker.score),
+                )
+                self.context.detail(
+                    "AUTO sale x10 proof | "
+                    f"attempt={quantity_attempt}/3 | "
+                    f"passes={quantity_passes}/{self.EXACT_TEN_REQUIRED_PASSES} | "
+                    f"score={quantity_marker.score:.3f}"
+                )
+            else:
+                quantity_passes = 0
+                self.context.detail(
+                    "AUTO sale x10 proof | "
+                    f"attempt={quantity_attempt}/3 | passes reset=0 | marker=MISS"
+                )
+            if quantity_passes >= self.EXACT_TEN_REQUIRED_PASSES:
                 break
             if quantity_attempt < 3:
                 self.selling.waiter.sleep(0.20)
-        if quantity_passes < 2:
+        if quantity_passes < self.EXACT_TEN_REQUIRED_PASSES:
             self.context.log(
-                f"AUTO bán VP • {item.label} còn dưới x10 • "
+                f"AUTO bán VP • {item.label} chưa chứng minh được x10 • "
+                f"best_score={best_quantity_score:.3f} • "
+                f"threshold={self.EXACT_TEN_THRESHOLD:.2f} • "
                 "hủy và chuyển VP kế tiếp"
             )
             self._cancel_selected_item()
             return "BELOW_TEN"
 
+        self.context.log(
+            f"AUTO bán VP • {item.label} • sale dialog READY + x10 PASS • "
+            f"quantity_score={best_quantity_score:.3f} • click Đặt bán"
+        )
         before = self._sale_change_crop()
         self.selling.vision.driver.click(*self.selling.PLACE_BUTTON)
         self.selling.waiter.settle(0.20)
@@ -245,7 +267,8 @@ class AutoMainSellingActions:
             if best_change >= self.selling.minimum_screen_change:
                 self.context.log(
                     f"AUTO MAIN đã treo {item.label} x10 "
-                    f"(match={item.score:.3f}, change={best_change:.2f})"
+                    f"(match={item.score:.3f}, quantity={best_quantity_score:.3f}, "
+                    f"change={best_change:.2f})"
                 )
                 return "SOLD"
             self.selling.waiter.settle(0.20)
