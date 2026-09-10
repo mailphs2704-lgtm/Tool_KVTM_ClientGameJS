@@ -12,6 +12,7 @@ FILE_FUNCTIONS = (
     "Cho phép các nhịp settle chạm biên có frame_change thấp nhưng vẫn lấy fresh frame",
     "Sau khi gieo Bông, từ mốc tầng 1 click đúng chậu tầng 4 để camera lên tầng 3",
     "Cuối vòng tầng 3: goDown(1) rồi nhận diện/click nút XUỐNG ở mép dưới",
+    "Cho Function 2 tái sử dụng route goDown(1) + click XUỐNG từ tầng trên về main",
     "Recovery tầng trên: sau mỗi goDown(1), thấy nút XUỐNG thì click ngay",
     "Hậu kiểm click xuống tầng bằng frame-change và ghi runtime exact-main proof",
 )
@@ -20,31 +21,16 @@ FILE_FUNCTIONS = (
 class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
     """Only the routes introduced by Function 1 pass 3."""
 
-    # Forensic AUTO PRO adb_controller.goUp reference (2026-09-07):
-    # mode2=(257,416), mode3=(257,191). LIVE 2026-09-09 proved that the old
-    # mode2 point only moved the current Function-1 camera to floor 2. For the
-    # business destination floor 3, the click must target the higher/floor-4 pot
-    # anchor. That recovered point is the old mode3 coordinate below.
     LEGACY_AUTO_PRO_MODE2_POINT = (257, 416)
     FLOOR_4_POT_POINT = (257, 191)
     AUTO_PRO_GO_UP_WAIT = 0.70
     AUTO_PRO_POST_WAIT = 0.15
-
-    # User-confirmed ClientJS behavior: the XUỐNG control is transient, centered
-    # on the bottom edge and only appears during floor-transition interaction on
-    # upper floors; floor 1 does not expose it.
     DOWN_FLOOR_POINT = (497, 978)
     DOWN_FLOOR_BUTTON_THRESHOLD = 0.78
-
-    # LIVE 2026-09-09 boundary evidence on an account whose farm background does
-    # not match quay_hang: real downward moves measured 15.74 / 71.06 while
-    # repeated no-op goDown at main measured 2.53..2.94. Require TWO consecutive
-    # low-change observations so one stale/quiet frame can never prove main.
     MAIN_BOUNDARY_MAX_CHANGE = 6.0
     MAIN_BOUNDARY_STABLE_REQUIRED = 2
 
     def _go_up_two(self, label: str) -> float:
-        """Reach floor 3 from floor 1 by clicking the proven floor-4 pot anchor."""
         self.context.ensure_running()
         self.context.invalidate_camera_main(f"floor4-pot-jump:{label}")
         before = self.vision.frame().copy()
@@ -71,13 +57,6 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         return change
 
     def _settle_down_one(self, label: str) -> float:
-        """Send one goDown(1), record fresh-frame change and learn main boundary.
-
-        Exact-main recovery is behavioral. A real vertical move resets boundary
-        evidence; two consecutive low-change goDown gestures prove that the camera
-        has reached the lower boundary. No account-specific background/template is
-        consulted.
-        """
         self.context.ensure_running()
         before = self.vision.frame().copy()
         self.vision.driver.click(*self.CLOSE_SIDE)
@@ -110,7 +89,6 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         return change
 
     def _click_down_floor_if_visible(self, label: str) -> float | None:
-        """Click the transient bottom XUỐNG control only after visual proof."""
         self.context.ensure_running()
         before_click = self.vision.frame().copy()
         match = find_down_floor_button(
@@ -124,9 +102,6 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
             )
             return None
 
-        # A detected XUỐNG control proves we are still on an upper-floor
-        # transition, so any previous exact-main proof must be discarded before
-        # the click.
         self.context.invalidate_camera_main(
             f"down-floor-button-visible:{label}"
         )
@@ -156,13 +131,6 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
     RECOVERY_DOWN_CHAIN_LIMIT = 10
 
     def go_down_one_toward_main(self, label: str) -> float:
-        """Recovery chain for unknown floors 3..10.
-
-        Repeatedly issue goDown(1). Whenever the transient bottom XUỐNG control
-        appears, click it immediately and continue with the next lower floor.
-        Floor 1 is the natural stop because that control is not exposed there.
-        The outer worker still performs the final exact-main proof.
-        """
         changes: list[float] = []
         for step in range(1, self.RECOVERY_DOWN_CHAIN_LIMIT + 1):
             chained_label = (
@@ -175,13 +143,30 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
             changes.append(click_change)
         return max(changes) if changes else 0.0
 
-    def floor_3_to_main_via_down_floor(self) -> NavigationEvidence:
-        """Run the operator-confirmed end-loop route from floor 3 to main.
+    def known_upper_floor_to_main_via_down_floor(self, label: str) -> NavigationEvidence:
+        """Known Function-2 upper floor -> goDown(1) -> visual XUỐNG -> main."""
+        swipe_label = f"{label}-goDown(1)"
+        swipe_change = self._settle_down_one(swipe_label)
+        click_change = self._click_down_floor_if_visible(swipe_label)
+        if click_change is None:
+            self.context.invalidate_camera_main(
+                f"{label}: down-floor button absent or no response"
+            )
+            raise ScreenTimeout(
+                f"{label}: sau goDown(1) không xác minh/click được nút XUỐNG ở mép dưới"
+            )
+        self.context.mark_camera_exact_main(
+            f"{label} via goDown(1)+down-floor deterministic route"
+        )
+        self.context.log(
+            f"AUTO điều hướng • {label} → goDown(1) → thấy nút XUỐNG → click → exact-main PASS"
+        )
+        return NavigationEvidence(
+            f"{label}-via-down-floor",
+            (swipe_change, click_change),
+        )
 
-        Sequence is one goDown(1), then visual proof of the transient XUỐNG button
-        at the bottom edge. The click is never blind: absence of the control or a
-        click without meaningful fresh-frame change fails closed.
-        """
+    def floor_3_to_main_via_down_floor(self) -> NavigationEvidence:
         swipe_change = self._settle_down_one(
             "function1-end-loop-floor3-goDown(1)"
         )
@@ -209,14 +194,6 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         )
 
     def floor_2_to_main(self) -> NavigationEvidence:
-        """Normalize the post-juice camera all the way to main before cotton.
-
-        A single goDown(1) only moves floor 2 toward floor 1. Immediately letting
-        CottonPlantingActions issue its own goUp(1) can cancel that movement and
-        start planting one floor too high. Keep the operator-proven 1+3 sequence;
-        its completion is deterministic exact-main evidence while each individual
-        goDown also feeds the background-independent lower-boundary detector.
-        """
         changes = tuple(
             self._settle_down_one(label)
             for label in (
@@ -234,7 +211,6 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         return NavigationEvidence("floor2-to-main-normalized", changes)
 
     def floor_1_to_floor_3(self) -> NavigationEvidence:
-        """Move floor 1 -> floor 3 by clicking the floor-4 pot anchor once."""
         changes = (
             self._go_up_two("floor1-click-floor4-pot-to-floor3"),
         )
