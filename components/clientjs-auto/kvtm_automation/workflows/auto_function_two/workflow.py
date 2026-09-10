@@ -11,9 +11,10 @@ from ..auto_function_one import FunctionOneWorkflow
 
 __all__ = ["FunctionTwoResult", "FunctionTwoWorkflow"]
 FILE_FUNCTIONS = (
-    "Kế thừa nguyên vòng Function 1 đã xác minh",
+    "Kế thừa phần lõi Function 1 đã xác minh qua import/composition",
     "Yêu cầu Function 1 PASS đầy đủ trước khi thêm nhánh TDHH",
     "Dùng một RecipeBook function_2 để toàn chuỗi chia sẻ đúng RecoveryManager/sale policy",
+    "Nhận handoff sau Vải vàng rồi tự recovery candidate về exact-main",
     "Từ exact-main trồng/thu hồi đủ 35 Hồng + 28 Tuyết",
     "Đi candidate tầng 7 về tầng 5 và sản xuất đúng 7 TDHH",
     "Sửa máy TDHH rồi trả camera về exact-main trước PASS",
@@ -40,7 +41,7 @@ class FunctionTwoResult:
 
 
 class FunctionTwoWorkflow:
-    """Function 2 = proven Function 1 + 35 Hồng + 28 Tuyết + 7 TDHH."""
+    """Function 2 = proven Function 1 core + 35 Hồng + 28 Tuyết + 7 TDHH."""
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
@@ -72,6 +73,28 @@ class FunctionTwoWorkflow:
                 "Function 2 từ chối kế thừa vì Function 1 chưa đạt contract PASS"
             )
 
+    def _recover_base_handoff_to_main(self) -> None:
+        """Function 2 owns the boundary after inherited Vải vàng production."""
+        self.context.stage("auto-function-2-base-handoff-main-recovery")
+        self.context.ensure_running()
+        self.recovery.recover_unknown_to_main(
+            "Function 2 handoff sau Vải vàng",
+            reason=(
+                "Function 1 base hoàn tất 3/3 nhưng bỏ qua end-loop riêng; "
+                "Function 2 cần exact-main trước nhánh Hồng/Tuyết/TDHH"
+            ),
+            max_passes=8,
+        )
+        self.context.ensure_running()
+        if not self.auto.popup.is_own_exact_main_screen():
+            raise ScreenTimeout(
+                "Function 2 handoff sau Vải vàng chưa chứng minh exact-main"
+            )
+        self.context.stage("auto-function-2-base-handoff-main-ready")
+        self.context.log(
+            "AUTO Function 2 • HANDOFF PASS • sau Vải vàng đã recovery về exact-main"
+        )
+
     def run(self) -> FunctionTwoResult:
         started = time.monotonic()
         self.context.stage("auto-function-2-start")
@@ -80,18 +103,16 @@ class FunctionTwoWorkflow:
             "35 Hồng + 28 Tuyết + 7 Tinh dầu hoa hồng"
         )
 
-        base = self.base.run()
+        base = self.base.run(normalize_end_to_main=False)
         self._validate_base(base)
         self.context.ensure_running()
         self.context.stage("auto-function-2-progress-3-of-4")
         self.context.log(
-            "AUTO Function 2 • base PASS 3/4 • Function 1 hoàn tất và đang exact-main"
+            "AUTO Function 2 • base PASS 3/4 • Function 1 core hoàn tất; "
+            "nhận handoff candidate sau Vải vàng"
         )
 
-        if not self.auto.popup.is_own_exact_main_screen():
-            raise ScreenTimeout(
-                "Function 2 base đã trả về nhưng chưa chứng minh exact-main trước TDHH"
-            )
+        self._recover_base_handoff_to_main()
 
         extra = self.rose_oil.run_from_main(count=7)
         if (

@@ -15,8 +15,8 @@ FILE_FUNCTIONS = (
     "Giữ supply Táo tầng 1-6 riêng của Function 1 rồi bàn giao candidate tầng 2 cho AppleJuiceRecipe",
     "AppleJuiceRecipe tự probe nuoc_tao, fallback exact-main, xử lý sai máy/kho đầy và Sửa máy",
     "YellowFabricRecipe nhận trạng thái sau Nước táo, về main, trồng Bông, vào tầng 3, SX và Sửa máy",
-    "Sau mỗi vòng RecoveryManager đưa tầng 3 về exact-main trước khi PASS",
-    "Cho phép Function 2 inject RecipeBook để toàn chuỗi dùng chung recovery/sale policy function_2",
+    "Function 1 standalone đưa tầng 3 về exact-main trước PASS",
+    "Cho phép Function kế thừa inject RecipeBook và nhận handoff sau Vải vàng trước bước kết vòng riêng",
 )
 
 
@@ -81,13 +81,15 @@ class FunctionOneWorkflow:
             "AUTO chức năng 1 • cuối vòng về main PASS qua RecoveryManager"
         )
 
-    def run(self) -> FunctionOneResult:
+    def run(
+        self,
+        *,
+        normalize_end_to_main: bool = True,
+    ) -> FunctionOneResult:
         started = time.monotonic()
         self.context.stage("auto-function-1-optional-check")
         self.context.log("AUTO chức năng 1 • check tùy chọn: chưa cấu hình • bỏ qua")
 
-        # Recipe 1: trồng Táo + SX 9 Táo sấy + Sửa máy. Runtime behavior is the
-        # same proven AppleDryer flow, now reusable by any future Function.
         dried_recipe = self.recipes.dried_apple.run_from_session(count=9)
         self.context.ensure_running()
         self.context.stage("auto-function-1-progress-1-of-3")
@@ -95,9 +97,6 @@ class FunctionOneWorkflow:
             "AUTO chức năng 1 • tiến độ 1/3 • DriedAppleRecipe PASS"
         )
 
-        # Function-1-specific apple supply continuation. This is business supply
-        # choreography, not generic recovery: wait/replant five floors, then the
-        # sixth row so there is enough Táo for the Nước táo production stage.
         self.auto.apple_supply.wait_until_floor_1_ripe()
         five_floors = self.auto.apple_supply.harvest_and_replant_five_floors()
         self.context.stage("auto-apple-five-floors-replanted")
@@ -106,8 +105,6 @@ class FunctionOneWorkflow:
         floor_6 = self.auto.apple_supply.harvest_and_replant_floor_6_row()
         self.context.stage("auto-apple-floor-6-replanted")
 
-        # Function 1 owns only the optimized movement that creates the candidate.
-        # The AppleJuiceRecipe owns proof/fallback/production/repair from here.
         self.auto.function_one_navigation.floor_6_to_floor_2()
         juice_recipe = self.recipes.apple_juice.run_from_candidate_floor_2(count=9)
         juice = juice_recipe.production
@@ -124,8 +121,6 @@ class FunctionOneWorkflow:
             f"{route_note}"
         )
 
-        # Recipe 3 consumes the known floor-2 state left by Nước táo. It owns
-        # floor2→main, 27 Bông, known floor1→3, Vải vàng production and repair.
         fabric_recipe = self.recipes.yellow_fabric.run_after_floor_2(count=9)
         cotton = fabric_recipe.cotton_planted
         fabric = fabric_recipe.production
@@ -136,7 +131,14 @@ class FunctionOneWorkflow:
             "Táo sấy + Nước táo + 27 Bông + Vải vàng"
         )
 
-        self._normalize_end_of_loop_to_main()
+        if normalize_end_to_main:
+            self._normalize_end_of_loop_to_main()
+        else:
+            self.context.stage("auto-function-1-handoff-after-yellow-fabric")
+            self.context.log(
+                "AUTO chức năng 1 • HANDOFF • giữ candidate sau Vải vàng; "
+                "Function kế thừa tự chịu trách nhiệm recovery về exact-main"
+            )
 
         return FunctionOneResult(
             profile_id=self.context.profile_id,
