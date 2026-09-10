@@ -11,6 +11,7 @@ class RecoveryEventKind(str, Enum):
     UNKNOWN_CAMERA = "unknown_camera"
     WRONG_PRODUCTION_MACHINE = "wrong_production_machine"
     INVENTORY_FULL = "inventory_full"
+    MATERIAL_SHORTAGE = "material_shortage"
     MAIN_PROVEN = "main_proven"
     FLOOR_REENTERED = "floor_reentered"
     RECOVERY_EXHAUSTED = "recovery_exhausted"
