@@ -13,6 +13,7 @@ FILE_FUNCTIONS = (
     "Khai báo thư viện VP mẫu dùng chung cho AUTO Main",
     "Mặc định Function 1 chỉ quét Táo sấy/Vải vàng; Function khác phải truyền policy riêng",
     "Quét vùng kho thành phẩm đã mở trên đúng một fresh frame",
+    "Native 1000 ưu tiên template kho chính scale 1.00 để chọn VP nhanh, fallback full scan khi chưa đủ chắc chắn",
     "Nhận diện VP theo template AUTO PRO",
     "Trả kết quả READ-ONLY có raw score/vị trí kể cả khi dưới threshold",
     "Ghi kết quả vào log hành động và chi tiết",
@@ -44,12 +45,7 @@ class VpRecognition:
 class AutoVpRecognitionActions:
     """READ-ONLY recognition for items produced by AUTO Main."""
 
-    # Function 1 was the pilot flow. Rose oil was only present there as an early
-    # recognition test, so the default scan must stay limited to its real sale VP.
     FUNCTION_1_ITEM_IDS = ("tao_say", "vai_vang")
-
-    # Function 2 starts from the same shared recognition library but owns rose oil.
-    # Its production runner is developed separately from Function 1.
     FUNCTION_2_ITEM_IDS = ("tao_say", "vai_vang", "tinh_dau_hh")
 
     SAMPLE_ITEMS = (
@@ -62,6 +58,8 @@ class AutoVpRecognitionActions:
         ),
     )
     RECOGNITION_SCALES = (0.75, 0.85, 0.95, 1.00, 1.05, 1.15, 1.25)
+    N1000_FAST_PRIMARY_SCALE = (1.00,)
+    N1000_FAST_PRIMARY_THRESHOLD = 0.82
 
     def __init__(
         self,
@@ -75,30 +73,7 @@ class AutoVpRecognitionActions:
         self.waiter = waiter
         self.inventory = inventory
 
-    def scan_samples(
-        self,
-        *,
-        log_prefix: str = "READ-ONLY VP",
-        item_ids: tuple[str, ...] | None = None,
-    ) -> tuple[VpRecognition, ...]:
-        """Scan the Function-owned VP policy against one fresh inventory frame.
-
-        ``VisionEngine.find`` normally captures a frame when ``frame`` is omitted.
-        Calling it once per template therefore mixed independent CAPTURE3 frames
-        in one logical inventory scan. Immediately after a storage-tab transition
-        that can pair a visible inventory with a stale/transition frame for the
-        exact VP template being tested. Capture once here, then reuse that
-        immutable frame for every candidate in this scan attempt.
-
-        Function 1 is the default caller and intentionally scans only Táo sấy and
-        Vải vàng. Tinh dầu hoa hồng remains in the shared library for Function 2,
-        which must opt in explicitly through ``item_ids`` when its runner is ready.
-
-        Matching is requested at -1.0 only to retain the best raw score for
-        diagnostics. Acceptance remains fail-closed at each spec's unchanged
-        threshold (0.72 by default); no weaker match can become clickable.
-        """
-        self.context.ensure_running()
+    def _specs_for(self, item_ids: tuple[str, ...] | None) -> tuple[AutoVpSpec, ...]:
         requested = (
             self.FUNCTION_1_ITEM_IDS
             if item_ids is None
@@ -113,7 +88,84 @@ class AutoVpRecognitionActions:
             raise ValueError(
                 "AUTO VP scan chưa có template cho: " + ", ".join(unknown)
             )
-        specs = tuple(specs_by_id[item_id] for item_id in requested)
+        return tuple(specs_by_id[item_id] for item_id in requested)
+
+    def scan_first_native1000(
+        self,
+        *,
+        log_prefix: str = "AUTO SELL VP FAST",
+        item_ids: tuple[str, ...],
+    ) -> VpRecognition | None:
+        """Fast discovery for native 1000 inventory.
+
+        The first template of each VP spec is the warehouse-specific reference.
+        Probe only that template at exact scale 1.00 on one fresh frame, in the
+        caller's preferred sale order. A strong match can be clicked immediately;
+        the sale dialog still performs the existing selected-item proof before any
+        listing is committed. When no strong warehouse match exists, callers must
+        fall back to ``scan_samples`` unchanged.
+        """
+        self.context.ensure_running()
+        specs = self._specs_for(item_ids)
+        frame = self.vision.frame()
+        frame_h, frame_w = frame.shape[:2]
+        if (frame_w, frame_h) != (1000, 1000):
+            return None
+
+        self.context.detail(
+            f"{log_prefix} | FAST_SNAPSHOT frame=1000x1000 | "
+            f"primary_scale=1.00 | threshold={self.N1000_FAST_PRIMARY_THRESHOLD:.2f} | "
+            f"items={','.join(spec.item_id for spec in specs)}"
+        )
+        for spec in specs:
+            primary_template = spec.templates[0]
+            match = self.vision.find(
+                primary_template,
+                threshold=self.N1000_FAST_PRIMARY_THRESHOLD,
+                zone=self.inventory.INVENTORY_ZONE,
+                scales=self.N1000_FAST_PRIMARY_SCALE,
+                click=False,
+                frame=frame,
+            )
+            if match is None:
+                continue
+            result = VpRecognition(
+                item_id=spec.item_id,
+                label=spec.label,
+                found=True,
+                template=match.template.stem,
+                score=float(match.score),
+                center=match.center,
+            )
+            self.context.log(
+                f"{log_prefix} | FAST_FOUND {spec.label} | "
+                f"template={result.template} score={result.score:.3f} "
+                f"threshold={self.N1000_FAST_PRIMARY_THRESHOLD:.2f} "
+                f"center={result.center}"
+            )
+            return result
+
+        self.context.detail(
+            f"{log_prefix} | FAST_MISS | fallback=full-scan | "
+            f"items={','.join(spec.item_id for spec in specs)}"
+        )
+        return None
+
+    def scan_samples(
+        self,
+        *,
+        log_prefix: str = "READ-ONLY VP",
+        item_ids: tuple[str, ...] | None = None,
+    ) -> tuple[VpRecognition, ...]:
+        """Scan the Function-owned VP policy against one fresh inventory frame.
+
+        Capture once and reuse that immutable frame for every candidate. Matching
+        at -1.0 retains the best raw score for diagnostics; acceptance remains
+        fail-closed at each spec's threshold.
+        """
+        self.context.ensure_running()
+        specs = self._specs_for(item_ids)
+        requested = tuple(spec.item_id for spec in specs)
 
         frame = self.vision.frame()
         frame_h, frame_w = frame.shape[:2]
