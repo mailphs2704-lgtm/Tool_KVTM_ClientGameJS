@@ -25,6 +25,7 @@ FILE_FUNCTIONS = (
 
 _AUTO_MAIN_FUNCTION_OPTIONS = (
     ("function_1", "9 Táo sấy - 9 Vải vàng"),
+    ("function_2", "9 Táo sấy - 9 Vải vàng - 7 tinh dầu hoa hồng"),
 )
 _FRIEND_REFRESH_SETTING_KEY = "auto_multi_dev_friend_refresh_enabled"
 _CLIENT_RESTART_INTERVAL_SECONDS = 7200.0
