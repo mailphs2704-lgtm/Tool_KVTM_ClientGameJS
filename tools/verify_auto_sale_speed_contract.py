@@ -46,13 +46,16 @@ def main() -> int:
     required_recognition = (
         "N1000_FAST_PRIMARY_SCALE = (1.00,)",
         "N1000_FAST_PRIMARY_THRESHOLD = 0.82",
-        "def _fast_candidate_from_frame(",
+        "def _fast_candidates_from_frame(",
+        "results: list[VpRecognition] = []",
         "primary_template = spec.templates[0]",
         "scales=self.N1000_FAST_PRIMARY_SCALE",
         "threshold=self.N1000_FAST_PRIMARY_THRESHOLD",
+        "results.append(result)",
+        "return tuple(results)",
         'if log_prefix == "AUTO SELL VP" and (frame_w, frame_h) == (1000, 1000):',
-        "if fast is not None:",
-        "return (fast,)",
+        "if fast:",
+        "return fast",
         "for template in spec.templates:",
         "scales=self.RECOGNITION_SCALES",
     )
@@ -60,14 +63,16 @@ def main() -> int:
         if token not in recognition:
             raise AssertionError(f"AUTO VP fast discovery contract missing: {token}")
 
-    if "FUNCTION_1_ITEM_IDS = (\"tao_say\", \"vai_vang\")" not in recognition:
+    if "return (fast,)" in recognition:
+        raise AssertionError("Native1000 fast scan must not return only the first VP candidate")
+    if 'FUNCTION_1_ITEM_IDS = ("tao_say", "vai_vang")' not in recognition:
         raise AssertionError("Function 1 recognition policy changed")
-    if "FUNCTION_2_ITEM_IDS = (\"tao_say\", \"vai_vang\", \"tinh_dau_hh\")" not in recognition:
+    if 'FUNCTION_2_ITEM_IDS = ("tao_say", "vai_vang", "tinh_dau_hh")' not in recognition:
         raise AssertionError("Function 2 recognition policy changed")
 
     print("AUTO MULTI DEV SALE SPEED STATIC CONTRACT VERIFIED")
-    print("native1000=stall/x10-fast-confidence+primary-VP-scale1-fast-discovery")
-    print("vp-fast-threshold=0.82;fallback=full-multiscale-scan")
+    print("native1000=stall/x10-fast-confidence+all-primary-VP-scale1-fast-discovery")
+    print("vp-fast-threshold=0.82;fair-round-robin=true;fallback=full-multiscale-scan")
     print("native500=unchanged")
     return 0
 
