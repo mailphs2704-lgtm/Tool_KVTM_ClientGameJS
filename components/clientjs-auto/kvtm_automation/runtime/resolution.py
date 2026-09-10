@@ -1,45 +1,83 @@
 from __future__ import annotations
 
-import ctypes
-from ctypes import wintypes
-import os
+from dataclasses import dataclass
 import sys
-import time
 from typing import Any
 
 
 __all__ = [
     "LOGICAL_REFERENCE_SIZE",
     "PRODUCTION_CLIENT_SIZE",
+    "SUPPORTED_CLIENT_SIZES",
+    "ClientResolutionContract",
     "NativeCaptureDriver",
+    "classify_client_size",
+    "detect_client_resolution",
     "disable_legacy_adaptive_matching",
-    "ensure_production_client_size",
 ]
 
 FILE_FUNCTIONS = (
     "Giữ source AUTO ở hệ logical 1000x1000",
-    "Đặt riêng ClientJS của worker hiện tại về client-area 500x500 trước Bridge V3",
-    "Giữ 500x500 ổn định đủ lâu để thắng callback display cũ của Multi khi client vừa launch",
-    "Giữ CAPTURE3 ở kích thước render thật 500x500 thay vì bị EngineDriver phóng ngược lên 1000",
-    "Fail-close nếu Bridge gắn nhầm HWND/kích thước native không còn đúng 500x500",
-    "Không di chuyển cửa sổ và không đụng ClientJS/profile khác",
+    "Chỉ đọc kích thước CAPTURE3 hiện tại; AUTO tuyệt đối không resize ClientJS",
+    "Chọn contract 500x500 hoặc 1000x1000 theo đúng kích thước client đang chạy",
+    "Giữ CAPTURE3 ở kích thước render thật thay vì bị EngineDriver phóng về reference 1000",
+    "Fail-close nếu kích thước native đổi giữa lúc AUTO đang chạy",
     "Gỡ monkeypatch adaptive_cv cũ trong isolated worker để tránh scale template/frame lần hai",
 )
 
 LOGICAL_REFERENCE_SIZE = (1000, 1000)
+# Compatibility marker only. AUTO no longer normalizes toward this value.
 PRODUCTION_CLIENT_SIZE = (500, 500)
+SUPPORTED_CLIENT_SIZES = ((500, 500), (1000, 1000))
+
+
+@dataclass(frozen=True)
+class ClientResolutionContract:
+    """Passive AUTO contract selected from the ClientJS size that already exists."""
+
+    name: str
+    native_size: tuple[int, int]
+    table_size: tuple[int, int]
+    logical_reference_size: tuple[int, int] = LOGICAL_REFERENCE_SIZE
+
+    @property
+    def is_native_500(self) -> bool:
+        return self.native_size == (500, 500)
+
+    @property
+    def is_native_1000(self) -> bool:
+        return self.native_size == (1000, 1000)
+
+
+def classify_client_size(size: tuple[int, int]) -> ClientResolutionContract:
+    """Map an already-running ClientJS size to its recognition table.
+
+    No resize is permitted here. Unsupported sizes stop before any AUTO click so
+    a wrong table can never be applied to a different render geometry.
+    """
+    actual = tuple(map(int, size))
+    if actual == (500, 500):
+        return ClientResolutionContract(
+            name="native-500",
+            native_size=actual,
+            table_size=(500, 500),
+        )
+    if actual == (1000, 1000):
+        return ClientResolutionContract(
+            name="native-1000",
+            native_size=actual,
+            table_size=(1000, 1000),
+        )
+    raise RuntimeError(
+        "AUTO MULTI DEV chỉ có bảng nhận diện đã kiểm chứng cho ClientJS "
+        "500x500 hoặc 1000x1000; actual="
+        f"{actual[0]}x{actual[1]}. AUTO không resize ClientJS; "
+        "hãy chọn kích thước trong GUI trước khi Bắt đầu AUTO."
+    )
 
 
 def disable_legacy_adaptive_matching() -> bool:
-    """Restore native ``cv2.matchTemplate`` inside the isolated clean worker.
-
-    The legacy AUTO PRO launcher installs a global adaptive_cv monkeypatch which
-    downscales both image and template. Clean VisionEngine now owns explicit
-    logical->frame scaling, so keeping that monkeypatch would scale the already
-    adapted 500x500 matcher a second time and throw away image detail.
-
-    Return True only when an installed legacy wrapper was actually removed.
-    """
+    """Restore native ``cv2.matchTemplate`` inside the isolated clean worker."""
     module = sys.modules.get("adaptive_cv")
     if module is None:
         return False
@@ -59,32 +97,49 @@ def disable_legacy_adaptive_matching() -> bool:
     return True
 
 
+def _raw_capture(driver: Any):
+    refresh = getattr(driver, "_refresh_profile_pid", None)
+    if callable(refresh):
+        refresh()
+    capture = getattr(driver, "_capture_shared_bgra", None)
+    if not callable(capture):
+        raise RuntimeError(
+            "Bridge V3 driver thiếu raw CAPTURE3 API; không thể đọc native resolution"
+        )
+    raw, width, height = capture()
+    return raw, int(width), int(height)
+
+
+def detect_client_resolution(driver: Any) -> ClientResolutionContract:
+    """Read CAPTURE3 once and choose 500/1000 contract without touching HWND size."""
+    _raw, width, height = _raw_capture(driver)
+    return classify_client_size((width, height))
+
+
 class NativeCaptureDriver:
-    """AUTO MULTI DEV view of EngineDriver that keeps CAPTURE3 at native size.
+    """Expose CAPTURE3 at its real size while preserving logical-1000 input.
 
-    Legacy ``EngineDriver.screenshot()`` always expands the raw bridge capture
-    back to ``reference_size`` (1000x1000). That behavior hid the real 500x500
-    frame from ``VisionEngine`` and forced template matching against an upscaled,
-    softened image. The result was visible in the first 500 smoke: the window was
-    confirmed 500x500 before Bridge, yet every Vision trace still reported
-    ``Frame: 1000x1000`` and small anchors fell just below their old thresholds.
+    ``EngineDriver.screenshot()`` historically expands raw CAPTURE3 to its
+    reference size. AUTO installs this adapter after Bridge construction so
+    VisionEngine receives the true frame: 500 stays 500, 1000 stays 1000.
 
-    This adapter is installed only for AUTO MULTI DEV. It reads the already
-    writer-bound ``_capture_shared_bgra`` implementation, validates that the
-    native Bridge frame is still exactly the production size, and exposes those
-    pixels without any reference-size resize. All input methods/attributes are
-    delegated unchanged to the underlying EngineDriver, whose native INPUT4 path
-    already scales logical 1000 coordinates by the actual ClientJS client area.
+    The selected size is immutable for one worker run. If ClientJS changes size
+    after AUTO starts, capture fails closed before the next click instead of
+    silently switching recognition tables mid-transaction.
     """
 
     def __init__(
         self,
         driver: Any,
         *,
-        expected_size: tuple[int, int] = PRODUCTION_CLIENT_SIZE,
+        contract: ClientResolutionContract,
     ) -> None:
         self._driver = driver
-        self.expected_size = tuple(map(int, expected_size))
+        self.contract = contract
+        self.expected_size = tuple(map(int, contract.native_size))
+        self.native_size = self.expected_size
+        self.table_size = tuple(map(int, contract.table_size))
+        self.resolution_name = str(contract.name)
         self.reference_size = tuple(
             map(int, getattr(driver, "reference_size", LOGICAL_REFERENCE_SIZE))
         )
@@ -93,26 +148,18 @@ class NativeCaptureDriver:
         return getattr(self._driver, name)
 
     def screenshot(self, format: str | None = None):
-        refresh = getattr(self._driver, "_refresh_profile_pid", None)
-        if callable(refresh):
-            refresh()
-        capture = getattr(self._driver, "_capture_shared_bgra", None)
-        if not callable(capture):
-            raise RuntimeError(
-                "Bridge V3 driver thiếu raw CAPTURE3 API; không thể giữ native 500x500"
-            )
-
-        raw, width, height = capture()
-        actual = (int(width), int(height))
+        raw, width, height = _raw_capture(self._driver)
+        actual = (width, height)
         if actual != self.expected_size:
             raise RuntimeError(
-                "AUTO MULTI DEV native CAPTURE3 không còn đúng production size "
-                f"{self.expected_size[0]}x{self.expected_size[1]}: actual="
-                f"{actual[0]}x{actual[1]}. Dừng trước khi click để tránh lệch tọa độ."
+                "AUTO MULTI DEV native CAPTURE3 đã đổi kích thước trong lúc chạy: "
+                f"start={self.expected_size[0]}x{self.expected_size[1]}, "
+                f"actual={actual[0]}x{actual[1]}. Dừng trước khi click để tránh "
+                "dùng sai bảng nhận diện; AUTO không tự resize ClientJS."
             )
 
         # Keep legacy capture-scale observers coherent even though the adaptive
-        # matcher itself was disabled above. No resizing is performed here.
+        # matcher itself is disabled. No image resizing is performed here.
         try:
             from adaptive_cv import set_capture_scale
 
@@ -136,139 +183,3 @@ class NativeCaptureDriver:
         return Image.frombuffer(
             "RGBA", actual, raw, "raw", "BGRA", 0, 1
         ).convert("RGB")
-
-
-def _find_window(pid: int) -> int | None:
-    if os.name != "nt":
-        return None
-    user32 = ctypes.windll.user32
-    found: list[int] = []
-    callback_type = ctypes.WINFUNCTYPE(
-        wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
-    )
-
-    def callback(hwnd, _lparam):
-        window_pid = wintypes.DWORD()
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
-        if window_pid.value != int(pid) or not user32.IsWindowVisible(hwnd):
-            return True
-        rect = wintypes.RECT()
-        if user32.GetClientRect(hwnd, ctypes.byref(rect)):
-            width = int(rect.right - rect.left)
-            height = int(rect.bottom - rect.top)
-            if width > 100 and height > 100:
-                found.append(int(hwnd))
-                return False
-        return True
-
-    user32.EnumWindows(callback_type(callback), 0)
-    return found[0] if found else None
-
-
-def _client_size(hwnd: int) -> tuple[int, int]:
-    rect = wintypes.RECT()
-    if not ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rect)):
-        raise ctypes.WinError()
-    return int(rect.right - rect.left), int(rect.bottom - rect.top)
-
-
-def _resize_client(hwnd: int, width: int, height: int) -> None:
-    """Resize drawable client area without changing its desktop position."""
-    user32 = ctypes.windll.user32
-    rect = wintypes.RECT(0, 0, int(width), int(height))
-    style = user32.GetWindowLongW(hwnd, -16)
-    ex_style = user32.GetWindowLongW(hwnd, -20)
-
-    adjusted = False
-    adjust_for_dpi = getattr(user32, "AdjustWindowRectExForDpi", None)
-    if adjust_for_dpi:
-        dpi = user32.GetDpiForWindow(hwnd)
-        adjusted = bool(
-            adjust_for_dpi(
-                ctypes.byref(rect), style, False, ex_style, dpi
-            )
-        )
-    if not adjusted:
-        if not user32.AdjustWindowRectEx(
-            ctypes.byref(rect), style, False, ex_style
-        ):
-            raise ctypes.WinError()
-
-    outer_width = int(rect.right - rect.left)
-    outer_height = int(rect.bottom - rect.top)
-    # SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW. Only this PID's hwnd is used.
-    if not user32.SetWindowPos(
-        hwnd,
-        0,
-        0,
-        0,
-        outer_width,
-        outer_height,
-        0x0002 | 0x0004 | 0x0040,
-    ):
-        raise ctypes.WinError()
-
-
-def ensure_production_client_size(
-    pid: int,
-    *,
-    target: tuple[int, int] = PRODUCTION_CLIENT_SIZE,
-    timeout: float = 20.0,
-    stable_seconds: float = 2.0,
-) -> tuple[int, int]:
-    """Make one selected ClientJS stay at production 500x500 before automation.
-
-    Multi's generic launcher can have a delayed display callback roughly one
-    second after process start. A one-shot resize in the worker could therefore
-    be overwritten back to an old saved size. This helper keeps observing only
-    this PID until the target client area remains stable for ``stable_seconds``.
-
-    It is intentionally called before Bridge V3 construction, so vision caches
-    and CAPTURE3 never begin at one size and switch resolution mid-run.
-    """
-    if os.name != "nt":
-        raise RuntimeError("AUTO MULTI DEV production resolution chỉ hỗ trợ Windows")
-
-    width, height = map(int, target)
-    if width < 200 or height < 200:
-        raise ValueError("Production ClientJS size quá nhỏ")
-
-    deadline = time.monotonic() + max(1.0, float(timeout))
-    stable_since: float | None = None
-    last_size: tuple[int, int] | None = None
-    resize_count = 0
-
-    while time.monotonic() < deadline:
-        hwnd = _find_window(int(pid))
-        if hwnd is None:
-            stable_since = None
-            time.sleep(0.10)
-            continue
-
-        current = _client_size(hwnd)
-        last_size = current
-        if current != (width, height):
-            _resize_client(hwnd, width, height)
-            resize_count += 1
-            stable_since = None
-            time.sleep(0.12)
-            continue
-
-        now = time.monotonic()
-        if stable_since is None:
-            stable_since = now
-        if now - stable_since >= max(0.25, float(stable_seconds)):
-            # Final fresh measurement after the stability window. This catches a
-            # delayed parent callback landing at the very end of the interval.
-            final_size = _client_size(hwnd)
-            if final_size == (width, height):
-                return final_size
-            last_size = final_size
-            stable_since = None
-        time.sleep(0.10)
-
-    raise RuntimeError(
-        "Không khóa được ClientJS production size "
-        f"{width}x{height} cho PID {int(pid)} sau {float(timeout):.1f}s; "
-        f"last_size={last_size}, resize_count={resize_count}"
-    )
