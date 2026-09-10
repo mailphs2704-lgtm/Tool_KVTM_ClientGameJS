@@ -198,6 +198,7 @@ def main() -> int:
         print("[KVTM DEV] Resident host: importing Multi UI AFTER runtime READY...", flush=True)
         import kvtm_multi_dev_entry
         from auto_builder_integration import install_auto_builder_integration
+        from auto_main_profile_settings import install_auto_main_profile_settings
         from client_video_recorder import install_client_video_recorder
 
         # Multi DEV is unattended-capable: error dialogs must never block all
@@ -210,6 +211,12 @@ def main() -> int:
         # keeps the shared kvtm_multi.py production UI untouched while reusing its
         # exact ttk styles/tab strip/lifecycle.
         install_auto_builder_integration(
+            kvtm_multi_dev_entry.MultiDevApp,
+            kvtm_multi_dev_entry.core,
+        )
+        # Scheduler persistence is also DEV-only. Install it after Builder so it
+        # can wrap the final AUTO Main controls without touching the core UI.
+        install_auto_main_profile_settings(
             kvtm_multi_dev_entry.MultiDevApp,
             kvtm_multi_dev_entry.core,
         )
