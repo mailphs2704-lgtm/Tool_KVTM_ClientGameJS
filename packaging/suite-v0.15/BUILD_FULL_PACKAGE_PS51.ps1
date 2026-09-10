@@ -144,6 +144,8 @@ Write-Host "Git HEAD preflight: $($probeHead.Trim())" -ForegroundColor Green
 # The old standalone recorder BAT is intentionally gone. The GUI recorder is a
 # required package source and uses the resident cv2 runtime already shipped by
 # AUTO_PRO. Block the build if the integrated recorder contract disappears.
+# Keep every verifier token ASCII-only because Windows PowerShell 5.1 parses
+# UTF-8-without-BOM script literals through the active ANSI code page.
 $VideoRecorderSource = Join-Path $RepoRoot "source-archive\multi-current\kvtm_multi_tool\client_video_recorder.py"
 if (-not (Test-Path -LiteralPath $VideoRecorderSource -PathType Leaf)) {
     throw "Missing integrated ClientJS MP4 recorder: $VideoRecorderSource"
@@ -156,7 +158,10 @@ foreach ($token in @(
     'VIDEO_CODEC = "mp4v"',
     'VIDEO_EXTENSION = ".mp4"',
     'capture_bgra',
-    'Chụp ảnh',
+    'def wrapped_build_ui(self) -> None:',
+    'screenshot_button = _find_widget_by_text(self',
+    '_client_video_button = core.ttk.Button(',
+    'command=lambda: _toggle_client_video(self)',
     'Quay MP4'
 )) {
     if (-not $VideoRecorderText.Contains($token)) {
@@ -166,7 +171,7 @@ foreach ($token in @(
 if (Test-Path -LiteralPath (Join-Path $RepoRoot "KVTM_QUAY_VIDEO_60FPS.bat") -PathType Leaf) {
     throw "Legacy KVTM_QUAY_VIDEO_60FPS.bat must stay deleted; GUI MP4 recorder owns recording"
 }
-Write-Host "VIDEO GUI contract: MP4 1920x1080@60 + legacy BAT removed" -ForegroundColor Green
+Write-Host "VIDEO GUI contract: MP4 1920x1080@60 + GUI hook + legacy BAT removed" -ForegroundColor Green
 
 # Stop only runtime processes that are proven to belong to the old packaged output.
 Stop-KvtmPackagedRuntimeProcesses -OutputRoot $OutputRoot
