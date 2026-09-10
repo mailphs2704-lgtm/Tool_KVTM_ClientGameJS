@@ -112,12 +112,7 @@ def _load_resident_runtime(component_root: Path, auto_root: Path) -> None:
 
 
 def _install_non_modal_error_ui(core) -> None:
-    """Keep Multi DEV runtime errors in status/logs instead of modal dialogs.
-
-    Only ``showerror`` is replaced. Informational/confirmation dialogs remain
-    available for explicit operator actions. AUTO runtime errors are supervised
-    by the isolated worker and should never block all clones behind an OK box.
-    """
+    """Keep Multi DEV runtime errors in status/logs instead of modal dialogs."""
 
     def showerror_no_modal(title, message, *args, **kwargs):
         del args, kwargs
@@ -133,13 +128,7 @@ def _install_non_modal_error_ui(core) -> None:
 
 
 def _install_pinned_dev_settings(core) -> None:
-    """Pin proven DEV defaults and self-heal Dọn quầy profile settings.
-
-    The launcher stores settings under %APPDATA%/KVTM Multi DEV, outside the
-    rebuilt dist tree. This layer provides a source-controlled fallback so even a
-    brand-new/missing settings file starts with the same operator-approved values.
-    Existing Dọn quầy values always win over the fallback and remain editable.
-    """
+    """Pin proven DEV defaults and self-heal Dọn quầy profile settings."""
     core.DEFAULT_AUTO_TUNING.update(_PINNED_MULTI_DEV_TUNING)
 
     original_clear_stall_job = core.MultiApp._clear_stall_job
@@ -209,6 +198,7 @@ def main() -> int:
         print("[KVTM DEV] Resident host: importing Multi UI AFTER runtime READY...", flush=True)
         import kvtm_multi_dev_entry
         from auto_builder_integration import install_auto_builder_integration
+        from client_video_recorder import install_client_video_recorder
 
         # Multi DEV is unattended-capable: error dialogs must never block all
         # running clones. Callers still update note/status and every worker error
@@ -220,6 +210,12 @@ def main() -> int:
         # keeps the shared kvtm_multi.py production UI untouched while reusing its
         # exact ttk styles/tab strip/lifecycle.
         install_auto_builder_integration(
+            kvtm_multi_dev_entry.MultiDevApp,
+            kvtm_multi_dev_entry.core,
+        )
+        # Recorder is installed last so its GUI wrapper sees the final control
+        # layout. It captures ClientJS HWND directly and never owns CAPTURE3.
+        install_client_video_recorder(
             kvtm_multi_dev_entry.MultiDevApp,
             kvtm_multi_dev_entry.core,
         )
