@@ -11,9 +11,9 @@ from .inventory import InventoryActions
 __all__ = ["AutoVpSpec", "VpRecognition", "AutoVpRecognitionActions"]
 FILE_FUNCTIONS = (
     "Khai báo ba VP mẫu của AUTO Main",
-    "Quét vùng kho thành phẩm đã mở",
+    "Quét vùng kho thành phẩm đã mở trên đúng một fresh frame",
     "Nhận diện VP theo template AUTO PRO",
-    "Trả kết quả READ-ONLY có score/vị trí",
+    "Trả kết quả READ-ONLY có raw score/vị trí kể cả khi dưới threshold",
     "Ghi kết quả vào log hành động và chi tiết",
 )
 
@@ -52,6 +52,7 @@ class AutoVpRecognitionActions:
             ("kho_tinh_dau_hh", "tinh_dau_hh"),
         ),
     )
+    RECOGNITION_SCALES = (0.75, 0.85, 0.95, 1.00, 1.05, 1.15, 1.25)
 
     def __init__(
         self,
@@ -66,37 +67,65 @@ class AutoVpRecognitionActions:
         self.inventory = inventory
 
     def scan_samples(self, *, log_prefix: str = "READ-ONLY VP") -> tuple[VpRecognition, ...]:
-        """Scan configured samples without clicking an inventory item."""
+        """Scan every configured VP against one and the same fresh inventory frame.
+
+        ``VisionEngine.find`` normally captures a frame when ``frame`` is omitted.
+        Calling it once per template therefore mixed six independent CAPTURE3
+        frames in one logical inventory scan.  Immediately after a storage-tab
+        transition that can pair a visible inventory with a stale/transition frame
+        for the exact VP template being tested.  Capture once here, then reuse that
+        immutable frame for every candidate in this scan attempt.
+
+        Matching is requested at -1.0 only to retain the best raw score for
+        diagnostics.  Acceptance remains fail-closed at each spec's unchanged
+        threshold (0.72 by default); no weaker match can become clickable.
+        """
         self.context.ensure_running()
+        frame = self.vision.frame()
+        frame_h, frame_w = frame.shape[:2]
+        self.context.detail(
+            f"{log_prefix} | SNAPSHOT frame={frame_w}x{frame_h} | "
+            "one-frame-all-templates=true"
+        )
+
         results: list[VpRecognition] = []
         for spec in self.SAMPLE_ITEMS:
             best = None
             for template in spec.templates:
                 match = self.vision.find(
                     template,
-                    threshold=spec.threshold,
+                    threshold=-1.0,
                     zone=self.inventory.INVENTORY_ZONE,
-                    scales=(0.75, 0.85, 0.95, 1.00, 1.05, 1.15, 1.25),
+                    scales=self.RECOGNITION_SCALES,
                     click=False,
+                    frame=frame,
                 )
                 if match is not None and (
                     best is None or match.score > best.score
                 ):
                     best = match
+
+            score = float(best.score) if best is not None else -1.0
+            found = best is not None and score >= float(spec.threshold)
             result = VpRecognition(
                 item_id=spec.item_id,
                 label=spec.label,
-                found=best is not None,
+                found=found,
                 template=best.template.stem if best is not None else "",
-                score=float(best.score) if best is not None else 0.0,
-                center=best.center if best is not None else None,
+                score=score,
+                center=best.center if found and best is not None else None,
             )
             results.append(result)
-            self.context.log(
-                f"{log_prefix} | {spec.label} | "
-                + (
-                    f"FOUND score={result.score:.3f} center={result.center}"
-                    if result.found else "NOT_FOUND"
+            if result.found:
+                self.context.log(
+                    f"{log_prefix} | {spec.label} | FOUND "
+                    f"template={result.template} score={result.score:.3f} "
+                    f"threshold={spec.threshold:.2f} center={result.center}"
                 )
-            )
+            else:
+                self.context.log(
+                    f"{log_prefix} | {spec.label} | NOT_FOUND "
+                    f"best_template={result.template or 'NONE'} "
+                    f"best_score={result.score:.3f} threshold={spec.threshold:.2f}"
+                )
         return tuple(results)
