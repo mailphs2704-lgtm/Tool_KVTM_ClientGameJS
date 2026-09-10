@@ -10,7 +10,8 @@ from .inventory import InventoryActions
 
 __all__ = ["AutoVpSpec", "VpRecognition", "AutoVpRecognitionActions"]
 FILE_FUNCTIONS = (
-    "Khai báo ba VP mẫu của AUTO Main",
+    "Khai báo thư viện VP mẫu dùng chung cho AUTO Main",
+    "Mặc định Function 1 chỉ quét Táo sấy/Vải vàng; Function khác phải truyền policy riêng",
     "Quét vùng kho thành phẩm đã mở trên đúng một fresh frame",
     "Nhận diện VP theo template AUTO PRO",
     "Trả kết quả READ-ONLY có raw score/vị trí kể cả khi dưới threshold",
@@ -43,6 +44,14 @@ class VpRecognition:
 class AutoVpRecognitionActions:
     """READ-ONLY recognition for items produced by AUTO Main."""
 
+    # Function 1 was the pilot flow. Rose oil was only present there as an early
+    # recognition test, so the default scan must stay limited to its real sale VP.
+    FUNCTION_1_ITEM_IDS = ("tao_say", "vai_vang")
+
+    # Function 2 starts from the same shared recognition library but owns rose oil.
+    # Its production runner is developed separately from Function 1.
+    FUNCTION_2_ITEM_IDS = ("tao_say", "vai_vang", "tinh_dau_hh")
+
     SAMPLE_ITEMS = (
         AutoVpSpec("tao_say", "Táo sấy", ("kho_tao_say", "tao_say")),
         AutoVpSpec("vai_vang", "Vải vàng", ("kho_vai_vang", "vai_vang")),
@@ -66,30 +75,55 @@ class AutoVpRecognitionActions:
         self.waiter = waiter
         self.inventory = inventory
 
-    def scan_samples(self, *, log_prefix: str = "READ-ONLY VP") -> tuple[VpRecognition, ...]:
-        """Scan every configured VP against one and the same fresh inventory frame.
+    def scan_samples(
+        self,
+        *,
+        log_prefix: str = "READ-ONLY VP",
+        item_ids: tuple[str, ...] | None = None,
+    ) -> tuple[VpRecognition, ...]:
+        """Scan the Function-owned VP policy against one fresh inventory frame.
 
         ``VisionEngine.find`` normally captures a frame when ``frame`` is omitted.
-        Calling it once per template therefore mixed six independent CAPTURE3
-        frames in one logical inventory scan.  Immediately after a storage-tab
-        transition that can pair a visible inventory with a stale/transition frame
-        for the exact VP template being tested.  Capture once here, then reuse that
+        Calling it once per template therefore mixed independent CAPTURE3 frames
+        in one logical inventory scan. Immediately after a storage-tab transition
+        that can pair a visible inventory with a stale/transition frame for the
+        exact VP template being tested. Capture once here, then reuse that
         immutable frame for every candidate in this scan attempt.
 
+        Function 1 is the default caller and intentionally scans only Táo sấy and
+        Vải vàng. Tinh dầu hoa hồng remains in the shared library for Function 2,
+        which must opt in explicitly through ``item_ids`` when its runner is ready.
+
         Matching is requested at -1.0 only to retain the best raw score for
-        diagnostics.  Acceptance remains fail-closed at each spec's unchanged
+        diagnostics. Acceptance remains fail-closed at each spec's unchanged
         threshold (0.72 by default); no weaker match can become clickable.
         """
         self.context.ensure_running()
+        requested = (
+            self.FUNCTION_1_ITEM_IDS
+            if item_ids is None
+            else tuple(str(item_id) for item_id in item_ids)
+        )
+        if not requested:
+            raise ValueError("AUTO VP scan cần ít nhất một item_id")
+
+        specs_by_id = {spec.item_id: spec for spec in self.SAMPLE_ITEMS}
+        unknown = [item_id for item_id in requested if item_id not in specs_by_id]
+        if unknown:
+            raise ValueError(
+                "AUTO VP scan chưa có template cho: " + ", ".join(unknown)
+            )
+        specs = tuple(specs_by_id[item_id] for item_id in requested)
+
         frame = self.vision.frame()
         frame_h, frame_w = frame.shape[:2]
         self.context.detail(
             f"{log_prefix} | SNAPSHOT frame={frame_w}x{frame_h} | "
-            "one-frame-all-templates=true"
+            f"one-frame-all-templates=true | items={','.join(requested)}"
         )
 
         results: list[VpRecognition] = []
-        for spec in self.SAMPLE_ITEMS:
+        for spec in specs:
             best = None
             for template in spec.templates:
                 match = self.vision.find(

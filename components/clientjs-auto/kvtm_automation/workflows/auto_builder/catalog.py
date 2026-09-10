@@ -26,6 +26,12 @@ FUNCTION_SPECS = {
         sale_item_ids=("tao_say", "vai_vang"),
         runner_key="function_1",
     ),
+    "function_2": FunctionSpec(
+        function_id="function_2",
+        label="9 Táo sấy - 9 Vải vàng - 7 tinh dầu hoa hồng",
+        sale_item_ids=("tao_say", "vai_vang", "tinh_dau_hh"),
+        runner_key="function_2",
+    ),
 }
 
 
