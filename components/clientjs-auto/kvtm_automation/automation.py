@@ -30,23 +30,16 @@ from .runtime.bootstrap import install_binary_dependencies
 from .runtime.driver import ClientJSDriverFactory
 from .runtime.resolution import (
     LOGICAL_REFERENCE_SIZE,
-    PRODUCTION_CLIENT_SIZE,
     NativeCaptureDriver,
+    detect_client_resolution,
     disable_legacy_adaptive_matching,
-    ensure_production_client_size,
 )
 from .runtime.vision import VisionEngine
 from .runtime.wait import Waiter
 
 
 def _load_image_runtime(context: AutomationContext) -> float:
-    """Load native image libraries on the worker main thread.
-
-    Windows native extension initialization can deadlock when cv2/NumPy is
-    imported from a temporary background thread. The proven AUTO PRO/package
-    path imports these DLLs synchronously. The worker owns the outer watchdog,
-    so this function must not create another loader thread.
-    """
+    """Load native image libraries on the worker main thread."""
     started = time.monotonic()
     context.log("Thư viện ảnh: cold-load đồng bộ trên worker main thread")
     install_binary_dependencies(context.auto_root, logger=context.log)
@@ -54,12 +47,7 @@ def _load_image_runtime(context: AutomationContext) -> float:
 
 
 def _is_auto_multi_dev_context(context: AutomationContext) -> bool:
-    """Scope the 500 production size to AUTO MULTI DEV only.
-
-    KVAutomation is also reusable by diagnostics/other clean workflows. Their
-    window-size behavior must not change as a side effect of this migration.
-    Multi DEV gives the isolated main worker a stable `auto-multi-dev` work-dir.
-    """
+    """Scope native-resolution capture ownership to AUTO MULTI DEV only."""
     return any(
         str(part).casefold() == "auto-multi-dev"
         for part in Path(context.work_dir).parts
@@ -69,10 +57,11 @@ def _is_auto_multi_dev_context(context: AutomationContext) -> bool:
 class KVAutomation:
     """Clean facade shared by ClientJS workflows.
 
-    DEV may keep the image runtime resident in the same Python process that owns
-    the Multi UI. In that mode ``image_runtime_ready=True`` skips all native
-    imports here, so a live probe goes directly to the Cocos DLL bridge.
-    Production/CLI workers keep the bounded loader as a safe fallback.
+    AUTO MULTI DEV never resizes ClientJS. The physical client size already
+    chosen by the user/profile is detected after Bridge V3 attaches. A 500x500
+    client selects the native-500 recognition contract; a 1000x1000 client
+    selects the native-1000 contract. Business/input coordinates remain logical
+    1000x1000 in both modes.
     """
 
     def __init__(
@@ -95,6 +84,7 @@ class KVAutomation:
             context.auto_root,
         )
         auto_multi_resolution = _is_auto_multi_dev_context(context)
+        self.resolution_contract = None
 
         if image_runtime_ready:
             context.stage("clean-image-runtime-ready")
@@ -110,24 +100,13 @@ class KVAutomation:
 
         if driver is None:
             if auto_multi_resolution:
-                context.stage("clientjs-production-resolution-normalizing")
+                context.stage("clientjs-resolution-preserve-start")
                 legacy_disabled = disable_legacy_adaptive_matching()
                 if legacy_disabled:
                     context.detail(
                         "AUTO MULTI DEV resolution • legacy adaptive_cv matcher "
                         "đã gỡ trong isolated worker • VisionEngine sở hữu scale"
                     )
-                measured = ensure_production_client_size(
-                    context.pid,
-                    target=PRODUCTION_CLIENT_SIZE,
-                )
-                context.log(
-                    "AUTO MULTI DEV display • production client="
-                    f"{measured[0]}x{measured[1]} • logical reference="
-                    f"{LOGICAL_REFERENCE_SIZE[0]}x{LOGICAL_REFERENCE_SIZE[1]} • "
-                    "resize ổn định trước Bridge V3"
-                )
-                context.stage("clientjs-production-resolution-ready")
 
             context.stage("clientjs-dll-bridge-connecting")
             bundle = self.driver_factory.engine(
@@ -138,21 +117,30 @@ class KVAutomation:
             )
             self.driver = bundle.driver
             if auto_multi_resolution:
-                # EngineDriver historically upscaled every CAPTURE3 frame back
-                # to reference_size=1000 before callers saw it. That defeats the
-                # new VisionEngine logical->frame transform and softens all small
-                # templates. Keep the real 500 frame and prove it immediately.
+                # Passive detection only: Bắt đầu AUTO must never change HWND or
+                # client-area size. CAPTURE3 is the authority for the real render
+                # geometry that VisionEngine will consume.
+                contract = detect_client_resolution(self.driver)
+                self.resolution_contract = contract
                 self.driver = NativeCaptureDriver(
                     self.driver,
-                    expected_size=PRODUCTION_CLIENT_SIZE,
+                    contract=contract,
                 )
                 native_probe = self.driver.screenshot(format="opencv")
                 native_height, native_width = native_probe.shape[:2]
+                context.log(
+                    "AUTO MULTI DEV resolution • preserve-client-size • native="
+                    f"{native_width}x{native_height} • table="
+                    f"{contract.table_size[0]}x{contract.table_size[1]} • "
+                    "logical="
+                    f"{LOGICAL_REFERENCE_SIZE[0]}x{LOGICAL_REFERENCE_SIZE[1]} • no-resize"
+                )
                 context.log(
                     "AUTO MULTI DEV capture • native CAPTURE3="
                     f"{native_width}x{native_height} • VisionEngine nhận frame thật • "
                     "không upscale về 1000 trước matching"
                 )
+                context.stage("clientjs-resolution-preserve-ready")
             self.bridge_root = bundle.bridge_root
             self.bridge_mode = bundle.mode
             context.stage("clientjs-dll-bridge-ready")
