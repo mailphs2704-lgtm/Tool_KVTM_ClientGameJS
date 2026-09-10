@@ -24,7 +24,19 @@ class SellingActions:
     SL10_ZONE = (737, 426, 81, 81)
     CONFIRM_ZONE = (390, 552, 211, 102)
     PLACE_BUTTON = (771, 692)
+    PLACE_BUTTON_ZONE = (700, 650, 180, 90)
     SALE_CHANGE_ZONE = (180, 330, 640, 430)
+
+    # Native-500 live calibration. ``dat_ban`` was captured from the old logical
+    # reference and can miss after VisionEngine scales it down. The orange button
+    # geometry is stable in the supplied 500x500 sale screenshot, so it is a
+    # second proof only inside the canonical button zone. The destructive click
+    # remains guarded by post-click screen-change verification below.
+    SALE_DIALOG_TEMPLATE_THRESHOLD = 0.68
+    SALE_DIALOG_TEMPLATE_SCALES = (
+        0.85, 1.00, 1.15, 1.30, 1.45, 1.60, 1.75,
+    )
+    SALE_BUTTON_ORANGE_MIN = 0.08
 
     # LIVE_CALIBRATED 20260903-195708: the last two verified x10 batches
     # matched at 0.612 and 0.605 after the own-stall view transition. 0.60 is
@@ -53,6 +65,71 @@ class SellingActions:
             self.SALE_CHANGE_ZONE, frame
         )
         return frame[y : y + height, x : x + width].copy()
+
+    def _sale_button_orange_ratio(self, frame=None) -> float:
+        """Measure the live orange Đặt bán button only in its canonical zone."""
+        import numpy as np
+
+        source = self.vision.frame() if frame is None else frame
+        x, y, width, height = self.vision.logical_zone_to_frame(
+            self.PLACE_BUTTON_ZONE, source
+        )
+        roi = source[y : y + height, x : x + width]
+        if roi is None or getattr(roi, "size", 0) == 0 or roi.ndim < 3:
+            return 0.0
+
+        # Vision frames are OpenCV BGR/BGRA. These loose channel relationships
+        # intentionally follow the orange/gold button rather than exact RGB, so
+        # native scaling/antialiasing does not break the proof.
+        blue = roi[:, :, 0].astype("int16")
+        green = roi[:, :, 1].astype("int16")
+        red = roi[:, :, 2].astype("int16")
+        orange = (
+            (red > 150)
+            & (green > 60)
+            & (blue < 110)
+            & (red > green + 20)
+            & (red > blue + 80)
+            & (green > blue + 20)
+        )
+        return float(np.mean(orange))
+
+    def is_sale_dialog_ready(self, frame=None) -> bool:
+        """Prove the sale dialog by template OR live native-500 button geometry."""
+        source = self.vision.frame() if frame is None else frame
+        marker = self.vision.find(
+            "dat_ban",
+            threshold=self.SALE_DIALOG_TEMPLATE_THRESHOLD,
+            zone=self.DAT_BAN_ZONE,
+            scales=self.SALE_DIALOG_TEMPLATE_SCALES,
+            click=False,
+            frame=source,
+        )
+        if marker is not None:
+            self.context.detail(
+                "AUTO sale dialog proof | source=dat_ban-template | "
+                f"score={marker.score:.3f} | center={marker.center}"
+            )
+            return True
+
+        orange_ratio = self._sale_button_orange_ratio(source)
+        if orange_ratio >= self.SALE_BUTTON_ORANGE_MIN:
+            self.context.detail(
+                "AUTO sale dialog proof | source=native-500-orange-button | "
+                f"orange_ratio={orange_ratio:.3f} | "
+                f"min={self.SALE_BUTTON_ORANGE_MIN:.3f}"
+            )
+            return True
+        return False
+
+    def wait_sale_dialog_ready(self, *, timeout: float = 4.0, description: str = "màn hình đặt bán") -> None:
+        """Wait for a safe sale-dialog proof without making the button template mandatory."""
+        self.waiter.until(
+            lambda: self.is_sale_dialog_ready(),
+            timeout=float(timeout),
+            interval=0.20,
+            description=description,
+        )
 
     def open_inventory_read_only(self, *, storage_id: int = 2) -> None:
         """Open the sale inventory without selecting or listing any VP."""
@@ -115,16 +192,7 @@ class SellingActions:
         self.waiter.sleep(0.30)
 
         try:
-            self.waiter.until(
-                lambda: self.vision.find(
-                    "dat_ban",
-                    threshold=0.78,
-                    zone=self.DAT_BAN_ZONE,
-                ),
-                timeout=4.0,
-                interval=0.20,
-                description="màn hình đặt bán",
-            )
+            self.wait_sale_dialog_ready(timeout=4.0, description="màn hình đặt bán")
         except ScreenTimeout as exc:
             self._cancel_dialog()
             raise TransactionError("VP không mở được màn hình đặt bán") from exc
