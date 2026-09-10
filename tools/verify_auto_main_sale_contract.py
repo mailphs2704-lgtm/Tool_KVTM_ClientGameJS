@@ -27,6 +27,7 @@ FILE_FUNCTIONS = (
     "Khóa đúng VP mặc định của Function 1 và sale policy theo Function catalog",
     "Khóa thứ tự thu vàng, treo VP và hai swipe",
     "Khóa xác minh giao dịch trước khi ghi nhận",
+    "Khóa x10 native-500 bằng multi-scale + hai frame liên tiếp, cấm quay lại threshold 0.95",
     "Khóa GUI chọn Function + số vòng giữa hai lần bán + chờ giữa vòng Function",
     "Khóa công tắc qua nhà bạn #1 sau mỗi ba vòng Function và handoff tới worker",
     "Khóa maintenance dùng navigation Dọn-quầy đã prove nhưng không chạy business Dọn quầy",
@@ -93,10 +94,17 @@ def main() -> int:
     require(action, 'return "WRONG_ITEM"', "Wrong-item safe cancel missing")
     require(action, "self._unsafe_item_ids.add", "Wrong-item exclusion missing")
     require(action, '"sl10"', "Exact x10 quantity gate missing")
-    require(action, "threshold=0.95", "Exact-ten threshold must reject 1..9")
-    require(action, "quantity_passes >= 2", "Exact-ten result must be stable on two frames")
+    require(action, "EXACT_TEN_THRESHOLD = 0.78", "Native-500 exact-ten threshold changed")
+    require(action, "EXACT_TEN_SCALES = (0.75, 0.90, 1.00, 1.10, 1.25, 1.40, 1.55)", "Native-500 exact-ten scales changed")
+    require(action, "EXACT_TEN_REQUIRED_PASSES = 2", "Exact-ten must require two stable frames")
+    require(action, "threshold=self.EXACT_TEN_THRESHOLD", "Exact-ten match does not use calibrated threshold")
+    require(action, "scales=self.EXACT_TEN_SCALES", "Exact-ten match does not use native multi-scale proof")
+    require(action, "quantity_passes >= self.EXACT_TEN_REQUIRED_PASSES", "Exact-ten result must be stable on configured frames")
     require(action, "for quantity_attempt in range(1, 4):", "Bounded x10 render retries missing")
-    require(action, "if quantity_passes < 2:", "Below-x10 branch missing")
+    require(action, "if quantity_passes < self.EXACT_TEN_REQUIRED_PASSES:", "Below-x10 branch missing")
+    require(action, "self.selling.wait_sale_dialog_ready(", "AUTO Main does not use native-500 sale dialog proof")
+    require(action, "sale dialog READY + x10 PASS", "Pre-click sale proof log missing")
+    forbid(action, "threshold=0.95", "Legacy exact-ten 0.95 threshold returned")
     require(action, "def _cancel_selected_item", "Verified dialog cancel missing")
     require(action, "zone=(930, 0, 70, 70)", "Visible top-right dialog close gate missing")
     require(action, "if inventory_open is None:", "Closed-inventory recovery branch missing")
@@ -268,6 +276,8 @@ def main() -> int:
     print("AUTO MULTI DEV VP SALE STATIC CONTRACT VERIFIED")
     print("runtime=isolated_worker_v3")
     print("flow=game-session+sale1+selected-function-loop+sale-every-n-loops")
+    print("sale_dialog=native500-dual-proof")
+    print("sale_x10=multi-scale-two-frame-proof")
     print("friend_refresh=gui-toggle+every3-function-loops+friend1-return-home")
     print("friend_refresh_navigation=reuse-clean-navigation-assets-no-friend-stall")
     print("client_restart=2h+defer-until-function-sale-boundary+same-profile-relaunch")
