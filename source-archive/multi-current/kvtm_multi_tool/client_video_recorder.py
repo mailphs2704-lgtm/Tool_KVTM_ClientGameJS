@@ -50,12 +50,7 @@ def _find_widget_by_text(root: Any, needle: str):
 
 
 def _letterbox_full_hd(frame_bgra, cv2, np):
-    """Scale native ClientJS into a 1920x1080 canvas without stretching.
-
-    The production client is normally 500x500.  That source becomes a centered
-    1080x1080 game image with black side bars inside the exact Full-HD frame.
-    This is presentation-only scaling; it never touches AUTO/CAPTURE3 frames.
-    """
+    """Scale native ClientJS into a 1920x1080 canvas without stretching."""
     if frame_bgra.ndim != 3 or frame_bgra.shape[2] < 3:
         raise RuntimeError(f"Frame ClientJS không hợp lệ: shape={frame_bgra.shape!r}")
     source = frame_bgra[:, :, :3]
@@ -78,9 +73,8 @@ def _letterbox_full_hd(frame_bgra, cv2, np):
 def install_client_video_recorder(app_cls, core) -> None:
     """Install one-click ClientJS MP4 recording into the Multi DEV GUI.
 
-    The recorder reads the selected ClientJS HWND through ``capture_bgra``. It is
-    independent from the isolated AUTO worker and therefore does not acquire or
-    modify Bridge CAPTURE3/VisionEngine ownership.
+    Recorder capture uses the existing Windows client-area capture helper and is
+    independent from the isolated AUTO worker/CAPTURE3 owner.
     """
     if getattr(app_cls, "_client_video_recorder_installed", False):
         return
@@ -103,8 +97,13 @@ def install_client_video_recorder(app_cls, core) -> None:
             return
         try:
             button.configure(text=text, state=("normal" if enabled else "disabled"))
+            button.update_idletasks()
         except Exception:
             pass
+
+    def _reject_start(self, message: str) -> None:
+        _video_log(self, f"VIDEO ClientJS • KHÔNG THỂ START • {message}")
+        _set_video_button(self, "⏺ Quay MP4", enabled=True)
 
     def _finish_video_ui(self, session: ClientVideoSession, error: str | None) -> None:
         current = getattr(self, "_client_video_session", None)
@@ -142,14 +141,13 @@ def install_client_video_recorder(app_cls, core) -> None:
             )
             if not writer.isOpened():
                 raise RuntimeError(
-                    "Không mở được MP4 encoder mp4v của OpenCV; "
-                    "runtime video chưa sẵn sàng"
+                    "Không mở được MP4 encoder mp4v của OpenCV; runtime video chưa sẵn sàng"
                 )
 
             _video_log(
                 self,
                 "VIDEO ClientJS • START • "
-                f"profile={session.profile_id} • pid={session.pid} • "
+                f"profile={session.profile_id} • pid={session.pid} • hwnd={session.hwnd} • "
                 f"1920x1080 @ 60fps • MP4/mp4v • {session.output_path}",
             )
             started = time.perf_counter()
@@ -164,12 +162,22 @@ def install_client_video_recorder(app_cls, core) -> None:
                     )
 
                 capture = None
+                capture_error = None
                 try:
                     capture = core.capture_bgra(session.hwnd)
-                except Exception:
-                    capture = None
+                except Exception as exc:
+                    capture_error = exc
+
                 if capture is None:
                     session.capture_failures += 1
+                    if session.capture_failures == 1:
+                        _video_log(
+                            self,
+                            "VIDEO ClientJS • capture MISS 1/"
+                            f"{MAX_CAPTURE_FAILURES} • "
+                            f"{type(capture_error).__name__ if capture_error else 'UNKNOWN'}: "
+                            f"{capture_error if capture_error else 'no frame'}",
+                        )
                     if session.capture_failures >= MAX_CAPTURE_FAILURES:
                         raise RuntimeError(
                             "Mất frame ClientJS liên tục; MP4 đã được đóng an toàn"
@@ -181,20 +189,23 @@ def install_client_video_recorder(app_cls, core) -> None:
                     continue
 
                 session.capture_failures = 0
-                width, height, raw = capture
-                expected_bytes = int(width) * int(height) * 4
-                if int(width) <= 0 or int(height) <= 0 or len(raw) < expected_bytes:
+                # pc_driver.capture_bgra() contract is exactly (raw, width, height).
+                # The first recorder version unpacked this backwards as
+                # (width, height, raw), causing the worker to fail immediately
+                # after the button was pressed and making the GUI look inert.
+                raw, width, height = capture
+                width = int(width)
+                height = int(height)
+                expected_bytes = width * height * 4
+                if width <= 0 or height <= 0 or len(raw) < expected_bytes:
                     raise RuntimeError(
                         f"Frame BGRA lỗi: {width}x{height}, bytes={len(raw)}"
                     )
                 frame = np.frombuffer(raw, dtype=np.uint8, count=expected_bytes)
-                frame = frame.reshape((int(height), int(width), 4))
+                frame = frame.reshape((height, width, 4))
                 canvas = _letterbox_full_hd(frame, cv2, np)
                 last_canvas = canvas
 
-                # Keep the MP4 timeline at 60 fps.  If one capture tick is late,
-                # duplicate the latest real frame for a bounded number of slots
-                # instead of stretching the square source or changing FPS metadata.
                 now = time.perf_counter()
                 expected_total = max(
                     session.frames_written + 1,
@@ -206,8 +217,6 @@ def install_client_video_recorder(app_cls, core) -> None:
                     writer.write(canvas)
                 session.frames_written += write_count
 
-                # Do not enter an unbounded catch-up spiral on a slow PC. Rebase
-                # only when the encoder/capture path falls far behind wall clock.
                 if missing > MAX_CATCHUP_FRAMES:
                     started = time.perf_counter() - (
                         session.frames_written / VIDEO_FPS
@@ -239,25 +248,25 @@ def install_client_video_recorder(app_cls, core) -> None:
 
     def _start_client_video(self) -> None:
         selected = list(map(str, self.selected_ids()))
+        _video_log(
+            self,
+            f"VIDEO ClientJS • BUTTON • start requested • selected={selected}",
+        )
         if len(selected) != 1:
-            core.messagebox.showinfo(
-                core.APP_NAME,
-                "Hãy chọn đúng 1 tài khoản ClientJS để quay video MP4.",
-            )
+            _reject_start(self, "Hãy chọn đúng 1 tài khoản ClientJS đang chạy.")
             return
+
         profile_id = selected[0]
         proc = self.processes.get(profile_id)
         if proc is None or proc.poll() is not None:
-            core.messagebox.showinfo(
-                core.APP_NAME,
-                "ClientJS đã chọn chưa chạy hoặc đã thoát.",
-            )
+            _reject_start(self, f"ClientJS profile={profile_id} chưa chạy hoặc đã thoát.")
             return
+
         hwnd = core.find_window(proc.pid)
         if not hwnd:
-            core.messagebox.showinfo(
-                core.APP_NAME,
-                "Không tìm thấy cửa sổ ClientJS của tài khoản đã chọn.",
+            _reject_start(
+                self,
+                f"Không tìm thấy cửa sổ ClientJS profile={profile_id} pid={proc.pid}.",
             )
             return
 
@@ -282,6 +291,10 @@ def install_client_video_recorder(app_cls, core) -> None:
         session.thread = thread
         self._client_video_session = session
         _set_video_button(self, "■ Dừng MP4", enabled=True)
+        _video_log(
+            self,
+            f"VIDEO ClientJS • THREAD STARTING • profile={profile_id} • pid={proc.pid} • hwnd={hwnd}",
+        )
         thread.start()
 
     def _toggle_client_video(self) -> None:
@@ -290,6 +303,7 @@ def install_client_video_recorder(app_cls, core) -> None:
             _start_client_video(self)
             return
         if session.stop_event.is_set():
+            _video_log(self, "VIDEO ClientJS • BUTTON • stop đã được yêu cầu trước đó")
             return
         session.stop_event.set()
         _set_video_button(self, "■ Đang dừng...", enabled=False)
@@ -323,8 +337,7 @@ def install_client_video_recorder(app_cls, core) -> None:
             pass
         _video_log(
             self,
-            "VIDEO GUI READY • nút Quay MP4 cạnh Chụp ảnh • "
-            "output=1920x1080@60fps",
+            "VIDEO GUI READY • nút Quay MP4 cạnh Chụp ảnh • output=1920x1080@60fps",
         )
 
     def wrapped_on_close(self) -> None:
