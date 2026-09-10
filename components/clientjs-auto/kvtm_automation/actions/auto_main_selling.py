@@ -11,8 +11,9 @@ from .selling import SellingActions, _mean_difference
 __all__ = ["AutoSaleAttempt", "AutoMainSellingActions"]
 FILE_FUNCTIONS = (
     "Tìm một ô trống trong view quầy hiện tại",
-    "Bấm chính xác nút kho thành phẩm đúng một lần cho mỗi lượt kiểm tra kho",
-    "Quét lại ba fresh frame mà không click lại khi bảng kho đã mở",
+    "Chờ bảng Kho READY rồi chọn chính xác Kho thành phẩm storage2",
+    "Hậu kiểm thay đổi vùng hàng hóa sau click storage2 và retry có giới hạn",
+    "Quét lại ba fresh frame mà không toggle bảng kho",
     "Chỉ chọn VP được Function hiện tại cho phép",
     "Bắt buộc xác nhận số lượng x10 bằng template đa scale trên hai frame trước khi đặt bán",
     "Bỏ qua loại còn dưới x10 và chuyển sang loại kế tiếp trong cùng bảng kho",
@@ -91,22 +92,23 @@ class AutoMainSellingActions:
         return frame[y : y + height, x : x + width].copy()
 
     def _open_and_scan_finished_goods(self) -> tuple[VpRecognition, ...]:
-        """Open finished-goods once, then retry recognition on fresh frames only.
+        """Wait for the picker, select storage2, then retry recognition frames.
 
-        Re-clicking ``basket_button`` while the inventory picker is already open
-        is unsafe because the same logical point belongs to the opened panel. The
-        old loop clicked it on attempt 1/2/3, which could toggle/switch UI state
-        and make AUTO repeatedly leave/re-enter the picker. One business action
-        opens storage; retries are capture-only.
+        ``_find_empty_slot()`` opens the inventory picker asynchronously.  The old
+        implementation immediately clicked logical (450,442), so on native 500
+        that click could be consumed while the picker was still opening and the UI
+        remained on its default warehouse.  The shared inventory action now proves
+        the picker first, targets kho_thanh_pham, and retries the same idempotent tab
+        click with content-change evidence before this scan begins.
         """
-        basket_button = (450, 442)
         self.context.ensure_running()
-        self.selling.vision.driver.click(*basket_button)
+        change = self.selling.inventory.select_storage_after_picker_ready(2)
         self.context.log(
-            "AUTO bán VP • đã bấm Kho thành phẩm đúng 1 lần • "
+            "AUTO bán VP • Kho thành phẩm storage2 READY • "
+            f"content_change={change:.2f} • "
             f"scan_fresh_frames={self.FINISHED_GOODS_SCAN_ATTEMPTS}"
         )
-        self.selling.waiter.sleep(0.60)
+        self.selling.waiter.sleep(0.20)
 
         best_by_id: dict[str, VpRecognition] = {}
         for attempt in range(1, self.FINISHED_GOODS_SCAN_ATTEMPTS + 1):
@@ -129,7 +131,7 @@ class AutoMainSellingActions:
             self.context.detail(
                 "AUTO bán VP • Kho thành phẩm fresh-frame MISS • "
                 f"frame={attempt}/{self.FINISHED_GOODS_SCAN_ATTEMPTS} • "
-                "không click lại tab kho"
+                "không toggle bảng kho"
             )
 
         self.context.log(
@@ -184,6 +186,7 @@ class AutoMainSellingActions:
                 if not self.selling._find_empty_slot():
                     continue
                 self.selling.waiter.sleep(0.35)
+                self.selling.inventory.select_storage_after_picker_ready(2)
 
             self.context.log(
                 f"AUTO bán VP • đã hủy dialog và khôi phục kho • "
