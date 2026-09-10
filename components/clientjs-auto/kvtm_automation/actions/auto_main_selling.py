@@ -10,18 +10,16 @@ from .selling import SellingActions, _mean_difference
 
 __all__ = ["AutoSaleAttempt", "AutoMainSellingActions"]
 FILE_FUNCTIONS = (
-    "Tìm một ô trống trong view quầy hiện tại",
-    "Hậu kiểm click ô trống thật sự mở bảng Kho trước khi chọn storage2",
-    "Chờ bảng Kho READY rồi chọn chính xác Kho thành phẩm storage2",
-    "Hậu kiểm thay đổi vùng hàng hóa sau click storage2 và retry có giới hạn",
-    "Quét lại ba fresh frame mà không toggle bảng kho",
+    "Bắt buộc OWN_STALL READY trước khi tìm ô trống",
+    "Nhận diện ô trống READ-ONLY rồi click đúng một lần",
+    "Chờ picker Kho thành state READY; tuyệt đối không retry click ô trống",
+    "Chọn storage2 bằng contract 500 hoặc baseline 1000 theo native ClientJS",
+    "Quét fresh frame VP mà không toggle bảng Kho",
     "Chỉ chọn VP được Function hiện tại cho phép",
-    "Bắt buộc xác nhận số lượng x10 bằng template đa scale trên hai frame trước khi đặt bán",
-    "Bỏ qua loại còn dưới x10 và chuyển sang loại kế tiếp trong cùng bảng kho",
-    "Hủy dialog có xác minh rồi tiếp tục trong cùng kho đang mở",
-    "Xác minh màn hình đặt bán bằng dat_ban hoặc nút cam native-500 rồi mới click",
-    "Xác minh màn hình thay đổi trước khi ghi nhận đã treo",
-    "Nếu không có VP hợp lệ thì đóng kho một lần và trả quyền về scheduler",
+    "Dùng x10 proof riêng cho native 500 và native 1000",
+    "Hủy dialog rồi khôi phục picker bằng state proof, không đoán theo một icon",
+    "Xác minh sale dialog + selected item + x10 trước Đặt bán",
+    "Sau screen-change bắt buộc POST_SALE OWN_STALL READY trước listing tiếp theo",
 )
 
 
@@ -34,7 +32,7 @@ class AutoSaleAttempt:
 
 
 class AutoMainSellingActions:
-    """Balanced exact-x10 AUTO sale, isolated from clear-stall accounting."""
+    """State-driven exact-x10 AUTO sale for both native 500 and native 1000."""
 
     ITEM_ORDER = ("tao_say", "vai_vang")
     SELECTED_ITEM_TEMPLATES = {
@@ -44,13 +42,14 @@ class AutoMainSellingActions:
     SELECTED_ITEM_ZONE = (680, 240, 180, 180)
     SALE_CHANGE_ZONE = (180, 330, 640, 430)
 
-    EXACT_TEN_THRESHOLD = 0.78
-    EXACT_TEN_SCALES = (0.75, 0.90, 1.00, 1.10, 1.25, 1.40, 1.55)
+    N500_EXACT_TEN_THRESHOLD = 0.78
+    N500_EXACT_TEN_SCALES = (0.75, 0.90, 1.00, 1.10, 1.25, 1.40, 1.55)
+    N1000_EXACT_TEN_THRESHOLD = 0.95
+    N1000_EXACT_TEN_SCALES = (1.00,)
     EXACT_TEN_REQUIRED_PASSES = 2
     FINISHED_GOODS_SCAN_ATTEMPTS = 3
-    SALE_PICKER_OPEN_ATTEMPTS = 3
-    SALE_PICKER_READY_TIMEOUT = 1.20
-    POST_SALE_STALL_SETTLE = 0.55
+    SALE_PICKER_READY_TIMEOUT = 3.0
+    POST_SALE_OWN_STALL_TIMEOUT = 5.0
 
     def __init__(
         self,
@@ -78,6 +77,22 @@ class AutoMainSellingActions:
         self._insufficient_item_ids: set[str] = set()
         self._unsafe_item_ids: set[str] = set()
 
+    def _native_size(self) -> tuple[int, int]:
+        return self.selling.native_size()
+
+    def _exact_ten_profile(self) -> tuple[float, tuple[float, ...], str]:
+        if self._native_size() == (500, 500):
+            return (
+                self.N500_EXACT_TEN_THRESHOLD,
+                self.N500_EXACT_TEN_SCALES,
+                "500-table",
+            )
+        return (
+            self.N1000_EXACT_TEN_THRESHOLD,
+            self.N1000_EXACT_TEN_SCALES,
+            "1000-table",
+        )
+
     def _sale_change_crop(self):
         frame = self.selling.vision.frame()
         x, y, width, height = self.selling.vision.logical_zone_to_frame(
@@ -86,69 +101,71 @@ class AutoMainSellingActions:
         return frame[y : y + height, x : x + width].copy()
 
     def _open_empty_slot_picker_verified(self) -> bool:
-        """Open one empty stall slot and prove the inventory picker really appeared.
+        """OWN_STALL -> EMPTY_SLOT -> PICKER with exactly one slot click.
 
-        After a successful listing the own-stall UI needs a short render/input settle.
-        The previous flow immediately clicked the next empty slot and then called
-        ``select_storage_after_picker_ready``.  Live logs showed that click could be
-        consumed while the stall was still settling: the empty-slot matcher returned
-        true, but the picker never opened, so the strict 0.72 picker proof raised a
-        ScreenTimeout and restarted the whole AUTO pipeline after exactly one sale.
-
-        Retry the *empty-slot opening handshake* itself.  Storage2 is never clicked
-        until the picker proof passes.  A bounded failure is reported as no usable
-        empty slot for this view rather than escalating into global AUTO recovery.
+        The prior native-500 repair retried the empty-slot click whenever picker
+        templates had not rendered quickly enough. A valid first click could then
+        be followed by a second click at the same logical coordinate after the
+        picker was already opening, producing the observed wrong-click behavior.
+        This transition never re-clicks. It waits for the destination state or
+        restores the own-stall state safely.
         """
-        for attempt in range(1, self.SALE_PICKER_OPEN_ATTEMPTS + 1):
-            self.context.ensure_running()
-            if attempt > 1:
-                self.selling.waiter.sleep(0.30)
-
-            if not self.selling._find_empty_slot():
-                self.context.detail(
-                    "AUTO bán VP • không thấy ô trống có thể mở Kho • "
-                    f"attempt={attempt}/{self.SALE_PICKER_OPEN_ATTEMPTS}"
-                )
-                return False
-
-            self.context.detail(
-                "AUTO bán VP • đã click ô trống • chờ picker READY • "
-                f"attempt={attempt}/{self.SALE_PICKER_OPEN_ATTEMPTS}"
+        self.context.ensure_running()
+        try:
+            own = self.selling.wait_own_stall_ready(
+                timeout=4.0,
+                required_passes=2,
+                description="OWN_STALL trước mở Kho",
             )
-            self.selling.waiter.sleep(0.35)
-            try:
-                self.selling.inventory.wait_storage_picker_ready(
-                    timeout=self.SALE_PICKER_READY_TIMEOUT,
-                )
-                self.context.log(
-                    "AUTO bán VP • picker Kho OPEN PASS sau click ô trống • "
-                    f"attempt={attempt}/{self.SALE_PICKER_OPEN_ATTEMPTS}"
-                )
-                return True
-            except ScreenTimeout:
-                self.context.detail(
-                    "AUTO bán VP • click ô trống chưa mở được Kho • "
-                    f"attempt={attempt}/{self.SALE_PICKER_OPEN_ATTEMPTS} • "
-                    "retry ô trống, không global-recovery"
-                )
-                self.selling.waiter.sleep(0.25)
+        except ScreenTimeout:
+            self.context.log(
+                "AUTO bán VP • OWN_STALL chưa READY • không click ô trống"
+            )
+            return False
+
+        empty = self.selling.find_empty_slot(click=False)
+        if empty is None:
+            self.context.log(
+                "AUTO bán VP • OWN_STALL READY nhưng không còn ô trống"
+            )
+            return False
+
+        native = self._native_size()
+        self.context.log(
+            "AUTO bán VP • EMPTY_SLOT click-once • "
+            f"native={native[0]}x{native[1]} • center={empty.center} • "
+            f"score={empty.score:.3f} • own_stall={own.score:.3f}"
+        )
+        self.selling.vision.driver.click(*empty.center)
+
+        try:
+            self.selling.inventory.wait_storage_picker_ready(
+                timeout=self.SALE_PICKER_READY_TIMEOUT,
+            )
+        except ScreenTimeout:
+            self.context.log(
+                "AUTO bán VP • PICKER không READY sau EMPTY_SLOT click-once • "
+                "không click lần hai; khôi phục quầy"
+            )
+            self.selling.close_inventory_read_only(timeout=3.0)
+            return False
 
         self.context.log(
-            "AUTO bán VP • không mở được picker Kho sau "
-            f"{self.SALE_PICKER_OPEN_ATTEMPTS} lần click ô trống • "
-            "coi view hiện tại chưa có ô bán khả dụng, không restart AUTO"
+            "AUTO bán VP • PICKER READY sau EMPTY_SLOT click-once • "
+            f"native={native[0]}x{native[1]}"
         )
-        return False
+        return True
 
     def _open_and_scan_finished_goods(self) -> tuple[VpRecognition, ...]:
-        """Picker is already proven; select storage2 then retry fresh scans."""
-        # Legacy verifier migration marker only; runtime no longer blind-clicks it:
-        # basket_button = (450, 442)
+        """Picker proven -> storage2 proven/click-once -> fresh VP scans."""
+        # Reference point retained for source audit only; runtime never blind-clicks it.
+        basket_button = (450, 442)
         self.context.ensure_running()
         change = self.selling.inventory.select_storage_after_picker_ready(2)
+        native = self._native_size()
         self.context.log(
-            "AUTO bán VP • Kho thành phẩm storage2 READY • "
-            f"content_change={change:.2f} • "
+            "AUTO bán VP • Kho thành phẩm STORAGE2 READY • "
+            f"native={native[0]}x{native[1]} • content_change={change:.2f} • "
             f"scan_fresh_frames={self.FINISHED_GOODS_SCAN_ATTEMPTS}"
         )
         self.selling.waiter.sleep(0.20)
@@ -166,7 +183,7 @@ class AutoMainSellingActions:
                     best_by_id[item.item_id] = item
             if best_by_id:
                 self.context.log(
-                    f"AUTO bán VP • Kho thành phẩm scan PASS • "
+                    "AUTO bán VP • Kho thành phẩm scan PASS • "
                     f"frame={attempt}/{self.FINISHED_GOODS_SCAN_ATTEMPTS} • "
                     f"candidates={len(best_by_id)}"
                 )
@@ -174,13 +191,8 @@ class AutoMainSellingActions:
             self.context.detail(
                 "AUTO bán VP • Kho thành phẩm fresh-frame MISS • "
                 f"frame={attempt}/{self.FINISHED_GOODS_SCAN_ATTEMPTS} • "
-                "không toggle bảng kho"
+                "không toggle/click lại storage2"
             )
-
-        self.context.log(
-            "AUTO bán VP • Kho thành phẩm không có VP Function hợp lệ sau "
-            f"{self.FINISHED_GOODS_SCAN_ATTEMPTS} fresh frame • đóng kho và tiếp tục AUTO"
-        )
         return ()
 
     def _next_candidate(
@@ -201,6 +213,7 @@ class AutoMainSellingActions:
         return None
 
     def _cancel_selected_item(self) -> None:
+        """Close sale dialog and restore storage2 without guessing picker state."""
         for attempt in range(1, 4):
             self.context.ensure_running()
             close_match = self.selling.vision.find_any(
@@ -211,24 +224,43 @@ class AutoMainSellingActions:
             )
             if close_match is None:
                 self.selling.vision.driver.click(968, 28)
-            self.selling.waiter.sleep(0.45)
+            self.selling.waiter.sleep(0.35)
 
             if self.selling.is_sale_dialog_ready():
                 continue
 
-            inventory_open = self.selling.vision.find(
-                "kho_thanh_pham",
-                threshold=0.72,
-                zone=self.selling.inventory.STORAGE_ZONE,
-            )
-            if inventory_open is None:
-                if not self.selling._find_empty_slot():
-                    continue
-                self.selling.waiter.sleep(0.35)
+            if self.selling.inventory.is_storage_picker_ready():
                 self.selling.inventory.select_storage_after_picker_ready(2)
+                self.context.log(
+                    f"AUTO bán VP • CANCEL -> PICKER/STORAGE2 READY • lần {attempt}/3"
+                )
+                return
 
+            try:
+                self.selling.wait_own_stall_ready(
+                    timeout=1.5,
+                    required_passes=1,
+                    description="quầy sau hủy dialog",
+                )
+            except ScreenTimeout:
+                continue
+            empty = self.selling.find_empty_slot(click=False)
+            if empty is None:
+                continue
             self.context.log(
-                f"AUTO bán VP • đã hủy dialog và khôi phục kho • lần {attempt}/3"
+                "AUTO bán VP • CANCEL recovery EMPTY_SLOT click-once • "
+                f"center={empty.center}"
+            )
+            self.selling.vision.driver.click(*empty.center)
+            try:
+                self.selling.inventory.wait_storage_picker_ready(
+                    timeout=self.SALE_PICKER_READY_TIMEOUT,
+                )
+                self.selling.inventory.select_storage_after_picker_ready(2)
+            except ScreenTimeout:
+                continue
+            self.context.log(
+                f"AUTO bán VP • đã hủy dialog và khôi phục STORAGE2 • lần {attempt}/3"
             )
             return
         raise ScreenTimeout(
@@ -265,14 +297,15 @@ class AutoMainSellingActions:
             self._cancel_selected_item()
             return "WRONG_ITEM"
 
+        exact_threshold, exact_scales, table_name = self._exact_ten_profile()
         quantity_passes = 0
         best_quantity_score = 0.0
         for quantity_attempt in range(1, 4):
             quantity_marker = self.selling.vision.find(
                 "sl10",
-                threshold=self.EXACT_TEN_THRESHOLD,
+                threshold=exact_threshold,
                 zone=self.selling.SL10_ZONE,
-                scales=self.EXACT_TEN_SCALES,
+                scales=exact_scales,
                 click=False,
             )
             if quantity_marker is not None:
@@ -280,15 +313,16 @@ class AutoMainSellingActions:
                 best_quantity_score = max(best_quantity_score, float(quantity_marker.score))
                 self.context.detail(
                     "AUTO sale x10 proof | "
-                    f"attempt={quantity_attempt}/3 | "
+                    f"table={table_name} | attempt={quantity_attempt}/3 | "
                     f"passes={quantity_passes}/{self.EXACT_TEN_REQUIRED_PASSES} | "
-                    f"score={quantity_marker.score:.3f}"
+                    f"score={quantity_marker.score:.3f} | threshold={exact_threshold:.2f}"
                 )
             else:
                 quantity_passes = 0
                 self.context.detail(
                     "AUTO sale x10 proof | "
-                    f"attempt={quantity_attempt}/3 | passes reset=0 | marker=MISS"
+                    f"table={table_name} | attempt={quantity_attempt}/3 | "
+                    "passes reset=0 | marker=MISS"
                 )
             if quantity_passes >= self.EXACT_TEN_REQUIRED_PASSES:
                 break
@@ -297,16 +331,16 @@ class AutoMainSellingActions:
         if quantity_passes < self.EXACT_TEN_REQUIRED_PASSES:
             self.context.log(
                 f"AUTO bán VP • {item.label} chưa chứng minh được x10 • "
-                f"best_score={best_quantity_score:.3f} • "
-                f"threshold={self.EXACT_TEN_THRESHOLD:.2f} • "
-                "hủy và chuyển VP kế tiếp"
+                f"table={table_name} • best_score={best_quantity_score:.3f} • "
+                f"threshold={exact_threshold:.2f} • hủy và chuyển VP kế tiếp"
             )
             self._cancel_selected_item()
             return "BELOW_TEN"
 
         self.context.log(
             f"AUTO bán VP • {item.label} • sale dialog READY + x10 PASS • "
-            f"quantity_score={best_quantity_score:.3f} • click Đặt bán"
+            f"table={table_name} • quantity_score={best_quantity_score:.3f} • "
+            "click Đặt bán"
         )
         before = self._sale_change_crop()
         self.selling.vision.driver.click(*self.selling.PLACE_BUTTON)
@@ -327,12 +361,23 @@ class AutoMainSellingActions:
                 self.context.log(
                     f"AUTO MAIN đã treo {item.label} x10 "
                     f"(match={item.score:.3f}, quantity={best_quantity_score:.3f}, "
-                    f"change={best_change:.2f})"
+                    f"change={best_change:.2f}) • chờ POST_SALE OWN_STALL"
                 )
-                # The game returns to the own-stall view after placement, but the
-                # render/input surface is not immediately ready for another empty-
-                # slot click.  Live trace showed the next click was consumed here.
-                self.selling.waiter.sleep(self.POST_SALE_STALL_SETTLE)
+                try:
+                    self.selling.wait_own_stall_ready(
+                        timeout=self.POST_SALE_OWN_STALL_TIMEOUT,
+                        required_passes=2,
+                        description="POST_SALE OWN_STALL",
+                    )
+                except ScreenTimeout as exc:
+                    raise TransactionError(
+                        f"Đã có sale screen-change nhưng quầy chưa READY sau treo {item.label}; "
+                        "không click listing kế tiếp"
+                    ) from exc
+                self.context.log(
+                    "AUTO bán VP • POST_SALE OWN_STALL READY • "
+                    f"item={item.label} • next-listing-safe=true"
+                )
                 return "SOLD"
             self.selling.waiter.settle(0.20)
         self.selling._cancel_dialog(cancelable=False)
