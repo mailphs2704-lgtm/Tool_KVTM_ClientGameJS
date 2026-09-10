@@ -7,12 +7,14 @@ from ...actions.auto_main_selling import AutoMainSellingActions
 from ...actions.stall_advertising import StallAdvertisingActions
 from ...automation import KVAutomation
 from ...errors import AutomationStopped, ScreenTimeout
+from ..auto_builder.catalog import get_function_spec
 
 
 __all__ = ["AutoVpSaleResult", "AutoVpSaleWorkflow"]
 FILE_FUNCTIONS = (
     "Đưa clone về farm, chứng minh exact-main bằng runtime boundary rồi mở quầy bán",
     "Mở quầy bằng entry point chuẩn sau exact-main proof; không dùng quay_hang background làm runtime gate",
+    "Khóa Function 2 bán VP ở native 1000x1000 trước mọi thao tác UI",
     "Mỗi lượt bán kiểm tra QC ba mốc đầu/giữa/cuối quầy trước thao tác bán tại mốc đó",
     "Không click ô đã có QC; nếu QC miễn phí hồi thì bật, còn cooldown thì đóng X",
     "Theo từng view: thu vàng nếu có",
@@ -45,6 +47,11 @@ class AutoVpSaleWorkflow:
     supplies the Function catalog item ids so sale policy is owned by the
     Function metadata rather than by Scheduler ordering.
 
+    Function 2 is intentionally locked to native 1000x1000 before any stall or
+    inventory UI side effect. Its Tinh dầu hoa hồng post-selection proof remains
+    fail-closed: no listing is placed unless the selected-item template and x10
+    proof both pass.
+
     Advertisement is opportunistic and non-blocking. If finished-goods inventory
     is genuinely depleted, sale returns immediately to AUTO Main instead of
     walking the remaining stall views and reopening UI that has no sellable VP.
@@ -70,17 +77,34 @@ class AutoVpSaleWorkflow:
     ) -> None:
         self.auto = automation
         self.context = automation.context
-        self.function_id = str(function_id or "function_1")
+        self.function_spec = get_function_spec(function_id)
+        self.function_id = self.function_spec.function_id
+        requested_order = tuple(
+            allowed_item_ids or self.function_spec.sale_item_ids
+        )
         self.sale = AutoMainSellingActions(
             automation.selling,
             automation.auto_vp,
-            item_order=allowed_item_ids,
+            item_order=requested_order,
         )
         self.advertising = StallAdvertisingActions(
             automation.context,
             automation.vision,
             automation.wait,
             automation.stall,
+        )
+
+    def _require_function_resolution(self) -> None:
+        if self.function_id != "function_2":
+            return
+        native = self.auto.selling.native_size()
+        if native != (1000, 1000):
+            raise ScreenTimeout(
+                "AUTO bán VP Function 2 hiện chỉ cho native ClientJS 1000x1000; "
+                f"capture={native[0]}x{native[1]}. Không thao tác quầy ở 500x500."
+            )
+        self.context.detail(
+            "AUTO Function 2 sale | native=1000x1000 | resolution_gate=PASS"
         )
 
     def _normalize_exact_main_for_sale(self) -> None:
@@ -176,6 +200,7 @@ class AutoVpSaleWorkflow:
 
     def run(self, timeout: float = 120.0) -> AutoVpSaleResult:
         started = time.monotonic()
+        self._require_function_resolution()
         self.context.stage(f"auto-vp-sale-{self.function_id}-start")
         self.auto.ensure_main_screen(timeout=timeout)
         self._normalize_exact_main_for_sale()

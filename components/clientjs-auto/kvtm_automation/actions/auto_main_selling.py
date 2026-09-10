@@ -14,7 +14,7 @@ FILE_FUNCTIONS = (
     "Nhận diện ô trống READ-ONLY rồi click đúng một lần",
     "Chờ picker Kho thành state READY; tuyệt đối không retry click ô trống",
     "Chọn storage2 bằng contract 500 hoặc baseline 1000 theo native ClientJS",
-    "Quét fresh frame VP mà không toggle bảng Kho",
+    "Quét fresh frame đúng VP được Function hiện tại cho phép mà không toggle bảng Kho",
     "Chỉ chọn VP được Function hiện tại cho phép",
     "Dùng x10 proof riêng cho native 500 và native 1000",
     "Hủy dialog rồi khôi phục picker bằng state proof, không đoán theo một icon",
@@ -38,6 +38,7 @@ class AutoMainSellingActions:
     SELECTED_ITEM_TEMPLATES = {
         "tao_say": "tao_say",
         "vai_vang": "vai_vang",
+        "tinh_dau_hh": "tinh_dau_hh",
     }
     SELECTED_ITEM_ZONE = (680, 240, 180, 180)
     SALE_CHANGE_ZONE = (180, 330, 640, 430)
@@ -157,7 +158,7 @@ class AutoMainSellingActions:
         return True
 
     def _open_and_scan_finished_goods(self) -> tuple[VpRecognition, ...]:
-        """Picker proven -> storage2 proven/click-once -> fresh VP scans."""
+        """Picker proven -> storage2 proven/click-once -> fresh Function VP scans."""
         # Reference point retained for source audit only; runtime never blind-clicks it.
         basket_button = (450, 442)
         self.context.ensure_running()
@@ -166,7 +167,8 @@ class AutoMainSellingActions:
         self.context.log(
             "AUTO bán VP • Kho thành phẩm STORAGE2 READY • "
             f"native={native[0]}x{native[1]} • content_change={change:.2f} • "
-            f"scan_fresh_frames={self.FINISHED_GOODS_SCAN_ATTEMPTS}"
+            f"scan_fresh_frames={self.FINISHED_GOODS_SCAN_ATTEMPTS} • "
+            f"items={','.join(self.ITEM_ORDER)}"
         )
         self.selling.waiter.sleep(0.20)
 
@@ -175,7 +177,10 @@ class AutoMainSellingActions:
             self.context.ensure_running()
             if attempt > 1:
                 self.selling.waiter.sleep(0.40)
-            for item in self.recognition.scan_samples(log_prefix="AUTO SELL VP"):
+            for item in self.recognition.scan_samples(
+                log_prefix="AUTO SELL VP",
+                item_ids=self.ITEM_ORDER,
+            ):
                 if not item.found or item.center is None:
                     continue
                 previous = best_by_id.get(item.item_id)

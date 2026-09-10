@@ -169,6 +169,41 @@ class AutoMainWorkflow:
                     "Function 1 trả kết quả không đạt hợp đồng PASS 3/3"
                 )
             return
+
+        if self.spec.runner_key == "function_2":
+            if (
+                int(payload.get("progress_steps", 0) or 0) != 4
+                or int(payload.get("total_steps", 0) or 0) != 4
+            ):
+                raise RuntimeError(
+                    "Function 2 trả kết quả không đạt hợp đồng PASS 4/4"
+                )
+
+            required_counts = {
+                "dried_apples": 9,
+                "apple_juices": 9,
+                "cotton_planted": 27,
+                "yellow_fabrics": 9,
+                "roses_planted": 35,
+                "snow_planted": 28,
+                "rose_oils": 7,
+            }
+            mismatches = [
+                f"{name}={int(payload.get(name, 0) or 0)}/{expected}"
+                for name, expected in required_counts.items()
+                if int(payload.get(name, 0) or 0) != expected
+            ]
+            if mismatches:
+                raise RuntimeError(
+                    "Function 2 completion gate FAIL: " + ", ".join(mismatches)
+                )
+            self.context.log(
+                "AUTO Main • Function 2 completion gate PASS • "
+                "Táo sấy=9 • Nước táo=9 • Bông=27 • Vải vàng=9 • "
+                "Hồng=35 • Tuyết=28 • TDHH=7"
+            )
+            return
+
         raise RuntimeError(
             f"Function chưa có completion gate AUTO Main: {self.spec.function_id}"
         )
