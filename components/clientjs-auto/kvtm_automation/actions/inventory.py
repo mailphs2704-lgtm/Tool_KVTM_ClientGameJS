@@ -16,6 +16,7 @@ class InventoryActions:
     # AUTO_PRO_REFERENCE: recovered sellItems geometry at logical 1000x1000.
     STORAGE_ZONE = (380, 277, 125, 453)
     INVENTORY_ZONE = (14, 345, 397, 379)
+    STORAGE2_ACTIVE_ZONE = (398, 395, 100, 96)
     STORAGE = {
         1: ("kho_nong_san", (455, 371)),
         2: ("kho_thanh_pham", (450, 442)),
@@ -23,19 +24,24 @@ class InventoryActions:
         4: ("kho_khoang_san", (455, 588)),
         5: ("kho_event", (447, 662)),
     }
-    STORAGE_PICKER_THRESHOLD = 0.72
-    # LIVE_CALIBRATED 20260910 native-500: after selecting storage2, the active
-    # picker restyles/antialiases its tab icons. Live scores were
-    # nong_san=0.6265, thanh_pham=0.5082, vat_dung=0.6369,
-    # khoang_san=0.6184, event=0.5664 while the picker was visibly still open.
-    # Require two independent storage markers at the lower post-click threshold;
-    # before the picker opened the same log peaked below 0.39 in this zone.
-    STORAGE_POSTCLICK_THRESHOLD = 0.52
-    STORAGE_POSTCLICK_REQUIRED_MARKERS = 2
-    STORAGE_TARGET_THRESHOLD = 0.74
-    STORAGE_PICKER_SCALES = (0.85, 1.00, 1.15, 1.30, 1.45)
+
+    # Native-500 opening proof. Live picker scores rise from <0.39 before open to
+    # >=0.72 for at least one tab when the picker has finished rendering.
+    N500_PICKER_THRESHOLD = 0.72
+    N500_PICKER_SCALES = (0.85, 1.00, 1.15, 1.30, 1.45)
+    # Native-500 storage2 active calibration: kho_thanh_pham was ~0.332 before
+    # selection and ~0.508 after selection. Require the target marker twice in a
+    # narrow row; generic other storage icons are never accepted as storage2.
+    N500_STORAGE2_ACTIVE_THRESHOLD = 0.46
+    N500_STORAGE2_ACTIVE_PASSES = 2
+
+    # Baseline 1000 contract from AUTO PRO / pre-native migration.
+    N1000_PICKER_THRESHOLD = 0.82
+    N1000_PICKER_SCALES = (1.00,)
+    N1000_STORAGE_TARGET_THRESHOLD = 0.82
+
     STORAGE_PICKER_TIMEOUT = 3.0
-    STORAGE_SELECT_ATTEMPTS = 3
+    STORAGE_ACTIVE_TIMEOUT = 2.5
     STORAGE_CHANGE_MIN = 1.00
 
     def __init__(
@@ -49,6 +55,22 @@ class InventoryActions:
         self.waiter = waiter
         self.storage_open_wait = 0.40
 
+    def _native_size(self) -> tuple[int, int]:
+        size = getattr(self.vision.driver, "native_size", None)
+        if size is not None:
+            return tuple(map(int, size))
+        frame = self.vision.frame()
+        height, width = frame.shape[:2]
+        return int(width), int(height)
+
+    def _is_native_500(self) -> bool:
+        return self._native_size() == (500, 500)
+
+    def _picker_profile(self) -> tuple[float, tuple[float, ...]]:
+        if self._is_native_500():
+            return self.N500_PICKER_THRESHOLD, self.N500_PICKER_SCALES
+        return self.N1000_PICKER_THRESHOLD, self.N1000_PICKER_SCALES
+
     def _inventory_crop(self):
         """Capture only the inventory-content ROI for storage-change evidence."""
         frame = self.vision.frame()
@@ -59,7 +81,6 @@ class InventoryActions:
 
     @staticmethod
     def _mean_change(before, after) -> float:
-        """Return a simple mean absolute pixel delta between two equal ROIs."""
         import cv2
 
         if before is None or after is None or before.size == 0 or after.size == 0:
@@ -72,20 +93,29 @@ class InventoryActions:
             )
         return float(cv2.absdiff(before, after).mean())
 
-    def _storage_marker_matches(self, *, threshold: float):
-        """Return every storage-tab marker that passes one bounded proof frame."""
+    def _storage_marker_matches(
+        self,
+        *,
+        threshold: float,
+        scales: tuple[float, ...],
+    ):
         matches = []
         for template, _point in self.STORAGE.values():
             match = self.vision.find(
                 template,
                 threshold=float(threshold),
                 zone=self.STORAGE_ZONE,
-                scales=self.STORAGE_PICKER_SCALES,
+                scales=scales,
                 click=False,
             )
             if match is not None:
                 matches.append(match)
         return tuple(matches)
+
+    def is_storage_picker_ready(self) -> bool:
+        """Read-only picker proof; never clicks and never implies storage2 active."""
+        threshold, scales = self._picker_profile()
+        return bool(self._storage_marker_matches(threshold=threshold, scales=scales))
 
     def wait_storage_picker_ready(
         self,
@@ -94,41 +124,29 @@ class InventoryActions:
         threshold: float | None = None,
         required_markers: int = 1,
     ):
-        """Wait until enough storage tabs are visible before a storage operation.
-
-        Initial opening keeps the strict 0.72 single-marker proof.  Post-click
-        verification may use the separately calibrated native-500 threshold but
-        requires multiple independent tab markers so one weak false positive can
-        never authorize inventory recognition.
-        """
+        """Wait for the picker itself; this proof says nothing about active tab."""
+        profile_threshold, scales = self._picker_profile()
+        marker_threshold = float(
+            profile_threshold if threshold is None else threshold
+        )
+        required = max(1, int(required_markers))
         deadline = time.monotonic() + float(
             self.STORAGE_PICKER_TIMEOUT if timeout is None else timeout
         )
-        marker_threshold = float(
-            self.STORAGE_PICKER_THRESHOLD if threshold is None else threshold
-        )
-        required = max(1, int(required_markers))
         last_matches = ()
         while time.monotonic() < deadline:
             self.context.ensure_running()
             last_matches = self._storage_marker_matches(
-                threshold=marker_threshold
+                threshold=marker_threshold,
+                scales=scales,
             )
             if len(last_matches) >= required:
                 best = max(last_matches, key=lambda item: float(item.score))
-                markers = ",".join(
-                    f"{item.name}:{item.score:.3f}"
-                    for item in sorted(
-                        last_matches,
-                        key=lambda item: float(item.score),
-                        reverse=True,
-                    )
-                )
                 self.context.detail(
-                    "AUTO kho • picker READY • "
+                    "AUTO kho • PICKER READY • "
+                    f"native={self._native_size()[0]}x{self._native_size()[1]} • "
                     f"markers={len(last_matches)}/{required} • "
-                    f"best={best.name}:{best.score:.3f} • threshold={marker_threshold:.2f} • "
-                    f"all={markers}"
+                    f"best={best.name}:{best.score:.3f} • threshold={marker_threshold:.2f}"
                 )
                 return best
             self.waiter.sleep(0.15)
@@ -137,14 +155,49 @@ class InventoryActions:
             f"markers={len(last_matches)}/{required} • threshold={marker_threshold:.2f}"
         )
 
-    def select_storage_after_picker_ready(self, storage_id: int) -> float:
-        """Select one storage tab only after picker readiness is proven.
+    def _wait_native500_storage2_active(self, *, timeout: float | None = None):
+        """Prove specifically storage2 ACTIVE on native 500, not generic picker."""
+        deadline = time.monotonic() + float(
+            self.STORAGE_ACTIVE_TIMEOUT if timeout is None else timeout
+        )
+        passes = 0
+        best = None
+        while time.monotonic() < deadline:
+            self.context.ensure_running()
+            match = self.vision.find(
+                "kho_thanh_pham",
+                threshold=self.N500_STORAGE2_ACTIVE_THRESHOLD,
+                zone=self.STORAGE2_ACTIVE_ZONE,
+                scales=self.N500_PICKER_SCALES,
+                click=False,
+            )
+            if match is None:
+                passes = 0
+            else:
+                passes += 1
+                if best is None or match.score > best.score:
+                    best = match
+                self.context.detail(
+                    "AUTO kho • STORAGE2 ACTIVE proof • native=500x500 • "
+                    f"passes={passes}/{self.N500_STORAGE2_ACTIVE_PASSES} • "
+                    f"score={match.score:.3f} • threshold="
+                    f"{self.N500_STORAGE2_ACTIVE_THRESHOLD:.2f}"
+                )
+                if passes >= self.N500_STORAGE2_ACTIVE_PASSES:
+                    return best
+            self.waiter.sleep(0.15)
+        raise ScreenTimeout(
+            "Kho thành phẩm storage2 chưa đạt target-specific ACTIVE proof trên "
+            "native 500; không dùng marker của tab kho khác để thay thế"
+        )
 
-        A targeted template center is preferred.  The historical logical fallback
-        is allowed only after the strict initial picker proof.  After the click,
-        native-500 uses a separate multi-marker proof because selected-tab styling
-        lowers the old template scores.  A post-click miss retries the idempotent
-        storage click instead of escaping immediately into global AUTO recovery.
+    def select_storage_after_picker_ready(self, storage_id: int) -> float:
+        """Click requested tab at most once, then wait for target state.
+
+        Native 500 uses a dedicated storage2-active proof. Native 1000 keeps the
+        recovered AUTO-PRO table/threshold: locate/click the storage2 row once,
+        then let the exact finished-goods scan be the content proof. A failed
+        transition never causes repeated blind clicks on the same coordinates.
         """
         storage = int(storage_id)
         if storage not in self.STORAGE:
@@ -152,79 +205,71 @@ class InventoryActions:
         template, fallback = self.STORAGE[storage]
         self.wait_storage_picker_ready()
 
-        best_change = 0.0
-        last_post_error: ScreenTimeout | None = None
-        for attempt in range(1, self.STORAGE_SELECT_ATTEMPTS + 1):
-            self.context.ensure_running()
-            before = self._inventory_crop()
-            match = self.vision.find(
+        before = self._inventory_crop()
+        native = self._native_size()
+        if native == (500, 500) and storage == 2:
+            # If storage2 is already active (for example after cancelling an item),
+            # do not toggle/click it again.
+            try:
+                active = self._wait_native500_storage2_active(timeout=0.45)
+            except ScreenTimeout:
+                active = None
+            if active is None:
+                point = fallback
+                candidate = self.vision.find(
+                    template,
+                    threshold=self.N500_PICKER_THRESHOLD,
+                    zone=self.STORAGE2_ACTIVE_ZONE,
+                    scales=self.N500_PICKER_SCALES,
+                    click=False,
+                )
+                if candidate is not None:
+                    point = candidate.center
+                self.context.log(
+                    "AUTO kho • PICKER READY • STORAGE2 click-once • "
+                    f"native=500x500 • point={point}"
+                )
+                self.vision.driver.click(*point)
+                self._wait_native500_storage2_active()
+            else:
+                self.context.log(
+                    "AUTO kho • STORAGE2 ACTIVE sẵn • native=500x500 • "
+                    f"score={active.score:.3f} • không click lại"
+                )
+        else:
+            scales = self.N1000_PICKER_SCALES if native == (1000, 1000) else (1.0,)
+            threshold = (
+                self.N1000_STORAGE_TARGET_THRESHOLD
+                if native == (1000, 1000)
+                else self.N1000_PICKER_THRESHOLD
+            )
+            candidate = self.vision.find(
                 template,
-                threshold=self.STORAGE_TARGET_THRESHOLD,
+                threshold=threshold,
                 zone=self.STORAGE_ZONE,
-                scales=self.STORAGE_PICKER_SCALES,
+                scales=scales,
                 click=False,
             )
-            point = match.center if match is not None else fallback
+            point = candidate.center if candidate is not None else fallback
             self.context.log(
-                f"AUTO kho • picker READY • chọn kho {storage} ({template}) • "
-                f"attempt={attempt}/{self.STORAGE_SELECT_ATTEMPTS} • "
-                f"source={'template' if match is not None else 'verified-fallback'}"
+                "AUTO kho • PICKER READY • storage click-once • "
+                f"native={native[0]}x{native[1]} • storage={storage} • point={point} • "
+                "contract=1000-baseline"
             )
             self.vision.driver.click(*point)
             self.waiter.sleep(self.storage_open_wait)
+            self.wait_storage_picker_ready(timeout=1.5)
 
-            after = self._inventory_crop()
-            change = self._mean_change(before, after)
-            best_change = max(best_change, change)
-            try:
-                self.wait_storage_picker_ready(
-                    timeout=1.0,
-                    threshold=self.STORAGE_POSTCLICK_THRESHOLD,
-                    required_markers=self.STORAGE_POSTCLICK_REQUIRED_MARKERS,
-                )
-                last_post_error = None
-            except ScreenTimeout as exc:
-                last_post_error = exc
-                self.context.detail(
-                    f"AUTO kho • storage{storage} postclick marker MISS • "
-                    f"attempt={attempt}/{self.STORAGE_SELECT_ATTEMPTS} • "
-                    f"change={change:.2f} • retry cùng tab, không global-recovery"
-                )
-                if attempt < self.STORAGE_SELECT_ATTEMPTS:
-                    self.waiter.sleep(0.15)
-                    continue
-                break
-
-            self.context.detail(
-                f"AUTO kho • storage{storage} postcheck • "
-                f"attempt={attempt}/{self.STORAGE_SELECT_ATTEMPTS} • change={change:.2f}"
-            )
-            if change >= self.STORAGE_CHANGE_MIN:
-                self.context.log(
-                    f"AUTO kho • storage{storage} PASS • change={change:.2f}"
-                )
-                return best_change
-            if attempt < self.STORAGE_SELECT_ATTEMPTS:
-                self.waiter.sleep(0.15)
-
-        if last_post_error is not None:
-            raise ScreenTimeout(
-                f"Kho storage{storage} không giữ được multi-marker proof sau "
-                f"{self.STORAGE_SELECT_ATTEMPTS} lần click; best_change={best_change:.2f}"
-            ) from last_post_error
-
-        # A no-delta result can mean the requested tab was already active.  The
-        # picker itself is still proven by multiple native-500 storage markers,
-        # and the destructive path remains guarded by VP/x10/post-click proofs.
+        after = self._inventory_crop()
+        change = self._mean_change(before, after)
         self.context.log(
-            f"AUTO kho • storage{storage} targeted click ổn định • "
-            f"best_change={best_change:.2f} • multi-marker PASS • "
-            "tiếp tục scan giới hạn theo VP"
+            f"AUTO kho • STORAGE{storage} READY • native={native[0]}x{native[1]} • "
+            f"content_change={change:.2f} • click_count<=1"
         )
-        return best_change
+        return change
 
     def select_storage(self, storage_id: int) -> None:
-        """Select one verified storage tab; detection alone is never success."""
+        """Shared legacy selector retained for non-AUTO-Main transactions."""
         storage = int(storage_id)
         if storage not in self.STORAGE:
             raise ValueError("Kho bán phải trong khoảng 1..5")
@@ -236,7 +281,6 @@ class InventoryActions:
             click=True,
         )
         if match is None:
-            # AUTO_PRO_REFERENCE: exact fallback points from sellItems.
             self.vision.driver.click(*fallback)
         self.waiter.sleep(self.storage_open_wait)
         self.context.log(f"Đã chọn kho bán {storage} ({template})")
@@ -245,14 +289,7 @@ class InventoryActions:
         self,
         fingerprint: VisualFingerprint,
     ) -> tuple[tuple[int, int], float] | None:
-        """Return the best inventory match, including scores below acceptance.
-
-        Fingerprint templates are captured earlier in the same clone transaction,
-        so their pixel dimensions already belong to the current rendered client.
-        Only the logical 1000 inventory ROI and the returned click center need a
-        logical/frame conversion here. Keeping the template at its captured pixel
-        size avoids applying the 500 scale twice.
-        """
+        """Return the best current-resolution inventory fingerprint match."""
         import cv2
 
         template_file = Path(fingerprint.template_file)
@@ -318,7 +355,6 @@ class InventoryActions:
         *,
         threshold: float = 0.70,
     ) -> tuple[tuple[int, int], float] | None:
-        """Find the normalized core icon captured from a verified purchase."""
         match = self.best_fingerprint_match(fingerprint)
         if match is None or match[1] < float(threshold):
             return None
