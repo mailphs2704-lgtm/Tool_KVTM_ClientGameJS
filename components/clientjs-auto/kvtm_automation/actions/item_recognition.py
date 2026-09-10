@@ -13,7 +13,7 @@ FILE_FUNCTIONS = (
     "Khai báo thư viện VP mẫu dùng chung cho AUTO Main",
     "Mặc định Function 1 chỉ quét Táo sấy/Vải vàng; Function khác phải truyền policy riêng",
     "Quét vùng kho thành phẩm đã mở trên đúng một fresh frame",
-    "Native 1000 AUTO SELL ưu tiên template kho chính scale 1.00 để chọn VP nhanh, fallback full scan khi chưa đủ chắc chắn",
+    "Native 1000 AUTO SELL quét nhanh mọi template kho chính scale 1.00 để giữ đủ ứng viên VP, fallback full scan khi chưa đủ chắc chắn",
     "Nhận diện VP theo template AUTO PRO",
     "Trả kết quả READ-ONLY có raw score/vị trí kể cả khi dưới threshold",
     "Ghi kết quả vào log hành động và chi tiết",
@@ -90,22 +90,30 @@ class AutoVpRecognitionActions:
             )
         return tuple(specs_by_id[item_id] for item_id in requested)
 
-    def _fast_candidate_from_frame(
+    def _fast_candidates_from_frame(
         self,
         *,
         frame,
         specs: tuple[AutoVpSpec, ...],
         log_prefix: str,
-    ) -> VpRecognition | None:
+    ) -> tuple[VpRecognition, ...]:
+        """Return every strong native-1000 warehouse candidate from one frame.
+
+        Returning the first match only made the first item in Function order
+        monopolize the sale pass. Keep all strong primary-template matches so the
+        caller's round-robin policy can choose Táo/Vải/TDHH fairly without paying
+        for the full multi-scale scan.
+        """
         frame_h, frame_w = frame.shape[:2]
         if (frame_w, frame_h) != (1000, 1000):
-            return None
+            return ()
 
         self.context.detail(
             f"{log_prefix} | FAST_SNAPSHOT frame=1000x1000 | "
             f"primary_scale=1.00 | threshold={self.N1000_FAST_PRIMARY_THRESHOLD:.2f} | "
             f"items={','.join(spec.item_id for spec in specs)}"
         )
+        results: list[VpRecognition] = []
         for spec in specs:
             primary_template = spec.templates[0]
             match = self.vision.find(
@@ -126,19 +134,26 @@ class AutoVpRecognitionActions:
                 score=float(match.score),
                 center=match.center,
             )
+            results.append(result)
             self.context.log(
                 f"{log_prefix} | FAST_FOUND {spec.label} | "
                 f"template={result.template} score={result.score:.3f} "
                 f"threshold={self.N1000_FAST_PRIMARY_THRESHOLD:.2f} "
                 f"center={result.center}"
             )
-            return result
+
+        if results:
+            self.context.detail(
+                f"{log_prefix} | FAST_READY | candidates={len(results)} | "
+                f"items={','.join(item.item_id for item in results)}"
+            )
+            return tuple(results)
 
         self.context.detail(
             f"{log_prefix} | FAST_MISS | fallback=full-scan | "
             f"items={','.join(spec.item_id for spec in specs)}"
         )
-        return None
+        return ()
 
     def scan_first_native1000(
         self,
@@ -146,14 +161,15 @@ class AutoVpRecognitionActions:
         log_prefix: str = "AUTO SELL VP FAST",
         item_ids: tuple[str, ...],
     ) -> VpRecognition | None:
-        """Explicit fast native-1000 discovery helper for future callers."""
+        """Compatibility helper returning the first strong native-1000 candidate."""
         self.context.ensure_running()
         specs = self._specs_for(item_ids)
-        return self._fast_candidate_from_frame(
+        results = self._fast_candidates_from_frame(
             frame=self.vision.frame(),
             specs=specs,
             log_prefix=log_prefix,
         )
+        return results[0] if results else None
 
     def scan_samples(
         self,
@@ -163,8 +179,9 @@ class AutoVpRecognitionActions:
     ) -> tuple[VpRecognition, ...]:
         """Scan the Function-owned VP policy against one fresh inventory frame.
 
-        AUTO SELL VP on native 1000 first probes only each item's warehouse-specific
-        primary template at exact scale 1.00. A strong match returns immediately.
+        AUTO SELL VP on native 1000 first probes every item's warehouse-specific
+        primary template at exact scale 1.00 on the same frame. All strong matches
+        are returned together so round-robin sale ordering cannot starve later VP.
         The existing full multi-template/multi-scale scan remains the fallback and
         all other callers keep the original exhaustive behavior.
         """
@@ -176,13 +193,13 @@ class AutoVpRecognitionActions:
         frame_h, frame_w = frame.shape[:2]
 
         if log_prefix == "AUTO SELL VP" and (frame_w, frame_h) == (1000, 1000):
-            fast = self._fast_candidate_from_frame(
+            fast = self._fast_candidates_from_frame(
                 frame=frame,
                 specs=specs,
                 log_prefix=log_prefix,
             )
-            if fast is not None:
-                return (fast,)
+            if fast:
+                return fast
 
         self.context.detail(
             f"{log_prefix} | SNAPSHOT frame={frame_w}x{frame_h} | "
