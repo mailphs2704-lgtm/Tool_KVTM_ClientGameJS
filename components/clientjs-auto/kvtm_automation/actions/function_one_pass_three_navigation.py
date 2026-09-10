@@ -13,6 +13,7 @@ FILE_FUNCTIONS = (
     "Sau khi gieo Bông, từ mốc tầng 1 click đúng chậu tầng 4 để camera lên tầng 3",
     "Cuối vòng tầng 3: goDown(1) rồi nhận diện/click nút XUỐNG ở mép dưới",
     "Cho Function 2 tái sử dụng route goDown(1) + click XUỐNG từ tầng trên về main",
+    "Function 2 fallback click điểm XUỐNG operator-confirmed nếu template nút tạm thời bị MISS",
     "Recovery tầng trên: sau mỗi goDown(1), thấy nút XUỐNG thì click ngay",
     "Hậu kiểm click xuống tầng bằng frame-change và ghi runtime exact-main proof",
 )
@@ -144,22 +145,54 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         return max(changes) if changes else 0.0
 
     def known_upper_floor_to_main_via_down_floor(self, label: str) -> NavigationEvidence:
-        """Known Function-2 upper floor -> goDown(1) -> visual XUỐNG -> main."""
+        """Function-2 route: goDown(1), then click the operator-confirmed XUỐNG control.
+
+        The transient template remains a preferred proof path. If the template is
+        missed after the known goDown(1), Function 2 falls back to the confirmed
+        bottom-center control point and still requires a real frame change before
+        exact-main can be marked. Function 1 standalone keeps its stricter visual
+        route in ``floor_3_to_main_via_down_floor`` unchanged.
+        """
         swipe_label = f"{label}-goDown(1)"
         swipe_change = self._settle_down_one(swipe_label)
         click_change = self._click_down_floor_if_visible(swipe_label)
+
         if click_change is None:
+            self.context.log(
+                "AUTO Function 2 • nút XUỐNG template MISS • "
+                f"fallback click operator point={self.DOWN_FLOOR_POINT}"
+            )
             self.context.invalidate_camera_main(
-                f"{label}: down-floor button absent or no response"
+                f"{label}: fixed down-floor fallback"
             )
-            raise ScreenTimeout(
-                f"{label}: sau goDown(1) không xác minh/click được nút XUỐNG ở mép dưới"
+            before_click = self.vision.frame().copy()
+            self.vision.driver.click(*self.DOWN_FLOOR_POINT)
+            self.waiter.sleep(0.70)
+            after_click = self.vision.frame().copy()
+            click_change = self._change(before_click, after_click)
+            self.context.detail(
+                "AUTO route | gesture=click-down-floor-fixed-fallback | "
+                f"after={swipe_label} | point={self.DOWN_FLOOR_POINT} | "
+                f"frame_change={click_change:.2f} | fresh_frame=true"
             )
+            if click_change < self.MIN_CHANGE:
+                self.context.invalidate_camera_main(
+                    f"{label}: fixed down-floor fallback no response"
+                )
+                raise ScreenTimeout(
+                    f"{label}: goDown(1) đã gửi nhưng click XUỐNG tại "
+                    f"{self.DOWN_FLOOR_POINT} không tạo phản hồi hình ảnh"
+                )
+            self.context.log(
+                "AUTO Function 2 • fallback nút XUỐNG PASS • "
+                f"point={self.DOWN_FLOOR_POINT} • frame_change={click_change:.2f}"
+            )
+
         self.context.mark_camera_exact_main(
             f"{label} via goDown(1)+down-floor deterministic route"
         )
         self.context.log(
-            f"AUTO điều hướng • {label} → goDown(1) → thấy nút XUỐNG → click → exact-main PASS"
+            f"AUTO điều hướng • {label} → goDown(1) → click XUỐNG → exact-main PASS"
         )
         return NavigationEvidence(
             f"{label}-via-down-floor",
