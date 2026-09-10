@@ -11,15 +11,15 @@ from .selling import SellingActions, _mean_difference
 __all__ = ["AutoSaleAttempt", "AutoMainSellingActions"]
 FILE_FUNCTIONS = (
     "Tìm một ô trống trong view quầy hiện tại",
-    "Bấm chính xác nút kho thành phẩm có biểu tượng giỏ hàng",
-    "Chờ và quét lại nhiều frame trước khi kết luận hết VP",
+    "Bấm chính xác nút kho thành phẩm đúng một lần cho mỗi lượt kiểm tra kho",
+    "Quét lại ba fresh frame mà không click lại khi bảng kho đã mở",
     "Chỉ chọn VP được Function hiện tại cho phép",
     "Bắt buộc xác nhận số lượng x10 bằng template đa scale trên hai frame trước khi đặt bán",
-    "Bỏ qua loại còn dưới x10 và chuyển sang loại kế tiếp",
+    "Bỏ qua loại còn dưới x10 và chuyển sang loại kế tiếp trong cùng bảng kho",
     "Hủy dialog có xác minh rồi tiếp tục trong cùng kho đang mở",
     "Xác minh màn hình đặt bán bằng dat_ban hoặc nút cam native-500 rồi mới click",
     "Xác minh màn hình thay đổi trước khi ghi nhận đã treo",
-    "Trả trạng thái rõ ràng cho workflow điều phối",
+    "Nếu không có VP hợp lệ thì đóng kho một lần và trả quyền về scheduler",
 )
 
 
@@ -54,6 +54,7 @@ class AutoMainSellingActions:
     EXACT_TEN_THRESHOLD = 0.78
     EXACT_TEN_SCALES = (0.75, 0.90, 1.00, 1.10, 1.25, 1.40, 1.55)
     EXACT_TEN_REQUIRED_PASSES = 2
+    FINISHED_GOODS_SCAN_ATTEMPTS = 3
 
     def __init__(
         self,
@@ -76,8 +77,6 @@ class AutoMainSellingActions:
             raise ValueError(
                 "AUTO bán VP chưa có hậu kiểm an toàn cho: " + ", ".join(unsupported)
             )
-        # Instance-level order lets the Builder bind sale policy to one Function
-        # without changing the stable Function-1 class default above.
         self.ITEM_ORDER = requested
         self._next_item_index = 0
         self._insufficient_item_ids: set[str] = set()
@@ -92,16 +91,28 @@ class AutoMainSellingActions:
         return frame[y : y + height, x : x + width].copy()
 
     def _open_and_scan_finished_goods(self) -> tuple[VpRecognition, ...]:
-        """Click the basket tab and require repeated fresh-frame recognition."""
+        """Open finished-goods once, then retry recognition on fresh frames only.
+
+        Re-clicking ``basket_button`` while the inventory picker is already open
+        is unsafe because the same logical point belongs to the opened panel. The
+        old loop clicked it on attempt 1/2/3, which could toggle/switch UI state
+        and make AUTO repeatedly leave/re-enter the picker. One business action
+        opens storage; retries are capture-only.
+        """
         basket_button = (450, 442)
+        self.context.ensure_running()
+        self.selling.vision.driver.click(*basket_button)
+        self.context.log(
+            "AUTO bán VP • đã bấm Kho thành phẩm đúng 1 lần • "
+            f"scan_fresh_frames={self.FINISHED_GOODS_SCAN_ATTEMPTS}"
+        )
+        self.selling.waiter.sleep(0.60)
+
         best_by_id: dict[str, VpRecognition] = {}
-        for attempt in range(1, 4):
+        for attempt in range(1, self.FINISHED_GOODS_SCAN_ATTEMPTS + 1):
             self.context.ensure_running()
-            self.selling.vision.driver.click(*basket_button)
-            self.context.log(
-                f"AUTO bán VP • đã bấm nút kho thành phẩm 2 • lần {attempt}/3"
-            )
-            self.selling.waiter.sleep(0.60 if attempt == 1 else 0.40)
+            if attempt > 1:
+                self.selling.waiter.sleep(0.40)
             for item in self.recognition.scan_samples(log_prefix="AUTO SELL VP"):
                 if not item.found or item.center is None:
                     continue
@@ -109,7 +120,22 @@ class AutoMainSellingActions:
                 if previous is None or item.score > previous.score:
                     best_by_id[item.item_id] = item
             if best_by_id:
+                self.context.log(
+                    f"AUTO bán VP • Kho thành phẩm scan PASS • "
+                    f"frame={attempt}/{self.FINISHED_GOODS_SCAN_ATTEMPTS} • "
+                    f"candidates={len(best_by_id)}"
+                )
                 return tuple(best_by_id.values())
+            self.context.detail(
+                "AUTO bán VP • Kho thành phẩm fresh-frame MISS • "
+                f"frame={attempt}/{self.FINISHED_GOODS_SCAN_ATTEMPTS} • "
+                "không click lại tab kho"
+            )
+
+        self.context.log(
+            "AUTO bán VP • Kho thành phẩm không có VP Function hợp lệ sau "
+            f"{self.FINISHED_GOODS_SCAN_ATTEMPTS} fresh frame • đóng kho và tiếp tục AUTO"
+        )
         return ()
 
     def _next_candidate(
@@ -136,10 +162,6 @@ class AutoMainSellingActions:
         """Close the sale dialog safely and restore the inventory picker."""
         for attempt in range(1, 4):
             self.context.ensure_running()
-
-            # ClientJS does not consume Escape from the injected Cocos window.
-            # Use the visible top-right X instead, then recover the item picker
-            # if that X closed both the sale dialog and the inventory panel.
             close_match = self.selling.vision.find_any(
                 ("close_game", "close", "x_popup_event"),
                 threshold=0.72,
@@ -278,14 +300,17 @@ class AutoMainSellingActions:
         )
 
     def sell_next_allowed(self, *, storage_id: int = 2) -> AutoSaleAttempt:
-        """Check every Function-allowed type in one inventory operation."""
+        """Open finished-goods once and check every allowed type in that picker."""
         self.context.ensure_running()
         if int(storage_id) != 2:
             raise ValueError("AUTO Main chỉ bán VP từ kho thành phẩm số 2")
-        # Select the empty stall slot exactly once. If one item is below x10,
-        # cancellation returns to this same open inventory for the next type.
         if not self.selling._find_empty_slot():
             return AutoSaleAttempt(status="NO_EMPTY_SLOT")
+
+        recognized = self._open_and_scan_finished_goods()
+        if not recognized:
+            self.selling.close_inventory_read_only()
+            return AutoSaleAttempt(status="NO_ALLOWED_ITEM")
 
         for checked_count in range(1, len(self.ITEM_ORDER) + 1):
             blocked_item_ids = (
@@ -294,11 +319,6 @@ class AutoMainSellingActions:
             if len(blocked_item_ids) == len(self.ITEM_ORDER):
                 self.selling.close_inventory_read_only()
                 return AutoSaleAttempt(status="NO_SAFE_EXACT_TEN_ITEMS")
-
-            recognized = self._open_and_scan_finished_goods()
-            if not recognized:
-                self.selling.close_inventory_read_only()
-                return AutoSaleAttempt(status="NO_ALLOWED_ITEM")
 
             selected = self._next_candidate(recognized)
             if selected is None:
