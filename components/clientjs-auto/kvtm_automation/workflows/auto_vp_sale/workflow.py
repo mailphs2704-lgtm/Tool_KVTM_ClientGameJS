@@ -17,8 +17,8 @@ FILE_FUNCTIONS = (
     "Không click ô đã có QC; nếu QC miễn phí hồi thì bật, còn cooldown thì đóng X",
     "Theo từng view: thu vàng nếu có",
     "Treo lần lượt đúng VP do Function hiện tại cho phép vào mọi ô trống",
-    "Nếu kho hết VP vẫn tiếp tục đi hết quầy để hoàn thành ba mốc QC và thu vàng",
-    "Kéo đúng hai swipe sang view kế tiếp",
+    "Nếu Kho thành phẩm không còn VP hợp lệ thì đóng kho, kết thúc sale pass ngay và trả scheduler chạy Function",
+    "Chỉ kéo sang view kế tiếp khi sale pass vẫn còn việc cần quét",
     "Đóng quầy và tổng hợp số VP đã treo",
 )
 
@@ -45,15 +45,9 @@ class AutoVpSaleWorkflow:
     supplies the Function catalog item ids so sale policy is owned by the
     Function metadata rather than by Scheduler ordering.
 
-    Advertisement is opportunistic and non-blocking. Every sale pass checks three
-    evenly distributed physical positions: start≈slot 1, middle≈slot 10 and
-    end≈slot 20. The helper skips any listing already carrying the red QC marker.
-
-    Sale entry deliberately separates fixed-HUD own-farm proof from vertical
-    exact-main proof. Different accounts may render different farm artwork, so
-    ``quay_hang`` is not a legal gate for opening the own stall. We first prove
-    the lower camera boundary behaviorally, then click the canonical logical
-    stall entry point and require the stable ``quay_hang_on`` panel as postcheck.
+    Advertisement is opportunistic and non-blocking. If finished-goods inventory
+    is genuinely depleted, sale returns immediately to AUTO Main instead of
+    walking the remaining stall views and reopening UI that has no sellable VP.
     """
 
     VIEW_COUNT = 4
@@ -61,9 +55,6 @@ class AutoVpSaleWorkflow:
     EXACT_MAIN_NAV_ATTEMPTS = 8
     OWN_STALL_OPEN_ATTEMPTS = 6
 
-    # Four rendered views overlap by four physical slots. These checkpoints land
-    # near physical 1 / 10 / 20, giving one QC check at the beginning, middle and
-    # end of the 20-slot stall without adding extra rewind/swipe passes.
     AD_CHECKPOINTS = {
         1: ("đầu", 1),
         2: ("giữa", 10),
@@ -134,8 +125,6 @@ class AutoVpSaleWorkflow:
 
         for attempt in range(1, self.OWN_STALL_OPEN_ATTEMPTS + 1):
             self.context.ensure_running()
-            # OWN_STALL_ENTRY_POINT is canonical logical 1000 geometry. The
-            # Bridge input path owns the single conversion to actual 500 pixels.
             self.auto.vision.driver.click(*stall.OWN_STALL_ENTRY_POINT)
             self.auto.wait.sleep(0.45)
             if self.auto.vision.find(
@@ -179,8 +168,6 @@ class AutoVpSaleWorkflow:
         except AutomationStopped:
             raise
         except Exception as exc:
-            # QC is a visibility optimization. Never sacrifice the already-PASS
-            # VP sale flow because one optional ad probe rendered late or failed.
             self.context.log(
                 "AUTO quảng cáo • "
                 f"mốc {checkpoint} lỗi non-blocking: {type(exc).__name__}: {exc} • "
@@ -205,9 +192,6 @@ class AutoVpSaleWorkflow:
                 views_scanned = view
                 self.context.stage(f"auto-vp-sale-view-{view}")
 
-                # QC check is deliberately first at its checkpoint. This covers
-                # the important full-stall case where no empty slot exists, so the
-                # stall can still be promoted before any attempt to list more VP.
                 self._check_advertisement_checkpoint(view)
 
                 self.context.log(
@@ -216,33 +200,38 @@ class AutoVpSaleWorkflow:
                 )
                 collected += self.auto.stall.collect_own_stall_gold(maximum=8)
 
-                if not depleted:
-                    for _slot in range(self.MAX_SALES_PER_VIEW):
-                        attempt = self.sale.sell_next_allowed(storage_id=2)
-                        if attempt.status == "SOLD":
-                            sold += 1
-                            sold_by_item[attempt.item_id] += 1
-                            self.context.log(
-                                f"AUTO bán VP • đã treo {attempt.label} x10 • "
-                                f"tổng {sold} ô"
-                            )
-                            continue
-                        if attempt.status in (
-                            "NO_ALLOWED_ITEM",
-                            "NO_EXACT_TEN_ITEMS",
-                            "NO_SAFE_EXACT_TEN_ITEMS",
-                        ):
-                            depleted = True
-                            self.context.log(
-                                f"AUTO bán VP • {self.function_id} không còn lựa chọn "
-                                "đúng loại và đủ x10; dừng TREO nhưng vẫn đi hết quầy "
-                                "để check QC đầu/giữa/cuối và thu vàng"
-                            )
-                        else:
-                            self.context.log(
-                                f"AUTO bán VP • view {view} không còn ô trống"
-                            )
-                        break
+                for _slot in range(self.MAX_SALES_PER_VIEW):
+                    attempt = self.sale.sell_next_allowed(storage_id=2)
+                    if attempt.status == "SOLD":
+                        sold += 1
+                        sold_by_item[attempt.item_id] += 1
+                        self.context.log(
+                            f"AUTO bán VP • đã treo {attempt.label} x10 • "
+                            f"tổng {sold} ô"
+                        )
+                        continue
+                    if attempt.status in (
+                        "NO_ALLOWED_ITEM",
+                        "NO_EXACT_TEN_ITEMS",
+                        "NO_SAFE_EXACT_TEN_ITEMS",
+                    ):
+                        depleted = True
+                        self.context.stage(
+                            "auto-vp-sale-inventory-depleted-return-scheduler"
+                        )
+                        self.context.log(
+                            f"AUTO bán VP • {self.function_id} không còn VP hợp lệ/x10 • "
+                            "Kho thành phẩm đã đóng • KẾT THÚC SALE PASS NGAY → "
+                            "trả scheduler chạy Function"
+                        )
+                    else:
+                        self.context.log(
+                            f"AUTO bán VP • view {view} không còn ô trống"
+                        )
+                    break
+
+                if depleted:
+                    break
 
                 if view < self.VIEW_COUNT:
                     self.context.stage("auto-vp-sale-two-swipes")
