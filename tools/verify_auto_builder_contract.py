@@ -7,6 +7,7 @@ from verify_auto_builder_contract_core import main as _verify_builder_core
 from verify_auto_function_two_contract import main as _verify_function_two
 from verify_auto_function_two_handoff_contract import main as _verify_function_two_handoff
 from verify_auto_function_two_ui_contract import main as _verify_function_two_ui
+from verify_auto_sale_speed_contract import main as _verify_sale_speed
 
 
 def main() -> int:
@@ -18,6 +19,8 @@ def main() -> int:
         raise AssertionError("AUTO Function 2 handoff static contract failed")
     if _verify_function_two_ui() != 0:
         raise AssertionError("AUTO Function 2 UI static contract failed")
+    if _verify_sale_speed() != 0:
+        raise AssertionError("AUTO sale speed static contract failed")
     print("AUTO MULTI DEV BUILDER + FUNCTION TWO COMPOSITE GATE VERIFIED")
     return 0
 
