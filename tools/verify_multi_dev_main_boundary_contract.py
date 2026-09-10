@@ -10,6 +10,12 @@ CONTEXT = CLEAN / "context.py"
 POPUP = CLEAN / "actions/popup.py"
 FUNCTION_NAV = CLEAN / "actions/function_one_navigation.py"
 PASS_THREE_NAV = CLEAN / "actions/function_one_pass_three_navigation.py"
+ACTIONS_INIT = CLEAN / "actions/__init__.py"
+MATERIAL_SIGNAL = CLEAN / "material_shortage.py"
+MATERIAL_ACTIONS = CLEAN / "actions/material_shortage_production.py"
+RECOVERY_INIT = CLEAN / "recovery/__init__.py"
+RECOVERY_EVENTS = CLEAN / "recovery/events.py"
+MATERIAL_RECOVERY = CLEAN / "recovery/material_shortage.py"
 WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 FUNCTION_ONE = CLEAN / "workflows/auto_function_one/workflow.py"
 AUTO_VP_SALE = CLEAN / "workflows/auto_vp_sale/workflow.py"
@@ -40,6 +46,12 @@ def main() -> int:
     popup = read(POPUP)
     function_nav = read(FUNCTION_NAV)
     pass_nav = read(PASS_THREE_NAV)
+    actions_init = read(ACTIONS_INIT)
+    material_signal = read(MATERIAL_SIGNAL)
+    material_actions = read(MATERIAL_ACTIONS)
+    recovery_init = read(RECOVERY_INIT)
+    recovery_events = read(RECOVERY_EVENTS)
+    material_recovery = read(MATERIAL_RECOVERY)
     worker = read(WORKER)
     function_one = read(FUNCTION_ONE)
     auto_vp_sale = read(AUTO_VP_SALE)
@@ -96,6 +108,45 @@ def main() -> int:
     require(auto_vp_sale, "background_gate=disabled", "Own-stall background-exclusion marker missing")
     forbid(auto_vp_sale, "self.auto.stall.open_own_stall()", "Sale returned to legacy quay_hang-gated stall entry")
 
+    # The two live shortage popups supplied at native 500 are now one typed
+    # production boundary. Product context selects the crop: Táo sấy/Nước táo ->
+    # cay_tao, Vải vàng -> cay_bong. LOW_STOCK may have already accepted the drag,
+    # so a fresh empty-slot delta must decide whether ordinal N is complete.
+    require(material_signal, "class MaterialShortage(ScreenTimeout)", "Typed material shortage signal missing")
+    require(material_signal, "def remaining_count", "Material shortage does not preserve remaining count")
+    require(material_signal, "drag_consumed_slot", "Shortage evidence does not record accepted drag")
+    require(material_actions, 'kind = "NOT_ENOUGH"', "NOT_ENOUGH popup variant missing")
+    require(material_actions, 'else "LOW_STOCK"', "LOW_STOCK popup variant missing")
+    require(material_actions, "SHORTAGE_MODAL_ZONE", "Shortage modal geometry guard missing")
+    require(material_actions, "SHORTAGE_GREEN_RATIO_MIN = 0.55", "Shortage green-geometry threshold changed")
+    require(material_actions, "consumed = current_empty < int(empty_before)", "Shortage does not postcheck current drag")
+    require(material_actions, 'MATERIAL_TEMPLATE = "cay_tao"', "Apple material mapping missing")
+    require(material_actions, 'MATERIAL_TEMPLATE = "cay_bong"', "Cotton material mapping missing")
+    require(material_actions, "verified_queue_events=self.REQUIRED_COUNT", "Cross-recovery queue proof missing")
+    require(material_actions, "def replenish_27_cotton_from_floor_1", "Cotton replenisher missing")
+    require(actions_init, "MaterialAwareProductionActions as ProductionActions", "Dried-apple shortage guard not wired")
+    require(actions_init, "MaterialAwareAppleJuiceProductionActions as AppleJuiceProductionActions", "Apple-juice shortage guard not wired")
+    require(actions_init, "MaterialAwareYellowFabricProductionActions as YellowFabricProductionActions", "Yellow-fabric shortage guard not wired")
+    require(actions_init, "MaterialAwareCottonPlantingActions as CottonPlantingActions", "Cotton replenisher not wired")
+    require(actions_init, "MaterialAwareMachineRepairActions as MachineRepairActions", "Recovered production handoff not wired")
+
+    # Recovery must route through exact-main, replenish only the crop carried by
+    # MaterialShortage, then return to the same production floor. Apple policy is
+    # locked to the requested three passes of the already-proven five-floor
+    # harvest/replant routine; its internal per-pass tree count remains owned by
+    # AppleSupplyActions rather than fabricated here.
+    require(recovery_events, 'MATERIAL_SHORTAGE = "material_shortage"', "Material recovery event kind missing")
+    require(recovery_init, "MaterialAwareRecoveryManager as RecoveryManager", "Material-aware RecoveryManager not wired")
+    require(material_recovery, "APPLE_FIVE_FLOOR_ROUNDS = 3", "Apple shortage recovery is not three five-floor passes")
+    require(material_recovery, 'if material == "cay_tao":', "Apple dispatcher branch missing")
+    require(material_recovery, 'if material == "cay_bong":', "Cotton dispatcher branch missing")
+    require(material_recovery, "wait_until_floor_1_ripe()", "Apple recovery does not wait for ripe crop")
+    require(material_recovery, "harvest_and_replant_five_floors()", "Apple five-floor harvest/replant call missing")
+    require(material_recovery, "replenish_27_cotton_from_floor_1()", "Cotton harvest/replant call missing")
+    require(material_recovery, "self.navigation.to_main_from_floor(", "Material recovery does not return machine floor to main")
+    require(material_recovery, "self.navigation.from_main_to_floor(", "Material recovery does not re-enter target floor")
+    require(material_recovery, "chỉ xếp tiếp còn=", "Resume-only-remaining log marker missing")
+
     # Existing worker/function recovery paths may keep calling the exact-main
     # predicate because that predicate is now runtime-proof based; ensure they do
     # not bypass it with the legacy quay_hang world anchor.
@@ -110,6 +161,10 @@ def main() -> int:
     print("unknown_camera=bounded_godown_until_two_low_change_frames")
     print("sale_entry=exact-main-proof->fixed-own-stall-point->quay_hang_on")
     print("popup_blocker=native-500-proportional")
+    print("material_shortage=NOT_ENOUGH+LOW_STOCK->typed-crop-recovery")
+    print("material_dispatch=cay_tao|cay_bong")
+    print("apple_shortage=main->floor1->five-floor-harvest-replant-x3->main")
+    print("production_resume=verified-progress->remaining-only")
     print("background_world_anchor=forbidden_as_runtime_gate")
     print("boundary_change_max=6.0")
     print("boundary_stable_required=2")
