@@ -18,7 +18,8 @@ FILE_FUNCTIONS = (
     "Ghi log hành động",
     "Ghi log kỹ thuật chi tiết",
     "Báo stage nghiệp vụ",
-    "Giữ bằng chứng camera exact-main theo runtime, không theo background tài khoản",
+    "Giữ bằng chứng camera exact-main theo nguồn chứng minh rõ ràng",
+    "Đánh dấu MAIN mặc định sau login/restart mà không gửi goDown",
     "Dừng tác vụ theo stop-event",
 )
 
@@ -30,11 +31,12 @@ class AutomationContext:
     No AUTO PRO object is stored here. The context owns only the selected
     ClientJS process/profile, paths, cancellation signal and reporting hooks.
 
-    ``camera_exact_main_proven`` is deliberately runtime evidence instead of an
-    image/template classification. KVTM accounts may use different farm
-    backgrounds, so a world-space object such as the stall must never be the
-    exact-main gate. Navigation owns this proof and invalidates it whenever the
-    vertical camera is moved.
+    ``camera_exact_main_proven`` is runtime state evidence instead of an
+    account-background classification. Most of the run proves MAIN through a
+    deterministic navigation route/boundary. Startup is the one explicit
+    exception agreed by the operator: immediately after a fresh login/restart,
+    the game camera is already at MAIN, so startup records that contract without
+    sending a synthetic ``goDown(1)``.
     """
 
     pid: int
@@ -80,13 +82,27 @@ class AutomationContext:
         if reason:
             self.detail(f"AUTO camera proof | exact_main=false | reason={reason}")
 
-    def mark_camera_exact_main(self, reason: str) -> None:
-        """Record exact-main only after a deterministic route/boundary proof."""
+    def mark_camera_exact_main(
+        self,
+        reason: str,
+        *,
+        source: str = "runtime-route",
+    ) -> None:
+        """Record exact-main with an explicit proof source.
+
+        ``source`` is diagnostic metadata only. Callers still own the safety
+        decision that allows exact-main to be marked.
+        """
         self.camera_exact_main_proven = True
         self.camera_main_boundary_streak = 0
         self.detail(
-            f"AUTO camera proof | exact_main=true | source=runtime-route | reason={reason}"
+            "AUTO camera proof | exact_main=true | "
+            f"source={str(source)} | reason={reason}"
         )
+
+    def mark_startup_exact_main(self, reason: str = "fresh login/restart default MAIN") -> None:
+        """Apply the operator-approved startup camera contract without goDown."""
+        self.mark_camera_exact_main(reason, source="startup-contract")
 
     def observe_camera_down_boundary(
         self,
