@@ -11,6 +11,7 @@ FILE_FUNCTIONS = (
     "Phân loại chậu trống, cây chín và cây chưa chín",
     "Kiểm tra lại trạng thái cây theo chu kỳ cấu hình mặc định 0.3 giây",
     "Tái sử dụng PlantingActions.PATH_30 cho batch Táo 5 tầng, không giữ geometry 30 riêng",
+    "Tái sử dụng PlantingActions.PATH_6 cho hàng 6 chậu tầng 6",
     "Thu hoạch và gieo lại đủ năm hàng, ba mươi cây Táo",
     "Tại tầng 6 gieo ngay nếu trống; chỉ chờ nếu đang có cây chưa chín",
     "Không sở hữu điều hướng tầng; caller/Recipe quyết định floor route",
@@ -34,11 +35,8 @@ class AppleSupplyActions(PlantingActions):
     EMPTY_ZONE = PlantingActions.EMPTY_READY_ZONE
     SEED_ZONE = PlantingActions.SEED_ZONE
 
-    # Exact existing geometry, now sourced from the project-wide planting path.
     FIVE_FLOOR_PATH = PlantingActions.PATH_30
-    # Floor-6 one-row gesture is separately proven and retained verbatim until a
-    # project-wide PATH_6 contract is explicitly introduced.
-    FLOOR_6_ROW = ((325, 799), (335, 940), (835, 940))
+    FLOOR_6_ROW = PlantingActions.PATH_6
     RIPE_TIMEOUT = 120.0
 
     def _scan_state(self) -> tuple[str, object | None]:
