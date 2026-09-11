@@ -3,24 +3,34 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..actions.function_two_planting import (
-    FunctionTwoPlantingActions,
-    FunctionTwoPlantingResult,
-)
 from ..actions.production import ProductionResult
 from ..actions.rose_oil_production import RoseOilProductionActions
+from ..errors import ScreenTimeout
 from ..recovery import RecoveryManager
 
 if TYPE_CHECKING:
     from ..automation import KVAutomation
 
 
-__all__ = ["RoseOilRecipe", "RoseOilRecipeResult"]
+__all__ = [
+    "RoseOilMaterialResult",
+    "RoseOilRecipe",
+    "RoseOilRecipeResult",
+]
+
+
+@dataclass(frozen=True)
+class RoseOilMaterialResult:
+    roses_planted: int
+    snow_planted: int
+    roses_harvested: int
+    snow_harvested: int
+    end_floor: int
 
 
 @dataclass(frozen=True)
 class RoseOilRecipeResult:
-    materials: FunctionTwoPlantingResult
+    materials: RoseOilMaterialResult
     production: ProductionResult
 
     @property
@@ -37,23 +47,22 @@ class RoseOilRecipeResult:
 
 
 class RoseOilRecipe:
-    """Function 2 recipe: 35 Hồng + 28 Tuyết -> floor 5 -> 7 TDHH."""
+    """Function-2 business recipe: 35 Hồng + 28 Tuyết -> floor 5 -> 7 TDHH.
+
+    The Recipe owns business order. PlantingActions owns only crop recognition and
+    verified count/path gestures. Navigation Actions own all floor primitives.
+    This removes the old Function-specific planting choreography from ``actions/``.
+    """
 
     REQUIRED_COUNT = 7
     ROSE_REQUIRED = 35
     SNOW_REQUIRED = 28
+    ROSE_FIRST_SEGMENT = 30
+    ROSE_FINAL_SEGMENT = 5
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
         self.context = automation.context
-        self.planting = FunctionTwoPlantingActions(
-            automation.context,
-            automation.vision,
-            automation.wait,
-            automation.speed_config,
-            function_one_navigation=automation.function_one_navigation,
-            pass_three_navigation=automation.function_one_pass_three_navigation,
-        )
         self.production = RoseOilProductionActions(
             automation.context,
             automation.vision,
@@ -74,31 +83,114 @@ class RoseOilRecipe:
                 f"requested={count}"
             )
 
+    def _require_native_1000(self) -> None:
+        frame = self.auto.vision.frame()
+        height, width = frame.shape[:2]
+        if (width, height) != (1000, 1000):
+            raise ScreenTimeout(
+                "Function 2 materials hiện khóa native 1000x1000; "
+                f"capture={width}x{height}. Không chạy contract 500x500."
+            )
+        self.context.detail(
+            "AUTO Function 2 materials | native=1000x1000 | resolution_gate=PASS"
+        )
+
     def _main_to_floor_5(self, label: str) -> None:
         self.context.log(
-            f"AUTO TDHH recovery route • {label} • main → tầng 1 → goUp(4) → tầng 5"
+            f"AUTO TDHH recovery route • {label} • MAIN → goUp(1) → goUp(4) → tầng 5"
         )
         self.auto.function_one_navigation.main_to_floor_1()
         self.auto.function_one_navigation.floor_1_to_floor_5()
 
     def _floor_5_to_main(self, label: str) -> None:
-        # Machine repair closes only its own modal; close the production panel,
-        # then use the operator-confirmed goDown(1) + visual XUỐNG route.
         self.context.log(
-            f"AUTO TDHH recovery route • {label} • đóng panel → goDown(1) → click XUỐNG → main"
+            f"AUTO TDHH recovery route • {label} • đóng panel → goDown(1) → click XUỐNG → MAIN"
         )
         self.auto.vision.driver.click(*RoseOilProductionActions.CLOSE_POINT)
         self.auto.wait.sleep(0.35)
         self.auto.function_one_pass_three_navigation.known_upper_floor_to_main_via_down_floor(
-            "TDHH tầng 5 → main"
+            "TDHH tầng 5 → MAIN"
+        )
+
+    def _prepare_materials(self) -> RoseOilMaterialResult:
+        """Compose Hồng/Tuyết from reusable Navigation + Planting Actions."""
+        self._require_native_1000()
+        planting = self.auto.planting
+        nav = self.auto.function_one_navigation
+        upper_nav = self.auto.function_one_pass_three_navigation
+
+        # HỒNG: MAIN -> floor1. First path covers 30 pots across the first five
+        # visible layers, then goUp(4)+goUp(1) hands us floor6 for the final 5.
+        self.context.stage("auto-recipe-rose-oil-rose-start")
+        nav.main_to_floor_1()
+        rose_first = planting.harvest_and_replant_current_view(
+            seed_template=planting.ROSE_TEMPLATE,
+            item_label="Hoa hồng",
+            count=self.ROSE_FIRST_SEGMENT,
+            segment_label="Hồng 30 chậu đầu",
+        )
+        nav.floor_1_to_floor_6()
+        rose_final = planting.harvest_and_replant_current_view(
+            seed_template=planting.ROSE_TEMPLATE,
+            item_label="Hoa hồng",
+            count=self.ROSE_FINAL_SEGMENT,
+            segment_label="Hồng 5 chậu tầng 6",
+        )
+
+        roses_planted = int(rose_first.planted_count + rose_final.planted_count)
+        roses_harvested = int(
+            rose_first.harvested_count + rose_final.harvested_count
+        )
+        if roses_planted != self.ROSE_REQUIRED:
+            raise RuntimeError(
+                f"TDHH Hồng contract FAIL: {roses_planted}/{self.ROSE_REQUIRED}"
+            )
+
+        # Return to the known MAIN boundary before starting Tuyết. This is a
+        # Recipe transition, not a hidden Planting Action side effect.
+        self.context.stage("auto-recipe-rose-oil-rose-return-main")
+        upper_nav.known_upper_floor_to_main_via_down_floor(
+            "Function 2 Hồng tầng 6 → MAIN"
+        )
+        if not self.auto.popup.is_own_exact_main_screen():
+            raise ScreenTimeout(
+                "Hồng 35/35 đã xong nhưng chưa chứng minh MAIN trước Tuyết"
+            )
+
+        # TUYẾT: MAIN -> floor1, one exact 28-pot path. Then goUp(4) from the
+        # floor1 anchor to candidate floor5 and hand it directly to production.
+        self.context.stage("auto-recipe-rose-oil-snow-start")
+        nav.main_to_floor_1()
+        snow = planting.harvest_and_replant_current_view(
+            seed_template=planting.SNOW_TEMPLATE,
+            item_label="Cây tuyết",
+            count=self.SNOW_REQUIRED,
+            segment_label="Tuyết 28 chậu",
+        )
+        if int(snow.planted_count) != self.SNOW_REQUIRED:
+            raise RuntimeError(
+                f"TDHH Tuyết contract FAIL: {snow.planted_count}/{self.SNOW_REQUIRED}"
+            )
+        nav.floor_1_to_floor_5()
+
+        self.context.stage("auto-recipe-rose-oil-materials-pass")
+        self.context.log(
+            "AUTO recipe TDHH materials • PASS • Hồng=35 • Tuyết=28 • candidate_floor=5"
+        )
+        return RoseOilMaterialResult(
+            roses_planted=roses_planted,
+            snow_planted=int(snow.planted_count),
+            roses_harvested=roses_harvested,
+            snow_harvested=int(snow.harvested_count),
+            end_floor=5,
         )
 
     def run_from_main(self, *, count: int = 7) -> RoseOilRecipeResult:
         self._require_count(count)
-        self.recovery.ensure_main("TDHH recipe: entry main")
+        self.recovery.ensure_main("TDHH recipe: entry MAIN")
         self.context.stage("auto-recipe-rose-oil-materials")
 
-        materials = self.planting.harvest_and_replant_materials()
+        materials = self._prepare_materials()
         if (
             int(materials.roses_planted) != self.ROSE_REQUIRED
             or int(materials.snow_planted) != self.SNOW_REQUIRED
@@ -111,8 +203,6 @@ class RoseOilRecipe:
                 f"end_floor={materials.end_floor}/5"
             )
 
-        # Planting hands off candidate floor5 directly after Tuyết via goUp(4).
-        # Do not return main and do not route through floor7.
         self.context.ensure_running()
         self.context.stage("auto-recipe-rose-oil-production")
         produced = self.recovery.run_production(
