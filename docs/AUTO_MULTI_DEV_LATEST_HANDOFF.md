@@ -1,433 +1,292 @@
 # AUTO MULTI DEV — LATEST HANDOFF
 
-Cập nhật: 2026-09-09
+Cập nhật: 2026-09-11
+Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
+Branch bắt buộc: `develop/multi-auto-dev`
+Trạng thái phiên: **STANDARDIZATION DESIGN IN PROGRESS**
 
-Đây là **tài liệu đọc đầu tiên** khi một AI khác tiếp nhận branch `develop/multi-auto-dev`.
+> Đây là tài liệu handoff hiện hành. Trong giai đoạn chuẩn hóa, tài liệu phải đọc đầu tiên là `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`.
 
-## 1. Trạng thái đã chốt với operator
+## 1. Read-first bắt buộc
 
-Các mốc hiện tại:
+Theo thứ tự:
 
-- Function 1: runtime đã chạy nhiều vòng và được operator chốt PASS qua các lần sửa gần đây.
-- Sale VP: PASS baseline; không thay đổi nếu không có regression evidence.
-- QC/Quảng cáo VP: LIVE PASS.
-- Recovery/Event/Error architecture: PASS.
-- Recipe architecture: đang được Function 1 sử dụng thực tế; không quay lại copy production/recovery vào Function.
-- exact-main đa background: PASS theo runtime-navigation proof, không dùng world/background anchor làm gate.
-- visual nút `XUỐNG` upper-floor: đang dùng detector bottom-edge; không blind click tọa độ cũ.
-- WrongProductionMachine recovery: đã sửa case mở nhầm máy rồi click thu VP vô hạn.
-- Friend refresh chống item treo: source hoàn tất, operator đã PASS runtime sau fix circular import.
-- Periodic ClientJS restart: **test 60 giây đã PASS**, đã promote production interval lên **7200 giây = 2 giờ**.
-- Runtime: isolated worker + Bridge V3/CAPTURE3 ownership.
-- Persistent settings: `%APPDATA%\KVTM Multi DEV`; rebuild không overwrite operator values.
+1. `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md` — source of truth cho các quyết định chuẩn hóa mới nhất;
+2. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md` — checkpoint/recovery source + target;
+3. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md` — kiến trúc recovery nền;
+4. `docs/AUTO_MULTI_DEV_CLIENT_RESTART.md` — implementation restart hiện tại, lưu ý vẫn là contract cũ 2h;
+5. `docs/AUTO_MULTI_DEV_FRIEND_REFRESH.md`;
+6. `docs/AUTO_MULTI_DEV_RECIPE_ARCHITECTURE.md`;
+7. `AI_COORDINATION.md`.
 
-## 2. Kiến trúc chuẩn
+Nếu target mới và tài liệu cũ xung đột, **không tự lấy contract cũ làm yêu cầu mới**. Kiểm tra nhãn `CHỐT / CẦN CHỐT / READY FOR LIVE TEST` trong `AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`.
 
-Luồng source chuẩn:
+## 2. Trạng thái quan trọng hiện tại
+
+### Runtime/source trước giai đoạn chuẩn hóa
+
+Các baseline lịch sử vẫn cần giữ regression:
+
+- Function 1 đã từng được operator runtime PASS nhiều vòng;
+- Sale VP baseline đã từng PASS;
+- QC/Quảng cáo VP LIVE PASS;
+- exact-main đa background đã có runtime proof;
+- visual nút `XUỐNG` upper-floor dùng detector, không blind click tọa độ cũ;
+- Friend Refresh định kỳ đã có source/runtime behavior;
+- ClientJS restart implementation hiện tại vẫn đang dùng **2 giờ** cho tới khi target 3h được triển khai và test;
+- Runtime dùng isolated worker + Bridge V3/CAPTURE3;
+- persistent settings ở `%APPDATA%\KVTM Multi DEV`.
+
+Các baseline trên không có nghĩa target chuẩn hóa mới đã PASS.
+
+### Global recovery mới
+
+Bug phát hiện từ quá trình chạy Function nhưng được xác định là **lỗi kiến trúc chung**, không thuộc riêng Function 2:
 
 ```text
-Function
-  → RecipeBook
-    → Product Recipe
-      → Atomic Action
-      + RecoveryManager
+module đang chạy
+→ lỗi recoverable (ví dụ kho đầy)
+→ recovery tạm rời module
+→ xử lý lỗi
+→ quay lại đúng checkpoint
+→ tiếp tục cùng module
+→ chỉ khi module + Function PASS mới cho scheduler tăng vòng
 ```
 
-Không được trộn vai trò:
+Commit source:
 
-- `errors.py`: typed signal/error only;
-- `recovery/`: policy điều hướng/sai máy/kho đầy;
-- `recipes/`: quy trình reusable cho từng VP;
-- `actions/`: click/gesture/production primitive;
-- `workflows/auto_function_*`: business composition của Function;
-- `workflows/auto_main`: scheduler chung giữa Function/sale/maintenance/restart.
+`b52befd4dbfab5c3a17175f1ddd43948244dcf32`
+`feat: checkpoint recoverable AUTO modules before scheduler resume`
 
-## 3. Recovery architecture
+Đã thêm lifecycle:
 
-Package:
+- `MODULE_STARTED`;
+- `MODULE_INTERRUPTED`;
+- `MODULE_RESUMED`;
+- `MODULE_COMPLETED`.
+
+Production `InventoryFull` và `WrongProductionMachine` đã đi qua checkpoint executor ở source.
+
+**Trạng thái: READY FOR LIVE TEST, chưa runtime PASS.**
+
+## 3. Giai đoạn hiện tại: chuẩn hóa trước khi refactor
+
+Operator đang trình bày cấu trúc mong muốn từng phần. Trong giai đoạn này:
+
+- không tự refactor runtime theo spec mới nếu operator chưa nói kết thúc/triển khai;
+- mỗi yêu cầu mới phải cập nhật tích lũy vào `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`;
+- phải góp ý khi logic có xung đột;
+- phần chưa được xác nhận phải ghi `CẦN CHỐT`, không tự biến thành contract.
+
+## 4. Các mục đã thống nhất tới thời điểm này
+
+### 4.1 Game Startup / Login / Popup
+
+Sau ClientJS open/restart:
+
+```text
+login hoàn tất
+→ LOGIN_VERIFIED
+→ chờ 60 giây
+→ scan/đóng toàn bộ popup đã biết
+→ scan lại
+→ verify exact-main
+→ startup PASS
+```
+
+60 giây chỉ là settle delay, không thay thế vision/verification và không chạy sau mỗi Function loop.
+
+### 4.2 Sale VP theo Function
+
+Sale module phải tự chịu trách nhiệm:
+
+- exact-main;
+- mở quầy;
+- check + thu vàng;
+- check/bật QC VP hợp lệ;
+- tìm ô trống;
+- mở kho + chọn Kho thành phẩm;
+- quét đúng VP thuộc Function;
+- chỉ bán khi đủ đúng batch x10;
+- bán lần lượt tới hết ô trống hoặc hết VP hợp lệ;
+- đóng panel/quầy và về main.
+
+Thay đổi target mới:
+
+```text
+4 view -> 5 view
+VIEW 5 = final overlap/end check
+```
+
+View 5 nhằm bắt 2 ô cuối đang bị bỏ sót. Swipe ở cuối quầy ít/không dịch không được tự coi là lỗi boundary.
+
+### 4.3 Repair Machine
+
+Sau mỗi production hoàn tất phải đi qua một module sửa máy dùng chung. Không copy logic sửa máy theo từng Function nếu cùng một cơ chế có thể reuse.
+
+### 4.4 Friend Refresh
+
+Có hai vai trò riêng:
+
+1. periodic maintenance sau N vòng;
+2. recovery escalation khi local retry không giải quyết được lỗi.
+
+Recovery Friend Refresh phải về lại exact-main rồi resume checkpoint/module đang dở.
+
+Periodic counter và recovery counter độc lập.
+
+### 4.5 Restart ClientJS
+
+Target interval mới:
+
+```text
+3 giờ
+```
+
+Scheduled restart chỉ sau Function PASS / safe boundary. Nếu tới hạn giữa Function thì defer.
+
+Sau restart target startup phải đi qua:
+
+```text
+rebind đúng profile
+→ worker/Bridge mới
+→ login
+→ wait 60s
+→ popup cleanup
+→ exact-main
+→ scheduler tiếp tục
+```
+
+Source hiện tại vẫn là 2h; chưa sửa thành 3h trong giai đoạn thiết kế này.
+
+### 4.6 Recovery escalation
+
+Yêu cầu operator:
+
+```text
+lỗi chưa có giải pháp / retry vẫn lỗi
+→ Friend Refresh #1
+→ retry/resume
+→ Friend Refresh #2
+→ retry/resume
+→ vẫn lỗi thì nâng cấp restart ClientJS
+```
+
+Chi tiết Emergency Restart giữa Function còn cần chốt vì scheduled restart có contract khác. Nếu cho phép restart giữa Function thì phải có checkpoint bền qua worker/process restart.
+
+### 4.7 Checkpoint RAM
+
+Đã thống nhất:
+
+- mỗi profile chỉ giữ một `ActiveCheckpoint`;
+- update tại chỗ, không append vô hạn;
+- chỉ lưu metadata/state nhỏ;
+- không giữ screenshot, OpenCV frame, numpy image, template image, automation object, driver object hoặc log history không giới hạn.
+
+Checkpoint mục tiêu chỉ vài KB/profile và không đáng kể so với ClientJS/OpenCV/capture.
+
+## 5. Điểm CẦN CHỐT ở các lượt trao đổi sau
+
+Chưa tự triển khai các chi tiết sau cho tới khi operator xác nhận:
+
+- retry limit chính xác cho từng loại lỗi/module; operator nêu khoảng 3-5 lần, đề xuất kỹ thuật là limit cố định theo policy, không random;
+- Emergency/Recovery Restart có được phép xảy ra giữa Function hay không;
+- nếu có Emergency Restart giữa Function: schema + persistence + clear rule của durable checkpoint;
+- số lần Emergency Restart tối đa cho cùng checkpoint trước fail-close;
+- các module/function tiếp theo mà operator chưa trình bày.
+
+## 6. Nguyên tắc recovery không được regression
+
+- lỗi recoverable không được làm scheduler tự mở vòng Function mới;
+- checkpoint chỉ clear sau khi công việc tương ứng thật sự hoàn tất;
+- generic `ScreenTimeout` không blind retry nếu thao tác có thể đã tạo side effect;
+- không retry/Friend Refresh/restart vô hạn;
+- Function không copy production/recovery policy;
+- sale/recovery phải quay về đúng state/tầng/module cần resume;
+- build/static PASS không được ghi thành runtime PASS.
+
+## 7. Kiến trúc mục tiêu hiện tại
+
+```text
+AUTO MAIN / SCHEDULER
+        ↓
+FUNCTION
+        ↓
+MODULE / RECIPE
+        ↓
+ACTION
+
+        ↕
+GLOBAL RECOVERY / ERROR MANAGER
+        ↕
+ACTIVE CHECKPOINT (RAM, metadata-only)
+```
+
+Nếu sau này chốt Recovery Restart giữa Function:
+
+```text
+ACTIVE CHECKPOINT (RAM)
+        +
+DURABLE CHECKPOINT (disk, nhỏ, chỉ để sống qua restart)
+```
+
+## 8. Source paths quan trọng
 
 ```text
 components/clientjs-auto/kvtm_automation/recovery/
-```
-
-Các file chính:
-
-- `events.py` — typed recovery events;
-- `navigation.py` — exact-main/unknown/floor routes;
-- `production.py` — `WrongProductionMachine` + `InventoryFull` policy;
-- `manager.py` — facade mà Recipe/Function dùng.
-
-Nguyên tắc quan trọng:
-
-- generic `ScreenTimeout` **không** được blind retry;
-- sai máy → đóng panel → camera unknown → exact-main → requested floor → retry có giới hạn;
-- kho đầy → về exact-main → sale VP theo Function → requested floor → retry;
-- Function sau có thể inject route/event handler riêng qua `RecoveryManager` thay vì copy recovery code.
-
-Chi tiết: `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`.
-
-## 4. Recipe architecture
-
-Package:
-
-```text
 components/clientjs-auto/kvtm_automation/recipes/
+components/clientjs-auto/kvtm_automation/workflows/auto_main/
+components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/
+components/clientjs-auto/kvtm_automation/workflows/auto_function_one/
+components/clientjs-auto/kvtm_automation/workflows/auto_function_two/
+components/clientjs-auto/kvtm_automation/actions/
 ```
 
-Hiện có:
-
-- `dried_apple.py`;
-- `apple_juice.py`;
-- `yellow_fabric.py`;
-- `book.py`.
-
-`RecipeBook(function_id=...)` dùng shared `RecoveryManager` của Function.
-
-### AppleJuiceRecipe
-
-Standalone từ main:
-
-```python
-recipes.apple_juice.run_from_main(count=9)
-```
-
-Function 1 dùng đường nhanh:
-
-```python
-recipes.apple_juice.run_from_candidate_floor_2(count=9)
-```
-
-Candidate floor2 từ movement không tự được tin. Recipe vẫn probe `nuoc_tao`; probe Nước táo hiện bounded tối đa **4 burst x5 = 20 click** để tránh false MISS sau chỉ 10 click. Nếu thấy anchor máy khác thì fail fast sang wrong-machine recovery.
-
-### YellowFabricRecipe
-
-Khi đang known floor2 sau Nước táo:
-
-```python
-recipes.yellow_fabric.run_after_floor_2(count=9)
-```
-
-Standalone có dependency explicit:
-
-```python
-recipes.yellow_fabric.run_from_main(
-    count=9,
-    include_apple_juice_dependency=True,
-)
-```
-
-`include_apple_juice_dependency=False` không được tự sản xuất Nước táo.
-
-Chi tiết: `docs/AUTO_MULTI_DEV_RECIPE_ARCHITECTURE.md`.
-
-## 5. Function 1 current business flow
-
-Function 1 hiện ghép nghiệp vụ thay vì nhúng recovery:
-
-1. `DriedAppleRecipe.run_from_session(count=9)`;
-2. supply Táo qua 5 tầng + trồng thêm tầng 6;
-3. tầng 6 → `goDown(4)` tạo candidate tầng 2;
-4. `AppleJuiceRecipe.run_from_candidate_floor_2(count=9)`;
-5. `YellowFabricRecipe.run_after_floor_2(count=9)`;
-6. normalize cuối vòng về exact-main;
-7. PASS 3/3.
-
-Function 1 không được gọi trực tiếp production/recovery đã thuộc Recipe/RecoveryManager.
-
-## 6. Route và floor proof đã sửa theo live evidence
-
-### Nước táo
-
-Sau trồng Táo tầng 6:
+Checkpoint source mới:
 
 ```text
-floor6
-→ goDown(4)
-→ candidate floor2
-→ probe nuoc_tao
-→ đúng: sản xuất ngay
-→ sai: close panel → exact-main → floor2 → retry
+components/clientjs-auto/kvtm_automation/recovery/module_execution.py
 ```
 
-Không đi vòng xuống main rồi lên lại floor2 nếu direct route đã đúng.
+## 9. Build/operator entry
 
-### Vải vàng
-
-Live correction:
-
-- `(257,416)` chỉ đưa tới tầng 2 trong state runtime đã test;
-- floor1 → floor3 dùng click chậu tầng 4 `(257,191)`;
-- movement vẫn không tự prove floor3; production phải thấy đúng `vai_vang`.
-
-## 7. Shared production panel rule
-
-Sau burst x5 bắt buộc:
-
-```text
-x5 raw click
-→ vp_collect_delay
-→ fresh frame
-→ panel_state(frame)
-→ target/wrong-machine scan trên cùng frame
-```
-
-Known product anchors:
-
-- `tao_say`;
-- `nuoc_tao`;
-- `vai_vang`.
-
-Nếu cần `vai_vang` nhưng thấy `nuoc_tao`, phải phát `WrongProductionMachine`, không được tiếp tục x5 vô hạn.
-
-## 8. exact-main contract
-
-Không phụ thuộc background/account farm skin.
-
-- fixed own-farm HUD chỉ chứng minh own farm;
-- exact-main = runtime navigation proof;
-- unknown camera → bounded `goDown`;
-- boundary fallback = 2 low-change frame liên tiếp;
-- `MAIN_BOUNDARY_MAX_CHANGE = 6.0`;
-- `MAIN_BOUNDARY_STABLE_REQUIRED = 2`;
-- upper-floor recovery dùng visual `XUỐNG` và click `match.center`;
-- không blind click `(497,978)`;
-- chain upper-floor recovery tối đa 10 bước.
-
-## 9. QC/Quảng cáo VP — LIVE PASS
-
-Mỗi sale duyệt 3 checkpoint gần physical slot `1 / 10 / 20`:
-
-- slot có dấu QC đỏ → skip, không click;
-- slot chưa QC → mở listing;
-- nút QC xanh miễn phí hồi → click;
-- cooldown → đóng X;
-- không click quảng cáo kim cương;
-- quầy full vẫn chạy checkpoint QC;
-- QC failure non-blocking.
-
-Không regression phần này khi làm Function/cleanup.
-
-## 10. Friend refresh chống item treo
-
-Workflow chung:
-
-```text
-workflows/auto_main/friend_refresh.py
-```
-
-GUI AUTO MULTI DEV có persistent toggle:
-
-```text
-LÀM MỚI ITEM TREO
-[ Qua bạn #1 / 3 vòng ]
-```
-
-Khi bật:
-
-```text
-sau Function loop 3 / 6 / 9 / ...
-→ nếu cùng boundary có sale thì sale/QC trước
-→ go_to_friend(1)
-→ chờ scene settle
-→ return_home()
-→ re-prove exact-main
-→ tiếp tục vòng kế
-```
-
-Workflow reuse navigation/assets của Dọn quầy nhưng **không** mở quầy bạn, không mua VP, không chạy Clear Stall business logic.
-
-Đã từng có circular import:
-
-```text
-recovery → auto_builder.__init__ → runner → FunctionOne → recipes → recovery
-```
-
-Đã fix bằng lazy import trong `workflows/auto_builder/__init__.py`. Không được đưa eager import `runner` trở lại package init.
-
-Chi tiết: `docs/AUTO_MULTI_DEV_FRIEND_REFRESH.md`.
-
-## 11. Periodic ClientJS restart — PRODUCTION 2H
-
-Test 60 giây đã PASS. Production hiện khóa:
-
-```text
-AutoMainWorkflow.CLIENT_RESTART_INTERVAL_SECONDS = 7200.0
-_CLIENT_RESTART_INTERVAL_SECONDS = 7200.0
-```
-
-Safe flow:
-
-```text
-2h đến hạn
-→ nếu đang giữa Function: defer
-→ hoàn thành đủ vòng theo sale_every_loops
-→ sale VP + QC PASS và đóng quầy
-→ ClientRestartRequested
-→ worker cooperative stop
-→ Multi đóng đúng ClientJS/profile
-→ chờ old supervisor thread chết
-→ relaunch đúng profile ClientJS
-→ worker mới + Bridge V3 generation mới
-→ game session + exact-main
-→ skip_initial_sale_once=true
-→ vào Function tiếp theo
-```
-
-Không restart giữa planting/production/sale transaction.
-
-Không được bỏ guard:
-
-```text
-old_thread.is_alive()
-```
-
-vì supervisor cũ có thể cleanup ownership map sau callback GUI.
-
-Operator Stop trong pending restart phải hủy pending/relaunch config.
-
-Chi tiết: `docs/AUTO_MULTI_DEV_CLIENT_RESTART.md`.
-
-## 12. Build/static contracts
-
-Operator build:
+Sau khi bước thiết kế kết thúc và bắt đầu triển khai source:
 
 ```text
 KVTM_DEV_CONTROL.bat
 → [1] Cap nhat source + build runtime DEV
 ```
 
-Các gate quan trọng gồm:
+Không được coi build thành công là runtime PASS. Live test vẫn bắt buộc cho behavior Windows/ClientJS/recovery.
 
-- persistent settings;
-- main boundary;
-- VP advertising;
-- Clear Stall;
-- AUTO Builder;
-- VP Sale;
-- planting;
-- speed config;
-- floor navigation;
-- Bridge V3;
-- production;
-- Recipe architecture;
-- Recovery architecture;
-- asset/package checks.
+## 10. Commit/tài liệu mốc mới
 
-VP sale contract hiện phải in:
+Source checkpoint:
 
-```text
-client_restart=2h+defer-until-function-sale-boundary+same-profile-relaunch
-client_restart_resume=skip-duplicate-initial-sale+new-worker+new-bridge-generation
-```
+- `b52befd4dbfab5c3a17175f1ddd43948244dcf32` — checkpoint recoverable modules before scheduler resume.
 
-## 13. Packaging input hiện tại
+Documentation standardization:
 
-`packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1` vẫn lấy production package từ 5 path:
+- `c714a55962b5ded5bbad389fa1b9bf2bb9c25e72` — tạo `AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`;
+- `56a4737b53243212cb6b5f251577d2e62ce427a1` — cập nhật global recovery/checkpoint contract.
 
-```text
-source-archive/auto-pro-reference
-source-archive/multi-current/kvtm_multi_tool
-test-candidates/auto-pro-clientjs-temp
-bridge-v3
-components/clientjs-auto
-```
+## 11. Quy tắc cho phiên chat/AI tiếp theo
 
-Vì vậy **không được xóa `source-archive` hoặc `test-candidates` theo tên folder**. Hai nơi này vẫn có production inputs thật.
+Nếu operator tiếp tục nói về cấu trúc AUTO:
 
-## 14. Kế hoạch dọn dẹp/chuẩn hóa repo — CHƯA THỰC HIỆN
+1. đọc `AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`;
+2. tiếp tục cộng dồn yêu cầu mới, không bắt operator trình bày lại;
+3. phản biện chỗ có xung đột;
+4. cập nhật tài liệu sau các mốc đã thống nhất;
+5. chưa refactor source cho tới khi operator yêu cầu triển khai/kết thúc giai đoạn thiết kế.
 
-Có branch riêng:
+Nếu operator nói **"kết thúc"** phần chuẩn hóa:
 
-```text
-maintenance/repo-cleanup-packaging
-```
-
-Branch này hiện đứng ở snapshot cũ, trước nhiều thay đổi runtime mới. Trước khi cleanup phải rebase/recreate từ HEAD develop mới nhất.
-
-Không thực hiện destructive cleanup trên `develop/multi-auto-dev`.
-
-Tài liệu bắt buộc đọc:
-
-```text
-docs/PROJECT_CLEANUP_PACKAGING_PLAN.md
-```
-
-Mục tiêu dài hạn:
-
-```text
-src/multi
-src/clientjs-auto
-native/bridge-v3
-vendor/auto-pro-reference
-vendor/auto-pro-clientjs-runtime
-packaging/suite-v0.15
-tools/verify
-tools/diagnostics
-tools/ops
-docs
-tests
-```
-
-Tên folder có thể điều chỉnh sau dependency audit; nguyên tắc là mỗi production component chỉ có một authoritative location và builder không lấy production source từ path mang nghĩa `test-candidates`.
-
-### Cleanup phải theo stage
-
-1. snapshot + dependency inventory, chưa xóa;
-2. ignore/generated artifact hygiene;
-3. relocate từng authoritative component + update callers;
-4. normalize packaging inputs;
-5. chỉ xóa prototype/legacy khi zero refs;
-6. full static/build/smoke trước merge.
-
-Các path như `KVTM_DON_QUAY_SAFE.bat`, `ai-don-quay/step1_probe.py`, `test-candidates/function-builder-core` chỉ là **candidate**, không được xóa trước dependency search.
-
-`KVTM_DEV_CONTROL.bat` là operator entry quan trọng; nếu move root scripts phải update caller cùng commit.
-
-## 15. Không được regression
-
-- đưa production/recovery logic trở lại Function;
-- generic `ScreenTimeout` blind retry;
-- background/world landmark làm exact-main gate;
-- blind click nút XUỐNG;
-- dùng `(257,416)` cho route Vải vàng hiện tại;
-- panel sai machine tiếp tục x5 vô hạn;
-- AppleJuice candidate probe quay về giới hạn 2 burst khi chưa có evidence;
-- QC click slot đã có quảng cáo;
-- QC click quảng cáo kim cương;
-- friend refresh mở quầy/mua VP;
-- eager-import AutoBuilder runner từ package init làm circular import;
-- restart ClientJS giữa Function/sale;
-- restart tất cả account khi chỉ một profile đến hạn;
-- duplicate sale ngay sau ClientJS restart;
-- thay đổi Dọn quầy/Bridge V3/persistent settings trong cleanup không có evidence.
-
-## 16. Read-first cho AI tiếp theo
-
-Theo thứ tự:
-
-1. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md`
-2. `docs/AUTO_MULTI_DEV_CLIENT_RESTART.md`
-3. `docs/AUTO_MULTI_DEV_FRIEND_REFRESH.md`
-4. `docs/AUTO_MULTI_DEV_RECIPE_ARCHITECTURE.md`
-5. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`
-6. `docs/AUTO_MULTI_DEV_FUNCTION_ONE.md`
-7. `docs/PROJECT_CLEANUP_PACKAGING_PLAN.md`
-8. `components/clientjs-auto/kvtm_automation/workflows/auto_main/workflow.py`
-9. `components/clientjs-auto/kvtm_automation/workflows/auto_main/friend_refresh.py`
-10. `components/clientjs-auto/kvtm_automation/recipes/book.py`
-11. `components/clientjs-auto/kvtm_automation/recovery/manager.py`
-12. `source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py`
-13. `components/clientjs-auto/worker/auto_multi_dev_worker.py`
-14. `tools/verify_auto_main_sale_contract.py`
-15. `tools/verify_auto_main_production_contract.py`
-16. `packaging/suite-v0.15/BUILD_FULL_PACKAGE.ps1`
-17. `packaging/suite-v0.15/BUILD_FULL_PACKAGE_PS51.ps1`
-18. `KVTM_DEV_CONTROL.bat`
-
-## 17. Quy tắc làm việc cho phiên tiếp theo
-
-- Runtime regression: sửa trên `develop/multi-auto-dev`, commit nhỏ, build `[1]`, live-test.
-- Cleanup/relocation: chỉ trên `maintenance/repo-cleanup-packaging` đã cập nhật từ develop mới.
-- Không trộn cleanup với feature/runtime fix.
-- Sau mọi thay đổi architecture/path, cập nhật static contract trước khi coi là hoàn tất.
-- Khi operator nói PASS, cập nhật handoff/documentation ngay để phiên AI tiếp theo không dùng trạng thái cũ.
+1. chốt spec cuối;
+2. audit source hiện tại so với spec;
+3. lập thứ tự refactor ít regression nhất;
+4. triển khai từng module nhỏ;
+5. cập nhật static contracts;
+6. build;
+7. live test;
+8. chỉ ghi PASS theo evidence thực tế.
