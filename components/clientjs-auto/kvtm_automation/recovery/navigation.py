@@ -17,9 +17,9 @@ RouteHandler = Callable[[str], None]
 class NavigationRecovery:
     """Reusable camera/floor recovery shared by every Function and Recipe.
 
-    Default routes cover the currently proven floors 1..3. Future Functions can
-    inject main/floor or floor/floor routes without copying unknown-camera,
-    XUỐNG-button, exact-main, or retry policy into business code.
+    Default routes cover proven common floors. Recipes may register additional
+    deterministic routes (for example floor 5 TDHH) on the *same* manager rather
+    than creating a second RecoveryManager and splitting checkpoint/event state.
     """
 
     UNKNOWN_FLOOR_MAIN_RECOVERY_PASSES = 6
@@ -39,6 +39,24 @@ class NavigationRecovery:
         self._to_main_routes = dict(to_main_routes or {})
         self._from_main_routes = dict(from_main_routes or {})
         self._between_floor_routes = dict(between_floor_routes or {})
+
+    def register_routes(
+        self,
+        *,
+        to_main_routes: Mapping[int, RouteHandler] | None = None,
+        from_main_routes: Mapping[int, RouteHandler] | None = None,
+        between_floor_routes: Mapping[tuple[int, int], RouteHandler] | None = None,
+    ) -> None:
+        """Register verified deterministic routes on this live shared manager."""
+        self._to_main_routes.update(dict(to_main_routes or {}))
+        self._from_main_routes.update(dict(from_main_routes or {}))
+        self._between_floor_routes.update(dict(between_floor_routes or {}))
+        self.context.detail(
+            "AUTO recovery routes | register | "
+            f"to_main={sorted(self._to_main_routes)} | "
+            f"from_main={sorted(self._from_main_routes)} | "
+            f"between={sorted(self._between_floor_routes)}"
+        )
 
     def ensure_main(self, label: str) -> None:
         self.context.ensure_running()
@@ -107,12 +125,12 @@ class NavigationRecovery:
             self.auto.function_one_pass_three_navigation.floor_3_to_main_via_down_floor()
         else:
             raise ValueError(
-                f"Chưa có route tầng {floor} → main; Function/Recipe phải inject to_main_routes"
+                f"Chưa có route tầng {floor} → main; Recipe phải register route đã xác minh"
             )
         self.ensure_main(f"{label}: tầng {floor} → main")
 
     def from_main_to_floor(self, floor: int, label: str) -> None:
-        """Enter a requested floor from proven main using a default or injected route."""
+        """Enter a requested floor from proven main using a default or registered route."""
         floor = int(floor)
         self.ensure_main(f"{label}: trước main → tầng {floor}")
         self.context.invalidate_camera_main(f"recovery-main-to-floor-{floor}:{label}")
@@ -129,7 +147,7 @@ class NavigationRecovery:
             self.auto.function_one_pass_three_navigation.floor_1_to_floor_3()
         else:
             raise ValueError(
-                f"Chưa có route main → tầng {floor}; Function/Recipe phải inject from_main_routes"
+                f"Chưa có route main → tầng {floor}; Recipe phải register route đã xác minh"
             )
 
         self.emit(
@@ -150,12 +168,6 @@ class NavigationRecovery:
         target_floor: int,
         label: str,
     ) -> None:
-        """Move between two known floors without pretending the source is main.
-
-        This is used after planting actions that deliberately leave the camera at
-        a known floor. The target is still only a candidate until the next
-        business action proves its own machine/product anchor.
-        """
         source = int(source_floor)
         target = int(target_floor)
         self.context.ensure_running()
@@ -171,7 +183,7 @@ class NavigationRecovery:
         else:
             raise ValueError(
                 f"Chưa có route tầng {source} → tầng {target}; "
-                "Function/Recipe phải inject between_floor_routes"
+                "Recipe phải register route đã xác minh"
             )
         self.emit(
             RecoveryEvent(
