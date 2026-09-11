@@ -5,12 +5,14 @@ from ..errors import ScreenTimeout
 from ..runtime.auto_speed_config import AutoSpeedConfig
 from ..runtime.vision import VisionEngine
 from ..runtime.wait import Waiter
-from .production import ProductionActions, ProductionResult
+from .production import ProductionResult
+from .production_panel import ProductionPanelActions
 
 
 __all__ = ["AppleJuiceProductionActions"]
 FILE_FUNCTIONS = (
     "Mở máy tầng 2 và xác minh đúng ảnh sản xuất Nước táo",
+    "Dùng ProductionPanelActions cho panel/slot/kho đầy/sai máy dùng chung",
     "Probe bounded candidate tầng 2 sau goDown(4), đủ cửa sổ click để panel Nước táo kịp mở nhưng vẫn chặn sai tầng",
     "Thu VP bằng burst x5 liên tục cho tới khi ảnh Nước táo xuất hiện trong vùng thư viện panel",
     "Ô trống chỉ là tín hiệu phụ, không được tự xác nhận panel đã mở",
@@ -34,11 +36,6 @@ class AppleJuiceProductionActions:
     VERIFY_RECHECKS = 4
     VERIFY_RECHECK_SECONDS = 0.18
 
-    # Keep the original two x5 bursts as the base probe contract, then allow two
-    # additional bounded bursts for the live Nước táo panel which can need more
-    # than ten raw clicks before the product-library anchor is actually rendered.
-    # The probe therefore gets at most 4 x5 = 20 clicks, never an unbounded loop.
-    # A wrong known product is detected on the same fresh frame and aborts early.
     DIRECT_FLOOR_PROBE_BURSTS = 2
     DIRECT_FLOOR_PROBE_EXTRA_BURSTS = 2
     DIRECT_FLOOR_PROBE_MAX_BURSTS = (
@@ -47,25 +44,26 @@ class AppleJuiceProductionActions:
     DIRECT_FLOOR_PROBE_RECHECKS = 3
     DIRECT_FLOOR_PROBE_RECHECK_SECONDS = 0.18
 
-    def __init__(self, context: AutomationContext, vision: VisionEngine,
-                 waiter: Waiter, speed_config: AutoSpeedConfig | None = None) -> None:
+    def __init__(
+        self,
+        context: AutomationContext,
+        vision: VisionEngine,
+        waiter: Waiter,
+        speed_config: AutoSpeedConfig | None = None,
+    ) -> None:
         self.context = context
         self.vision = vision
         self.waiter = waiter
         self.speed_config = speed_config or AutoSpeedConfig()
-        self.slots = ProductionActions(context, vision, waiter, self.speed_config)
+        self.slots = ProductionPanelActions(
+            context,
+            vision,
+            waiter,
+            self.speed_config,
+        )
 
     def probe_floor_2_machine(self) -> bool:
-        """Bounded proof that the fast goDown(4) landed at the Nước táo machine.
-
-        This is deliberately separate from the normal production opener, which is
-        allowed to keep collecting until the requested panel opens. The direct
-        candidate gets up to four true x5 bursts so normal Nước táo output
-        collection/render latency does not create a false floor miss. A wrong-floor
-        panel is still fail-fast: if another known production item is visible on
-        the same fresh frame, close it immediately and hand control to exact-main
-        recovery. ``full_kho`` is not accepted as floor proof.
-        """
+        """Bounded proof that the fast goDown(4) landed at the Nước táo machine."""
         click_count = 0
         for burst in range(1, self.DIRECT_FLOOR_PROBE_MAX_BURSTS + 1):
             self.context.ensure_running()
@@ -127,8 +125,6 @@ class AppleJuiceProductionActions:
                 if recheck < self.DIRECT_FLOOR_PROBE_RECHECKS:
                     self.waiter.sleep(self.DIRECT_FLOOR_PROBE_RECHECK_SECONDS)
 
-        # Still bounded: after four x5 bursts without target/wrong-product proof,
-        # close anything that may have opened and normalize through exact-main.
         self.vision.driver.click(*self.CLOSE_POINT)
         self.waiter.sleep(0.25)
         self.context.log(
@@ -164,7 +160,6 @@ class AppleJuiceProductionActions:
         top_point: tuple[int, int],
         empty_before: int,
     ) -> int:
-        """Retry a lost/slow production gesture without failing on one early frame."""
         last_empty = int(empty_before)
         for drag_attempt in range(1, self.DRAG_ATTEMPTS + 1):
             self.context.ensure_running()
@@ -197,7 +192,9 @@ class AppleJuiceProductionActions:
         return last_empty
 
     def produce_9_apple_juices(
-        self, *, close_after_success: bool = True
+        self,
+        *,
+        close_after_success: bool = True,
     ) -> ProductionResult:
         empty_before, product_point, top_point = self._open_verified()
         empty_after = empty_before
@@ -231,6 +228,9 @@ class AppleJuiceProductionActions:
             )
         self.context.log("AUTO sản xuất Nước táo hoàn tất • đã xác minh đủ 9/9 ô")
         return ProductionResult(
-            item_id=self.PRODUCT_TEMPLATE, requested_count=9, queued_count=9,
-            empty_before=empty_before, empty_after=empty_after,
+            item_id=self.PRODUCT_TEMPLATE,
+            requested_count=9,
+            queued_count=9,
+            empty_before=empty_before,
+            empty_after=empty_after,
         )
