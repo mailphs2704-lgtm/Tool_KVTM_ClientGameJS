@@ -23,6 +23,7 @@ from .navigation import NavigationActions
 from .popup import PopupActions
 from .planting import PlantingActions, PlantingSegmentResult
 from .production import ProductionResult
+from .rose_oil_production import RoseOilProductionActions
 from .selling import SellingActions
 from .stall import StallActions
 from .vp_sale_transaction import AutoSaleAttempt, VpSaleTransactionActions
@@ -53,6 +54,7 @@ __all__ = [
     "PlantingSegmentResult",
     "ProductionActions",
     "ProductionResult",
+    "RoseOilProductionActions",
     "SellingActions",
     "StallActions",
     "VpSaleTransactionActions",
