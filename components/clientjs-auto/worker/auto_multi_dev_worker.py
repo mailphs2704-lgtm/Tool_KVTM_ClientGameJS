@@ -35,6 +35,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode", choices=("main", "floor-demo", "builder"), default="main"
     )
+    parser.add_argument(
+        "--startup-mode", choices=("fresh", "reentry"), default="fresh"
+    )
     parser.add_argument("--plan-json", default="")
     parser.add_argument("--speed-json", default="{}")
     parser.add_argument("--timeout", type=float, default=180.0)
@@ -253,6 +256,43 @@ def main() -> int:
             f"check cây={speed.crop_check_interval:.3f}s"
         )
 
+        def prepare_runtime_camera() -> None:
+            if args.startup_mode == "fresh":
+                log(
+                    "AUTO lifecycle • fresh ClientJS • chạy startup popup watch 60s"
+                )
+                GameSessionWorkflow(automation).run(timeout=args.timeout)
+                if not automation.popup.is_own_exact_main_screen():
+                    raise RuntimeError(
+                        "Startup kết thúc nhưng exact-main contract không còn hợp lệ"
+                    )
+                log(
+                    "PASS | fresh startup + popup watch 60s • MAIN READY"
+                )
+                return
+
+            from kvtm_automation.recovery import RecoveryManager
+
+            log(
+                "AUTO lifecycle • re-entry trên ClientJS đang chạy • "
+                "bỏ popup startup 60s • recovery unknown → exact MAIN"
+            )
+            recovery = RecoveryManager(
+                automation,
+                function_id="lifecycle_reentry",
+            )
+            recovery.recover_unknown_to_main(
+                "AUTO re-entry existing ClientJS",
+                reason="auto-reentry-existing-client",
+            )
+            if not automation.popup.is_own_exact_main_screen():
+                raise RuntimeError(
+                    "AUTO re-entry recovery kết thúc nhưng chưa chứng minh exact-main"
+                )
+            log(
+                "PASS | AUTO re-entry • exact MAIN READY • popup startup đã bỏ qua"
+            )
+
         if effective_mode == "builder":
             from kvtm_automation.workflows.auto_builder import AutoBuilderRunner
 
@@ -271,10 +311,7 @@ def main() -> int:
             return 0
 
         if effective_mode == "floor-demo":
-            GameSessionWorkflow(automation).run(timeout=args.timeout)
-            log(
-                "PASS | startup + popup watch 60s • MAIN theo startup contract"
-            )
+            prepare_runtime_camera()
             context.stage("floor-demo-1-to-6-start")
             movement = automation.floors.reference_main_to_floor_6()
             emit(
@@ -298,23 +335,15 @@ def main() -> int:
             f"chờ giữa vòng Function={loop_delay:.3f}s • "
             f"qua nhà bạn #1 sau mỗi 3 vòng="
             f"{'BẬT' if friend_refresh_enabled else 'TẮT'} • "
+            f"startup_mode={args.startup_mode} • "
             "runtime_error_policy=typed-recovery-only • "
             "unregistered_error=fail-close"
         )
 
         try:
-            # Startup owns the operator-approved invariant that a fresh
-            # login/restart begins at MAIN. Do not manufacture another MAIN proof
-            # with goDown(1) here.
-            GameSessionWorkflow(automation).run(timeout=args.timeout)
-            if not automation.popup.is_own_exact_main_screen():
-                raise RuntimeError(
-                    "Startup kết thúc nhưng exact-main contract không còn hợp lệ"
-                )
-
+            prepare_runtime_camera()
             log(
-                "PASS | startup + popup watch 60s • MAIN READY • "
-                "bàn giao trực tiếp cho AUTO Main"
+                "PASS | lifecycle camera READY • bàn giao trực tiếp cho AUTO Main"
             )
             result = AutoMainWorkflow(
                 automation,
