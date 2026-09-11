@@ -333,13 +333,21 @@ def main() -> int:
             return 0
         except ClientRestartRequested as exc:
             # Scheduled ClientJS restart is a lifecycle request, not an AUTO
-            # failure and not a generic AutomationStopped. The parent Multi
-            # supervisor must close/reopen this exact profile and spawn a fresh
-            # worker/Bridge generation.
+            # failure and not a generic AutomationStopped. Emit a dedicated
+            # lifecycle event, then a compatibility terminal event so the
+            # current Multi supervisor can hand the exact profile to its restart
+            # adapter without mistaking this for an unregistered runtime error.
             emit(
                 "client_restart_requested", workflow=WORKFLOW_NAME,
                 profile_id=args.profile_id,
                 reason=str(exc),
+                function_id=function_id,
+            )
+            emit(
+                "worker_stopped", workflow=WORKFLOW_NAME,
+                profile_id=args.profile_id,
+                reason=str(exc),
+                lifecycle_event="client_restart_requested",
                 function_id=function_id,
             )
             log(
