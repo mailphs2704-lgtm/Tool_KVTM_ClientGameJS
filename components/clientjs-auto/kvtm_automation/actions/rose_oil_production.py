@@ -11,6 +11,7 @@ FILE_FUNCTIONS = (
     "Chờ đủ bảy ô trống rồi xếp đúng bảy TDHH",
     "Hậu kiểm mỗi lần kéo bằng số ô trống giảm và fail-close khi thiếu nguyên liệu",
     "Giữ panel mở sau PASS để bàn giao Sửa máy",
+    "Cung cấp Action đóng panel có settle để Recipe/Navigation không click tọa độ trực tiếp",
 )
 
 
@@ -29,6 +30,17 @@ class RoseOilProductionActions(ProductionActions):
         "vai_vang",
         "tinh_dau_hh",
     )
+
+    def close_panel_for_navigation(self, *, settle_seconds: float = 0.35) -> None:
+        """Close the current TDHH/production panel before a camera route.
+
+        The Recipe owns *when* the route is needed; the Action owns the concrete
+        click/wait required to leave the production panel safely.
+        """
+        self.context.ensure_running()
+        self.vision.driver.click(*self.CLOSE_POINT)
+        self.waiter.sleep(max(0.0, float(settle_seconds)))
+        self.context.log("AUTO TDHH • đóng panel trước điều hướng")
 
     def _open_verified_rose_oil_machine(
         self,
