@@ -154,9 +154,16 @@ def main() -> int:
     )
 
     # Crop Action owns HOW to obtain a real cotton batch; Recovery owns WHY it is
-    # needed and navigation/resume policy. Keep this boundary explicit.
+    # needed and navigation/resume policy. Keep this boundary explicit. Check
+    # semantic phrases independently so harmless docstring line wrapping cannot
+    # break the package gate.
     require(cotton, "def wait_harvest_and_replant_27_cotton(", "Neutral cotton batch Action missing")
-    require(cotton, "It does not know *why* the batch is needed", "Cotton Action responsibility boundary missing")
+    require(
+        cotton,
+        "Recipe/Recovery chịu trách nhiệm điều hướng và quyết định vì sao cần batch Bông",
+        "Cotton Action/Recovery ownership marker missing",
+    )
+    require(cotton, "not know *why* the batch is needed", "Cotton Action responsibility boundary missing")
     require(material_recovery, "self.auto.cotton_planting.wait_harvest_and_replant_27_cotton()", "Material Recovery does not call neutral cotton Action")
     forbid(material_recovery, "replenish_27_cotton_from_floor_1()", "Recovery still calls recovery-named method inside Actions")
 
