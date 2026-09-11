@@ -3,9 +3,9 @@
 Cập nhật: 2026-09-11
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
-Trạng thái phiên: **STANDARDIZATION DESIGN IN PROGRESS**
+Trạng thái phiên: **INCREMENTAL IMPLEMENTATION / STANDARDIZATION**
 
-> Đây là handoff hiện hành cho giai đoạn chuẩn hóa AUTO KVTM MULTI DEV. Chưa refactor runtime/source cho tới khi operator nói `kết thúc` hoặc yêu cầu triển khai rõ ràng.
+> Đây là handoff hiện hành cho AUTO KVTM MULTI DEV. Operator không còn yêu cầu phải mô tả trọn Function hoặc nói `kết thúc` trước khi triển khai. Từ bây giờ AI được phép triển khai từng đoạn ngay khi operator mô tả phần cần thực hiện; các điểm bắt lỗi sẽ được operator chỉ ra trong quá trình làm và AI phải tự phân loại sang đúng nhánh Recovery.
 
 ## 1. Read-first bắt buộc
 
@@ -14,7 +14,7 @@ Trạng thái phiên: **STANDARDIZATION DESIGN IN PROGRESS**
 1. `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md` — kiến trúc tổng thể và các quyết định tích lũy;
 2. `docs/AUTO_MULTI_DEV_CONFIRMED_FLOW_LATEST.md` — contract mới nhất đã chốt cho Startup/Popup, Sale VP và Navigation goUp; **file này override wording cũ nếu có xung đột ở ba phần đó**;
 3. `docs/AUTO_MULTI_DEV_ACTIONS_STANDARDIZATION.md` — contract Actions dùng chung;
-4. `docs/AUTO_MULTI_DEV_FUNCTION_RECOVERY_MAPPING.md` — phương pháp phân loại Function/Module/Action/Recovery;
+4. `docs/AUTO_MULTI_DEV_FUNCTION_RECOVERY_MAPPING.md` — phương pháp triển khai từng đoạn + phân loại Function/Module/Action/Recovery;
 5. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md`;
 6. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`;
 7. `docs/AUTO_MULTI_DEV_CLIENT_RESTART.md` — lưu ý implementation cũ vẫn là 2h;
@@ -23,16 +23,34 @@ Trạng thái phiên: **STANDARDIZATION DESIGN IN PROGRESS**
 
 Nếu tài liệu cũ xung đột với quyết định mới, dùng tài liệu có wording mới hơn và nhãn `CHỐT / CẦN CHỐT / READY FOR LIVE TEST`.
 
-## 2. Giai đoạn hiện tại
+## 2. Giai đoạn hiện tại — CHỐT MỚI NHẤT
 
-Operator đang mô tả từng phần của một vòng Function hoàn chỉnh bằng ngôn ngữ nghiệp vụ. AI phải:
+Operator sẽ mô tả Function **trong lúc thực hiện**, không cần hoàn tất tài liệu flow trước.
+
+AI phải:
 
 - không yêu cầu operator biết Python/class/file;
-- phân loại từng đoạn thành Action / Module-Recipe / Function orchestration / Recovery;
-- xác định checkpoint/resume point ở các nhánh lỗi;
-- phản biện chỗ có xung đột/rủi ro;
-- cập nhật tài liệu sau mỗi đoạn đã được operator xác nhận;
-- chưa sửa runtime/source trước khi operator nói `kết thúc`.
+- nhận từng đoạn nghiệp vụ và phân loại Action / Module-Recipe / Function orchestration;
+- triển khai phần operator đang yêu cầu theo kiến trúc đã chốt;
+- khi operator nói một điểm là điểm bắt lỗi, tự phân loại sang specialized recovery / local retry / unknown escalation / fail-close;
+- xác định checkpoint và nơi resume cho nhánh lỗi;
+- không copy recovery riêng vào từng Function nếu có thể dùng global recovery;
+- cập nhật tài liệu khi một contract mới được xác nhận;
+- không tự gọi runtime PASS nếu chưa có live evidence.
+
+### Workflow mới
+
+```text
+operator mô tả đoạn hiện tại
+→ AI phân nhóm + triển khai
+→ operator test/mô tả tiếp
+→ nếu có điểm bắt lỗi
+   → AI tách Recovery
+   → giữ checkpoint/resume đúng việc đang dở
+→ tiếp tục đoạn kế
+```
+
+Không còn quy tắc cũ `chưa code cho tới khi operator nói kết thúc`.
 
 ## 3. Kiến trúc đã chốt
 
@@ -189,35 +207,36 @@ specialized recovery nếu có
 → fail-close nếu vượt giới hạn
 ```
 
-Retry limit cụ thể theo từng loại lỗi và Emergency Restart giữa Function vẫn là phần cần chốt sau khi operator mô tả đủ các nhánh lỗi.
+Retry limit cụ thể theo từng loại lỗi và Emergency Restart giữa Function vẫn là phần cần chốt khi operator mô tả tới các nhánh lỗi tương ứng.
 
 ## 9. Maintenance đã thống nhất
 
 - Periodic Friend Refresh và Recovery Friend Refresh là hai counter/luồng độc lập.
 - Target scheduled ClientJS restart mới là **3 giờ**.
 - Scheduled restart chỉ ở Function safe boundary.
-- Source/runtime cũ vẫn là 2h cho tới khi giai đoạn thiết kế kết thúc, refactor và live-test.
+- Source/runtime cũ vẫn là 2h cho tới khi phần liên quan được refactor và live-test.
 - Emergency/Recovery Restart giữa Function chưa được tự coi là CHỐT; nếu cho phép thì cần durable checkpoint sống qua restart.
 
 ## 10. Trạng thái source vs thiết kế
 
-Trong giai đoạn này:
+Từ workflow mới:
 
-- tài liệu mới = target design;
+- tài liệu mới vẫn là contract kiến trúc;
 - source cũ có thể khác;
-- không tự sửa source vì khác spec;
-- không tự gọi spec mới là runtime PASS;
+- khi operator yêu cầu thực hiện một đoạn, được phép refactor source phần đó theo contract mới;
+- không cần chờ toàn bộ Function hoàn thiện;
+- không tự gọi source mới là runtime PASS trước live evidence;
 - build/static PASS không thay live evidence.
 
 ## 11. Điểm tiếp theo
 
-Operator đã xác nhận đoạn Startup + Sale trước vòng Function là đúng ý. Tiếp theo operator sẽ mô tả phần còn lại của vòng Function hoàn chỉnh và đánh dấu các nhánh lỗi.
+Operator đã xác nhận Startup + Sale trước vòng Function và bộ semantics `goUp(1) / goUp(2) / goUp(4)`.
 
-Khi nhận mô tả mới:
+Từ lượt tiếp theo:
 
-1. không bắt operator lặp lại các phần đã chốt;
-2. tiếp tục từ đúng điểm sau Sale / bắt đầu Function;
-3. phân loại Action / Module / Function / Recovery;
-4. xác định checkpoint/resume semantics;
-5. cập nhật tài liệu;
-6. chưa code cho tới khi operator nói `kết thúc`.
+1. nhận đúng đoạn Function/operator muốn làm hiện tại;
+2. phân loại Action / Module / Function;
+3. triển khai phần đó nếu operator đang yêu cầu thực hiện;
+4. nếu operator đánh dấu điểm bắt lỗi, phân loại và nối Recovery/checkpoint phù hợp;
+5. không bắt operator mô tả hết Function;
+6. cập nhật tài liệu khi contract được chốt.
