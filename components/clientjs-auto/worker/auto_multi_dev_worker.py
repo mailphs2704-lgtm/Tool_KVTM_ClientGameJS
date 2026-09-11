@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 import traceback
 
 from clean_worker_support import (
@@ -17,6 +18,8 @@ from clean_worker_support import (
 
 
 WORKFLOW_NAME = "auto_multi_dev_main"
+_AUTO_MAIN_FRESH_MARKER = ".fresh-client-start.json"
+_FRESH_MARKER_MAX_AGE_SECONDS = 300.0
 _REQUIRED_BRIDGE_PROTOCOL = (
     "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
     "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2 "
@@ -36,12 +39,68 @@ def _parser() -> argparse.ArgumentParser:
         "--mode", choices=("main", "floor-demo", "builder"), default="main"
     )
     parser.add_argument(
-        "--startup-mode", choices=("fresh", "reentry"), default="fresh"
+        "--startup-mode", choices=("auto", "fresh", "reentry"), default="auto"
     )
     parser.add_argument("--plan-json", default="")
     parser.add_argument("--speed-json", default="{}")
     parser.add_argument("--timeout", type=float, default=180.0)
     return parser
+
+
+def _resolve_startup_mode(args) -> tuple[str, str]:
+    """Resolve fresh ClientJS startup vs AUTO re-entry without camera guessing.
+
+    The DEV parent writes a one-shot marker only when AUTO Main itself had to
+    launch this exact ClientJS process. An already-running/adopted ClientJS has
+    no marker and therefore always re-enters through bounded unknown-camera
+    recovery. Explicit CLI modes remain available for diagnostics.
+    """
+    requested = str(args.startup_mode)
+    if requested in {"fresh", "reentry"}:
+        return requested, f"explicit:{requested}"
+
+    marker = Path(args.work_dir).resolve().parent / _AUTO_MAIN_FRESH_MARKER
+    if not marker.is_file():
+        return "reentry", "no-fresh-launch-marker"
+
+    try:
+        raw = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        try:
+            marker.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return "reentry", f"invalid-fresh-launch-marker:{type(exc).__name__}"
+
+    # One launch marker authorizes exactly one startup decision. Consume it
+    # before any image/bootstrap work so a failed worker cannot later mislabel
+    # the same still-running ClientJS as a second fresh login.
+    try:
+        marker.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    if not isinstance(raw, dict):
+        return "reentry", "fresh-launch-marker-not-object"
+
+    try:
+        version = int(raw.get("version", 0) or 0)
+        marker_pid = int(raw.get("pid", 0) or 0)
+        created_at = float(raw.get("created_at", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return "reentry", "fresh-launch-marker-fields-invalid"
+
+    marker_profile = str(raw.get("profile_id") or "")
+    age = time.time() - created_at
+    if version != 1:
+        return "reentry", f"fresh-launch-marker-version:{version}"
+    if marker_profile != str(args.profile_id):
+        return "reentry", "fresh-launch-marker-profile-mismatch"
+    if marker_pid != int(args.pid):
+        return "reentry", "fresh-launch-marker-pid-mismatch"
+    if age < -5.0 or age > _FRESH_MARKER_MAX_AGE_SECONDS:
+        return "reentry", f"fresh-launch-marker-stale:{age:.1f}s"
+    return "fresh", f"fresh-launch-marker-match:age={age:.1f}s"
 
 
 def _bootstrap_shared_image_runtime(auto_root: Path, profile_id: str) -> None:
@@ -155,6 +214,7 @@ def main() -> int:
             raise ValueError("speed-json phải là object")
         effective_mode, builder_plan = _load_builder_plan(args)
         auto_main_config = _load_auto_main_config(args, effective_mode)
+        startup_mode, startup_mode_reason = _resolve_startup_mode(args)
     except (json.JSONDecodeError, ValueError) as exc:
         emit(
             "progress", workflow=WORKFLOW_NAME, profile_id=args.profile_id,
@@ -165,6 +225,15 @@ def main() -> int:
             profile_id=args.profile_id, reason=str(exc),
         )
         return 2
+
+    emit(
+        "detail", workflow=WORKFLOW_NAME, profile_id=args.profile_id,
+        message=(
+            "AUTO lifecycle resolve | "
+            f"requested={args.startup_mode} | resolved={startup_mode} | "
+            f"reason={startup_mode_reason} | client_pid={int(args.pid)}"
+        ),
+    )
 
     try:
         emit(
@@ -257,7 +326,7 @@ def main() -> int:
         )
 
         def prepare_runtime_camera() -> None:
-            if args.startup_mode == "fresh":
+            if startup_mode == "fresh":
                 log(
                     "AUTO lifecycle • fresh ClientJS • chạy startup popup watch 60s"
                 )
@@ -335,7 +404,7 @@ def main() -> int:
             f"chờ giữa vòng Function={loop_delay:.3f}s • "
             f"qua nhà bạn #1 sau mỗi 3 vòng="
             f"{'BẬT' if friend_refresh_enabled else 'TẮT'} • "
-            f"startup_mode={args.startup_mode} • "
+            f"startup_mode={startup_mode} • "
             "runtime_error_policy=typed-recovery-only • "
             "unregistered_error=fail-close"
         )
