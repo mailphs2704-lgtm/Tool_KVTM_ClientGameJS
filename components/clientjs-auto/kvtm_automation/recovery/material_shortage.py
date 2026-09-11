@@ -20,8 +20,8 @@ __all__ = [
 FILE_FUNCTIONS = (
     "Bắt MaterialShortage ở lớp recovery thay vì để ScreenTimeout dừng Function",
     "Về exact-main rồi bổ sung đúng loại cây theo material_template",
-    "Táo: main→tầng1, chờ chín, cào+gieo lại 5 tầng theo routine hiện có, lặp 3 lượt",
-    "Bông: main→tầng1, chờ đủ một batch chín, thu 27 rồi gieo lại cay_bong",
+    "Táo: main→tầng1, chờ chín, cào+gieo lại 5 tầng theo routine hiện có, lặp policy hiện hữu",
+    "Bông: main→tầng1 rồi gọi crop Action trung tính để chờ/thu/gieo lại một batch 27",
     "Sau bổ sung normalize lại exact-main, quay đúng tầng máy và gọi lại producer",
     "Producer giữ progress nên chỉ sản xuất phần còn thiếu, không replay sản phẩm đã xếp",
 )
@@ -73,7 +73,6 @@ class MaterialAwareProductionRecovery(BaseProductionRecovery):
         """Harvest/replant the existing five-floor apple route three times."""
         total = 0
 
-        # The shortage handler entered here at proven exact-main.
         self.navigation.from_main_to_floor(
             1,
             f"{label}: bổ sung Táo vòng {recovery_round}",
@@ -100,9 +99,6 @@ class MaterialAwareProductionRecovery(BaseProductionRecovery):
                 f"routine_count={harvested} • tổng routine_count={total}"
             )
 
-            # Crop-path gestures can leave the camera at an unknown vertical
-            # position. Before a second/third harvest, re-prove exact-main and
-            # enter floor 1 again instead of assuming camera state.
             if harvest_round < self.APPLE_FIVE_FLOOR_ROUNDS:
                 self._normalize_to_main_from_material_floor(
                     f"{label}: giữa các lượt bổ sung Táo",
@@ -128,10 +124,10 @@ class MaterialAwareProductionRecovery(BaseProductionRecovery):
             f"{label}: bổ sung Bông vòng {recovery_round}",
         )
         harvested = int(
-            self.auto.cotton_planting.replenish_27_cotton_from_floor_1()
+            self.auto.cotton_planting.wait_harvest_and_replant_27_cotton()
         )
         self.context.log(
-            f"AUTO bổ sung Bông • đã thu và gieo lại cay_bong • "
+            f"AUTO bổ sung Bông • crop Action trả một batch đã thu+gieo lại • "
             f"routine_count={harvested}"
         )
         self._normalize_to_main_from_material_floor(
@@ -175,9 +171,6 @@ class MaterialAwareProductionRecovery(BaseProductionRecovery):
         while True:
             self.context.ensure_running()
             try:
-                # Keep the already-proven WrongProductionMachine/InventoryFull
-                # policy intact. MaterialShortage is not caught by the base class
-                # and therefore reaches this outer recovery boundary.
                 return super().run_production(
                     floor=int(floor),
                     label=label,
@@ -220,9 +213,6 @@ class MaterialAwareProductionRecovery(BaseProductionRecovery):
                     f"còn={exc.remaining_count} • về Main → bổ sung đúng cây"
                 )
 
-                # The production action already closed the shortage popup and
-                # production panel, so the camera is still on the known machine
-                # floor and can take the deterministic floor->main route.
                 self.navigation.to_main_from_floor(
                     int(floor),
                     f"{label}: thiếu {exc.material_label}",
