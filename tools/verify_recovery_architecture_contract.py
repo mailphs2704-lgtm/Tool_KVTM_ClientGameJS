@@ -6,12 +6,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CLEAN = ROOT / "components/clientjs-auto/kvtm_automation"
+AUTOMATION = CLEAN / "automation.py"
 ERRORS = CLEAN / "errors.py"
 EVENTS = CLEAN / "recovery/events.py"
 MODULE_EXECUTION = CLEAN / "recovery/module_execution.py"
 NAV = CLEAN / "recovery/navigation.py"
 PRODUCTION = CLEAN / "recovery/production.py"
+MATERIAL_RECOVERY = CLEAN / "recovery/material_shortage.py"
 MANAGER = CLEAN / "recovery/manager.py"
+FARM_ROUTES = CLEAN / "actions/farm_routes.py"
+COTTON = CLEAN / "actions/cotton_planting.py"
 LEGACY = CLEAN / "workflows/production_warehouse_recovery.py"
 FUNCTION_ONE = CLEAN / "workflows/auto_function_one/workflow.py"
 RECIPE_BOOK = CLEAN / "recipes/book.py"
@@ -51,12 +55,16 @@ def forbid_top_level_import_from(text: str, module_name: str, message: str) -> N
 
 
 def main() -> int:
+    automation = read(AUTOMATION)
     errors = read(ERRORS)
     events = read(EVENTS)
     module_execution = read(MODULE_EXECUTION)
     nav = read(NAV)
     production = read(PRODUCTION)
+    material_recovery = read(MATERIAL_RECOVERY)
     manager = read(MANAGER)
+    farm_routes = read(FARM_ROUTES)
+    cotton = read(COTTON)
     legacy = read(LEGACY)
     function_one = read(FUNCTION_ONE)
     recipe_book = read(RECIPE_BOOK)
@@ -102,6 +110,21 @@ def main() -> int:
         "Module resume contract missing",
     )
 
+    # Generic farm-route facade replaces Function-specific route ownership.
+    require(farm_routes, "class FarmRouteActions", "Generic FarmRouteActions missing")
+    require(farm_routes, "class FarmBoundaryRouteActions", "Generic FarmBoundaryRouteActions missing")
+    require(automation, "self.farm_routes = FarmRouteActions(", "Automation generic farm_routes facade missing")
+    require(automation, "self.farm_boundary_routes = FarmBoundaryRouteActions(", "Automation generic boundary routes missing")
+    require(automation, "self.function_one_navigation = self.farm_routes", "Legacy route alias must share the same object")
+    require(automation, "self.function_one_pass_three_navigation = self.farm_boundary_routes", "Legacy boundary alias must share the same object")
+    require(nav, "self.auto.farm_routes", "Global Recovery still depends on Function-specific route facade")
+    require(nav, "self.auto.farm_boundary_routes", "Global Recovery boundary path is not generic")
+    forbid(nav, "self.auto.function_one_navigation", "Global Recovery uses Function-specific route name")
+    forbid(nav, "self.auto.function_one_pass_three_navigation", "Global Recovery uses Function-specific boundary route name")
+    require(function_one, "self.auto.farm_routes", "Function 1 still calls Function-specific navigation facade")
+    require(rose_oil, "self.auto.farm_routes", "TDHH recipe still calls Function-specific navigation facade")
+    require(rose_oil, "self.auto.farm_boundary_routes", "TDHH recipe boundary route is not generic")
+
     # Navigation owns all reusable position recovery and supports injected routes.
     require(nav, "class NavigationRecovery:", "NavigationRecovery missing")
     require(nav, "UNKNOWN_FLOOR_MAIN_RECOVERY_PASSES = 6", "Unknown-floor bound changed")
@@ -129,6 +152,13 @@ def main() -> int:
         "if sold <= 0 and collected <= 0:",
         "Warehouse recovery must accept either listing or gold-collection progress",
     )
+
+    # Crop Action owns HOW to obtain a real cotton batch; Recovery owns WHY it is
+    # needed and navigation/resume policy. Keep this boundary explicit.
+    require(cotton, "def wait_harvest_and_replant_27_cotton(", "Neutral cotton batch Action missing")
+    require(cotton, "It does not know *why* the batch is needed", "Cotton Action responsibility boundary missing")
+    require(material_recovery, "self.auto.cotton_planting.wait_harvest_and_replant_27_cotton()", "Material Recovery does not call neutral cotton Action")
+    forbid(material_recovery, "replenish_27_cotton_from_floor_1()", "Recovery still calls recovery-named method inside Actions")
 
     # Recovery imports auto_builder.catalog for Function sale metadata. The
     # package initializer must stay side-effect free: eagerly importing runner
@@ -219,8 +249,9 @@ def main() -> int:
     print("errors=signals-only")
     print("events=typed-observer-hooks+module-lifecycle")
     print("module_executor=checkpointed+typed-handler-only+no-scheduler-return-on-recovery")
-    print("navigation=centralized+injectable-routes")
+    print("navigation=canonical-primitives+generic-farm-routes+injectable-recovery-routes")
     print("production=checkpointed-explicit-signals+no-generic-screen-timeout-retry")
+    print("material_shortage=crop-action-how+recovery-policy-why")
     print("warehouse_progress=listing-or-gold-collection")
     print("startup=continuous-popup-watch-60s+no-goDown-main-normalize")
     print("tdhh=finished-vp+rose-snow-materials")
