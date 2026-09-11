@@ -12,16 +12,14 @@ from ..auto_builder.catalog import get_function_spec
 
 __all__ = ["AutoVpSaleResult", "AutoVpSaleWorkflow"]
 FILE_FUNCTIONS = (
-    "Đưa clone về farm, chứng minh exact-main bằng runtime boundary rồi mở quầy bán",
-    "Mở quầy bằng entry point chuẩn sau exact-main proof; không dùng quay_hang background làm runtime gate",
-    "Khóa Function 2 bán VP ở native 1000x1000 trước mọi thao tác UI",
-    "Mỗi lượt bán kiểm tra QC ba mốc đầu/giữa/cuối quầy trước thao tác bán tại mốc đó",
-    "Không click ô đã có QC; nếu QC miễn phí hồi thì bật, còn cooldown thì đóng X",
-    "Theo từng view: thu vàng nếu có",
-    "Treo lần lượt đúng VP do Function hiện tại cho phép vào mọi ô trống",
-    "Nếu Kho thành phẩm không còn VP hợp lệ thì đóng kho, kết thúc sale pass ngay và trả scheduler chạy Function",
-    "Chỉ kéo sang view kế tiếp khi sale pass vẫn còn việc cần quét",
-    "Đóng quầy và tổng hợp số VP đã treo",
+    "Yêu cầu caller bàn giao camera exact-main; sale không tự goDown để sửa trạng thái",
+    "Mở quầy và bắt đầu tại 8 ô mặc định của View 1",
+    "Mỗi View chạy QC nếu có → thu vàng → tìm ô trống → Kho 2 → VP Function → đủ x10 mới đăng",
+    "Không đủ 10 thì thử VP hợp lệ tiếp theo; hết VP hợp lệ thì đóng sale và trả caller",
+    "Nếu View hết ô trống thì chuyển View bằng Action stall.next_view() = đúng hai swipe",
+    "Quét đủ 5 View; View 5 là final boundary/overlap check để bắt các ô cuối",
+    "View 5 không coi việc camera ít/không dịch ở biên phải là lỗi",
+    "Đóng Kho/quầy theo owner Action và trả kết quả cho caller, không giả định caller là Scheduler",
 )
 
 
@@ -40,32 +38,33 @@ class AutoVpSaleResult:
 
 
 class AutoVpSaleWorkflow:
-    """Callable sale module: advertise, collect, sell exact x10, swipe, repeat.
+    """Reusable VP sale Module for every Function.
 
-    The old consolidated AUTO call remains source-compatible: without explicit
-    arguments this is Function 1 and sells only Táo sấy/Vải vàng. AUTO Builder
-    supplies the Function catalog item ids so sale policy is owned by the
-    Function metadata rather than by Scheduler ordering.
-
-    Function 2 is intentionally locked to native 1000x1000 before any stall or
-    inventory UI side effect. Its Tinh dầu hoa hồng post-selection proof remains
-    fail-closed: no listing is placed unless the selected-item template and x10
-    proof both pass.
-
-    Advertisement is opportunistic and non-blocking. If finished-goods inventory
-    is genuinely depleted, sale returns immediately to AUTO Main instead of
-    walking the remaining stall views and reopening UI that has no sellable VP.
+    Sale policy comes from Function metadata (allowed item ids), while all UI
+    interaction stays inside Actions/this Module. The Module never decides that a
+    Function completed and never performs a hidden farm-camera recovery.
     """
 
-    VIEW_COUNT = 4
+    VIEW_COUNT = 5
     MAX_SALES_PER_VIEW = 8
-    EXACT_MAIN_NAV_ATTEMPTS = 8
     OWN_STALL_OPEN_ATTEMPTS = 6
 
+    # view -> (label, target physical slot, geometry view used by the 20-slot
+    # mapping). View 5 is an extra boundary scan, not a fifth independent group
+    # of physical slots, so its QC geometry intentionally reuses the rightmost
+    # proven physical view.
     AD_CHECKPOINTS = {
-        1: ("đầu", 1),
-        2: ("giữa", 10),
-        4: ("cuối", 20),
+        1: ("view-1", 1, 1),
+        2: ("view-2", 5, 2),
+        3: ("view-3", 9, 3),
+        4: ("view-4", 13, 4),
+        5: ("final-boundary", 20, 4),
+    }
+
+    INVENTORY_DEPLETED_STATUSES = {
+        "NO_ALLOWED_ITEM",
+        "NO_EXACT_TEN_ITEMS",
+        "NO_SAFE_EXACT_TEN_ITEMS",
     }
 
     def __init__(
@@ -107,34 +106,24 @@ class AutoVpSaleWorkflow:
             "AUTO Function 2 sale | native=1000x1000 | resolution_gate=PASS"
         )
 
-    def _normalize_exact_main_for_sale(self) -> None:
-        """Prove the lower farm boundary without depending on account artwork."""
-        if self.auto.popup.is_own_exact_main_screen():
-            return
+    def _require_sale_entry_main(self, *, timeout: float) -> None:
+        """Require MAIN from the previous Module; never synthesize it with goDown."""
+        self.context.ensure_running()
+        if not self.auto.popup.is_own_main_screen():
+            # Recover only the own-farm HUD/portal state. ensure_main_screen does
+            # not promise a camera floor and deliberately invalidates old proof.
+            self.auto.ensure_main_screen(timeout=float(timeout))
 
-        for attempt in range(1, self.EXACT_MAIN_NAV_ATTEMPTS + 1):
-            self.context.ensure_running()
-            change = self.auto.function_one_pass_three_navigation.go_down_one_toward_main(
-                f"auto-vp-sale-exact-main-{attempt}-of-{self.EXACT_MAIN_NAV_ATTEMPTS}"
+        if not self.auto.popup.is_own_exact_main_screen():
+            raise ScreenTimeout(
+                "AUTO bán VP cần exact-main từ Startup/Function boundary; "
+                "Sale không tự goDown(1) để sửa camera"
             )
-            self.context.detail(
-                "AUTO bán VP exact-main | "
-                f"attempt={attempt}/{self.EXACT_MAIN_NAV_ATTEMPTS} | "
-                f"frame_change={float(change):.2f}"
-            )
-            if self.auto.popup.is_own_exact_main_screen():
-                self.context.log(
-                    "AUTO bán VP • exact-main runtime proof READY trước mở quầy"
-                )
-                return
-
-        raise ScreenTimeout(
-            "AUTO bán VP không chứng minh được exact-main sau "
-            f"{self.EXACT_MAIN_NAV_ATTEMPTS} nhịp goDown"
+        self.context.log(
+            "AUTO bán VP • entry exact-main READY • không gửi navigation ẩn"
         )
 
     def _open_own_stall_from_exact_main(self) -> None:
-        """Open own stall from a proven main boundary and verify the active panel."""
         stall = self.auto.stall
         zone = stall.OWN_STALL_ACTIVE_ZONE
         if self.auto.vision.find(
@@ -144,7 +133,7 @@ class AutoVpSaleWorkflow:
 
         if not self.auto.popup.is_own_exact_main_screen():
             raise ScreenTimeout(
-                "AUTO bán VP từ chối mở quầy khi chưa có exact-main runtime proof"
+                "AUTO bán VP từ chối mở quầy khi chưa có exact-main"
             )
 
         for attempt in range(1, self.OWN_STALL_OPEN_ATTEMPTS + 1):
@@ -155,55 +144,52 @@ class AutoVpSaleWorkflow:
                 "quay_hang_on", threshold=0.80, zone=zone
             ) is not None:
                 self.context.log(
-                    "Đã vào quầy bán của clone • exact-main proof + quay_hang_on PASS"
+                    "AUTO bán VP • mở quầy PASS • quay_hang_on verified"
                 )
                 return
             self.context.detail(
                 "AUTO bán VP mở quầy | "
                 f"attempt={attempt}/{self.OWN_STALL_OPEN_ATTEMPTS} | "
-                "entry=logical-fixed | background_gate=disabled"
+                "entry=logical-fixed"
             )
 
         raise ScreenTimeout(
-            "Không vào được quầy bán của clone sau exact-main proof; "
-            "không dùng quay_hang background để click mù"
+            "Không vào được quầy bán từ exact-main; không click mù"
         )
 
     def _check_advertisement_checkpoint(self, view: int) -> None:
-        spec = self.AD_CHECKPOINTS.get(int(view))
-        if spec is None:
-            return
-        checkpoint, target_physical = spec
+        checkpoint, target_physical, geometry_view = self.AD_CHECKPOINTS[int(view)]
         self.context.stage(
             f"auto-vp-sale-advert-{checkpoint}-view-{int(view)}"
         )
         try:
             result = self.advertising.check_checkpoint(
-                view=int(view),
+                view=int(geometry_view),
                 checkpoint=checkpoint,
                 target_physical_slot=int(target_physical),
             )
             self.context.detail(
                 "AUTO quảng cáo checkpoint | "
-                f"checkpoint={checkpoint} | view={view} | "
-                f"target_physical={target_physical} | status={result.status} | "
-                f"physical_slot={result.physical_slot}"
+                f"checkpoint={checkpoint} | scan_view={view} | "
+                f"geometry_view={geometry_view} | target_physical={target_physical} | "
+                f"status={result.status} | physical_slot={result.physical_slot}"
             )
         except AutomationStopped:
             raise
         except Exception as exc:
+            # QC is optional/non-blocking by business contract. It must never
+            # turn a valid sale into a false Function completion either.
             self.context.log(
                 "AUTO quảng cáo • "
-                f"mốc {checkpoint} lỗi non-blocking: {type(exc).__name__}: {exc} • "
-                "bỏ qua QC và tiếp tục bán"
+                f"{checkpoint} lỗi non-blocking: {type(exc).__name__}: {exc} • "
+                "tiếp tục xử lý vàng/ô trống/VP"
             )
 
     def run(self, timeout: float = 120.0) -> AutoVpSaleResult:
         started = time.monotonic()
         self._require_function_resolution()
         self.context.stage(f"auto-vp-sale-{self.function_id}-start")
-        self.auto.ensure_main_screen(timeout=timeout)
-        self._normalize_exact_main_for_sale()
+        self._require_sale_entry_main(timeout=timeout)
         self._open_own_stall_from_exact_main()
 
         sold = 0
@@ -215,15 +201,18 @@ class AutoVpSaleWorkflow:
             for view in range(1, self.VIEW_COUNT + 1):
                 self.context.ensure_running()
                 views_scanned = view
+                final_boundary = view == self.VIEW_COUNT
                 self.context.stage(f"auto-vp-sale-view-{view}")
-
-                self._check_advertisement_checkpoint(view)
-
                 self.context.log(
-                    f"AUTO bán VP • {self.function_id} • view {view}/{self.VIEW_COUNT} • "
-                    "QC nếu tới mốc → thu vàng → treo VP nếu còn hàng"
+                    f"AUTO bán VP • {self.function_id} • view {view}/{self.VIEW_COUNT}"
+                    + (" • FINAL BOUNDARY CHECK" if final_boundary else "")
                 )
+
+                # Operator order: sold gold -> QC (if available) -> empty slot ->
+                # warehouse/item selection. Gold collection scans all 8 visible
+                # cells and is verified before we try to fill an empty slot.
                 collected += self.auto.stall.collect_own_stall_gold(maximum=8)
+                self._check_advertisement_checkpoint(view)
 
                 for _slot in range(self.MAX_SALES_PER_VIEW):
                     attempt = self.sale.sell_next_allowed(storage_id=2)
@@ -231,27 +220,22 @@ class AutoVpSaleWorkflow:
                         sold += 1
                         sold_by_item[attempt.item_id] += 1
                         self.context.log(
-                            f"AUTO bán VP • đã treo {attempt.label} x10 • "
-                            f"tổng {sold} ô"
+                            f"AUTO bán VP • đã treo {attempt.label} x10 • tổng={sold}"
                         )
                         continue
-                    if attempt.status in (
-                        "NO_ALLOWED_ITEM",
-                        "NO_EXACT_TEN_ITEMS",
-                        "NO_SAFE_EXACT_TEN_ITEMS",
-                    ):
+
+                    if attempt.status in self.INVENTORY_DEPLETED_STATUSES:
                         depleted = True
                         self.context.stage(
-                            "auto-vp-sale-inventory-depleted-return-scheduler"
+                            "auto-vp-sale-inventory-depleted-return-caller"
                         )
                         self.context.log(
-                            f"AUTO bán VP • {self.function_id} không còn VP hợp lệ/x10 • "
-                            "Kho thành phẩm đã đóng • KẾT THÚC SALE PASS NGAY → "
-                            "trả scheduler chạy Function"
+                            f"AUTO bán VP • {self.function_id} không còn VP hợp lệ đủ x10 • "
+                            "đóng sale và trả caller hiện tại"
                         )
                     else:
                         self.context.log(
-                            f"AUTO bán VP • view {view} không còn ô trống"
+                            f"AUTO bán VP • view {view} hiện không còn ô trống dùng được"
                         )
                     break
 
@@ -259,8 +243,15 @@ class AutoVpSaleWorkflow:
                     break
 
                 if view < self.VIEW_COUNT:
-                    self.context.stage("auto-vp-sale-two-swipes")
+                    self.context.stage(
+                        f"auto-vp-sale-next-view-{view}-to-{view + 1}-two-swipes"
+                    )
                     self.auto.stall.next_view()
+                    if view == self.VIEW_COUNT - 1:
+                        self.context.log(
+                            "AUTO bán VP • đã gửi 2 swipe vào View 5 final boundary • "
+                            "không yêu cầu camera phải dịch thêm ở biên phải"
+                        )
         finally:
             self.auto.stall.close_own_stall()
 
@@ -268,9 +259,7 @@ class AutoVpSaleWorkflow:
         summary = " | ".join(
             f"{item_id}={sold_by_item[item_id]}" for item_id in self.sale.ITEM_ORDER
         )
-        self.context.log(
-            "AUTO bán VP • tổng kết x10 | " + summary
-        )
+        self.context.log("AUTO bán VP • tổng kết x10 | " + summary)
         self.context.stage(f"auto-vp-sale-{self.function_id}-finished")
         return AutoVpSaleResult(
             profile_id=self.context.profile_id,
