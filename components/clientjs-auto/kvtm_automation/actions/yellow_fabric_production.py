@@ -5,12 +5,14 @@ from ..errors import ScreenTimeout
 from ..runtime.auto_speed_config import AutoSpeedConfig
 from ..runtime.vision import VisionEngine
 from ..runtime.wait import Waiter
-from .production import ProductionActions, ProductionResult
+from .production import ProductionResult
+from .production_panel import ProductionPanelActions
 
 
 __all__ = ["YellowFabricProductionActions"]
 FILE_FUNCTIONS = (
     "Mở máy tầng 3 và xác minh đúng ảnh sản xuất Vải vàng",
+    "Dùng ProductionPanelActions cho panel/slot/kho đầy/sai máy dùng chung",
     "Thu VP bằng burst x5 liên tục cho tới khi ảnh Vải vàng xuất hiện trong vùng thư viện panel",
     "Ô trống chỉ là tín hiệu phụ, không được tự xác nhận panel đã mở",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
@@ -46,7 +48,12 @@ class YellowFabricProductionActions:
         self.vision = vision
         self.waiter = waiter
         self.speed_config = speed_config or AutoSpeedConfig()
-        self.slots = ProductionActions(context, vision, waiter, self.speed_config)
+        self.slots = ProductionPanelActions(
+            context,
+            vision,
+            waiter,
+            self.speed_config,
+        )
 
     def _close_panel(self) -> None:
         self.vision.driver.click(*self.CLOSE_POINT)
@@ -81,7 +88,8 @@ class YellowFabricProductionActions:
         for drag_attempt in range(1, self.DRAG_ATTEMPTS + 1):
             self.context.ensure_running()
             self.vision.driver.swipe_points(
-                (product_point, top_point), duration=0.02
+                (product_point, top_point),
+                duration=0.02,
             )
             self.waiter.sleep(self.speed_config.vp_production_delay)
 
@@ -124,7 +132,9 @@ class YellowFabricProductionActions:
         return last_empty
 
     def produce_9_yellow_fabrics(
-        self, *, close_after_success: bool = True
+        self,
+        *,
+        close_after_success: bool = True,
     ) -> ProductionResult:
         empty_before, product_point, top_point = self._open_verified()
         empty_after = empty_before
