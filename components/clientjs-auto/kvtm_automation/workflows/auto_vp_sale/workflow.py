@@ -14,7 +14,7 @@ __all__ = ["AutoVpSaleResult", "AutoVpSaleWorkflow"]
 FILE_FUNCTIONS = (
     "Yêu cầu caller bàn giao camera exact-main; sale không tự goDown để sửa trạng thái",
     "Mở quầy và bắt đầu tại 8 ô mặc định của View 1",
-    "Mỗi View chạy QC nếu có → thu vàng → tìm ô trống → Kho 2 → VP Function → đủ x10 mới đăng",
+    "Mỗi View chạy thu vàng nếu có → QC nếu có → tìm ô trống → Kho 2 → VP Function → đủ x10 mới đăng",
     "Không đủ 10 thì thử VP hợp lệ tiếp theo; hết VP hợp lệ thì đóng sale và trả caller",
     "Nếu View hết ô trống thì chuyển View bằng Action stall.next_view() = đúng hai swipe",
     "Quét đủ 5 View; View 5 là final boundary/overlap check để bắt các ô cuối",
@@ -110,8 +110,6 @@ class AutoVpSaleWorkflow:
         """Require MAIN from the previous Module; never synthesize it with goDown."""
         self.context.ensure_running()
         if not self.auto.popup.is_own_main_screen():
-            # Recover only the own-farm HUD/portal state. ensure_main_screen does
-            # not promise a camera floor and deliberately invalidates old proof.
             self.auto.ensure_main_screen(timeout=float(timeout))
 
         if not self.auto.popup.is_own_exact_main_screen():
@@ -208,7 +206,7 @@ class AutoVpSaleWorkflow:
                     + (" • FINAL BOUNDARY CHECK" if final_boundary else "")
                 )
 
-                # Operator order: sold gold -> QC (if available) -> empty slot ->
+                # Operator-approved order: sold gold -> QC -> empty slot ->
                 # warehouse/item selection. Gold collection scans all 8 visible
                 # cells and is verified before we try to fill an empty slot.
                 collected += self.auto.stall.collect_own_stall_gold(maximum=8)
