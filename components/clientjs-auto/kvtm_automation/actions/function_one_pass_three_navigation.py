@@ -36,12 +36,17 @@ class FunctionOnePassThreeNavigationActions(FunctionOneNavigationActions):
         return change
 
     def _settle_down_one(self, label: str) -> float:
-        """Boundary-aware goDown(1): low motion is evidence, not immediate failure."""
+        """Boundary-aware goDown(1): low motion is evidence, not immediate failure.
+
+        Do not invalidate the boundary streak before this gesture. Two or more
+        consecutive low-motion goDown observations are exactly the proof used to
+        establish the lower MAIN boundary. A real camera move resets that streak
+        inside ``observe_camera_down_boundary``.
+        """
         self.context.ensure_running()
         before = self.vision.frame().copy()
         self.vision.driver.click(*self.CLOSE_SIDE)
         self.waiter.sleep(0.15)
-        self.context.invalidate_camera_main(f"boundary-goDown:{label}")
         self.vision.driver.swipe(
             *self.DOWN_ONE,
             duration=self.speed_config.floor_swipe_duration,
