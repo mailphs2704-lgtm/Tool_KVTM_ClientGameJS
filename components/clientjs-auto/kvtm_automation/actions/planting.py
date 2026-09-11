@@ -12,7 +12,7 @@ from ..runtime.wait import Waiter
 __all__ = ["PlantingActions", "PlantingSegmentResult"]
 FILE_FUNCTIONS = (
     "Sở hữu geometry/path trồng và thu hoạch dùng chung, không sở hữu Function choreography",
-    "Cung cấp path chuẩn 5/27/28/30 chậu ở logical 1000x1000",
+    "Cung cấp path chuẩn 5/6/27/28/30 chậu ở logical 1000x1000",
     "Nhận diện trạng thái chậu RIPE/EMPTY theo crop template",
     "Thu hoạch và gieo lại đúng count trên view hiện tại bằng một BATCH_SWIPE",
     "Crop/template tách khỏi geometry để cùng path dùng được cho nhiều loại cây",
@@ -73,6 +73,10 @@ class PlantingActions:
         (835, 280), (335, 280),
         (335, 40), (835, 40),
     )
+    PATH_6 = (
+        START_POINT,
+        (335, 940), (835, 940),
+    )
     PATH_5 = (
         START_POINT,
         (335, 940), (720, 940),
@@ -82,6 +86,7 @@ class PlantingActions:
     FARM_PATH_27 = PATH_27
     VERIFIED_PATHS = {
         5: PATH_5,
+        6: PATH_6,
         27: PATH_27,
         28: PATH_28,
         30: PATH_30,
@@ -212,8 +217,8 @@ class PlantingActions:
         """Harvest if ripe, then plant the requested crop/count on current view.
 
         The caller must position the camera first. This keeps Navigation separate
-        from planting and allows the same 28/30/etc. geometry to be reused by any
-        crop whose seed template is supplied.
+        from planting and allows the same 5/6/27/28/30 geometry to be reused by
+        any crop whose seed template is supplied.
         """
         requested = int(count)
         selected_path = tuple(path or self.path_for_count(requested))
