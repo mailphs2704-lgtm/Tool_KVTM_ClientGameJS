@@ -314,13 +314,13 @@ def install_auto_main_profile_settings(app_class, core) -> None:
                 f"chờ giữa vòng {current['function_loop_delay_seconds']:g}s • "
                 "qua bạn #1/3 vòng="
                 f"{'BẬT' if current['friend_refresh_enabled'] else 'TẮT'} • "
-                "restart ClientJS=2 giờ/safe-sale-boundary"
+                "restart ClientJS=3 giờ/safe-Function-boundary"
             )
         else:
             self.note.set(
                 f"AUTO MULTI DEV • {options[function_id]} • "
                 f"{len(selected)} tài khoản dùng lịch riêng từng acc • "
-                "restart ClientJS=2 giờ/safe-sale-boundary"
+                "restart ClientJS=3 giờ/safe-Function-boundary"
             )
 
         self._start_clean_auto_session()
