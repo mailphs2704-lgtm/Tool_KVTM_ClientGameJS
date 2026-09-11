@@ -1,40 +1,55 @@
 # AUTO MULTI DEV — FUNCTION & RECOVERY MAPPING METHOD
 
 Cập nhật: 2026-09-11
-Trạng thái: DESIGN / SPECIFICATION IN PROGRESS
+Trạng thái: INCREMENTAL IMPLEMENTATION / STANDARDIZATION
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
 
-> Tài liệu này định nghĩa cách tiếp nhận mô tả nghiệp vụ từ operator trong giai đoạn chuẩn hóa Function và Recovery. Operator không cần biết cấu trúc Python; chỉ cần mô tả một vòng Function hoàn chỉnh theo đúng thứ tự thực tế và đánh dấu các điểm có nhánh lỗi.
+> Tài liệu này định nghĩa cách tiếp nhận mô tả nghiệp vụ từ operator trong giai đoạn vừa triển khai vừa chuẩn hóa Function và Recovery. Operator không cần mô tả trọn Function trước. Có thể mô tả từng đoạn ngay lúc thực hiện; khi operator đánh dấu một điểm bắt lỗi, AI phải tự phân loại và đưa logic đó sang đúng nhánh Recovery.
 
-## 1. Cách operator mô tả
+## 1. Cách operator mô tả — CHỐT MỚI NHẤT
 
-Operator có thể mô tả tự nhiên từ đầu đến cuối:
+Operator **không cần mô tả toàn bộ Function từ đầu đến cuối trước khi bắt đầu triển khai**.
+
+Workflow mới:
 
 ```text
-Bắt đầu Function
-→ làm A
-→ làm B
-→ làm C
-→ nếu lỗi X thì xử lý theo hướng 1
-→ nếu không lỗi thì đi tiếp
-→ làm D
-→ kết thúc Function
+operator mô tả đoạn cần làm hiện tại
+        ↓
+AI phân loại Action / Module / Function orchestration
+        ↓
+triển khai đoạn đó theo kiến trúc đã chốt
+        ↓
+operator test / mô tả tiếp
+        ↓
+nếu operator đánh dấu điểm bắt lỗi
+        ↓
+AI phân loại lỗi + Recovery + checkpoint/resume
+        ↓
+tiếp tục triển khai đoạn kế tiếp
 ```
 
-Không cần tự quyết định đoạn nào là class, file, action hay module.
-
-Nếu một bước có lỗi, chỉ cần ghi rõ hai hướng:
+Khi mô tả một điểm lỗi, operator chỉ cần nói theo gameplay, ví dụ:
 
 ```text
 Bình thường:
 → ...
 
 Nếu lỗi:
-→ phát hiện gì
-→ cần làm gì
-→ sau xử lý quay lại bước nào
+→ thấy trạng thái gì
+→ muốn xử lý thế nào
+→ sau xử lý cần tiếp tục việc gì
 ```
+
+Operator không cần tự quyết định đó là class, file, Action, Module hay Recovery handler.
+
+### Quy tắc làm việc
+
+- Không bắt operator mô tả lại phần đã chốt.
+- Không bắt operator hoàn thành toàn bộ sơ đồ Function trước khi code phần hiện tại.
+- Mỗi đoạn triển khai vẫn phải tuân thủ kiến trúc chung và tránh nhét recovery riêng vào Function.
+- Khi chưa có nhánh lỗi do operator chỉ ra, không tự bịa recovery nghiệp vụ cụ thể; chỉ giữ các guard/fail-close kỹ thuật cần thiết.
+- Khi operator chỉ ra điểm bắt lỗi, AI phải xác định chính xác checkpoint và nơi resume, không chỉ thêm retry chung chung.
 
 ## 2. Trách nhiệm của phần chuẩn hóa
 
@@ -136,37 +151,37 @@ Checkpoint chỉ là metadata nhẹ; không giữ frame/image/numpy object.
 
 Recovery xử lý xong phải quay về đúng checkpoint và tiếp tục công việc đang dở. Không được coi recovery là Function PASS.
 
-## 5. Quy tắc phân rã một Function hoàn chỉnh
+## 5. Quy tắc phân rã Function trong chế độ triển khai từng đoạn
 
-Sau khi operator mô tả xong một vòng, tài liệu sẽ được chuyển thành dạng:
+Không cần chờ operator mô tả xong toàn bộ Function mới phân rã.
+
+Mỗi đoạn mới được map ngay vào cấu trúc đang tích lũy:
 
 ```text
 FUNCTION X
   1. Module A
      - Action A1
      - Action A2
-     - Recovery points...
+     - Recovery points đã được operator chỉ ra
 
   2. Module B
-     - Action B1
-     - Action B2
-     - Recovery points...
+     - bổ sung khi operator mô tả tới
 
   3. Module C
-     ...
-
-  FUNCTION PASS CONDITION
+     - bổ sung khi operator mô tả tới
 ```
 
-Mỗi Module phải có:
+Khi Function dần hoàn thiện, mỗi Module cuối cùng phải có:
 
 - precondition;
 - actions chính;
 - postcondition/PASS proof;
-- typed/recoverable errors có thể phát sinh;
+- typed/recoverable errors đã được xác định;
 - retry policy nếu an toàn;
 - checkpoint/resume point;
 - escalation path nếu recovery cục bộ thất bại.
+
+Function PASS condition được chốt khi flow thực tế đủ hoàn chỉnh, không cần giả định trước.
 
 ## 6. Nguyên tắc tránh nhầm tầng
 
@@ -193,28 +208,28 @@ RỦI RO LOGIC
 
 Không tự đổi yêu cầu nghiệp vụ chỉ vì code hiện tại đang làm khác.
 
-Nếu source cũ xung đột với mô tả mới, mô tả mới được coi là target thiết kế nhưng chưa tự động là runtime PASS.
+Nếu source cũ xung đột với mô tả mới, mô tả mới được coi là target mới; khi đang ở chế độ triển khai từng đoạn thì refactor phần liên quan phải bám target mới nhưng vẫn không được tự gọi runtime PASS trước live evidence.
 
-## 8. Mục tiêu cuối của giai đoạn này
+## 8. Mục tiêu tích lũy
 
-Khi operator nói `kết thúc`, phải có đủ:
+Trong quá trình triển khai, tài liệu phải dần tích lũy đủ:
 
 ```text
-1. Function flow từ đầu đến cuối
+1. Function flow thực tế đã triển khai
 2. Danh sách Module/Recipe
 3. Danh sách Actions dùng lại
-4. Tất cả recovery points
-5. Retry/escalation policy
+4. Các recovery points operator đã xác định
+5. Retry/escalation policy tương ứng
 6. Checkpoint/resume contract
-7. PASS condition cho từng Module và Function
+7. PASS condition cho Module/Function khi đã đủ flow
 8. Mapping source hiện tại -> kiến trúc target
 ```
 
-Sau đó mới audit/refactor code theo thứ tự ít regression nhất.
+Không còn yêu cầu phải chờ operator nói `kết thúc` mới được audit/refactor đoạn đang được yêu cầu triển khai.
 
 ## 9. ĐOẠN FLOW ĐÃ ĐƯỢC OPERATOR XÁC NHẬN — CHỐT
 
-Phần dưới đây là đoạn đầu của một vòng AUTO hoàn chỉnh mà operator đã mô tả và đã xác nhận bản chuẩn hóa là đúng ý. Đây là target thiết kế, chưa đồng nghĩa runtime source hiện tại đã được refactor theo flow này.
+Phần dưới đây là đoạn đầu của một vòng AUTO hoàn chỉnh mà operator đã mô tả và đã xác nhận bản chuẩn hóa là đúng ý.
 
 ### 9.1 Startup sau Login / Restart — CHỐT
 
@@ -369,4 +384,4 @@ Function/Scheduler boundary
   └─ start selected Function loop
 ```
 
-Lưu ý: đây mới là mapping kiến trúc cho đoạn đã mô tả. Recovery point chi tiết của từng thao tác sẽ được bổ sung khi operator mô tả các nhánh lỗi tương ứng.
+Lưu ý: Recovery point chi tiết của từng thao tác được bổ sung khi operator đánh dấu nhánh lỗi tương ứng trong lúc triển khai.
