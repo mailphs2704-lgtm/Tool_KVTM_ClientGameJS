@@ -10,6 +10,9 @@ ACTIONS = CLEAN / "actions"
 PLANTING = ACTIONS / "planting.py"
 APPLE_SUPPLY = ACTIONS / "apple_supply.py"
 ACTIONS_INIT = ACTIONS / "__init__.py"
+FARM_ROUTES = ACTIONS / "farm_routes.py"
+FUNCTION_ONE_NAV = ACTIONS / "function_one_navigation.py"
+FUNCTION_ONE_BOUNDARY_NAV = ACTIONS / "function_one_pass_three_navigation.py"
 VP_SALE_TRANSACTION = ACTIONS / "vp_sale_transaction.py"
 FUNCTION_TWO_PLANTING = ACTIONS / "function_two_planting.py"
 SALE_WORKFLOW = CLEAN / "workflows/auto_vp_sale/workflow.py"
@@ -37,6 +40,9 @@ def main() -> int:
     planting = read(PLANTING)
     apple_supply = read(APPLE_SUPPLY)
     actions_init = read(ACTIONS_INIT)
+    farm_routes = read(FARM_ROUTES)
+    function_one_nav = read(FUNCTION_ONE_NAV)
+    function_one_boundary_nav = read(FUNCTION_ONE_BOUNDARY_NAV)
     vp_sale_transaction = read(VP_SALE_TRANSACTION)
     function_two_planting = read(FUNCTION_TWO_PLANTING)
     sale_workflow = read(SALE_WORKFLOW)
@@ -72,6 +78,33 @@ def main() -> int:
     )
     forbid(apple_supply, "go_up(", "Apple supply must not own floor navigation")
     forbid(apple_supply, "go_down(", "Apple supply must not own floor navigation")
+
+    # Generic farm route files own the real implementation. Historical Function 1
+    # files are compatibility wrappers only and must not become a second source.
+    require(farm_routes, "class FarmRouteActions(FloorNavigationActions):", "Canonical FarmRouteActions implementation missing")
+    require(farm_routes, "class FarmBoundaryRouteActions(FarmRouteActions):", "Canonical FarmBoundaryRouteActions implementation missing")
+    for token in (
+        "def main_to_floor_1(self)",
+        "def floor_1_to_floor_5(self)",
+        "def floor_1_to_floor_6(self)",
+        "def main_to_floor_2(self)",
+        "def floor_1_to_floor_3(self)",
+        "def floor_3_to_main_via_down_floor(self)",
+        "def go_down_one_toward_main(self, label: str)",
+    ):
+        require(farm_routes, token, f"Canonical farm route missing: {token}")
+    require(
+        function_one_nav,
+        "class FunctionOneNavigationActions(FarmRouteActions):",
+        "Function 1 navigation is not a compatibility wrapper",
+    )
+    require(
+        function_one_boundary_nav,
+        "class FunctionOnePassThreeNavigationActions(FarmBoundaryRouteActions):",
+        "Function 1 boundary navigation is not a compatibility wrapper",
+    )
+    forbid(function_one_nav, "def main_to_floor_1(", "Function 1 wrapper regained route implementation")
+    forbid(function_one_boundary_nav, "def floor_1_to_floor_3(", "Function 1 boundary wrapper regained route implementation")
 
     # One VP listing transaction is a generic Action; AUTO Main is not its owner.
     require(
@@ -134,6 +167,7 @@ def main() -> int:
     print("AUTO ACTION STANDARDIZATION CONTRACT VERIFIED")
     print("planting=shared-paths-5-6-27-28-30")
     print("apple-supply=shared-geometry+crop-wait-only")
+    print("farm-routes=generic-canonical+function1-wrappers-only")
     print("vp-sale=neutral-transaction-action+five-view-module")
     print("function-two-planting=compatibility-only")
     return 0
