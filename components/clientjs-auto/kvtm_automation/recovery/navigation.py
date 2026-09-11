@@ -17,9 +17,10 @@ RouteHandler = Callable[[str], None]
 class NavigationRecovery:
     """Reusable camera/floor recovery shared by every Function and Recipe.
 
-    Default routes cover proven common floors. Recipes may register additional
-    deterministic routes (for example floor 5 TDHH) on the *same* manager rather
-    than creating a second RecoveryManager and splitting checkpoint/event state.
+    Default routes cover proven common floors through the generic farm-route
+    facade. Recipes may register additional deterministic routes (for example
+    floor 5 TDHH) on the same manager rather than creating a second
+    RecoveryManager and splitting checkpoint/event state.
     """
 
     UNKNOWN_FLOOR_MAIN_RECOVERY_PASSES = 6
@@ -90,7 +91,7 @@ class NavigationRecovery:
             self.context.ensure_running()
             if self.auto.popup.is_own_exact_main_screen():
                 break
-            self.auto.function_one_pass_three_navigation.go_down_one_toward_main(
+            self.auto.farm_boundary_routes.go_down_one_toward_main(
                 f"recovery-{label}-{attempt}-of-{passes}"
             )
             if self.auto.popup.is_own_exact_main_screen():
@@ -118,11 +119,11 @@ class NavigationRecovery:
         if custom is not None:
             custom(label)
         elif floor == 1:
-            self.auto.function_one_navigation.floor_1_to_main()
+            self.auto.farm_routes.floor_1_to_main()
         elif floor == 2:
-            self.auto.function_one_pass_three_navigation.floor_2_to_main()
+            self.auto.farm_boundary_routes.floor_2_to_main()
         elif floor == 3:
-            self.auto.function_one_pass_three_navigation.floor_3_to_main_via_down_floor()
+            self.auto.farm_boundary_routes.floor_3_to_main_via_down_floor()
         else:
             raise ValueError(
                 f"Chưa có route tầng {floor} → main; Recipe phải register route đã xác minh"
@@ -139,12 +140,12 @@ class NavigationRecovery:
         if custom is not None:
             custom(label)
         elif floor == 1:
-            self.auto.function_one_navigation.main_to_floor_1()
+            self.auto.farm_routes.main_to_floor_1()
         elif floor == 2:
-            self.auto.function_one_navigation.main_to_floor_2()
+            self.auto.farm_routes.main_to_floor_2()
         elif floor == 3:
-            self.auto.function_one_navigation.main_to_floor_1()
-            self.auto.function_one_pass_three_navigation.floor_1_to_floor_3()
+            self.auto.farm_routes.main_to_floor_1()
+            self.auto.farm_boundary_routes.floor_1_to_floor_3()
         else:
             raise ValueError(
                 f"Chưa có route main → tầng {floor}; Recipe phải register route đã xác minh"
@@ -179,7 +180,7 @@ class NavigationRecovery:
         if custom is not None:
             custom(label)
         elif (source, target) == (1, 3):
-            self.auto.function_one_pass_three_navigation.floor_1_to_floor_3()
+            self.auto.farm_boundary_routes.floor_1_to_floor_3()
         else:
             raise ValueError(
                 f"Chưa có route tầng {source} → tầng {target}; "
