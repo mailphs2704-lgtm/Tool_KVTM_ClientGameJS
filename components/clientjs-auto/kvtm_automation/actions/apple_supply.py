@@ -2,43 +2,44 @@ from __future__ import annotations
 
 import time
 
-from ..context import AutomationContext
 from ..errors import ScreenTimeout
-from ..runtime.auto_speed_config import AutoSpeedConfig
-from ..runtime.vision import VisionEngine
-from ..runtime.wait import Waiter
+from .planting import PlantingActions
+
 
 __all__ = ["AppleSupplyActions"]
 FILE_FUNCTIONS = (
     "Phân loại chậu trống, cây chín và cây chưa chín",
     "Kiểm tra lại trạng thái cây theo chu kỳ cấu hình mặc định 0.3 giây",
+    "Tái sử dụng PlantingActions.PATH_30 cho batch Táo 5 tầng, không giữ geometry 30 riêng",
     "Thu hoạch và gieo lại đủ năm hàng, ba mươi cây Táo",
     "Tại tầng 6 gieo ngay nếu trống; chỉ chờ nếu đang có cây chưa chín",
+    "Không sở hữu điều hướng tầng; caller/Recipe quyết định floor route",
 )
 
-class AppleSupplyActions:
-    APPLE_TEMPLATE = "cay_tao"
+
+class AppleSupplyActions(PlantingActions):
+    """Apple crop/supply Actions on the camera view supplied by the caller.
+
+    This class owns the crop-specific READY/GROWING wait semantics that were
+    already proven for Function 1 material supply. Shared farm geometry comes
+    from PlantingActions; navigation remains outside this Action.
+    """
+
+    APPLE_TEMPLATE = PlantingActions.APPLE_TEMPLATE
     HARVEST_TEMPLATE = "thu_hoach"
     EMPTY_TEMPLATE = "next_gieo_trai"
-    OPEN_POT = (388, 946)
-    CLOSE_PANEL = (965, 198)
-    HARVEST_ZONE = (222, 703, 218, 191)
-    EMPTY_ZONE = (124, 729, 347, 236)
-    SEED_ZONE = (179, 773, 230, 166)
-    FIVE_FLOOR_PATH = (
-        (325, 799), (335, 940), (835, 940), (835, 725), (335, 725),
-        (335, 505), (835, 505), (835, 280), (335, 280),
-        (335, 40), (835, 40),
-    )
+    OPEN_POT = PlantingActions.OPEN_PLANT_POINT
+    CLOSE_PANEL = PlantingActions.CLOSE_POINT
+    HARVEST_ZONE = PlantingActions.HARVEST_ZONE
+    EMPTY_ZONE = PlantingActions.EMPTY_READY_ZONE
+    SEED_ZONE = PlantingActions.SEED_ZONE
+
+    # Exact existing geometry, now sourced from the project-wide planting path.
+    FIVE_FLOOR_PATH = PlantingActions.PATH_30
+    # Floor-6 one-row gesture is separately proven and retained verbatim until a
+    # project-wide PATH_6 contract is explicitly introduced.
     FLOOR_6_ROW = ((325, 799), (335, 940), (835, 940))
     RIPE_TIMEOUT = 120.0
-
-    def __init__(self, context: AutomationContext, vision: VisionEngine,
-                 waiter: Waiter, speed_config: AutoSpeedConfig | None = None) -> None:
-        self.context = context
-        self.vision = vision
-        self.waiter = waiter
-        self.speed_config = speed_config or AutoSpeedConfig()
 
     def _scan_state(self) -> tuple[str, object | None]:
         self.context.ensure_running()
@@ -64,14 +65,21 @@ class AppleSupplyActions:
         self.vision.driver.click(*self.CLOSE_PANEL)
         return "GROWING", None
 
-    def _wait_state(self, *, allow_empty: bool, label: str,
-                    accept_ripe: bool = True) -> tuple[str, object | None]:
+    def _wait_state(
+        self,
+        *,
+        allow_empty: bool,
+        label: str,
+        accept_ripe: bool = True,
+    ) -> tuple[str, object | None]:
         deadline = time.monotonic() + self.RIPE_TIMEOUT
         attempt = 0
         while time.monotonic() < deadline:
             attempt += 1
             state, match = self._scan_state()
-            if (accept_ripe and state == "RIPE") or (allow_empty and state == "EMPTY"):
+            if (accept_ripe and state == "RIPE") or (
+                allow_empty and state == "EMPTY"
+            ):
                 self.context.log(
                     f"AUTO nguyên liệu • {label}={state} • kiểm tra {attempt} • "
                     f"chu kỳ={self.speed_config.crop_check_interval:.3f}s"
@@ -82,7 +90,9 @@ class AppleSupplyActions:
                 f"{self.speed_config.crop_check_interval:.3f}s"
             )
             self.waiter.sleep(self.speed_config.crop_check_interval)
-        raise ScreenTimeout(f"Hết {self.RIPE_TIMEOUT:.0f}s chờ cây Táo {label} chín")
+        raise ScreenTimeout(
+            f"Hết {self.RIPE_TIMEOUT:.0f}s chờ cây Táo {label} chín"
+        )
 
     def _plant_open_panel(self, seed, farm_path, count: int, label: str) -> int:
         self.context.ensure_running()
@@ -101,28 +111,52 @@ class AppleSupplyActions:
 
     def harvest_and_replant_five_floors(self) -> int:
         self.vision.driver.swipe_points(
-            self.FIVE_FLOOR_PATH, duration=self.speed_config.plant_harvest_duration
+            self.FIVE_FLOOR_PATH,
+            duration=self.speed_config.plant_harvest_duration,
         )
         self.waiter.sleep(0.55)
         state, seed = self._wait_state(
-            allow_empty=True, accept_ripe=False, label="5 tầng sau thu hoạch"
+            allow_empty=True,
+            accept_ripe=False,
+            label="5 tầng sau thu hoạch",
         )
         if state != "EMPTY" or seed is None:
             raise ScreenTimeout("Thu hoạch 5 tầng chưa chuyển thành chậu trống")
-        return self._plant_open_panel(seed, self.FIVE_FLOOR_PATH, 30, "5 tầng x 6 Táo")
+        return self._plant_open_panel(
+            seed,
+            self.FIVE_FLOOR_PATH,
+            30,
+            "5 tầng x 6 Táo",
+        )
 
     def harvest_and_replant_floor_6_row(self) -> int:
-        state, match = self._wait_state(allow_empty=True, label="hàng dưới cùng tầng 6")
+        state, match = self._wait_state(
+            allow_empty=True,
+            label="hàng dưới cùng tầng 6",
+        )
         if state == "EMPTY":
             self.context.log("AUTO nguyên liệu • tầng 6 đang trống • gieo Táo ngay")
-            return self._plant_open_panel(match, self.FLOOR_6_ROW, 6, "hàng tầng 6 x 6 Táo")
+            return self._plant_open_panel(
+                match,
+                self.FLOOR_6_ROW,
+                6,
+                "hàng tầng 6 x 6 Táo",
+            )
         self.vision.driver.swipe_points(
-            self.FLOOR_6_ROW, duration=self.speed_config.plant_harvest_duration
+            self.FLOOR_6_ROW,
+            duration=self.speed_config.plant_harvest_duration,
         )
         self.waiter.sleep(0.55)
         state, seed = self._wait_state(
-            allow_empty=True, accept_ripe=False, label="hàng tầng 6 sau thu hoạch"
+            allow_empty=True,
+            accept_ripe=False,
+            label="hàng tầng 6 sau thu hoạch",
         )
         if state != "EMPTY" or seed is None:
             raise ScreenTimeout("Thu hoạch tầng 6 chưa chuyển thành chậu trống")
-        return self._plant_open_panel(seed, self.FLOOR_6_ROW, 6, "hàng tầng 6 x 6 Táo")
+        return self._plant_open_panel(
+            seed,
+            self.FLOOR_6_ROW,
+            6,
+            "hàng tầng 6 x 6 Táo",
+        )
