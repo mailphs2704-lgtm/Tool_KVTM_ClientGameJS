@@ -10,9 +10,9 @@ from .actions import (
     AutoVpRecognitionActions,
     BuyingActions,
     CottonPlantingActions,
+    FarmBoundaryRouteActions,
+    FarmRouteActions,
     FloorNavigationActions,
-    FunctionOneNavigationActions,
-    FunctionOnePassThreeNavigationActions,
     InventoryActions,
     MachineRepairActions,
     NavigationActions,
@@ -117,9 +117,6 @@ class KVAutomation:
             )
             self.driver = bundle.driver
             if auto_multi_resolution:
-                # Passive detection only: Bắt đầu AUTO must never change HWND or
-                # client-area size. CAPTURE3 is the authority for the real render
-                # geometry that VisionEngine will consume.
                 contract = detect_client_resolution(self.driver)
                 self.resolution_contract = contract
                 self.driver = NativeCaptureDriver(
@@ -177,12 +174,20 @@ class KVAutomation:
         self.apple_supply = AppleSupplyActions(
             context, self.vision, self.wait, self.speed_config
         )
-        self.function_one_navigation = FunctionOneNavigationActions(
+
+        # Generic shared farm routes are the canonical facade for all Functions,
+        # Recipes and Global Recovery. Historical Function-specific attributes are
+        # aliases to the same objects so old callers keep working without owning
+        # a second route implementation/state.
+        self.farm_routes = FarmRouteActions(
             context, self.vision, self.wait, self.speed_config
         )
-        self.function_one_pass_three_navigation = FunctionOnePassThreeNavigationActions(
+        self.farm_boundary_routes = FarmBoundaryRouteActions(
             context, self.vision, self.wait, self.speed_config
         )
+        self.function_one_navigation = self.farm_routes
+        self.function_one_pass_three_navigation = self.farm_boundary_routes
+
         self.apple_juice_production = AppleJuiceProductionActions(
             context, self.vision, self.wait, self.speed_config
         )
