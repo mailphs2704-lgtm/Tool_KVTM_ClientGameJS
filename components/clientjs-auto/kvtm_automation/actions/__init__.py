@@ -1,3 +1,7 @@
+from .warehouse_full_guard import install_warehouse_full_guard
+
+install_warehouse_full_guard()
+
 from .apple_supply import AppleSupplyActions
 from .buying import BuyingActions
 from .floor_navigation import FloorMoveResult, FloorNavigationActions
