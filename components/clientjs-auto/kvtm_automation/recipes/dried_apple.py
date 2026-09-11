@@ -24,15 +24,15 @@ class DriedAppleRecipeResult:
 
 
 class DriedAppleRecipe:
-    """Reusable Táo sấy recipe: plant apples, produce x9, then repair.
+    """Reusable Táo sấy recipe composed from shared Actions.
 
-    This recipe preserves the proven startup behavior: the owning GameSession has
-    already normalized the account before the recipe begins, and the planting
-    action performs the existing goUp(1) entry to the farm rows. Recovery handles
-    only explicit production signals; generic visual failures still fail closed.
+    Navigation and planting are deliberately separate: the Recipe decides that
+    it needs floor 1, then calls the generic crop/count Action. ``PlantingActions``
+    no longer needs to know that this crop belongs to Táo sấy Function logic.
     """
 
     REQUIRED_COUNT = 9
+    PLANT_COUNT = 27
 
     def __init__(
         self,
@@ -52,14 +52,24 @@ class DriedAppleRecipe:
             )
 
     def run_from_session(self, *, count: int = 9) -> DriedAppleRecipeResult:
-        """Run from the same startup state previously consumed by AppleDryerWorkflow."""
+        """Run from the exact-main state handed off by startup/sale boundary."""
         self._require_supported_count(count)
         self.context.stage("auto-recipe-dried-apple-start")
         self.context.log(
-            "AUTO recipe Táo sấy • bắt đầu • trồng Táo → SX 9 → Sửa máy"
+            "AUTO recipe Táo sấy • MAIN → goUp(1) → trồng 27 Táo → SX 9 → Sửa máy"
         )
 
-        planted = self.auto.planting.plant_27_apples()
+        if not self.auto.popup.is_own_exact_main_screen():
+            raise RuntimeError(
+                "Táo sấy recipe cần exact-main từ caller; không tự recovery/navigation ẩn"
+            )
+
+        self.auto.floors.go_up(1, label="dried-apple-main-to-floor1")
+        planted = self.auto.planting.plant_current_view(
+            seed_template=self.auto.planting.APPLE_TEMPLATE,
+            item_label="Táo",
+            count=self.PLANT_COUNT,
+        )
         self.context.ensure_running()
         self.context.stage("auto-recipe-dried-apple-planted")
 
@@ -74,13 +84,12 @@ class DriedAppleRecipe:
         self.auto.machine_repair.repair_after_production(produced)
         self.context.ensure_running()
         self.context.stage("auto-recipe-dried-apple-pass")
-        self.context.log("AUTO recipe Táo sấy • PASS • trồng + SX 9/9 + Sửa máy")
+        self.context.log("AUTO recipe Táo sấy • PASS • trồng 27 + SX 9/9 + Sửa máy")
         return DriedAppleRecipeResult(
             planted_count=int(planted),
             production=produced,
         )
 
     def run_from_main(self, *, count: int = 9) -> DriedAppleRecipeResult:
-        """Reusable entry when a future Function explicitly owns exact-main."""
         self.recovery.ensure_main("Táo sấy recipe: trước khi bắt đầu")
         return self.run_from_session(count=count)
