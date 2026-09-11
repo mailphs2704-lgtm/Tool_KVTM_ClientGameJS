@@ -29,7 +29,6 @@ def _logical_crop(action, frame, zone):
 def _green_board_ratio(roi) -> float:
     if roi is None or getattr(roi, "size", 0) == 0 or roi.ndim < 3:
         return 0.0
-    # Vision frames are BGR/BGRA. Ignore alpha when present.
     blue = roi[:, :, 0].astype("int16")
     green = roi[:, :, 1].astype("int16")
     red = roi[:, :, 2].astype("int16")
@@ -74,13 +73,7 @@ def _red_close_ratio(roi) -> float:
 
 
 def _detect_live_warehouse_full(action, frame):
-    """Return visual proof for the supplied KHO QUA TAI popup.
-
-    Do not rely on one historical template. The popup is accepted only when three
-    independent visual properties agree: the large green board, orange upgrade
-    button, and red close area. The X template is used only to improve the click
-    center when available.
-    """
+    """Return visual proof for the supplied KHO QUA TAI popup."""
     modal = _logical_crop(action, frame, WAREHOUSE_FULL_MODAL_ZONE)
     green_ratio = _green_board_ratio(modal)
     if green_ratio < WAREHOUSE_FULL_GREEN_RATIO_MIN:
@@ -109,25 +102,23 @@ def _detect_live_warehouse_full(action, frame):
 
 
 def install_warehouse_full_guard() -> None:
-    """Patch the shared production primitive with the live warehouse-full guard.
+    """Patch the shared production panel engine with the live full-kho guard.
 
-    All production recipes route VP collection through ProductionActions, including
-    the slot helper used by Nuoc tao/Vai vang. Keeping this guard at the shared
-    primitive means every recipe raises the same recoverable InventoryFull event.
+    Every product transaction reaches panel state through ProductionPanelActions,
+    directly or by inheritance. Patching this one shared primitive preserves the
+    same recoverable InventoryFull evidence for Táo sấy/Nước táo/Vải vàng/TDHH.
     """
-    from .production import ProductionActions
+    from .production_panel import ProductionPanelActions
 
-    if getattr(ProductionActions, "_kvtm_live_warehouse_full_guard", False):
+    if getattr(ProductionPanelActions, "_kvtm_live_warehouse_full_guard", False):
         return
 
-    original_panel_state = ProductionActions._panel_state
+    original_panel_state = ProductionPanelActions._panel_state
 
     def panel_state(self, frame=None):
         source = self.vision.frame() if frame is None else frame
         warehouse_full, empty_ready = original_panel_state(self, frame=source)
         if warehouse_full:
-            # Old full_kho template still wins when it matches. Try to capture the
-            # real modal X so recovery does not click the production-panel X.
             x_match = self.vision.find(
                 "x",
                 threshold=WAREHOUSE_FULL_X_THRESHOLD,
@@ -169,6 +160,6 @@ def install_warehouse_full_guard() -> None:
         )
         raise InventoryFull(f"{label}: kho day khi thu VP/san xuat")
 
-    ProductionActions._panel_state = panel_state
-    ProductionActions._raise_inventory_full = raise_inventory_full
-    ProductionActions._kvtm_live_warehouse_full_guard = True
+    ProductionPanelActions._panel_state = panel_state
+    ProductionPanelActions._raise_inventory_full = raise_inventory_full
+    ProductionPanelActions._kvtm_live_warehouse_full_guard = True
