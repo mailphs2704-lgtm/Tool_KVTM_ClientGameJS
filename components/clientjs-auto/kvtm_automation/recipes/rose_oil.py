@@ -52,7 +52,7 @@ class RoseOilRecipe:
     Hồng and Tuyết are crop/material inputs handled by PlantingActions.
     TDHH (Tinh dầu hoa hồng) is a finished VP product handled by
     RoseOilProductionActions; it is never treated as a crop/planting action.
-    Navigation Actions own camera primitives and all Function-2 recipes share
+    Generic FarmRouteActions own camera routes and all Function-2 recipes share
     the same RecoveryManager instance.
     """
 
@@ -112,8 +112,8 @@ class RoseOilRecipe:
         self.context.log(
             f"AUTO TDHH recovery route • {label} • MAIN → goUp(1) → goUp(4) → tầng 5"
         )
-        self.auto.function_one_navigation.main_to_floor_1()
-        self.auto.function_one_navigation.floor_1_to_floor_5()
+        self.auto.farm_routes.main_to_floor_1()
+        self.auto.farm_routes.floor_1_to_floor_5()
 
     def _floor_5_to_main(self, label: str) -> None:
         self.context.log(
@@ -121,15 +121,15 @@ class RoseOilRecipe:
         )
         self.auto.vision.driver.click(*RoseOilProductionActions.CLOSE_POINT)
         self.auto.wait.sleep(0.35)
-        self.auto.function_one_pass_three_navigation.known_upper_floor_to_main_via_down_floor(
+        self.auto.farm_boundary_routes.known_upper_floor_to_main_via_down_floor(
             "TDHH tầng 5 → MAIN"
         )
 
     def _prepare_materials(self) -> RoseOilMaterialResult:
         self._require_native_1000()
         planting = self.auto.planting
-        nav = self.auto.function_one_navigation
-        upper_nav = self.auto.function_one_pass_three_navigation
+        nav = self.auto.farm_routes
+        upper_nav = self.auto.farm_boundary_routes
 
         self.context.stage("auto-recipe-rose-oil-rose-start")
         nav.main_to_floor_1()
