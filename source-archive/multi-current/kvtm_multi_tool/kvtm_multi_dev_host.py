@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 from pathlib import Path
 import struct
 import sys
@@ -33,6 +34,7 @@ _PINNED_CLEAR_STALL_DEFAULTS = {
     "enabled": False,
     "last_checkpoint": "WAITING",
 }
+_AUTO_MAIN_FRESH_MARKER = ".fresh-client-start.json"
 
 
 def _roots() -> tuple[Path, Path, Path]:
@@ -168,6 +170,71 @@ def _install_pinned_dev_settings(core) -> None:
     )
 
 
+def _install_auto_main_lifecycle_tracking(dev_entry) -> None:
+    """Mark only ClientJS processes that AUTO Main itself launched.
+
+    The worker consumes this one-shot marker to decide whether startup popup
+    watch is valid. Stop AUTO -> Start AUTO on an already-running ClientJS does
+    not call _launch(), so it must re-enter through unknown-camera recovery.
+    """
+    app_cls = dev_entry.MultiDevApp
+    if getattr(app_cls, "_auto_main_lifecycle_tracking_installed", False):
+        return
+
+    original_start = app_cls._start_clean_auto_session
+    original_launch = app_cls._launch
+
+    def tracked_start(self, *args, **kwargs):
+        previous_depth = int(getattr(self, "_auto_main_launch_tracking_depth", 0) or 0)
+        self._auto_main_launch_tracking_depth = previous_depth + 1
+        try:
+            return original_start(self, *args, **kwargs)
+        finally:
+            self._auto_main_launch_tracking_depth = previous_depth
+
+    def tracked_launch(self, profile, *args, **kwargs):
+        result = original_launch(self, profile, *args, **kwargs)
+        if int(getattr(self, "_auto_main_launch_tracking_depth", 0) or 0) <= 0:
+            return result
+
+        profile_id = str((profile or {}).get("id") or "")
+        process = self.processes.get(profile_id) if profile_id else None
+        try:
+            alive = bool(process and process.poll() is None)
+        except Exception:
+            alive = False
+        if not alive:
+            return result
+
+        marker_root = dev_entry.core.APP_DIR / "auto-multi-dev" / profile_id
+        marker_root.mkdir(parents=True, exist_ok=True)
+        marker = marker_root / _AUTO_MAIN_FRESH_MARKER
+        payload = {
+            "version": 1,
+            "profile_id": profile_id,
+            "pid": int(process.pid),
+            "created_at": time.time(),
+        }
+        marker.write_text(
+            json.dumps(payload, ensure_ascii=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        print(
+            "[KVTM DEV] AUTO lifecycle marker • "
+            f"fresh ClientJS profile={profile_id} pid={int(process.pid)}",
+            flush=True,
+        )
+        return result
+
+    app_cls._start_clean_auto_session = tracked_start
+    app_cls._launch = tracked_launch
+    app_cls._auto_main_lifecycle_tracking_installed = True
+    print(
+        "[KVTM DEV] AUTO lifecycle tracking READY • fresh launch marker=one-shot",
+        flush=True,
+    )
+
+
 def _configure_dpi() -> None:
     try:
         ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
@@ -206,6 +273,7 @@ def main() -> int:
         # remains in action/detail logs.
         _install_non_modal_error_ui(kvtm_multi_dev_entry.core)
         _install_pinned_dev_settings(kvtm_multi_dev_entry.core)
+        _install_auto_main_lifecycle_tracking(kvtm_multi_dev_entry)
 
         # Builder is DEV-only and is layered onto MultiDevApp after import. This
         # keeps the shared kvtm_multi.py production UI untouched while reusing its
