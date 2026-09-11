@@ -153,7 +153,11 @@ def main() -> int:
         require(text, "self.speed_config.vp_production_delay", f"VP production speed not applied to {label}")
         forbid(text, "self.slots = ProductionActions(", f"{label} regressed to Dried Apple helper")
 
-    require(apple_supply, 'allow_empty=True, label="hàng dưới cùng tầng 6"', "Floor 6 must allow immediate planting on empty pots")
+    # Floor-6 immediate-empty behavior is semantic, not source formatting. The
+    # call is intentionally multiline in AppleSupplyActions after standardization.
+    require(apple_supply, "def harvest_and_replant_floor_6_row(self) -> int:", "Floor-6 apple supply action missing")
+    require(apple_supply, "allow_empty=True,", "Floor 6 must allow immediate planting on empty pots")
+    require(apple_supply, 'label="hàng dưới cùng tầng 6",', "Floor-6 empty/ripe state label missing")
     require(automation, "AutoSpeedConfig.from_mapping", "Speed normalization missing")
     require(gui, "MULTI_DEV_TUNING_KEYS = (", "Dedicated Multi DEV tuning key group missing")
     require(gui, "AUTO_LEGACY_TUNING_KEYS = tuple(", "Legacy AUTO tuning key group missing")
@@ -172,6 +176,7 @@ def main() -> int:
     print("vp_collect=shared-panel-x5-no-inter-click-wait+post-burst-settle+fresh-frame-scan")
     print("vp_production=product-owned")
     print("panel_speed_wiring=format-insensitive")
+    print("floor6_empty_planting=format-insensitive")
     print("crop_check_interval=independent")
     return 0
 
