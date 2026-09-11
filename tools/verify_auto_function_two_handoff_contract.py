@@ -25,6 +25,11 @@ def require(text: str, token: str, message: str) -> None:
         raise AssertionError(message)
 
 
+def forbid(text: str, token: str, message: str) -> None:
+    if token in text:
+        raise AssertionError(message)
+
+
 def main() -> int:
     function_one = read(FUNCTION_ONE)
     function_two = read(FUNCTION_TWO)
@@ -57,18 +62,23 @@ def main() -> int:
     )
     require(
         function_two,
-        "def _recover_base_handoff_to_main(self) -> None:",
-        "Function 2 handoff recovery helper missing",
+        "def _base_handoff_to_main(self) -> None:",
+        "Function 2 known-floor handoff helper missing",
     )
     require(
         function_two,
-        "self.recovery.recover_unknown_to_main(",
-        "Function 2 does not use RecoveryManager for inherited handoff",
+        "self.recovery.to_main_from_floor(",
+        "Function 2 does not use deterministic RecoveryManager route",
     )
     require(
         function_two,
-        "max_passes=8",
-        "Function 2 handoff recovery is not bounded to 8 passes",
+        "3,\n            \"Function 2 handoff sau Vải vàng\"",
+        "Function 2 handoff is not bound to known floor3",
+    )
+    forbid(
+        function_two,
+        "recover_unknown_to_main(",
+        "Function 2 known floor3 handoff regressed to unknown-camera recovery",
     )
     require(
         function_two,
@@ -77,23 +87,23 @@ def main() -> int:
     )
     require(
         function_two,
-        "self._recover_base_handoff_to_main()",
-        "Function 2 does not execute handoff recovery",
+        "self._base_handoff_to_main()",
+        "Function 2 does not execute handoff normalization",
     )
     require(
         function_two,
         "extra = self.rose_oil.run_from_main(count=7)",
         "Function 2 TDHH stage missing after handoff",
     )
-    if function_two.index("self._recover_base_handoff_to_main()") > function_two.index(
+    if function_two.index("self._base_handoff_to_main()") > function_two.index(
         "extra = self.rose_oil.run_from_main(count=7)"
     ):
-        raise AssertionError("Function 2 starts TDHH before exact-main handoff recovery")
+        raise AssertionError("Function 2 starts TDHH before exact-main handoff")
 
     print("AUTO MULTI DEV FUNCTION TWO HANDOFF STATIC CONTRACT VERIFIED")
-    print("inheritance=import-composition+function1-core")
-    print("handoff=skip-function1-terminal-route+bounded-unknown-to-main")
-    print("next=exact-main-before-rose35+snow28+rose-oil7")
+    print("inheritance=function1-core-with-terminal-normalize-disabled")
+    print("handoff=known-floor3->RecoveryManager.to_main_from_floor(3)->exact-main")
+    print("next=rose35+snow28+rose-oil7")
     return 0
 
 
