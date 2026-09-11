@@ -200,12 +200,16 @@ def main() -> int:
     require(recipe_book, "recovery=self.recovery", "Recipes are not receiving shared recovery")
 
     # TDHH classification is explicit: Hồng/Tuyết are planting materials, TDHH
-    # itself is a VP product produced by the production action.
+    # itself is a finished VP produced through the resident automation facade.
+    # Recipe code must not import or instantiate the concrete Production Action.
     require(rose_oil, "Hồng and Tuyết are crop/material inputs", "TDHH material classification missing")
     require(rose_oil, "TDHH (Tinh dầu hoa hồng) is a finished VP product", "TDHH is not classified as finished VP")
-    require(rose_oil, "RoseOilProductionActions", "TDHH VP production action missing")
+    require(rose_oil, "self.production = automation.rose_oil_production", "TDHH recipe is not using the resident production facade")
     require(rose_oil, "auto-recipe-rose-oil-vp-production", "TDHH VP production stage missing")
-    require(rose_oil, "recovery=self.recovery", "RoseOilRecipe does not share Function recovery")
+    require(rose_oil, "producer=lambda: self.production.produce_7_rose_oils(", "TDHH x7 producer handoff missing")
+    require(rose_oil, "self.recovery = recovery or RecoveryManager(", "RoseOilRecipe recovery injection/fallback missing")
+    require(rose_oil, 'if self.recovery.function_id != "function_2":', "RoseOilRecipe recovery ownership guard missing")
+    forbid(rose_oil, "from ..actions.rose_oil_production import RoseOilProductionActions", "Recipe imports concrete TDHH Production Action")
 
     # Startup follows the operator-approved invariant: fresh login/restart begins
     # at MAIN and the worker watches/clears popups continuously for a full minute.
@@ -261,7 +265,7 @@ def main() -> int:
     print("material_shortage=crop-action-how+recovery-policy-why")
     print("warehouse_progress=listing-or-gold-collection")
     print("startup=continuous-popup-watch-60s+no-goDown-main-normalize")
-    print("tdhh=finished-vp+rose-snow-materials")
+    print("tdhh=finished-vp+rose-snow-materials+resident-production-facade")
     print("scheduled_restart=3h+safe-function-boundary+exact-profile-relaunch")
     print("worker=typed-recovery-boundary+unregistered-fail-close")
     print("auto_builder_import=lazy-runner-no-recovery-cycle")
