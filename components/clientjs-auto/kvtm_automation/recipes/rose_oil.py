@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..actions.production import ProductionResult
-from ..actions.rose_oil_production import RoseOilProductionActions
 from ..errors import ScreenTimeout
 from ..recovery import RecoveryManager
 
@@ -50,10 +49,9 @@ class RoseOilRecipe:
     """Function-2 business recipe: 35 Hồng + 28 Tuyết -> produce 7 TDHH VP.
 
     Hồng and Tuyết are crop/material inputs handled by PlantingActions.
-    TDHH (Tinh dầu hoa hồng) is a finished VP product handled by
-    RoseOilProductionActions; it is never treated as a crop/planting action.
-    Generic FarmRouteActions own camera routes and all Function-2 recipes share
-    the same RecoveryManager instance.
+    TDHH (Tinh dầu hoa hồng) is a finished VP product handled by the shared
+    ``KVAutomation.rose_oil_production`` Action. Recipe code owns orchestration
+    only; raw click/swipe coordinates remain in Actions.
     """
 
     REQUIRED_COUNT = 7
@@ -70,12 +68,7 @@ class RoseOilRecipe:
     ) -> None:
         self.auto = automation
         self.context = automation.context
-        self.production = RoseOilProductionActions(
-            automation.context,
-            automation.vision,
-            automation.wait,
-            automation.speed_config,
-        )
+        self.production = automation.rose_oil_production
         self.recovery = recovery or RecoveryManager(
             automation,
             function_id="function_2",
@@ -119,8 +112,7 @@ class RoseOilRecipe:
         self.context.log(
             f"AUTO TDHH recovery route • {label} • đóng panel → goDown(1) → click XUỐNG → MAIN"
         )
-        self.auto.vision.driver.click(*RoseOilProductionActions.CLOSE_POINT)
-        self.auto.wait.sleep(0.35)
+        self.production.close_panel_for_navigation()
         self.auto.farm_boundary_routes.known_upper_floor_to_main_via_down_floor(
             "TDHH tầng 5 → MAIN"
         )
