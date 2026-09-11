@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import time
+
 
 __all__ = ["install_function_loop_delay"]
 FILE_FUNCTIONS = (
     "Áp dụng thời gian chờ chỉ cho module Function có loops",
+    "Boundary delay bắt đầu ngay khi Function PASS; thời gian Sale/maintenance được tính vào khoảng chờ",
+    "Sau Sale chỉ chờ phần thời gian còn thiếu, không sleep lại toàn bộ delay",
     "Không chờ sau vòng cuối và không ảnh hưởng Click/Swipe/Wait/Bán VP/Vào game",
     "Hỗ trợ cả Function built-in và Function tự tạo được gọi lặp",
     "Giữ wait stop-aware qua automation.wait.sleep",
@@ -22,19 +26,38 @@ def _loop_delay(step: dict) -> float:
     return value
 
 
-def _wait_between_loops(runner, *, step: dict, label: str,
-                        loop_index: int, loops: int) -> None:
+def _wait_between_loops(
+    runner,
+    *,
+    step: dict,
+    label: str,
+    loop_index: int,
+    loops: int,
+    boundary_started_at: float,
+) -> None:
     if loop_index >= loops:
         return
     delay = _loop_delay(step)
     if delay <= 0.0:
         return
+
+    elapsed = max(0.0, time.monotonic() - float(boundary_started_at))
+    remaining = max(0.0, delay - elapsed)
     runner.context.ensure_running()
+    if remaining <= 0.0:
+        runner.context.log(
+            f"AUTO Builder • {label} • boundary đã dùng {elapsed:.3f}s/"
+            f"{delay:.3f}s (Sale/maintenance đã đủ thời gian chờ) • "
+            f"vào vòng {loop_index + 1}/{loops} ngay"
+        )
+        return
+
     runner.context.log(
-        f"AUTO Builder • {label} • vòng {loop_index}/{loops} xong • "
-        f"chờ {delay:.3f}s trước vòng {loop_index + 1}/{loops}"
+        f"AUTO Builder • {label} • boundary đã dùng {elapsed:.3f}s/"
+        f"{delay:.3f}s • chỉ chờ thêm {remaining:.3f}s trước vòng "
+        f"{loop_index + 1}/{loops}"
     )
-    runner.auto.wait.sleep(delay)
+    runner.auto.wait.sleep(remaining)
 
 
 def install_function_loop_delay(runner_class) -> None:
@@ -58,6 +81,7 @@ def install_function_loop_delay(runner_class) -> None:
             )
             self.function.run(function_id=function_id)
             self.function_loops[function_id] = self.function_loops.get(function_id, 0) + 1
+            boundary_started_at = time.monotonic()
             if bool(step.get("sale_after_each_loop", False)):
                 self.context.log(
                     f"AUTO Builder • {function_id} vòng {loop_index}/{loops} xong • "
@@ -74,6 +98,7 @@ def install_function_loop_delay(runner_class) -> None:
                 label=function_id,
                 loop_index=loop_index,
                 loops=loops,
+                boundary_started_at=boundary_started_at,
             )
         return None
 
@@ -96,6 +121,7 @@ def install_function_loop_delay(runner_class) -> None:
                 terminal_is_local=True,
             )
             self.function_loops[function_id] = self.function_loops.get(function_id, 0) + 1
+            boundary_started_at = time.monotonic()
             if bool(step.get("sale_after_each_loop", False)):
                 sale_function_id = str(step.get("sale_function_id") or "function_1")
                 self.context.log(
@@ -113,6 +139,7 @@ def install_function_loop_delay(runner_class) -> None:
                 label=f"Function tự tạo {function['name']}",
                 loop_index=loop_index,
                 loops=loops,
+                boundary_started_at=boundary_started_at,
             )
 
     # Keep original references available for debugging/introspection while the
