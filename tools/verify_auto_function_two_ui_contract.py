@@ -29,10 +29,12 @@ def main() -> int:
     catalog = read(CATALOG)
 
     function_1 = '("function_1", "9 Táo sấy - 9 Vải vàng")'
-    function_2 = '("function_2", "9 Táo sấy - 9 Vải vàng - 7 Tinh dầu hoa hồng")'
+    function_2_ui = '("function_2", "9 Táo sấy - 9 Vải vàng - 7 Tinh dầu hoa hồng")'
+    function_2_catalog = 'label="9 Táo sấy - 9 Vải vàng - 7 tinh dầu hoa hồng"'
+
     require(integration, "_AUTO_MAIN_FUNCTION_OPTIONS = (", "AUTO Main Function dropdown missing")
     require(integration, function_1, "Function 1 disappeared from AUTO Main dropdown")
-    require(integration, function_2, "Function 2 missing from AUTO Main dropdown")
+    require(integration, function_2_ui, "Function 2 missing from AUTO Main dropdown")
     require(integration, "default_id, default_label = _AUTO_MAIN_FUNCTION_OPTIONS[0]", "Function 1 default selector changed")
     require(integration, "for function_id, label in _AUTO_MAIN_FUNCTION_OPTIONS:", "Function menu is not built from guarded options")
     require(integration, "valid_ids = {item[0] for item in _AUTO_MAIN_FUNCTION_OPTIONS}", "AUTO Main start does not validate selected Function")
@@ -44,10 +46,11 @@ def main() -> int:
 
     require(catalog, '"function_1": FunctionSpec(', "Function 1 catalog entry missing")
     require(catalog, '"function_2": FunctionSpec(', "Function 2 catalog entry missing")
-    require(catalog, 'label="9 Táo sấy - 9 Vải vàng - 7 Tinh dầu hoa hồng"', "Function 2 UI/catalog label drift")
+    require(catalog, function_2_catalog, "Function 2 catalog label drift")
+    require(catalog, 'sale_item_ids=("tao_say", "vai_vang", "tinh_dau_hh")', "Function 2 sale ownership changed")
 
     first = integration.index(function_1)
-    second = integration.index(function_2)
+    second = integration.index(function_2_ui)
     if first >= second:
         raise AssertionError("Function 1 must remain the default first AUTO Main option")
 
