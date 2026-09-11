@@ -2,7 +2,7 @@
 
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
-Trạng thái: **SOURCE STANDARDIZATION IN PROGRESS — NOT STATIC PASS — NOT RUNTIME PASS**
+Trạng thái: **SOURCE STANDARDIZATION NEAR LIVE TEST — NOT STATIC PASS — NOT RUNTIME PASS**
 
 Tài liệu này là checkpoint chống mất ngữ cảnh. Nếu tài liệu cũ mâu thuẫn, ưu tiên contract operator và checkpoint này.
 
@@ -133,11 +133,51 @@ FIVE_FLOOR_PATH = PlantingActions.PATH_30
 FLOOR_6_ROW      = PlantingActions.PATH_6
 ```
 
-Apple Supply giữ crop READY/GROWING semantics, không sở hữu navigation.
+Cotton Action chỉ cung cấp crop manipulation/batch neutral; Recovery quyết định vì sao cần bổ sung Bông.
 
-Cotton Action cung cấp current-view planting và neutral batch replenishment; Recovery quyết định vì sao cần batch Bông.
+## 7. Production Action architecture — ĐÃ TÁCH SHARED ENGINE
 
-## 7. TDHH — CHỐT PHÂN LOẠI + RECIPE BOUNDARY
+Canonical shared engine mới:
+
+```text
+ProductionPanelActions
+```
+
+Sở hữu reusable panel/slot mechanics:
+
+- count/identify empty slots;
+- product anchor recognition;
+- wrong-machine detection;
+- collect burst x5;
+- panel-open proof;
+- idle/capacity wait;
+- typed `InventoryFull`/`WrongProductionMachine` handoff.
+
+Product transactions độc lập dùng engine này:
+
+```text
+ProductionActions             → Táo sấy
+AppleJuiceProductionActions   → Nước táo
+YellowFabricProductionActions → Vải vàng
+RoseOilProductionActions      → TDHH
+```
+
+`warehouse_full_guard.py` patch **ProductionPanelActions**, không patch riêng Táo sấy. Vì vậy detector KHO QUÁ TẢI dùng chung cho mọi product path.
+
+TDHH khai báo explicit contract riêng:
+
+```text
+TARGET_COUNT = 7
+REQUIRED_COUNT = 7
+DRAG_ATTEMPTS = 3
+VERIFY_RECHECKS = 4
+```
+
+TDHH không kế thừa transaction Táo sấy.
+
+MaterialShortage resume-layer của Táo sấy/Nước táo/Vải vàng vẫn giữ nguyên; việc tách engine chỉ đổi ownership, không đổi gesture/threshold/retry hiện hữu.
+
+## 8. TDHH — CHỐT PHÂN LOẠI + RECIPE BOUNDARY
 
 - Hồng = crop/material.
 - Tuyết = crop/material.
@@ -157,25 +197,13 @@ Hồng 35
 
 `RoseOilRecipe` chỉ orchestration.
 
-`RoseOilProductionActions` sở hữu thao tác production và semantic Action:
+`RoseOilProductionActions` sở hữu production + semantic `close_panel_for_navigation()`.
 
-```text
-close_panel_for_navigation()
-```
+`KVAutomation` sở hữu shared instance `rose_oil_production`; Recipe không tự tạo Action riêng.
 
-Recipe không click tọa độ đóng panel trực tiếp nữa.
+## 9. Recipe / Function / Module boundary
 
-`KVAutomation` sở hữu một shared instance:
-
-```text
-rose_oil_production
-```
-
-Recipe dùng instance này thay vì tự `new RoseOilProductionActions`.
-
-## 8. Recipe / Function — AUDIT HIỆN TẠI
-
-Đã audit:
+Đã audit và khóa:
 
 - DriedAppleRecipe
 - AppleJuiceRecipe
@@ -184,22 +212,24 @@ Recipe dùng instance này thay vì tự `new RoseOilProductionActions`.
 - RecipeBook
 - FunctionOneWorkflow
 - FunctionTwoWorkflow
+- FriendRefreshWorkflow
+- Builder EnterGame/Sale/Function/MachineRepair modules
 
 Contract:
 
-- không raw `driver.click/swipe/swipe_points` trong Recipe/Function;
-- mỗi Function dùng một `RecipeBook` và một shared `RecoveryManager`;
+- Recipe/Function không raw `driver.click/swipe/swipe_points`;
+- mỗi Function dùng một `RecipeBook` + shared `RecoveryManager`;
 - Function 2 compose Function 1 core, không copy business actions;
-- Function 2 handoff known floor3 qua RecoveryManager rồi gọi RoseOilRecipe;
-- không tạo parallel RecoveryManager trong Function.
+- Builder Module chỉ delegate đúng module hiển thị, không insert business module ẩn;
+- boundary-delay wrapper không sở hữu một `run()` scheduler thứ hai.
 
-Legacy modules đã audit:
+Legacy adapters đã audit:
 
 - `auto_apple_dryer` = compatibility adapter gọi DriedAppleRecipe;
 - `auto_planting` = isolated module ghép semantic Navigation + Planting Actions;
 - `ProductionWarehouseRecovery` = compatibility facade delegate RecoveryManager.
 
-## 9. Recovery — SOURCE HIỆN ĐÚNG RANH GIỚI
+## 10. Recovery — SOURCE HIỆN ĐÚNG RANH GIỚI
 
 NavigationRecovery:
 
@@ -222,7 +252,7 @@ MaterialShortage:
 - Táo/Bông dùng policy hiện hữu;
 - không tự áp policy đó cho Hồng/Tuyết.
 
-## 10. Worker / scheduled restart — ĐÃ REFACTOR SOURCE
+## 11. Worker / scheduled restart — ĐÃ REFACTOR SOURCE
 
 Worker không còn:
 
@@ -256,17 +286,17 @@ Chưa gọi runtime PASS cho tới live test.
 
 Emergency mid-Function restart chưa bật vì cần durable checkpoint + operator-defined policy.
 
-## 11. Safety debt — KHÔNG TỰ SỬA
+## 12. Safety debt — KHÔNG TỰ SỬA
 
 ### Production panel open
 
-`ProductionActions._click_until_panel_open(...)` còn wait loop không bounded.
+`ProductionPanelActions._click_until_panel_open(...)` còn wait loop không bounded.
 
 Chưa có operator-defined max time/burst.
 
 ### Production idle-slot wait
 
-`ProductionActions._wait_for_idle_open_panel(...)` còn wait không bounded để chờ machine/slot.
+`ProductionPanelActions._wait_for_idle_open_panel(...)` còn wait không bounded để chờ machine/slot.
 
 Chưa có operator-defined max wait.
 
@@ -282,7 +312,7 @@ InventoryFull recovery hiện dừng khi Sale không còn tạo tiến triển; 
 
 Không bật cho tới durable checkpoint + restore/clear contract.
 
-## 12. Static verifiers
+## 13. Static verifiers
 
 Workflow:
 
@@ -295,6 +325,8 @@ tools/verify_recovery_architecture_contract.py
 tools/verify_function_boundary_delay_contract.py
 tools/verify_action_standardization_contract.py
 tools/verify_recipe_function_standardization_contract.py
+tools/verify_module_scheduler_boundaries_contract.py
+tools/verify_production_action_boundaries_contract.py
 ```
 
 Các verifier khóa:
@@ -309,12 +341,15 @@ Các verifier khóa:
 - neutral VP sale transaction + Sale 5 View;
 - Recipe/Function không raw input;
 - one shared RecoveryManager per Function;
-- TDHH Action đi qua KVAutomation facade;
-- RoseOilRecipe không trực tiếp đóng panel bằng tọa độ.
+- Module/Scheduler boundary;
+- shared `ProductionPanelActions` ownership;
+- warehouse-full guard bám shared panel engine;
+- TDHH không kế thừa Táo sấy;
+- MaterialShortage resume-layer được giữ.
 
-## 13. CI blocker hiện tại
+## 14. CI blocker
 
-Latest AUTO standardization workflow run cho HEAD `51a1a535...` vẫn:
+GitHub Actions các run gần đây có hiện tượng:
 
 ```text
 job=auto-contract
@@ -324,35 +359,43 @@ steps=null
 logs_url=null
 ```
 
-=> runner/provisioning chưa thực thi bất kỳ step nào.
+=> runner/provisioning không thực thi step.
 
 Do đó:
 
 ```text
 KHÔNG gọi STATIC PASS
-KHÔNG kết luận source compile fail từ run này
+KHÔNG kết luận source compile fail chỉ từ run này
 ```
 
-## 14. Checkpoint commits gần nhất
+Nếu runner tiếp tục không thực thi, pre-live static/build phải được xác minh bằng luồng DEV chính thức trên máy operator.
+
+## 15. Checkpoint commits gần nhất
 
 ```text
-f7dd679c  refactor(auto): move TDHH panel close gesture into Action
-bb629c91  refactor(auto): export TDHH production Action through shared facade
-f3f6b512  refactor(auto): expose TDHH production through KVAutomation facade
-7dd06c5e  refactor(auto): keep TDHH recipe orchestration-only
-cb4c54ee  test(auto): lock Recipe and Function orchestration boundaries
-51a1a535  ci(auto): verify Recipe and Function orchestration contracts
+5526eb9f  refactor(auto): extract shared production panel engine
+f9448a0a  refactor(auto): keep warehouse-full guard on shared production engine
+3bae064f  refactor(auto): make dried apple transaction use shared panel engine
+705343ec  refactor(auto): move apple juice panel helpers to shared engine
+caaeb0e9  refactor(auto): move yellow fabric panel helpers to shared engine
+148ec9ca  refactor(auto): move TDHH production onto shared panel engine
+ae259553  refactor(auto): export shared production panel Action
+8d1e2d5a  test(auto): lock shared production panel architecture
+5d713a31  ci(auto): verify shared production Action boundaries
 ```
 
-Các checkpoint trước vẫn giữ hiệu lực: shared PATH_6, generic farm routes, neutral VP sale facade, boundary-aware Function delay, worker fail-close và restart 3h.
+Các checkpoint trước vẫn giữ hiệu lực: Startup 60s, Sale 5 View, generic farm routes, shared planting geometry, Recipe/Function boundary, boundary-aware delay, worker fail-close, restart 3h.
 
-## 15. Điểm tiếp tục
+## 16. Điểm tiếp tục trước LIVE TEST
 
-Tiếp tục theo thứ tự:
+Không mở rộng refactor lớn nếu không phát hiện regression thật.
 
-1. audit FriendRefresh + Builder Modules;
-2. audit canonical imports/aliases còn sót;
-3. không đổi production wait/TDHH shortage/InventoryFull hard-limit khi operator chưa chốt;
-4. cập nhật verifier khi phát hiện boundary mới;
-5. khi CI runner thực thi được mới đánh dấu static PASS;
-6. runtime/live PASS chỉ sau operator test.
+Thứ tự còn lại:
+
+1. rà import/export/canonical aliases sau khi tách `ProductionPanelActions`;
+2. kiểm tra CI run mới; nếu vẫn `steps=null` ghi nhận hạ tầng;
+3. cập nhật handoff final pre-live;
+4. operator chạy `KVTM_DEV_CONTROL.bat` → `[1] Cap nhat source + build runtime DEV`;
+5. static/build sạch thì bắt đầu LIVE TEST module-by-module, rồi Function 1/2 end-to-end.
+
+Runtime/live PASS chỉ sau operator test thực tế.
