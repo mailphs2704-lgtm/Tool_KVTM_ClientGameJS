@@ -12,6 +12,7 @@ on:
       - 'tools/verify_recovery_architecture_contract.py'
       - 'tools/verify_function_boundary_delay_contract.py'
       - 'tools/verify_action_standardization_contract.py'
+      - 'tools/verify_recipe_function_standardization_contract.py'
       - '.github/workflows/auto-standardization-contract.yml'
   workflow_dispatch:
 
@@ -36,10 +37,12 @@ jobs:
             source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py \
             tools/verify_recovery_architecture_contract.py \
             tools/verify_function_boundary_delay_contract.py \
-            tools/verify_action_standardization_contract.py
+            tools/verify_action_standardization_contract.py \
+            tools/verify_recipe_function_standardization_contract.py
 
       - name: Verify AUTO architecture contracts
         run: |
           python tools/verify_recovery_architecture_contract.py
           python tools/verify_function_boundary_delay_contract.py
           python tools/verify_action_standardization_contract.py
+          python tools/verify_recipe_function_standardization_contract.py
