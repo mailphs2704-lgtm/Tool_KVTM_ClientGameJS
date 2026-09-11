@@ -3,7 +3,7 @@
 Cập nhật: 2026-09-11
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
-Trạng thái: **PRE-LIVE STANDARDIZATION — SOURCE REFACTORED, NOT STATIC PASS, NOT RUNTIME PASS**
+Trạng thái: **PRE-LIVE READY FOR LOCAL BUILD — SOURCE AUDIT COMPLETE, NOT STATIC PASS, NOT RUNTIME PASS**
 
 > Operator đã yêu cầu chuẩn hóa toàn bộ AUTO. Không tiếp tục refactor lớn nếu không phát hiện regression thật. Build/static PASS không thay cho live/runtime evidence.
 
@@ -278,18 +278,41 @@ Production verifier khóa:
 - warehouse-full guard patch shared engine;
 - material-shortage resume-layer được giữ.
 
-GitHub Actions gần đây có blocker hạ tầng:
+Run `AUTO standardization contract` cho commit `5d713a31...` vẫn bị blocker hạ tầng:
 
 ```text
+run_id=34614344739
 job=auto-contract
 conclusion=failure
-steps=null
-logs_url=null
+steps=[]
+runner_id=0
+runner_name=""
 ```
 
-Nếu run mới vẫn như vậy, **không gọi source fail và cũng không gọi static PASS**; chuyển pre-live verification sang build DEV chính thức trên máy operator.
+=> GitHub chưa cấp runner và **không thực thi compile/verifier**. Vì vậy:
 
-## 15. Checkpoint commits gần nhất
+```text
+KHÔNG gọi source compile fail
+KHÔNG gọi STATIC PASS
+```
+
+Pre-live static/build phải chuyển sang luồng DEV chính thức trên máy operator.
+
+## 15. Import/export audit sau ProductionPanel refactor — COMPLETE
+
+Đã kiểm tra source hiện tại:
+
+- `actions/__init__.py` export `ProductionPanelActions`;
+- warehouse-full guard được install trước product Action imports;
+- `ProductionActions` chỉ còn Táo sấy và subclass `ProductionPanelActions`;
+- Nước táo/Vải vàng dùng neutral `ProductionPanelActions` helper;
+- TDHH subclass trực tiếp `ProductionPanelActions` và khai báo explicit constants riêng;
+- `KVAutomation` vẫn khởi tạo các product Action bằng constructor tương thích;
+- không phát hiện regression import/ownership mới trong audit này.
+
+Đây là **source audit**, không thay cho Python compile thật.
+
+## 16. Checkpoint commits gần nhất
 
 ```text
 5526eb9f  refactor(auto): extract shared production panel engine
@@ -302,17 +325,36 @@ ae259553  refactor(auto): export shared production panel Action
 8d1e2d5a  test(auto): lock shared production panel architecture
 5d713a31  ci(auto): verify shared production Action boundaries
 047cac1e  docs(auto): refresh pre-live-test standardization checkpoint
+eda5b0e9  docs(auto): move handoff to pre-live-test checkpoint
 ```
 
-## 16. Điểm tiếp tục ngay trước LIVE TEST
+## 17. NEXT GATE — LOCAL BUILD, KHÔNG REFACTOR THÊM
 
-Không mở rộng kiến trúc nữa nếu audit không phát hiện regression thật.
+Source chuẩn hóa hiện đã tới gate build trước live test.
 
-1. audit import/export/canonical aliases sau ProductionPanel refactor;
-2. xem CI run mới có thực thi steps không;
-3. chốt handoff pre-live;
-4. operator chạy `KVTM_DEV_CONTROL.bat` → `[1] Cap nhat source + build runtime DEV`;
-5. build/static sạch → LIVE TEST smoke từng Module;
-6. tiếp theo Function 1 full loop → Function 2 full loop.
+Operator thực hiện đúng luồng dự án:
+
+```text
+D:\Tool_KVTM_Multi_DEV\KVTM_DEV_CONTROL.bat
+→ [1] Cap nhat source + build runtime DEV
+```
+
+Sau khi build/static thật sự sạch:
+
+```text
+LIVE TEST smoke modules
+→ Startup 60s
+→ Navigation
+→ Planting
+→ Production/Repair
+→ Sale 5 View
+→ Friend Refresh
+
+sau đó:
+Function 1 full loop
+→ Function 2 full loop
+```
+
+Nếu build fail, sửa đúng lỗi compile/import/contract trước. Không mở lại refactor kiến trúc rộng nếu không có bằng chứng regression.
 
 **Không gọi STATIC PASS hoặc RUNTIME PASS trước bằng chứng tương ứng.**
