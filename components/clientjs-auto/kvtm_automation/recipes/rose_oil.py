@@ -47,11 +47,13 @@ class RoseOilRecipeResult:
 
 
 class RoseOilRecipe:
-    """Function-2 business recipe: 35 Hồng + 28 Tuyết -> floor 5 -> 7 TDHH.
+    """Function-2 business recipe: 35 Hồng + 28 Tuyết -> produce 7 TDHH VP.
 
-    Business order lives here. PlantingActions owns crop/count gestures;
-    Navigation Actions own camera primitives; all Function-2 recipes share the
-    same RecoveryManager instance.
+    Hồng and Tuyết are crop/material inputs handled by PlantingActions.
+    TDHH (Tinh dầu hoa hồng) is a finished VP product handled by
+    RoseOilProductionActions; it is never treated as a crop/planting action.
+    Navigation Actions own camera primitives and all Function-2 recipes share
+    the same RecoveryManager instance.
     """
 
     REQUIRED_COUNT = 7
@@ -90,7 +92,7 @@ class RoseOilRecipe:
     def _require_count(self, count: int) -> None:
         if int(count) != self.REQUIRED_COUNT:
             raise ValueError(
-                f"TDHH recipe hiện khóa đúng {self.REQUIRED_COUNT} sản phẩm; "
+                f"VP TDHH recipe hiện khóa đúng {self.REQUIRED_COUNT} sản phẩm; "
                 f"requested={count}"
             )
 
@@ -179,7 +181,7 @@ class RoseOilRecipe:
 
         self.context.stage("auto-recipe-rose-oil-materials-pass")
         self.context.log(
-            "AUTO recipe TDHH materials • PASS • Hồng=35 • Tuyết=28 • candidate_floor=5"
+            "AUTO recipe TDHH nguyên liệu cây • PASS • Hồng=35 • Tuyết=28 • candidate_floor=5"
         )
         return RoseOilMaterialResult(
             roses_planted=roses_planted,
@@ -208,7 +210,7 @@ class RoseOilRecipe:
             )
 
         self.context.ensure_running()
-        self.context.stage("auto-recipe-rose-oil-production")
+        self.context.stage("auto-recipe-rose-oil-vp-production")
         produced = self.recovery.run_production(
             floor=5,
             label="Tinh dầu hoa hồng",
@@ -223,7 +225,7 @@ class RoseOilRecipe:
         self.recovery.to_main_from_floor(5, "TDHH recipe: cuối production")
         self.context.stage("auto-recipe-rose-oil-pass")
         self.context.log(
-            "AUTO recipe TDHH • PASS • 35 Hồng + 28 Tuyết + SX 7/7 + Sửa máy"
+            "AUTO recipe TDHH • PASS • nguyên liệu Hồng=35 + Tuyết=28 • SX VP TDHH=7/7 • Sửa máy"
         )
         return RoseOilRecipeResult(
             materials=materials,
