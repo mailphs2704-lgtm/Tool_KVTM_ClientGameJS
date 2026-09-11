@@ -49,9 +49,9 @@ class RoseOilRecipeResult:
 class RoseOilRecipe:
     """Function-2 business recipe: 35 Hồng + 28 Tuyết -> floor 5 -> 7 TDHH.
 
-    The Recipe owns business order. PlantingActions owns only crop recognition and
-    verified count/path gestures. Navigation Actions own all floor primitives.
-    This removes the old Function-specific planting choreography from ``actions/``.
+    Business order lives here. PlantingActions owns crop/count gestures;
+    Navigation Actions own camera primitives; all Function-2 recipes share the
+    same RecoveryManager instance.
     """
 
     REQUIRED_COUNT = 7
@@ -60,7 +60,12 @@ class RoseOilRecipe:
     ROSE_FIRST_SEGMENT = 30
     ROSE_FINAL_SEGMENT = 5
 
-    def __init__(self, automation: KVAutomation) -> None:
+    def __init__(
+        self,
+        automation: KVAutomation,
+        *,
+        recovery: RecoveryManager | None = None,
+    ) -> None:
         self.auto = automation
         self.context = automation.context
         self.production = RoseOilProductionActions(
@@ -69,9 +74,15 @@ class RoseOilRecipe:
             automation.wait,
             automation.speed_config,
         )
-        self.recovery = RecoveryManager(
+        self.recovery = recovery or RecoveryManager(
             automation,
             function_id="function_2",
+        )
+        if self.recovery.function_id != "function_2":
+            raise ValueError(
+                "RoseOilRecipe chỉ nhận RecoveryManager function_2"
+            )
+        self.recovery.register_navigation_routes(
             to_main_routes={5: self._floor_5_to_main},
             from_main_routes={5: self._main_to_floor_5},
         )
@@ -113,14 +124,11 @@ class RoseOilRecipe:
         )
 
     def _prepare_materials(self) -> RoseOilMaterialResult:
-        """Compose Hồng/Tuyết from reusable Navigation + Planting Actions."""
         self._require_native_1000()
         planting = self.auto.planting
         nav = self.auto.function_one_navigation
         upper_nav = self.auto.function_one_pass_three_navigation
 
-        # HỒNG: MAIN -> floor1. First path covers 30 pots across the first five
-        # visible layers, then goUp(4)+goUp(1) hands us floor6 for the final 5.
         self.context.stage("auto-recipe-rose-oil-rose-start")
         nav.main_to_floor_1()
         rose_first = planting.harvest_and_replant_current_view(
@@ -146,8 +154,6 @@ class RoseOilRecipe:
                 f"TDHH Hồng contract FAIL: {roses_planted}/{self.ROSE_REQUIRED}"
             )
 
-        # Return to the known MAIN boundary before starting Tuyết. This is a
-        # Recipe transition, not a hidden Planting Action side effect.
         self.context.stage("auto-recipe-rose-oil-rose-return-main")
         upper_nav.known_upper_floor_to_main_via_down_floor(
             "Function 2 Hồng tầng 6 → MAIN"
@@ -157,8 +163,6 @@ class RoseOilRecipe:
                 "Hồng 35/35 đã xong nhưng chưa chứng minh MAIN trước Tuyết"
             )
 
-        # TUYẾT: MAIN -> floor1, one exact 28-pot path. Then goUp(4) from the
-        # floor1 anchor to candidate floor5 and hand it directly to production.
         self.context.stage("auto-recipe-rose-oil-snow-start")
         nav.main_to_floor_1()
         snow = planting.harvest_and_replant_current_view(
