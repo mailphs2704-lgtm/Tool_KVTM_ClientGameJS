@@ -211,3 +211,162 @@ Khi operator nói `kết thúc`, phải có đủ:
 ```
 
 Sau đó mới audit/refactor code theo thứ tự ít regression nhất.
+
+## 9. ĐOẠN FLOW ĐÃ ĐƯỢC OPERATOR XÁC NHẬN — CHỐT
+
+Phần dưới đây là đoạn đầu của một vòng AUTO hoàn chỉnh mà operator đã mô tả và đã xác nhận bản chuẩn hóa là đúng ý. Đây là target thiết kế, chưa đồng nghĩa runtime source hiện tại đã được refactor theo flow này.
+
+### 9.1 Startup sau Login / Restart — CHỐT
+
+```text
+Login game thành công
+        ↓
+Camera mặc định ở MAIN
+        ↓
+Bắt đầu timer 60 giây
+        ↓
+Trong SUỐT 60 giây:
+    → liên tục check popup
+    → popup nào xuất hiện thì đóng popup đó ngay
+    → tiếp tục check popup khác
+        ↓
+Đủ 60 giây
+        ↓
+Dừng popup check
+        ↓
+Giữ camera ở MAIN
+```
+
+Quy tắc bắt buộc:
+
+- 60 giây là **cửa sổ kiểm tra popup liên tục**, không phải ngủ 60 giây rồi mới bắt đầu quét.
+- Sau login/restart, mặc định camera đã ở MAIN.
+- Không dùng `goDown(1)` chỉ để ép exact-main sau login/restart.
+- Startup kết thúc sau khi đủ 60 giây check/đóng popup theo flow trên.
+
+### 9.2 Mở quầy và bán VP theo Function — CHỐT
+
+Sau Startup:
+
+```text
+Mở quầy hàng
+        ↓
+VIEW 1 = 8 ô đầu mặc định
+```
+
+Tại mỗi View:
+
+```text
+Có ô vàng (VP đã bán)?
+   ├─ Có
+   │    ↓
+   │  Thu vàng
+   │    ↓
+   │  Check QC VP nếu có
+   │
+   └─ Không
+        ↓
+      Check QC VP nếu có
+```
+
+Sau đó tìm ô trống.
+
+#### Nếu có ô trống
+
+```text
+click ô trống
+→ mở Kho
+→ chọn Kho 2 / Kho thành phẩm
+→ quét VP được phép bán theo Function hiện tại
+```
+
+Với từng VP hợp lệ:
+
+```text
+Tìm thấy VP
+→ click VP
+→ check số lượng
+→ số lượng >= 10?
+   ├─ Có  → đăng bán x10 → tiếp tục lấp ô trống khác nếu còn
+   └─ Không → bỏ qua VP này → thử VP hợp lệ tiếp theo
+```
+
+Nếu không còn VP nào thuộc Function có số lượng đủ 10:
+
+```text
+đóng Kho
+→ đóng Quầy
+→ check chức năng tùy chọn
+→ nếu có thì chạy chức năng tùy chọn
+→ nếu không có thì bắt đầu vòng Function mới
+```
+
+#### Nếu View hiện tại không có ô trống
+
+```text
+swipe chuyển View bằng đúng 2 nhịp
+→ scan View tiếp theo
+→ chạy lại logic:
+   vàng → thu vàng → QC → tìm ô trống → bán VP
+```
+
+Tổng cộng tối đa 5 View:
+
+```text
+VIEW 1
+→ VIEW 2
+→ VIEW 3
+→ VIEW 4
+→ VIEW 5
+```
+
+View 5 là lượt kiểm tra cuối để tránh bỏ sót các ô cuối quầy.
+
+### 9.3 Điều kiện kết thúc Sale — CHỐT
+
+Sale kết thúc khi:
+
+```text
+A. Không còn VP hợp lệ có số lượng >= 10
+hoặc
+B. Đã kiểm tra đủ 5 View và không còn ô trống có thể sử dụng
+```
+
+Sau đó:
+
+```text
+đóng Kho nếu còn mở
+→ đóng Quầy
+→ check chức năng tùy chọn
+   ├─ có → chạy chức năng tùy chọn
+   └─ không → bắt đầu vòng Function mới
+```
+
+### 9.4 Phân nhóm kiến trúc tạm thời cho đoạn đã chốt
+
+```text
+GameStartupModule
+  ├─ Login verification
+  ├─ Popup watch 60s
+  └─ Popup close actions
+
+SellFunctionVpModule
+  ├─ Open stall action
+  ├─ Scan sold/gold slots action
+  ├─ Collect gold action
+  ├─ QC check/action
+  ├─ Find empty stall slot action
+  ├─ Open warehouse action
+  ├─ Select warehouse 2 action
+  ├─ Scan allowed VP action
+  ├─ Quantity >=10 check
+  ├─ List x10 action
+  ├─ Stall next-view action = đúng 2 swipe nhịp
+  └─ Close warehouse/stall actions
+
+Function/Scheduler boundary
+  ├─ optional function check
+  └─ start selected Function loop
+```
+
+Lưu ý: đây mới là mapping kiến trúc cho đoạn đã mô tả. Recovery point chi tiết của từng thao tác sẽ được bổ sung khi operator mô tả các nhánh lỗi tương ứng.
