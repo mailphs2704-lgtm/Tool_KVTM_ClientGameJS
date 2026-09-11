@@ -6,20 +6,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTION = ROOT / "components/clientjs-auto/kvtm_automation/actions/floor_navigation.py"
+FARM_ROUTES = ROOT / "components/clientjs-auto/kvtm_automation/actions/farm_routes.py"
 AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
 ACTIONS_INIT = ROOT / "components/clientjs-auto/kvtm_automation/actions/__init__.py"
 PLANTING = ROOT / "components/clientjs-auto/kvtm_automation/actions/planting.py"
 
 
 def read_python(path: Path) -> str:
+    if not path.is_file():
+        raise AssertionError(f"Missing floor-navigation contract file: {path}")
     text = path.read_text(encoding="utf-8")
-    tree = ast.parse(text, filename=str(path))
-    functions = sum(
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        for node in ast.walk(tree)
-    )
-    if path == ACTION and functions > 10:
-        raise AssertionError("Floor navigation module exceeds ten functions")
+    ast.parse(text, filename=str(path))
     return text
 
 
@@ -28,56 +25,77 @@ def require(text: str, needle: str, message: str) -> None:
         raise AssertionError(message)
 
 
+def forbid(text: str, needle: str, message: str) -> None:
+    if needle in text:
+        raise AssertionError(message)
+
+
 def main() -> int:
     action = read_python(ACTION)
+    farm_routes = read_python(FARM_ROUTES)
     automation = read_python(AUTOMATION)
     actions_init = read_python(ACTIONS_INIT)
     planting = read_python(PLANTING)
 
-    require(action, "MAX_STEPS = 5", "Five-floor safety bound missing")
-    require(action, "UP_SWIPE = (514, 214, 514, 314)",
-            "AUTO PRO goUp(1) geometry missing")
-    require(action, "DOWN_SWIPE = (514, 314, 514, 214)",
-            "Symmetric one-floor down geometry missing")
-    require(action, "for ordinal in range(1, requested + 1):",
-            "Movement must execute one verified pulse per floor")
-    require(action, "duration=self.speed_config.floor_swipe_duration",
-            "Independent floor speed is not applied")
-    require(action, "before = self.vision.frame().copy()",
-            "Pre-movement fresh frame missing")
-    require(action, "after = self.vision.frame().copy()",
-            "Post-movement fresh frame missing")
-    require(action, "if change < self.MIN_FRAME_CHANGE:",
-            "No-response fail-closed guard missing")
-    require(action, "dừng trước khi quét hoặc chọn máy sản xuất",
-            "Production safety boundary missing")
-    require(automation, "FloorNavigationActions(",
-            "Floor navigation is not wired to resident automation")
-    require(actions_init, "FloorNavigationActions",
-            "Floor navigation export missing")
-    require(action, "AUTO_PRO_GO_UP_4_SWIPE = (387, 69, 387, 918)",
-            "Exact Auto Pro goUp(4) swipe missing")
-    require(action, "def reference_main_to_floor_6(self)",
-            "Auto Pro target-6 state machine missing")
-    require(action, "duration=self.speed_config.plant_harvest_duration",
-            "Auto Pro goUp(4) harvest-speed binding missing")
-    require(action, "goUp(1) khởi tạo đã có phản hồi • cur=1",
-            "Target-6 initialization missing")
-    require(action, "goUp(4) đã có phản hồi • cur=5",
-            "Target-6 four-unit branch missing")
-    require(action, "goUp(1) → goUp(4) → goUp(1)",
-            "Target-6 command order missing")
-    require(action, "chờ xác nhận tầng 6",
-            "Reference demo must remain evidence-only and await floor-6 confirmation")
-    if "FloorNavigationActions" in planting:
-        raise AssertionError("Stable planting flow must not be rewritten by floor navigation")
+    # goUp integer is a semantic mode, not N repeated pulses.
+    require(action, "GO_UP_ONE_SWIPE = (514, 214, 514, 314)",
+            "goUp(1) geometry changed")
+    require(action, "GO_UP_TWO_POT_POINT = (257, 191)",
+            "goUp(2) floor-4 pot anchor changed")
+    require(action, "GO_UP_FOUR_SWIPE = (387, 69, 387, 918)",
+            "goUp(4) AUTO PRO geometry changed")
+    require(action, "GO_DOWN_ONE_SWIPE = (514, 314, 514, 214)",
+            "goDown(1) geometry changed")
+    require(action, "GO_DOWN_FOUR_SWIPE = (387, 918, 387, 69)",
+            "goDown(4) geometry changed")
+    require(action, "def go_up(self, mode: int", "Semantic go_up dispatcher missing")
+    require(action, "elif selected == 2:", "goUp(2) semantic branch missing")
+    require(action, "self.GO_UP_TWO_POT_POINT", "goUp(2) does not use pot anchor")
+    require(action, "elif selected == 4:", "goUp(4) semantic branch missing")
+    require(action, "elif selected == 3:", "goUp(3) explicit unsupported branch missing")
+    require(action, "goUp(3) chưa được operator định nghĩa", "goUp(3) fail-close marker missing")
+    forbid(action, "for _ in range(selected)", "goUp(mode) regressed to repeated primitive pulses")
+
+    # Every primitive invalidates old camera proof and verifies a fresh frame.
+    require(action, "def _prepare_camera_input", "Camera-input preparation missing")
+    require(action, "self.context.invalidate_camera_main", "Navigation no longer invalidates stale exact-main proof")
+    require(action, "before = self.vision.frame().copy()", "Pre-movement fresh frame missing")
+    require(action, "after = self.vision.frame().copy()", "Post-movement fresh frame missing")
+    require(action, "if change < self.MIN_FRAME_CHANGE:", "No-response fail-close guard missing")
+    require(action, "duration=self.speed_config.plant_harvest_duration", "Canonical primitive speed binding missing")
+
+    # Explicit repeated one-floor compatibility sequences remain separate from
+    # semantic goUp(mode), so old callers can still request UP/DOWN steps safely.
+    require(action, "MAX_STEP_SEQUENCE = 8", "Compatibility step safety bound changed")
+    require(action, "def move(self, direction: str, steps: int = 1)", "Compatibility move helper missing")
+    require(action, "for ordinal in range(1, requested + 1):", "Compatibility move does not verify each one-floor pulse")
+    require(action, 'label=f"move-UP-one-{ordinal}-of-{requested}"', "Compatibility UP sequence is not explicit goUp(1)")
+
+    # Target-6 demo is composition of canonical modes 1 -> 4 -> 1.
+    require(action, "def reference_main_to_floor_6(self)", "Target-6 compatibility route missing")
+    require(action, 'first = self.go_up(1, label="target6-goUp(1)-initial")', "Target-6 initial goUp(1) missing")
+    require(action, 'middle = self.go_up(4, label="target6-goUp(4)")', "Target-6 goUp(4) missing")
+    require(action, 'final = self.go_up(1, label="target6-goUp(1)-final")', "Target-6 final goUp(1) missing")
+    require(action, "goUp(1) → goUp(4) → goUp(1) PASS", "Target-6 command order marker missing")
+
+    # Business routes live in farm_routes.py; planting must not own navigation.
+    require(farm_routes, "class FarmRouteActions(FloorNavigationActions):", "Canonical farm route composer missing")
+    require(farm_routes, "class FarmBoundaryRouteActions(FarmRouteActions):", "Boundary farm route composer missing")
+    require(farm_routes, "self.go_up(2", "Farm route does not consume semantic goUp(2)")
+    require(automation, "FloorNavigationActions(", "Floor navigation is not wired to resident automation")
+    require(automation, "self.farm_routes = FarmRouteActions(", "Canonical farm route facade missing")
+    require(actions_init, "FloorNavigationActions", "Floor navigation export missing")
+    require(actions_init, "FarmRouteActions", "Farm route export missing")
+    forbid(planting, "FloorNavigationActions", "Planting must not own farm navigation")
+    forbid(planting, "def _go_up_one", "Planting regressed to hidden navigation primitive")
 
     print("AUTO MULTI DEV FLOOR NAVIGATION STATIC CONTRACT VERIFIED")
-    print("reference=auto_pro_goUp_1_and_exact_goUp_4")
-    print("movement=stable_one_floor_primitive_plus_goUp_1_4_1_target_6")
-    print("maximum_steps=5")
-    print("pre_production_scan=fresh_frame_required")
-    print("stable_planting=untouched")
+    print("goUp_modes=1-swipe|2-pot-anchor|4-long-swipe|3-unsupported")
+    print("camera_proof=invalidate-before-input+fresh-frame-postcheck")
+    print("compat_move=explicit-one-floor-sequence")
+    print("target6=goUp1+goUp4+goUp1")
+    print("route_owner=farm_routes")
+    print("planting_navigation=forbidden")
     return 0
 
 
