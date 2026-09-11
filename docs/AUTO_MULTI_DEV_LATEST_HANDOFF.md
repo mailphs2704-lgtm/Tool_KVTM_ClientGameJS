@@ -5,207 +5,36 @@ Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
 Trạng thái phiên: **STANDARDIZATION DESIGN IN PROGRESS**
 
-> Đây là tài liệu handoff hiện hành. Trong giai đoạn chuẩn hóa, tài liệu phải đọc đầu tiên là `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`.
+> Đây là handoff hiện hành cho giai đoạn chuẩn hóa AUTO KVTM MULTI DEV. Chưa refactor runtime/source cho tới khi operator nói `kết thúc` hoặc yêu cầu triển khai rõ ràng.
 
 ## 1. Read-first bắt buộc
 
-Theo thứ tự:
+Đọc theo thứ tự:
 
-1. `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md` — source of truth cho các quyết định chuẩn hóa mới nhất;
-2. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md` — checkpoint/recovery source + target;
-3. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md` — kiến trúc recovery nền;
-4. `docs/AUTO_MULTI_DEV_CLIENT_RESTART.md` — implementation restart hiện tại, lưu ý vẫn là contract cũ 2h;
-5. `docs/AUTO_MULTI_DEV_FRIEND_REFRESH.md`;
-6. `docs/AUTO_MULTI_DEV_RECIPE_ARCHITECTURE.md`;
-7. `AI_COORDINATION.md`.
+1. `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md` — kiến trúc tổng thể và các quyết định tích lũy;
+2. `docs/AUTO_MULTI_DEV_CONFIRMED_FLOW_LATEST.md` — contract mới nhất đã chốt cho Startup/Popup, Sale VP và Navigation goUp; **file này override wording cũ nếu có xung đột ở ba phần đó**;
+3. `docs/AUTO_MULTI_DEV_ACTIONS_STANDARDIZATION.md` — contract Actions dùng chung;
+4. `docs/AUTO_MULTI_DEV_FUNCTION_RECOVERY_MAPPING.md` — phương pháp phân loại Function/Module/Action/Recovery;
+5. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md`;
+6. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`;
+7. `docs/AUTO_MULTI_DEV_CLIENT_RESTART.md` — lưu ý implementation cũ vẫn là 2h;
+8. `docs/AUTO_MULTI_DEV_FRIEND_REFRESH.md`;
+9. `AI_COORDINATION.md`.
 
-Nếu target mới và tài liệu cũ xung đột, **không tự lấy contract cũ làm yêu cầu mới**. Kiểm tra nhãn `CHỐT / CẦN CHỐT / READY FOR LIVE TEST` trong `AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`.
+Nếu tài liệu cũ xung đột với quyết định mới, dùng tài liệu có wording mới hơn và nhãn `CHỐT / CẦN CHỐT / READY FOR LIVE TEST`.
 
-## 2. Trạng thái quan trọng hiện tại
+## 2. Giai đoạn hiện tại
 
-### Runtime/source trước giai đoạn chuẩn hóa
+Operator đang mô tả từng phần của một vòng Function hoàn chỉnh bằng ngôn ngữ nghiệp vụ. AI phải:
 
-Các baseline lịch sử vẫn cần giữ regression:
+- không yêu cầu operator biết Python/class/file;
+- phân loại từng đoạn thành Action / Module-Recipe / Function orchestration / Recovery;
+- xác định checkpoint/resume point ở các nhánh lỗi;
+- phản biện chỗ có xung đột/rủi ro;
+- cập nhật tài liệu sau mỗi đoạn đã được operator xác nhận;
+- chưa sửa runtime/source trước khi operator nói `kết thúc`.
 
-- Function 1 đã từng được operator runtime PASS nhiều vòng;
-- Sale VP baseline đã từng PASS;
-- QC/Quảng cáo VP LIVE PASS;
-- exact-main đa background đã có runtime proof;
-- visual nút `XUỐNG` upper-floor dùng detector, không blind click tọa độ cũ;
-- Friend Refresh định kỳ đã có source/runtime behavior;
-- ClientJS restart implementation hiện tại vẫn đang dùng **2 giờ** cho tới khi target 3h được triển khai và test;
-- Runtime dùng isolated worker + Bridge V3/CAPTURE3;
-- persistent settings ở `%APPDATA%\KVTM Multi DEV`.
-
-Các baseline trên không có nghĩa target chuẩn hóa mới đã PASS.
-
-### Global recovery mới
-
-Bug phát hiện từ quá trình chạy Function nhưng được xác định là **lỗi kiến trúc chung**, không thuộc riêng Function 2:
-
-```text
-module đang chạy
-→ lỗi recoverable (ví dụ kho đầy)
-→ recovery tạm rời module
-→ xử lý lỗi
-→ quay lại đúng checkpoint
-→ tiếp tục cùng module
-→ chỉ khi module + Function PASS mới cho scheduler tăng vòng
-```
-
-Commit source:
-
-`b52befd4dbfab5c3a17175f1ddd43948244dcf32`
-`feat: checkpoint recoverable AUTO modules before scheduler resume`
-
-Đã thêm lifecycle:
-
-- `MODULE_STARTED`;
-- `MODULE_INTERRUPTED`;
-- `MODULE_RESUMED`;
-- `MODULE_COMPLETED`.
-
-Production `InventoryFull` và `WrongProductionMachine` đã đi qua checkpoint executor ở source.
-
-**Trạng thái: READY FOR LIVE TEST, chưa runtime PASS.**
-
-## 3. Giai đoạn hiện tại: chuẩn hóa trước khi refactor
-
-Operator đang trình bày cấu trúc mong muốn từng phần. Trong giai đoạn này:
-
-- không tự refactor runtime theo spec mới nếu operator chưa nói kết thúc/triển khai;
-- mỗi yêu cầu mới phải cập nhật tích lũy vào `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`;
-- phải góp ý khi logic có xung đột;
-- phần chưa được xác nhận phải ghi `CẦN CHỐT`, không tự biến thành contract.
-
-## 4. Các mục đã thống nhất tới thời điểm này
-
-### 4.1 Game Startup / Login / Popup
-
-Sau ClientJS open/restart:
-
-```text
-login hoàn tất
-→ LOGIN_VERIFIED
-→ chờ 60 giây
-→ scan/đóng toàn bộ popup đã biết
-→ scan lại
-→ verify exact-main
-→ startup PASS
-```
-
-60 giây chỉ là settle delay, không thay thế vision/verification và không chạy sau mỗi Function loop.
-
-### 4.2 Sale VP theo Function
-
-Sale module phải tự chịu trách nhiệm:
-
-- exact-main;
-- mở quầy;
-- check + thu vàng;
-- check/bật QC VP hợp lệ;
-- tìm ô trống;
-- mở kho + chọn Kho thành phẩm;
-- quét đúng VP thuộc Function;
-- chỉ bán khi đủ đúng batch x10;
-- bán lần lượt tới hết ô trống hoặc hết VP hợp lệ;
-- đóng panel/quầy và về main.
-
-Thay đổi target mới:
-
-```text
-4 view -> 5 view
-VIEW 5 = final overlap/end check
-```
-
-View 5 nhằm bắt 2 ô cuối đang bị bỏ sót. Swipe ở cuối quầy ít/không dịch không được tự coi là lỗi boundary.
-
-### 4.3 Repair Machine
-
-Sau mỗi production hoàn tất phải đi qua một module sửa máy dùng chung. Không copy logic sửa máy theo từng Function nếu cùng một cơ chế có thể reuse.
-
-### 4.4 Friend Refresh
-
-Có hai vai trò riêng:
-
-1. periodic maintenance sau N vòng;
-2. recovery escalation khi local retry không giải quyết được lỗi.
-
-Recovery Friend Refresh phải về lại exact-main rồi resume checkpoint/module đang dở.
-
-Periodic counter và recovery counter độc lập.
-
-### 4.5 Restart ClientJS
-
-Target interval mới:
-
-```text
-3 giờ
-```
-
-Scheduled restart chỉ sau Function PASS / safe boundary. Nếu tới hạn giữa Function thì defer.
-
-Sau restart target startup phải đi qua:
-
-```text
-rebind đúng profile
-→ worker/Bridge mới
-→ login
-→ wait 60s
-→ popup cleanup
-→ exact-main
-→ scheduler tiếp tục
-```
-
-Source hiện tại vẫn là 2h; chưa sửa thành 3h trong giai đoạn thiết kế này.
-
-### 4.6 Recovery escalation
-
-Yêu cầu operator:
-
-```text
-lỗi chưa có giải pháp / retry vẫn lỗi
-→ Friend Refresh #1
-→ retry/resume
-→ Friend Refresh #2
-→ retry/resume
-→ vẫn lỗi thì nâng cấp restart ClientJS
-```
-
-Chi tiết Emergency Restart giữa Function còn cần chốt vì scheduled restart có contract khác. Nếu cho phép restart giữa Function thì phải có checkpoint bền qua worker/process restart.
-
-### 4.7 Checkpoint RAM
-
-Đã thống nhất:
-
-- mỗi profile chỉ giữ một `ActiveCheckpoint`;
-- update tại chỗ, không append vô hạn;
-- chỉ lưu metadata/state nhỏ;
-- không giữ screenshot, OpenCV frame, numpy image, template image, automation object, driver object hoặc log history không giới hạn.
-
-Checkpoint mục tiêu chỉ vài KB/profile và không đáng kể so với ClientJS/OpenCV/capture.
-
-## 5. Điểm CẦN CHỐT ở các lượt trao đổi sau
-
-Chưa tự triển khai các chi tiết sau cho tới khi operator xác nhận:
-
-- retry limit chính xác cho từng loại lỗi/module; operator nêu khoảng 3-5 lần, đề xuất kỹ thuật là limit cố định theo policy, không random;
-- Emergency/Recovery Restart có được phép xảy ra giữa Function hay không;
-- nếu có Emergency Restart giữa Function: schema + persistence + clear rule của durable checkpoint;
-- số lần Emergency Restart tối đa cho cùng checkpoint trước fail-close;
-- các module/function tiếp theo mà operator chưa trình bày.
-
-## 6. Nguyên tắc recovery không được regression
-
-- lỗi recoverable không được làm scheduler tự mở vòng Function mới;
-- checkpoint chỉ clear sau khi công việc tương ứng thật sự hoàn tất;
-- generic `ScreenTimeout` không blind retry nếu thao tác có thể đã tạo side effect;
-- không retry/Friend Refresh/restart vô hạn;
-- Function không copy production/recovery policy;
-- sale/recovery phải quay về đúng state/tầng/module cần resume;
-- build/static PASS không được ghi thành runtime PASS.
-
-## 7. Kiến trúc mục tiêu hiện tại
+## 3. Kiến trúc đã chốt
 
 ```text
 AUTO MAIN / SCHEDULER
@@ -222,71 +51,173 @@ GLOBAL RECOVERY / ERROR MANAGER
 ACTIVE CHECKPOINT (RAM, metadata-only)
 ```
 
-Nếu sau này chốt Recovery Restart giữa Function:
+Nguyên tắc:
 
 ```text
-ACTIVE CHECKPOINT (RAM)
-        +
-DURABLE CHECKPOINT (disk, nhỏ, chỉ để sống qua restart)
+Recovery != Function completion
+Recovery = interrupt -> recover -> resume same work
 ```
 
-## 8. Source paths quan trọng
+Mỗi profile chỉ giữ một ActiveCheckpoint nhỏ, update tại chỗ; không giữ frame/image/numpy/template/driver/log history nặng trong checkpoint.
+
+## 4. Startup / Login / Popup — CHỐT MỚI NHẤT
+
+Sau ClientJS open/restart:
 
 ```text
-components/clientjs-auto/kvtm_automation/recovery/
-components/clientjs-auto/kvtm_automation/recipes/
-components/clientjs-auto/kvtm_automation/workflows/auto_main/
-components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/
-components/clientjs-auto/kvtm_automation/workflows/auto_function_one/
-components/clientjs-auto/kvtm_automation/workflows/auto_function_two/
-components/clientjs-auto/kvtm_automation/actions/
+login game thành công
+→ camera mặc định ở MAIN
+→ bắt đầu timer 60 giây
+→ TRONG SUỐT 60 GIÂY liên tục check popup
+→ popup nào xuất hiện thì đóng ngay
+→ tiếp tục scan
+→ đủ 60 giây thì dừng popup check
+→ giữ nguyên camera MAIN
 ```
 
-Checkpoint source mới:
+Không dùng `goDown(1)` chỉ để exact-main sau login/restart. Đây là contract mới nhất và thay wording cũ kiểu chờ đủ 60 giây rồi mới popup sweep.
+
+## 5. Sale VP trước vòng Function — CHỐT MỚI NHẤT
+
+Mở quầy và check View 1 gồm 8 ô đầu mặc định.
+
+Trong mỗi View:
 
 ```text
-components/clientjs-auto/kvtm_automation/recovery/module_execution.py
+ô vàng?
+  Có → thu vàng → check QC
+  Không → check QC
+        ↓
+tìm ô trống
 ```
 
-## 9. Build/operator entry
-
-Sau khi bước thiết kế kết thúc và bắt đầu triển khai source:
+Nếu có ô trống:
 
 ```text
-KVTM_DEV_CONTROL.bat
-→ [1] Cap nhat source + build runtime DEV
+click ô trống
+→ mở Kho
+→ chọn Kho 2 / kho thành phẩm
+→ quét VP được Function cho phép
+→ chọn VP
+→ check SL >= 10
+   Có → đăng x10 → tiếp tục lấp ô trống khác
+   Không → thử VP hợp lệ khác
 ```
 
-Không được coi build thành công là runtime PASS. Live test vẫn bắt buộc cho behavior Windows/ClientJS/recovery.
+Nếu không còn VP hợp lệ đủ 10:
 
-## 10. Commit/tài liệu mốc mới
+```text
+đóng Kho
+→ đóng Quầy
+→ check chức năng tùy chọn
+→ nếu không có thì bắt đầu vòng Function mới
+```
 
-Source checkpoint:
+Nếu View hiện tại không có ô trống:
 
-- `b52befd4dbfab5c3a17175f1ddd43948244dcf32` — checkpoint recoverable modules before scheduler resume.
+```text
+swipe 2 nhịp
+→ View tiếp theo
+→ chạy lại scan vàng/QC/ô trống/sale
+```
 
-Documentation standardization:
+Tổng cộng 5 View. View 5 là final/end check. `swipe 2 nhịp` phải là Action dùng chung, Function không tự gửi hai swipe rời.
 
-- `c714a55962b5ded5bbad389fa1b9bf2bb9c25e72` — tạo `AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`;
-- `56a4737b53243212cb6b5f251577d2e62ce427a1` — cập nhật global recovery/checkpoint contract.
+Sale kết thúc khi không còn VP hợp lệ đủ 10 hoặc đã quét đủ 5 View mà không còn ô trống dùng được.
 
-## 11. Quy tắc cho phiên chat/AI tiếp theo
+## 6. Navigation Actions / goUp — CHỐT
 
-Nếu operator tiếp tục nói về cấu trúc AUTO:
+`goUp(n)` là mode hành động, không phải mặc định `n` lần swipe.
 
-1. đọc `AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md`;
-2. tiếp tục cộng dồn yêu cầu mới, không bắt operator trình bày lại;
-3. phản biện chỗ có xung đột;
-4. cập nhật tài liệu sau các mốc đã thống nhất;
-5. chưa refactor source cho tới khi operator yêu cầu triển khai/kết thúc giai đoạn thiết kế.
+```text
+goUp(1)
+= swipe ngắn lên 1 tầng
+= reference hiện tại khoảng (514,214) → (514,314)
 
-Nếu operator nói **"kết thúc"** phần chuẩn hóa:
+goUp(2)
+= click anchor/chậu đầu tiên tầng 4
+= ví dụ đang tầng 1 thì camera nhảy lên tầng 3
+= KHÔNG được thay bằng goUp(1) hai lần
+= tọa độ anchor chính xác chưa khóa
 
-1. chốt spec cuối;
-2. audit source hiện tại so với spec;
-3. lập thứ tự refactor ít regression nhất;
-4. triển khai từng module nhỏ;
-5. cập nhật static contracts;
-6. build;
-7. live test;
-8. chỉ ghi PASS theo evidence thực tế.
+goUp(4)
+= swipe dài 4 tầng
+= nếu đang tầng 1 thì lên tầng 5
+= reference hiện tại (387,69) → (387,918)
+= một gesture riêng, không phải 4 lần goUp(1)
+
+goUp(3)
+= CHƯA ĐỊNH NGHĨA
+= không tự suy đoán
+```
+
+Navigation Action chỉ cập nhật state/floor candidate sau khi thao tác thành công/đủ evidence. Nếu lỗi thì Recovery giữ checkpoint cũ.
+
+## 7. Actions architecture — CHỐT HƯỚNG
+
+`actions/` chứa toàn bộ khả năng thao tác tái sử dụng: click, swipe, nhận diện, mở/đóng panel, navigation, trồng/thu hoạch theo path/count, kho, stall, sale, production, repair...
+
+Function không chứa tọa độ/gesture/vision trực tiếp nếu Action tương ứng đã tồn tại.
+
+Ví dụ trồng 28 Tuyết không được làm `plant_27 + tự bù cây thứ 28` trong Function. Geometry/count nằm trong Action/path engine, còn Function/Recipe chỉ truyền crop + target/path cần thiết.
+
+## 8. Recovery/checkpoint hiện tại
+
+Source checkpoint trước giai đoạn chuẩn hóa đã có commit:
+
+`b52befd4dbfab5c3a17175f1ddd43948244dcf32`
+
+Lifecycle source:
+
+- `MODULE_STARTED`;
+- `MODULE_INTERRUPTED`;
+- `MODULE_RESUMED`;
+- `MODULE_COMPLETED`.
+
+Trạng thái: **READY FOR LIVE TEST**, chưa được tự gọi runtime PASS.
+
+Recovery escalation mục tiêu hiện tại:
+
+```text
+specialized recovery nếu có
+→ local retry có giới hạn
+→ Friend Refresh #1
+→ resume checkpoint + retry
+→ Friend Refresh #2
+→ resume checkpoint + retry
+→ recovery restart nếu policy được chốt
+→ fail-close nếu vượt giới hạn
+```
+
+Retry limit cụ thể theo từng loại lỗi và Emergency Restart giữa Function vẫn là phần cần chốt sau khi operator mô tả đủ các nhánh lỗi.
+
+## 9. Maintenance đã thống nhất
+
+- Periodic Friend Refresh và Recovery Friend Refresh là hai counter/luồng độc lập.
+- Target scheduled ClientJS restart mới là **3 giờ**.
+- Scheduled restart chỉ ở Function safe boundary.
+- Source/runtime cũ vẫn là 2h cho tới khi giai đoạn thiết kế kết thúc, refactor và live-test.
+- Emergency/Recovery Restart giữa Function chưa được tự coi là CHỐT; nếu cho phép thì cần durable checkpoint sống qua restart.
+
+## 10. Trạng thái source vs thiết kế
+
+Trong giai đoạn này:
+
+- tài liệu mới = target design;
+- source cũ có thể khác;
+- không tự sửa source vì khác spec;
+- không tự gọi spec mới là runtime PASS;
+- build/static PASS không thay live evidence.
+
+## 11. Điểm tiếp theo
+
+Operator đã xác nhận đoạn Startup + Sale trước vòng Function là đúng ý. Tiếp theo operator sẽ mô tả phần còn lại của vòng Function hoàn chỉnh và đánh dấu các nhánh lỗi.
+
+Khi nhận mô tả mới:
+
+1. không bắt operator lặp lại các phần đã chốt;
+2. tiếp tục từ đúng điểm sau Sale / bắt đầu Function;
+3. phân loại Action / Module / Function / Recovery;
+4. xác định checkpoint/resume semantics;
+5. cập nhật tài liệu;
+6. chưa code cho tới khi operator nói `kết thúc`.
