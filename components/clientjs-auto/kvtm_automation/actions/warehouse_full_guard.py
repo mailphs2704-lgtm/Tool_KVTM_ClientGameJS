@@ -18,6 +18,7 @@ WAREHOUSE_FULL_FALLBACK_X = (717, 392)
 WAREHOUSE_FULL_X_THRESHOLD = 0.72
 WAREHOUSE_FULL_GREEN_RATIO_MIN = 0.45
 WAREHOUSE_FULL_ORANGE_RATIO_MIN = 0.08
+WAREHOUSE_FULL_RED_X_RATIO_MIN = 0.035
 
 
 def _logical_crop(action, frame, zone):
@@ -57,19 +58,29 @@ def _orange_button_ratio(roi) -> float:
     )
 
 
-def _detect_live_warehouse_full(action, frame):
-    """Return (close_point, green_ratio, orange_ratio) for the live full popup."""
-    x_match = action.vision.find(
-        "x",
-        threshold=WAREHOUSE_FULL_X_THRESHOLD,
-        zone=WAREHOUSE_FULL_X_ZONE,
-        scales=(0.75, 0.85, 0.95, 1.00, 1.10, 1.20, 1.30),
-        click=False,
-        frame=frame,
+def _red_close_ratio(roi) -> float:
+    if roi is None or getattr(roi, "size", 0) == 0 or roi.ndim < 3:
+        return 0.0
+    blue = roi[:, :, 0].astype("int16")
+    green = roi[:, :, 1].astype("int16")
+    red = roi[:, :, 2].astype("int16")
+    return float(
+        (
+            (red > 145)
+            & (red > green + 35)
+            & (red > blue + 35)
+        ).mean()
     )
-    if x_match is None:
-        return None
 
+
+def _detect_live_warehouse_full(action, frame):
+    """Return visual proof for the supplied KHO QUA TAI popup.
+
+    Do not rely on one historical template. The popup is accepted only when three
+    independent visual properties agree: the large green board, orange upgrade
+    button, and red close area. The X template is used only to improve the click
+    center when available.
+    """
     modal = _logical_crop(action, frame, WAREHOUSE_FULL_MODAL_ZONE)
     green_ratio = _green_board_ratio(modal)
     if green_ratio < WAREHOUSE_FULL_GREEN_RATIO_MIN:
@@ -80,7 +91,21 @@ def _detect_live_warehouse_full(action, frame):
     if orange_ratio < WAREHOUSE_FULL_ORANGE_RATIO_MIN:
         return None
 
-    return x_match.center, green_ratio, orange_ratio
+    x_roi = _logical_crop(action, frame, WAREHOUSE_FULL_X_ZONE)
+    red_x_ratio = _red_close_ratio(x_roi)
+    if red_x_ratio < WAREHOUSE_FULL_RED_X_RATIO_MIN:
+        return None
+
+    x_match = action.vision.find(
+        "x",
+        threshold=WAREHOUSE_FULL_X_THRESHOLD,
+        zone=WAREHOUSE_FULL_X_ZONE,
+        scales=(0.75, 0.85, 0.95, 1.00, 1.10, 1.20, 1.30),
+        click=False,
+        frame=frame,
+    )
+    close_point = x_match.center if x_match is not None else WAREHOUSE_FULL_FALLBACK_X
+    return close_point, green_ratio, orange_ratio, red_x_ratio
 
 
 def install_warehouse_full_guard() -> None:
@@ -120,12 +145,12 @@ def install_warehouse_full_guard() -> None:
         if detected is None:
             return False, empty_ready
 
-        close_point, green_ratio, orange_ratio = detected
+        close_point, green_ratio, orange_ratio, red_x_ratio = detected
         self._warehouse_full_close_point = close_point
         self.context.detail(
             "AUTO kho day LIVE guard | "
             f"green={green_ratio:.3f} | orange={orange_ratio:.3f} | "
-            f"x={close_point}"
+            f"red_x={red_x_ratio:.3f} | x={close_point}"
         )
         return True, empty_ready
 
