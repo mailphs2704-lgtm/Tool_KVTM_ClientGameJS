@@ -25,10 +25,12 @@ from .planting import PlantingActions, PlantingSegmentResult
 from .production import ProductionResult
 from .selling import SellingActions
 from .stall import StallActions
+from .vp_sale_transaction import AutoSaleAttempt, VpSaleTransactionActions
 
 __all__ = [
     "AppleJuiceProductionActions",
     "AppleSupplyActions",
+    "AutoSaleAttempt",
     "BuyingActions",
     "CottonPlantingActions",
     "FarmBoundaryRouteActions",
@@ -53,5 +55,6 @@ __all__ = [
     "ProductionResult",
     "SellingActions",
     "StallActions",
+    "VpSaleTransactionActions",
     "YellowFabricProductionActions",
 ]
