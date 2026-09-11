@@ -20,7 +20,7 @@ from .material_shortage_production import (
 from .machine_repair import MachineRepairHandoff
 from .navigation import NavigationActions
 from .popup import PopupActions
-from .planting import PlantingActions
+from .planting import PlantingActions, PlantingSegmentResult
 from .production import ProductionResult
 from .selling import SellingActions
 from .stall import StallActions
@@ -45,6 +45,7 @@ __all__ = [
     "NavigationActions",
     "PopupActions",
     "PlantingActions",
+    "PlantingSegmentResult",
     "ProductionActions",
     "ProductionResult",
     "SellingActions",
