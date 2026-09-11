@@ -4,7 +4,7 @@ Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch: `develop/multi-auto-dev`
 Status: **SOURCE STANDARDIZATION IN PROGRESS — NOT RUNTIME PASS**
 
-Mục tiêu của audit này là giữ ranh giới:
+Mục tiêu:
 
 ```text
 FUNCTION = WHAT + order
@@ -15,13 +15,13 @@ RECOVERY = typed error + checkpoint + resume/escalation
 
 Không dùng build/static PASS thay cho live PASS.
 
-## 1. CANONICAL / DÙNG CHUNG
+## 1. CANONICAL ACTIONS
 
-### `actions/floor_navigation.py`
+### Navigation primitive
 
-Canonical primitive cho chuyển tầng.
+`actions/floor_navigation.py`
 
-Quy ước operator:
+Operator contract:
 
 ```text
 goUp(1) = swipe một tầng
@@ -30,76 +30,114 @@ goUp(4) = long swipe; từ tầng 1 → candidate tầng 5
 goUp(3) = undefined → fail-close
 ```
 
-Không được biến `goUp(n)` thành loop `goUp(1)`.
+Không được triển khai `goUp(n)` bằng loop `goUp(1)`.
 
-### `actions/farm_routes.py`
+### Farm route composer
 
-Canonical route composer dùng chung:
+`actions/farm_routes.py` hiện là **canonical implementation**, không còn kế thừa implementation từ Function 1.
+
+Canonical classes:
 
 - `FarmRouteActions`
 - `FarmBoundaryRouteActions`
+- `NavigationEvidence`
 
-`KVAutomation.farm_routes` và `KVAutomation.farm_boundary_routes` là facade mới. Tên `function_one_*` chỉ còn compatibility alias trỏ cùng object.
+Chúng sở hữu các route dùng chung như:
 
-### `actions/planting.py`
+- MAIN → tầng 1
+- tầng 1 → tầng 5
+- tầng 1 → tầng 6
+- MAIN → tầng 2 bằng `goUp(1) + goUp(1)`
+- tầng 1 → tầng 3 bằng `goUp(2)`
+- known floor → MAIN / boundary proof
 
-Canonical geometry/crop manipulation:
+`function_one_navigation.py` và `function_one_pass_three_navigation.py` chỉ còn compatibility wrapper, không được chứa route implementation mới.
 
-- PATH 5
-- PATH 27
-- PATH 28
-- PATH 30
+### Planting
 
-Crop identity tách khỏi geometry. Action không quyết định floor route hay thứ tự crop trong Function.
+`actions/planting.py` là canonical geometry/crop manipulation.
 
-### `actions/cotton_planting.py`
-
-Current-view cotton Action.
-
-- `plant_27_cotton()` = crop manipulation trên view caller đã đưa tới.
-- `wait_harvest_and_replant_27_cotton()` = chờ tới khi thực sự thu được một batch 27 Bông rồi gieo lại 27.
-
-Action này không biết vì sao cần batch Bông; `recovery/material_shortage.py` sở hữu lý do/route/resume.
-
-### `actions/apple_supply.py`
-
-Crop Action đặc thù cho semantics chờ Táo chín đã có live/source history.
-
-Đã chuẩn hóa:
-
-- kế thừa `PlantingActions`;
-- path 30 lấy từ `PlantingActions.PATH_30`;
-- không sở hữu navigation;
-- giữ nguyên wait/scan behavior cũ để tránh regression.
-
-`FLOOR_6_ROW` 6 chậu vẫn là geometry riêng đã có; chưa tạo project-wide PATH_6 cho tới khi được chuẩn hóa/verified riêng.
-
-### `actions/machine_repair.py`
-
-Ranh giới hiện đúng:
+Shared verified paths:
 
 ```text
-verified production handoff
-→ ?
-→ Sửa
-→ verify UI change
-→ close modal
+PATH_5
+PATH_6
+PATH_27
+PATH_28
+PATH_30
 ```
 
-Không chứa Friend Refresh/restart/scheduler policy.
+Crop identity tách khỏi geometry. Action không quyết định floor route hay thứ tự crop.
 
-### `actions/production.py`
+`PATH_6` được promote từ exact geometry hàng 6 chậu tầng 6 đã tồn tại trong Apple Supply; behavior không đổi.
 
-Shared panel/slot engine + current Táo sấy transaction.
+### Apple Supply
 
-Canonical reusable pieces gồm:
+`actions/apple_supply.py`
 
-- open/verify product panel;
-- detect wrong product/machine;
-- detect warehouse full;
-- count empty production slots;
-- collect burst x5;
-- verify each queue drag by slot delta.
+- kế thừa `PlantingActions`;
+- `FIVE_FLOOR_PATH = PlantingActions.PATH_30`;
+- `FLOOR_6_ROW = PlantingActions.PATH_6`;
+- giữ semantics READY/GROWING/wait đã có;
+- không sở hữu navigation.
+
+### Cotton
+
+`actions/cotton_planting.py`
+
+- `plant_27_cotton()` = crop manipulation current-view;
+- `wait_harvest_and_replant_27_cotton()` = lấy một batch 27 Bông thật rồi gieo lại;
+- Action không biết vì sao cần batch Bông.
+
+`recovery/material_shortage.py` sở hữu route/reason/resume.
+
+### VP sale transaction
+
+`actions/vp_sale_transaction.py`
+
+Canonical facade:
+
+```text
+VpSaleTransactionActions
+```
+
+Tên cũ `AutoMainSellingActions` chỉ là implementation lịch sử/base compatibility. Code Sale mới không phụ thuộc tên AUTO Main.
+
+Một transaction gồm:
+
+```text
+empty slot
+→ Kho 2
+→ VP allowed by Function
+→ proof số lượng >= 10 / exact x10
+→ đăng bán
+→ post-sale proof
+```
+
+Vòng 5 View không thuộc Action này.
+
+### Sale Module
+
+`workflows/auto_vp_sale/workflow.py`
+
+Business order đã chốt:
+
+```text
+View 1..5
+→ thu vàng
+→ QC nếu có
+→ tìm ô trống
+→ Kho 2
+→ VP Function
+→ x10
+→ 2 swipe sang View tiếp theo
+```
+
+View 5 là final boundary/overlap check.
+
+### Production / Repair
+
+`actions/production.py` sở hữu shared product-panel/slot primitives.
 
 Gesture retry hiện bounded:
 
@@ -108,178 +146,155 @@ DRAG_ATTEMPTS = 3
 VERIFY_RECHECKS = 4
 ```
 
-Xem Safety Debt bên dưới cho hai wait loop chưa bounded.
+Product Actions:
 
-### `actions/apple_juice_production.py`
+- Táo sấy
+- Nước táo
+- Vải vàng
+- TDHH
 
-Product transaction cho VP Nước táo. Dùng shared `ProductionActions` panel/slot engine. Candidate floor-2 probe bounded riêng.
+**TDHH/Tinh dầu hoa hồng là finished VP. Hồng và Tuyết là crop/material input.**
 
-### `actions/yellow_fabric_production.py`
+`actions/machine_repair.py` chỉ sở hữu transaction `? → Sửa → verify → close`, không chứa scheduler/Friend Refresh/restart policy.
 
-Product transaction cho VP Vải vàng. Dùng shared production panel/slot engine.
+## 2. DOMAIN ACTIONS — RANH GIỚI HIỆN ĐÚNG
 
-### `actions/rose_oil_production.py`
+Đã audit và hiện không thấy Scheduler/Function completion nằm trong:
 
-Product transaction cho **VP TDHH / Tinh dầu hoa hồng**.
+- `inventory.py`
+- `selling.py`
+- `buying.py`
+- `popup.py`
+- `stall.py`
+- `stall_advertising.py`
+- `warehouse_full_guard.py`
+- `item_recognition.py`
 
-TDHH là finished VP, không phải crop.
+Các file này có thể có retry/recheck cục bộ để chứng minh thao tác UI, nhưng không được tự quyết định Function PASS, Friend Refresh hay ClientJS restart.
 
-### `actions/stall.py`
+## 3. COMPATIBILITY-ONLY
 
-Low/domain-level stall interaction:
+### Function 1 navigation names
 
-- open/close stall;
-- collect gold;
-- two-swipe `next_view()`;
-- slot geometry/scan helpers.
-
-Business loop 5 View không nằm ở đây; nó nằm trong `AutoVpSaleWorkflow`.
-
-### `actions/inventory.py`, `selling.py`, `item_recognition.py`, `stall_advertising.py`
-
-Domain Actions. Chúng thao tác/xác minh UI và transaction; Scheduler/Function completion nằm ngoài.
-
-## 2. DOMAIN ACTION ĐÚNG RANH GIỚI NHƯNG TÊN CŨ CÒN GÂY NHẦM
-
-### `actions/auto_main_selling.py`
-
-Thực tế là VP sale transaction Action, không phải AUTO Main scheduler.
-
-Nó xử lý:
+`actions/function_one_navigation.py`
 
 ```text
-own stall ready
-→ empty slot
-→ storage2
-→ scan allowed VP
-→ selected item proof
-→ exact x10 proof
-→ place sale
-→ post-sale stall proof
+FunctionOneNavigationActions(FarmRouteActions)
 ```
 
-Vòng 5 View, vàng/QC, và quyết định kết thúc Sale nằm trong `AutoVpSaleWorkflow`, nên ranh giới behavior hiện đúng.
-
-Có thể đổi facade/tên thành `VpSaleTransactionActions` sau để bỏ coupling bằng tên; không cần đổi gameplay.
-
-## 3. COMPATIBILITY-ONLY / KHÔNG DÙNG CHO CODE MỚI
-
-### `actions/function_one_navigation.py`
-### `actions/function_one_pass_three_navigation.py`
-
-Implementation lịch sử hiện được generic facade kế thừa. Code mới phải dùng:
+`actions/function_one_pass_three_navigation.py`
 
 ```text
-farm_routes
-farm_boundary_routes
+FunctionOnePassThreeNavigationActions(FarmBoundaryRouteActions)
 ```
 
-Hai file này chưa xóa để không phá import/runtime/Builder cũ.
+Hai file không còn implementation thật.
 
-### `actions/function_two_planting.py`
+### Function 2 planting
 
-Retired khỏi business runtime.
+`actions/function_two_planting.py`
 
-- constants trỏ lại `PlantingActions`;
-- `harvest_and_replant_materials()` fail rõ;
-- choreography authoritative nằm trong `RoseOilRecipe`.
+- compatibility facade only;
+- geometry lấy từ `PlantingActions`;
+- choreography authoritative nằm trong `RoseOilRecipe`;
+- method choreography cũ fail rõ để tránh hai nguồn business logic.
 
-Không được thêm business flow mới vào file này.
+### Planting legacy wrappers
 
-### legacy wrappers trong `actions/planting.py`
+Một số helper cũ trong `planting.py` vẫn giữ để tránh vỡ import/diagnostic. Code mới phải dùng current-view Planting + Navigation riêng.
 
-Các helper như `_go_up_one`, `_open_seed_picker`, `_plant_27` chỉ giữ compatibility. Code mới phải tách Navigation và current-view Planting Action.
+## 4. RECOVERY-AWARE ACTION
 
-## 4. RECOVERY-AWARE ACTION — CẦN GIỮ PROGRESS, KHÔNG ĐƯỢC SỞ HỮU POLICY
+`actions/material_shortage_production.py` được phép giữ progress nhỏ để resume side effect an toàn:
 
-### `actions/material_shortage_production.py`
+```text
+queued
+slot evidence
+recovery_count
+```
 
-Nhiệm vụ đúng của lớp Action:
-
-- detect material-shortage visual;
-- raise typed `MaterialShortage`;
-- giữ progress queue nhỏ trong memory (`queued`, slot evidence...);
-- khi được caller gọi lại thì tiếp tục phần còn thiếu, không replay toàn bộ VP đã xếp.
-
-Policy:
+Nó không sở hữu policy:
 
 ```text
 về MAIN
-→ bổ sung cây
-→ quay đúng máy
-→ retry/resume
+→ bổ sung nguyên liệu
+→ quay đúng floor/machine
+→ Friend Refresh
+→ restart
 ```
 
-nằm ở `recovery/material_shortage.py`, không nằm trong Action.
+Policy thuộc `recovery/`.
 
-Một helper Bông recovery-named cũ vẫn có thể còn trong subclass compatibility, nhưng Recovery chuẩn mới không gọi nó nữa.
+## 5. FUNCTION BOUNDARY DELAY — CHỐT
 
-## 5. SALE MODULE — RANH GIỚI ĐÃ AUDIT
-
-`workflows/auto_vp_sale/workflow.py` sở hữu business loop:
+Thời gian chờ giữa hai Function là **minimum boundary time**, không phải sleep cố định cộng thêm sau Sale.
 
 ```text
-View 1..5
-→ thu vàng
-→ QC nếu có
-→ empty slot
-→ sale transaction
-→ 2 swipe sang view tiếp theo
+Function PASS
+→ bắt đầu boundary timer
+→ Sale/Friend Refresh/maintenance nếu đến hạn
+→ elapsed = thời gian maintenance đã dùng
+→ chỉ sleep phần delay còn thiếu
+→ Function tiếp theo
 ```
 
-Thứ tự operator-approved:
+Nếu maintenance đã dùng >= configured delay thì Function tiếp theo bắt đầu ngay.
 
-```text
-VÀNG → QC → Ô TRỐNG → KHO 2 → VP FUNCTION → x10
-```
+Áp dụng cho:
 
-View 5 là final boundary/overlap check.
+- AUTO Main
+- AUTO Builder `sale_after_each_loop`
 
-`AutoMainSellingActions` chỉ xử lý một transaction sale hợp lệ; không quyết định Function PASS hoặc Scheduler next-loop.
+Verifier: `tools/verify_function_boundary_delay_contract.py`.
 
-## 6. SAFETY DEBT — KHÔNG TỰ SỬA KHI CHƯA CÓ CONTRACT OPERATOR
+## 6. SAFETY DEBT — KHÔNG TỰ SỬA
 
-### Production panel open wait
+### Production panel open
 
-Trong `ProductionActions._click_until_panel_open(...)` hiện có `while True`.
+`ProductionActions._click_until_panel_open(...)` còn `while True`.
 
-Nó liên tục x5 collect burst cho tới khi:
-
-- đúng product panel xuất hiện;
-- wrong machine signal;
-- warehouse full signal.
-
-Chưa có operator-defined maximum time/burst cho normal production open. Không tự invent timeout vì có thể cắt một machine đang legitimate chờ/render/collect.
+Chưa có operator-defined max time/burst. Không tự đặt timeout.
 
 ### Production idle-slot wait
 
-`ProductionActions._wait_for_idle_open_panel(...)` cũng có `while True` để giữ panel chờ máy chạy xong/đủ slot trống.
+`ProductionActions._wait_for_idle_open_panel(...)` còn chờ không bounded để máy chạy xong/đủ slot.
 
-Chưa có operator-defined maximum wait. Đánh dấu **CẦN CHỐT**.
+Chưa có operator-defined max wait. Không tự đặt timeout.
 
-### TDHH shortage
+### TDHH thiếu Hồng/Tuyết
 
-`RoseOilProductionActions` hiện nếu thiếu Hồng/Tuyết vẫn raise `ScreenTimeout`; chưa có typed material recovery cho TDHH.
-
-Không tự suy diễn cách bổ sung Hồng/Tuyết hoặc resume TDHH cho tới khi operator mô tả điểm bắt lỗi này.
+Hiện chưa có typed material recovery được operator mô tả/chốt. Không tự suy diễn cách bổ sung và resume.
 
 ### Emergency restart
 
-Không bật emergency mid-Function restart khi chưa có durable checkpoint + policy rõ. Scheduled 3h restart tại safe Function boundary là luồng riêng.
+Không bật mid-Function emergency restart cho tới khi durable checkpoint + policy được chốt.
 
-## 7. NEXT SAFE REFACTOR TARGETS
+Scheduled restart 3 giờ tại safe Function boundary là luồng riêng.
 
-Không cần operator bổ sung gameplay để làm các bước sau:
+## 7. VERIFIERS
 
-1. thêm neutral facade `VpSaleTransactionActions` và giữ `AutoMainSellingActions` compatibility alias;
-2. tiếp tục retire tên Function-specific trong import mới;
-3. khóa các ranh giới trên bằng verifier;
-4. cập nhật handoff/checkpoint.
+CI standardization hiện gọi:
 
-Cần operator mô tả/CHỐT trước khi làm:
+```text
+tools/verify_recovery_architecture_contract.py
+tools/verify_function_boundary_delay_contract.py
+tools/verify_action_standardization_contract.py
+```
 
-1. timeout/burst tối đa khi mở production panel;
-2. thời gian tối đa chờ production slot rảnh;
-3. TDHH thiếu Hồng/Tuyết recovery;
-4. các unknown-error escalation cụ thể;
-5. emergency restart/durable checkpoint chi tiết.
+`verify_action_standardization_contract.py` khóa:
+
+- PATH 5/6/27/28/30;
+- Apple Supply dùng shared geometry;
+- generic farm routes là canonical implementation;
+- Function 1 navigation chỉ compatibility wrapper;
+- VP sale dùng neutral transaction facade;
+- Sale Module giữ 5 View + vàng → QC;
+- Function 2 planting choreography không quay lại Actions.
+
+## 8. TRẠNG THÁI
+
+```text
+SOURCE STANDARDIZATION IN PROGRESS
+≠ STATIC PASS nếu CI chưa thực thi thành công
+≠ RUNTIME PASS cho tới khi operator live test
+```
