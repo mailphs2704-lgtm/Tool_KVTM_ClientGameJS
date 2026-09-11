@@ -15,7 +15,7 @@ FILE_FUNCTIONS = (
     "Thay khối mô tả AUTO MULTI DEV bằng menu chọn Function + số vòng giữa hai lần bán",
     "Hiển thị trực tiếp thời gian chờ giữa các vòng Function trên AUTO MULTI DEV",
     "Thêm công tắc chung qua nhà bạn #1 sau mỗi ba vòng Function để làm mới scene/item treo",
-    "Restart ClientJS định kỳ 2 giờ nhưng chỉ sau Function đủ vòng và lượt bán VP an toàn hoàn tất",
+    "Restart ClientJS định kỳ 3 giờ tại safe Function boundary sau lượt bán VP an toàn",
     "Tự relaunch đúng profile ClientJS rồi gắn lại worker AUTO với cấu hình cũ",
     "Bổ sung Tốc độ thu VP vào đúng cửa sổ Cấu hình tốc độ hiện có",
     "Đưa Log hành động + Log chi tiết xuống hàng riêng dưới nút AUTO MULTI DEV",
@@ -25,10 +25,10 @@ FILE_FUNCTIONS = (
 
 _AUTO_MAIN_FUNCTION_OPTIONS = (
     ("function_1", "9 Táo sấy - 9 Vải vàng"),
-    ("function_2", "9 Táo sấy - 9 Vải vàng - 7 tinh dầu hoa hồng"),
+    ("function_2", "9 Táo sấy - 9 Vải vàng - 7 Tinh dầu hoa hồng"),
 )
 _FRIEND_REFRESH_SETTING_KEY = "auto_multi_dev_friend_refresh_enabled"
-_CLIENT_RESTART_INTERVAL_SECONDS = 7200.0
+_CLIENT_RESTART_INTERVAL_SECONDS = 10800.0
 _CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"
 
 
@@ -241,8 +241,9 @@ def install_auto_builder_integration(app_class, core) -> None:
             text=(
                 "Vào game + đóng popup → bán VP lần 1 → chạy Function. "
                 "Nếu bật làm mới: sau vòng 3/6/9..., bán đến hạn xong sẽ sang "
-                "nhà bạn đầu tiên rồi quay về. Restart ClientJS định kỳ 2 giờ; "
-                "đến giờ vẫn chờ Function đủ vòng + bán VP xong mới restart."
+                "nhà bạn đầu tiên rồi quay về. Restart ClientJS định kỳ 3 giờ; "
+                "nếu đến hạn giữa Function thì chờ Function hiện tại PASS, "
+                "chạy sale an toàn tại boundary rồi mới restart."
             ),
             style="AutoValue.TLabel",
             anchor="w",
@@ -360,7 +361,7 @@ def install_auto_builder_integration(app_class, core) -> None:
             f"AUTO MULTI DEV • {label} • bán lại sau {sale_every} vòng • "
             f"chờ giữa vòng {loop_delay:g}s • qua bạn #1/3 vòng="
             f"{'BẬT' if friend_refresh_enabled else 'TẮT'} • "
-            "restart ClientJS=2 giờ/safe-sale-boundary"
+            "restart ClientJS=3 giờ/safe-Function-boundary"
         )
         original_start_clean_session(self)
 
@@ -482,6 +483,9 @@ def install_auto_builder_integration(app_class, core) -> None:
                 "LỖI • restart ClientJS: mất cấu hình AUTO để resume"
             )
             return
+        # The safe boundary sale already completed immediately before restart.
+        # Skip only the duplicated startup sale once. A fresh AutoMainWorkflow
+        # instance starts a new independent three-hour ClientJS lifetime timer.
         resume["skip_initial_sale_once"] = True
         resume["client_restart_interval_seconds"] = (
             _CLIENT_RESTART_INTERVAL_SECONDS
@@ -493,7 +497,8 @@ def install_auto_builder_integration(app_class, core) -> None:
             "AUTO MULTI DEV • ClientJS cũ đã đóng • đang mở lại đúng tài khoản"
         )
         self.note.set(
-            "Restart ClientJS • relaunch profile → worker mới → vào game → tiếp tục AUTO"
+            "Restart ClientJS • relaunch đúng profile → worker/Bridge mới → "
+            "startup 60s → tiếp tục AUTO"
         )
         self._start_clean_auto_profile_only(profile_id)
 
@@ -511,10 +516,19 @@ def install_auto_builder_integration(app_class, core) -> None:
     def finish_clean_main(self, profile_id: str, outcome: str, payload: dict) -> None:
         profile_id = str(profile_id)
         reason = str(payload.get("reason") or "")
-        if outcome == "stopped" and reason.startswith(_CLIENT_RESTART_REQUEST_PREFIX):
-            # Keep the old supervisor thread registered until its finally block
-            # exits. _resume_auto_after_client_restart waits on it before any
-            # replacement worker is allowed to start.
+        lifecycle_event = str(payload.get("lifecycle_event") or "")
+        scheduled_restart = (
+            outcome == "client_restart_requested"
+            or lifecycle_event == "client_restart_requested"
+            or (
+                outcome == "stopped"
+                and reason.startswith(_CLIENT_RESTART_REQUEST_PREFIX)
+            )
+        )
+        if scheduled_restart:
+            # Scheduled restart is lifecycle orchestration only. RecoveryManager
+            # is not involved because the current Function and safe-boundary sale
+            # have already completed before this signal is allowed to escape.
             self._auto_main_restart_pending.add(profile_id)
 
             proc = self.processes.get(profile_id)
@@ -526,10 +540,11 @@ def install_auto_builder_integration(app_class, core) -> None:
                     pass
 
             self.auto_multi_dev_status.set(
-                "AUTO MULTI DEV • SAFE RESTART • đã bán VP xong • đang đóng ClientJS"
+                "AUTO MULTI DEV • SAFE RESTART 3H • sale boundary đã xong • đang đóng ClientJS"
             )
             self.note.set(
-                "Đến hạn restart • Function/sale đã hoàn tất • không cắt ngang transaction"
+                "Đến hạn 3 giờ • Function hiện tại PASS + sale an toàn đã hoàn tất • "
+                "không cắt ngang transaction"
             )
             self.after(
                 500,
