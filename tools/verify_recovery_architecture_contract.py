@@ -15,7 +15,14 @@ MANAGER = CLEAN / "recovery/manager.py"
 LEGACY = CLEAN / "workflows/production_warehouse_recovery.py"
 FUNCTION_ONE = CLEAN / "workflows/auto_function_one/workflow.py"
 RECIPE_BOOK = CLEAN / "recipes/book.py"
+ROSE_OIL = CLEAN / "recipes/rose_oil.py"
+GAME_SESSION = CLEAN / "workflows/game_session/workflow.py"
+AUTO_MAIN = CLEAN / "workflows/auto_main/workflow.py"
 AUTO_BUILDER_INIT = CLEAN / "workflows/auto_builder/__init__.py"
+WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
+MULTI_TOOL = ROOT / "source-archive/multi-current/kvtm_multi_tool"
+BUILDER_INTEGRATION = MULTI_TOOL / "auto_builder_integration.py"
+PROFILE_SETTINGS = MULTI_TOOL / "auto_main_profile_settings.py"
 
 
 def read(path: Path) -> str:
@@ -53,7 +60,13 @@ def main() -> int:
     legacy = read(LEGACY)
     function_one = read(FUNCTION_ONE)
     recipe_book = read(RECIPE_BOOK)
+    rose_oil = read(ROSE_OIL)
+    game_session = read(GAME_SESSION)
+    auto_main = read(AUTO_MAIN)
     auto_builder_init = read(AUTO_BUILDER_INIT)
+    worker = read(WORKER)
+    builder_integration = read(BUILDER_INTEGRATION)
+    profile_settings = read(PROFILE_SETTINGS)
 
     # errors.py declares signals only.
     require(errors, "class WrongProductionMachine(NavigationError):", "Wrong-machine signal missing")
@@ -97,6 +110,7 @@ def main() -> int:
     require(nav, "def to_main_from_floor(", "Floor->main API missing")
     require(nav, "def from_main_to_floor(", "Main->floor API missing")
     require(nav, "def from_floor_to_floor(", "Floor->floor API missing")
+    require(nav, "def register_routes(", "Navigation route registration missing")
     require(nav, "to_main_routes:", "Injected to-main routes missing")
     require(nav, "from_main_routes:", "Injected from-main routes missing")
     require(nav, "between_floor_routes:", "Injected between-floor routes missing")
@@ -132,11 +146,12 @@ def main() -> int:
         "AUTO Builder __init__ eagerly imports loop-delay patch; keep Builder runtime lazy",
     )
 
-    # Manager is the one recovery facade consumed directly by RecipeBook. Functions
-    # receive the same manager through their RecipeBook instead of rebuilding policy.
+    # Manager is the one recovery facade consumed directly by RecipeBook. Recipes
+    # may add deterministic routes but must keep the same manager instance.
     require(manager, "class RecoveryManager:", "RecoveryManager missing")
     require(manager, "event_handlers:", "Per-Function event injection missing")
     require(manager, "between_floor_routes:", "Per-Function route injection missing")
+    require(manager, "def register_navigation_routes(", "Shared manager route registration missing")
     require(manager, "def recover_unknown_to_floor(", "Manager unknown-floor facade missing")
     require(manager, "def from_floor_to_floor(", "Manager known-floor facade missing")
     require(manager, "def run_module(", "Manager module checkpoint facade missing")
@@ -145,9 +160,52 @@ def main() -> int:
     require(recipe_book, "from ..recovery import RecoveryManager", "RecipeBook recovery import missing")
     require(recipe_book, "self.recovery = recovery or RecoveryManager(",
             "RecipeBook does not share one RecoveryManager")
+    require(recipe_book, "recovery=self.recovery", "Recipes are not receiving shared recovery")
 
-    # Old class remains adapter only; new Function 1 must compose RecipeBook and
-    # must not duplicate unknown-camera or production recovery loops.
+    # TDHH classification is explicit: Hồng/Tuyết are planting materials, TDHH
+    # itself is a VP product produced by the production action.
+    require(rose_oil, "Hồng and Tuyết are crop/material inputs", "TDHH material classification missing")
+    require(rose_oil, "TDHH (Tinh dầu hoa hồng) is a finished VP product", "TDHH is not classified as finished VP")
+    require(rose_oil, "RoseOilProductionActions", "TDHH VP production action missing")
+    require(rose_oil, "auto-recipe-rose-oil-vp-production", "TDHH VP production stage missing")
+    require(rose_oil, "recovery=self.recovery", "RoseOilRecipe does not share Function recovery")
+
+    # Startup follows the operator-approved invariant: fresh login/restart begins
+    # at MAIN and the worker watches/clears popups continuously for a full minute.
+    require(game_session, "POPUP_WATCH_SECONDS = 60.0", "Startup popup watch is not 60 seconds")
+    require(game_session, "mark_startup_exact_main", "Startup MAIN contract marker missing")
+    forbid(game_session, "go_down_one_toward_main", "Startup must not manufacture MAIN with goDown(1)")
+
+    # Scheduler restart is three-hour, safe-boundary lifecycle only. Emergency
+    # mid-Function restart remains a separate durable-checkpoint feature.
+    require(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 10800.0", "AUTO Main restart is not 3h")
+    require(auto_main, "_request_client_restart_at_safe_boundary", "Safe restart boundary API missing")
+    require(auto_main, "auto-main-client-restart-pre-sale", "Pre-restart safe sale missing")
+    require(auto_main, "skip_initial_sale_once", "Post-restart one-shot sale skip missing")
+    forbid(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 7200.0", "Old 2h AUTO Main restart remains")
+
+    # Worker is a lifecycle host, not a second recovery engine. Registered errors
+    # are handled below it; anything escaping RecoveryManager fails closed.
+    require(worker, "except ClientRestartRequested as exc:", "Worker restart lifecycle branch missing")
+    require(worker, '"client_restart_requested"', "Worker explicit restart lifecycle event missing")
+    require(worker, 'lifecycle_event="client_restart_requested"', "Worker restart supervisor bridge missing")
+    require(worker, "unregistered_runtime_error; recovery=fail-close", "Worker fail-close contract missing")
+    forbid(worker, "_AUTO_MAIN_SAME_ERROR_LIMIT", "Old catch-all same-error restart loop remains")
+    forbid(worker, "_recover_auto_main_to_main_screen", "Worker still owns generic camera recovery")
+    forbid(worker, "runtime_error_policy=recover-main-restart", "Worker still advertises pipeline restart recovery")
+
+    # Multi integration owns only scheduled ClientJS lifecycle: exact profile,
+    # new worker/Bridge generation and one-shot startup-sale skip.
+    require(builder_integration, "_CLIENT_RESTART_INTERVAL_SECONDS = 10800.0", "Multi restart integration is not 3h")
+    require(builder_integration, 'lifecycle_event == "client_restart_requested"', "Supervisor lifecycle marker missing")
+    require(builder_integration, 'resume["skip_initial_sale_once"] = True', "Restart handoff does not skip duplicate startup sale")
+    require(builder_integration, "_start_clean_auto_profile_only(profile_id)", "Restart does not relaunch exact profile")
+    forbid(builder_integration, "_CLIENT_RESTART_INTERVAL_SECONDS = 7200.0", "Old 2h integration constant remains")
+    forbid(builder_integration, "restart ClientJS=2 giờ", "Old 2h integration UI remains")
+    forbid(profile_settings, "restart ClientJS=2 giờ", "Old 2h profile UI remains")
+
+    # Old class remains adapter only; Function 1 composes RecipeBook and must not
+    # duplicate unknown-camera or production recovery loops.
     require(legacy, "self.manager = RecoveryManager(", "Legacy adapter is not delegated")
     forbid(legacy, "except WrongProductionMachine", "Wrong-machine policy duplicated in legacy adapter")
     forbid(legacy, "except InventoryFull", "Inventory-full policy duplicated in legacy adapter")
@@ -164,6 +222,10 @@ def main() -> int:
     print("navigation=centralized+injectable-routes")
     print("production=checkpointed-explicit-signals+no-generic-screen-timeout-retry")
     print("warehouse_progress=listing-or-gold-collection")
+    print("startup=continuous-popup-watch-60s+no-goDown-main-normalize")
+    print("tdhh=finished-vp+rose-snow-materials")
+    print("scheduled_restart=3h+safe-function-boundary+exact-profile-relaunch")
+    print("worker=typed-recovery-boundary+unregistered-fail-close")
     print("auto_builder_import=lazy-runner-no-recovery-cycle")
     print("recipes=share-one-RecoveryManager-per-function")
     print("functions=business-flow-composes-RecipeBook")
