@@ -46,6 +46,16 @@ def method_section(text: str, start: str, end: str) -> str:
     return text[start_index:end_index]
 
 
+def init_section(text: str) -> str:
+    start = text.find("    def __init__(")
+    if start < 0:
+        raise AssertionError("Cannot isolate __init__ section")
+    next_method = text.find("\n    def ", start + len("    def __init__("))
+    if next_method < 0:
+        return text[start:]
+    return text[start:next_method]
+
+
 def main() -> int:
     config = check_python(CONFIG_PATH)
     planting = check_python(PLANTING_PATH)
@@ -78,9 +88,6 @@ def main() -> int:
     ):
         require(gui, f'"{key}"', f"Core GUI key missing: {key}")
 
-    # vp_collect_delay is a clean Multi DEV extension installed before app
-    # construction, so the native tuning dialog/collector sees it without
-    # changing the legacy production GUI source.
     require(integration, '"vp_collect_delay"', "VP collect GUI extension key missing")
     require(integration, '"Thu VP (giây/click)"', "VP collect GUI label missing")
     require(integration, "core.MULTI_DEV_TUNING_KEYS = keys", "VP collect key is not injected into native Multi DEV tuning group")
@@ -95,8 +102,6 @@ def main() -> int:
     require(apple_supply, "self.speed_config.crop_check_interval", "Crop check interval not applied")
 
     # VP collection is centralized in ProductionPanelActions for every product.
-    # One true x5 burst has exactly one stop checkpoint before the clicks, no
-    # sleeps/captures between clicks, then one configurable settle before proof.
     require(panel, "class ProductionPanelActions", "Shared production panel engine missing")
     require(panel, "def _send_collect_burst(", "Raw five-click VP burst helper missing")
     require(panel, "def _click_until_panel_open(", "Shared VP collect helper missing")
@@ -136,10 +141,14 @@ def main() -> int:
         raise AssertionError("VP collect order must be x5 -> settle once -> fresh frame -> panel check")
 
     # Product queue gesture timing stays product-owned while collection/panel proof
-    # stays shared. Nước táo and Vải vàng use the neutral panel helper directly.
+    # stays shared. Constructor formatting is intentionally irrelevant: verify the
+    # semantic wiring inside __init__ rather than one exact source-code line.
     require(dried, "self.speed_config.vp_production_delay", "VP production speed not applied to dried apple")
     for text, label in ((apple_juice, "apple juice"), (yellow_fabric, "yellow fabric")):
-        require(text, "self.slots = ProductionPanelActions(context, vision, waiter, self.speed_config)", f"Shared speed config not delegated to {label} panel helper")
+        ctor = init_section(text)
+        require(ctor, "self.speed_config = speed_config or AutoSpeedConfig()", f"{label} speed config normalization missing")
+        require(ctor, "self.slots = ProductionPanelActions(", f"{label} does not construct shared panel helper")
+        require(ctor, "self.speed_config,", f"Shared speed config not delegated to {label} panel helper")
         require(text, "self.slots._click_until_panel_open(", f"Shared VP collect helper not used by {label}")
         require(text, "self.speed_config.vp_production_delay", f"VP production speed not applied to {label}")
         forbid(text, "self.slots = ProductionActions(", f"{label} regressed to Dried Apple helper")
@@ -162,6 +171,7 @@ def main() -> int:
     print("plant_harvest=independent")
     print("vp_collect=shared-panel-x5-no-inter-click-wait+post-burst-settle+fresh-frame-scan")
     print("vp_production=product-owned")
+    print("panel_speed_wiring=format-insensitive")
     print("crop_check_interval=independent")
     return 0
 
