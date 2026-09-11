@@ -69,60 +69,53 @@ def main() -> int:
 
     require(stall, "VISIBLE_SLOT_CENTERS", "Stable own-stall slot geometry missing")
     require(stall, "def listing_is_available", "Listing availability guard missing")
+    require(stall, "def next_view", "Two-swipe stall view transition Action missing")
 
+    # Approved sale Module flow: every visible view is gold -> QC -> empty/listing.
+    # Five views are scanned; View 5 is the final boundary/overlap check. QC uses
+    # physical slot checkpoints that match the current overlapping-view geometry.
     require(workflow, "from ...actions.stall_advertising import StallAdvertisingActions", "Advertising action not wired into sale workflow")
-    require(workflow, '1: ("đầu", 1)', "Beginning QC checkpoint changed")
-    require(workflow, '2: ("giữa", 10)', "Middle QC checkpoint changed")
-    require(workflow, '4: ("cuối", 20)', "End QC checkpoint changed")
+    require(workflow, "VIEW_COUNT = 5", "Sale no longer scans five views")
+    require(workflow, '1: ("view-1", 1, 1)', "View-1 QC checkpoint changed")
+    require(workflow, '2: ("view-2", 5, 2)', "View-2 QC checkpoint changed")
+    require(workflow, '3: ("view-3", 9, 3)', "View-3 QC checkpoint changed")
+    require(workflow, '4: ("view-4", 13, 4)', "View-4 QC checkpoint changed")
+    require(workflow, '5: ("final-boundary", 20, 4)', "View-5 final-boundary QC checkpoint changed")
     require(workflow, "self._check_advertisement_checkpoint(view)", "Per-view QC checkpoint call missing")
     require(workflow, "except AutomationStopped:", "Stop signal must not be swallowed by optional QC")
     require(workflow, "lỗi non-blocking", "Optional QC failure must remain non-blocking")
+    require(workflow, "self.auto.stall.next_view()", "Sale does not use canonical two-swipe stall transition")
+    require(workflow, "FINAL BOUNDARY CHECK", "View-5 final boundary marker missing")
 
-    # Empty/depleted finished-goods inventory is now a scheduler boundary. Once
-    # the current view proves there is no Function-allowed x10 VP to list, sale
-    # must stop traversing the stall and return immediately so Function loops and
-    # their configured between-loop delay can run. Full-stall NO_EMPTY_SLOT is
-    # different: traversal remains legal so QC checkpoints can still be reached.
-    require(
-        workflow,
-        '"NO_ALLOWED_ITEM",\n                        "NO_EXACT_TEN_ITEMS",\n                        "NO_SAFE_EXACT_TEN_ITEMS",',
-        "Depleted inventory status set changed",
-    )
-    require(
-        workflow,
-        'self.context.stage(\n                            "auto-vp-sale-inventory-depleted-return-scheduler"\n                        )',
-        "Depleted inventory scheduler-return stage missing",
-    )
-    require(
-        workflow,
-        "KẾT THÚC SALE PASS NGAY",
-        "Depleted inventory immediate-return policy marker missing",
-    )
-    require(
-        workflow,
-        "if depleted:\n                    break",
-        "Depleted inventory must stop stall traversal and return scheduler",
-    )
-    forbid(
-        workflow,
-        "if not depleted:",
-        "Legacy depleted-inventory continue-traversal policy returned",
-    )
+    # Empty/depleted finished-goods inventory is a Module completion condition.
+    # Sale closes itself and returns to its caller; it must not decide that the
+    # caller is necessarily the Scheduler. Full-stall NO_EMPTY_SLOT remains a
+    # legal reason to keep traversing toward later views/QC checkpoints.
+    require(workflow, '"NO_ALLOWED_ITEM",', "NO_ALLOWED_ITEM depleted status missing")
+    require(workflow, '"NO_EXACT_TEN_ITEMS",', "NO_EXACT_TEN_ITEMS depleted status missing")
+    require(workflow, '"NO_SAFE_EXACT_TEN_ITEMS",', "NO_SAFE_EXACT_TEN_ITEMS depleted status missing")
+    require(workflow, '"auto-vp-sale-inventory-depleted-return-caller"', "Depleted inventory caller-return stage missing")
+    require(workflow, "đóng sale và trả caller hiện tại", "Depleted inventory caller-return policy marker missing")
+    require(workflow, "if depleted:\n                    break", "Depleted inventory must stop stall traversal")
+    forbid(workflow, "return-scheduler", "Sale Module regressed to Scheduler-specific completion semantics")
+    forbid(workflow, "KẾT THÚC SALE PASS NGAY", "Legacy scheduler-specific sale completion marker returned")
 
-    advert_call = workflow.index("self._check_advertisement_checkpoint(view)")
     gold_call = workflow.index("collected += self.auto.stall.collect_own_stall_gold")
+    advert_call = workflow.index("self._check_advertisement_checkpoint(view)")
     sale_call = workflow.index("attempt = self.sale.sell_next_allowed")
-    if not advert_call < gold_call < sale_call:
-        raise AssertionError("Sale view order must be QC -> collect gold -> list VP")
+    if not gold_call < advert_call < sale_call:
+        raise AssertionError("Sale view order must be collect gold -> QC -> list VP")
 
     print("AUTO MULTI DEV VP ADVERTISING CONTRACT VERIFIED")
-    print("checkpoints=physical-slot-1,10,20")
+    print("views=5-final-boundary-overlap")
+    print("view_order=gold->QC->empty/list-VP")
+    print("checkpoints=physical-slot-1,5,9,13,20")
     print("existing_ad=skip-without-click")
     print("cooldown=close-x-and-continue")
     print("ready=green-free-button-only")
     print("paid_diamond=never-click")
     print("full_stall=advertising-checks-still-run")
-    print("inventory_depleted=close-sale-return-scheduler-immediately")
+    print("inventory_depleted=close-sale-return-caller")
     print("ad_failure=non-blocking")
     return 0
 
