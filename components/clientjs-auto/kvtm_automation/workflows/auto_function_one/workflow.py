@@ -13,6 +13,7 @@ FILE_FUNCTIONS = (
     "Function chỉ ghép các Recipe nghiệp vụ thay vì tự chứa production/recovery chi tiết",
     "Gọi DriedAppleRecipe cho trồng Táo + SX Táo sấy + Sửa máy",
     "Giữ supply Táo tầng 1-6 riêng của Function 1 rồi bàn giao candidate tầng 2 cho AppleJuiceRecipe",
+    "Dùng FarmRouteActions dùng chung; Function không sở hữu primitive điều hướng riêng",
     "AppleJuiceRecipe tự probe nuoc_tao, fallback exact-main, xử lý sai máy/kho đầy và Sửa máy",
     "YellowFabricRecipe nhận trạng thái sau Nước táo, về main, trồng Bông, vào tầng 3, SX và Sửa máy",
     "Function 1 standalone đưa tầng 3 về exact-main trước PASS",
@@ -59,7 +60,6 @@ class FunctionOneWorkflow:
         self.recovery = self.recipes.recovery
 
     def _require_main_transition(self, label: str) -> None:
-        """Keep an explicit Function boundary gate before scheduler completion."""
         self.context.ensure_running()
         if not self.auto.popup.is_own_exact_main_screen():
             raise ScreenTimeout(
@@ -101,11 +101,11 @@ class FunctionOneWorkflow:
         five_floors = self.auto.apple_supply.harvest_and_replant_five_floors()
         self.context.stage("auto-apple-five-floors-replanted")
 
-        self.auto.function_one_navigation.floor_1_to_floor_6()
+        self.auto.farm_routes.floor_1_to_floor_6()
         floor_6 = self.auto.apple_supply.harvest_and_replant_floor_6_row()
         self.context.stage("auto-apple-floor-6-replanted")
 
-        self.auto.function_one_navigation.floor_6_to_floor_2()
+        self.auto.farm_routes.floor_6_to_floor_2()
         juice_recipe = self.recipes.apple_juice.run_from_candidate_floor_2(count=9)
         juice = juice_recipe.production
         self.context.ensure_running()
