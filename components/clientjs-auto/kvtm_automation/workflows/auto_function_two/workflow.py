@@ -11,14 +11,14 @@ from ..auto_function_one import FunctionOneWorkflow
 
 __all__ = ["FunctionTwoResult", "FunctionTwoWorkflow"]
 FILE_FUNCTIONS = (
-    "Kế thừa phần lõi Function 1 đã xác minh qua import/composition",
-    "Yêu cầu Function 1 PASS đầy đủ trước khi thêm nhánh TDHH",
-    "Dùng một RecipeBook function_2 để toàn chuỗi chia sẻ đúng RecoveryManager/sale policy",
-    "Nhận handoff sau Vải vàng rồi tự recovery candidate về exact-main",
-    "Từ exact-main trồng/thu hồi đủ 35 Hồng + 28 Tuyết",
-    "Đi candidate tầng 7 về tầng 5 và sản xuất đúng 7 TDHH",
-    "Sửa máy TDHH rồi trả camera về exact-main trước PASS",
-    "Khóa Function 2 ở 1000x1000 trong planting action để không mở lại nhánh 500x500",
+    "Kế thừa phần lõi Function 1 qua composition, không copy business actions",
+    "Yêu cầu Function 1 core PASS 3/3 trước nhánh TDHH",
+    "Dùng một RecipeBook function_2 để chia sẻ RecoveryManager",
+    "Nhận handoff known floor 3 sau Vải vàng rồi đi deterministic floor3 → MAIN",
+    "RoseOilRecipe ghép 35 Hồng + 28 Tuyết bằng PlantingActions dùng chung",
+    "Tuyết kết thúc tại floor1 rồi goUp(4) thẳng candidate floor5; không có floor7 giả",
+    "Sản xuất đúng 7 TDHH, sửa máy và trở về exact-main trước PASS",
+    "Function 2 materials khóa native 1000x1000 tại Recipe boundary",
 )
 
 
@@ -41,7 +41,7 @@ class FunctionTwoResult:
 
 
 class FunctionTwoWorkflow:
-    """Function 2 = proven Function 1 core + 35 Hồng + 28 Tuyết + 7 TDHH."""
+    """Function 2 = Function 1 core + RoseOilRecipe, with explicit handoff states."""
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
@@ -73,33 +73,29 @@ class FunctionTwoWorkflow:
                 "Function 2 từ chối kế thừa vì Function 1 chưa đạt contract PASS"
             )
 
-    def _recover_base_handoff_to_main(self) -> None:
-        """Function 2 owns the boundary after inherited Vải vàng production."""
-        self.context.stage("auto-function-2-base-handoff-main-recovery")
+    def _base_handoff_to_main(self) -> None:
+        """Function-1 base intentionally hands Function 2 the known floor-3 state."""
+        self.context.stage("auto-function-2-base-handoff-main")
         self.context.ensure_running()
-        self.recovery.recover_unknown_to_main(
+        self.recovery.to_main_from_floor(
+            3,
             "Function 2 handoff sau Vải vàng",
-            reason=(
-                "Function 1 base hoàn tất 3/3 nhưng bỏ qua end-loop riêng; "
-                "Function 2 cần exact-main trước nhánh Hồng/Tuyết/TDHH"
-            ),
-            max_passes=8,
         )
         self.context.ensure_running()
         if not self.auto.popup.is_own_exact_main_screen():
             raise ScreenTimeout(
-                "Function 2 handoff sau Vải vàng chưa chứng minh exact-main"
+                "Function 2 handoff floor3 → MAIN chưa chứng minh exact-main"
             )
         self.context.stage("auto-function-2-base-handoff-main-ready")
         self.context.log(
-            "AUTO Function 2 • HANDOFF PASS • sau Vải vàng đã recovery về exact-main"
+            "AUTO Function 2 • HANDOFF PASS • known floor3 sau Vải vàng → exact-main"
         )
 
     def run(self) -> FunctionTwoResult:
         started = time.monotonic()
         self.context.stage("auto-function-2-start")
         self.context.log(
-            "AUTO Function 2 • START • kế thừa Function 1 rồi thêm "
+            "AUTO Function 2 • START • Function 1 core → "
             "35 Hồng + 28 Tuyết + 7 Tinh dầu hoa hồng"
         )
 
@@ -108,11 +104,10 @@ class FunctionTwoWorkflow:
         self.context.ensure_running()
         self.context.stage("auto-function-2-progress-3-of-4")
         self.context.log(
-            "AUTO Function 2 • base PASS 3/4 • Function 1 core hoàn tất; "
-            "nhận handoff candidate sau Vải vàng"
+            "AUTO Function 2 • base PASS 3/4 • handoff known floor3 sau Vải vàng"
         )
 
-        self._recover_base_handoff_to_main()
+        self._base_handoff_to_main()
 
         extra = self.rose_oil.run_from_main(count=7)
         if (
