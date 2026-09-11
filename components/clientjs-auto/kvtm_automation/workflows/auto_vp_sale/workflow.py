@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import time
 
-from ...actions.auto_main_selling import AutoMainSellingActions
 from ...actions.stall_advertising import StallAdvertisingActions
+from ...actions.vp_sale_transaction import VpSaleTransactionActions
 from ...automation import KVAutomation
 from ...errors import AutomationStopped, ScreenTimeout
 from ..auto_builder.catalog import get_function_spec
@@ -19,6 +19,7 @@ FILE_FUNCTIONS = (
     "Nếu View hết ô trống thì chuyển View bằng Action stall.next_view() = đúng hai swipe",
     "Quét đủ 5 View; View 5 là final boundary/overlap check để bắt các ô cuối",
     "View 5 không coi việc camera ít/không dịch ở biên phải là lỗi",
+    "Dùng VpSaleTransactionActions cho từng listing; không phụ thuộc tên AUTO Main",
     "Đóng Kho/quầy theo owner Action và trả kết quả cho caller, không giả định caller là Scheduler",
 )
 
@@ -49,10 +50,6 @@ class AutoVpSaleWorkflow:
     MAX_SALES_PER_VIEW = 8
     OWN_STALL_OPEN_ATTEMPTS = 6
 
-    # view -> (label, target physical slot, geometry view used by the 20-slot
-    # mapping). View 5 is an extra boundary scan, not a fifth independent group
-    # of physical slots, so its QC geometry intentionally reuses the rightmost
-    # proven physical view.
     AD_CHECKPOINTS = {
         1: ("view-1", 1, 1),
         2: ("view-2", 5, 2),
@@ -81,7 +78,7 @@ class AutoVpSaleWorkflow:
         requested_order = tuple(
             allowed_item_ids or self.function_spec.sale_item_ids
         )
-        self.sale = AutoMainSellingActions(
+        self.sale = VpSaleTransactionActions(
             automation.selling,
             automation.auto_vp,
             item_order=requested_order,
@@ -107,7 +104,6 @@ class AutoVpSaleWorkflow:
         )
 
     def _require_sale_entry_main(self, *, timeout: float) -> None:
-        """Require MAIN from the previous Module; never synthesize it with goDown."""
         self.context.ensure_running()
         if not self.auto.popup.is_own_main_screen():
             self.auto.ensure_main_screen(timeout=float(timeout))
@@ -175,8 +171,6 @@ class AutoVpSaleWorkflow:
         except AutomationStopped:
             raise
         except Exception as exc:
-            # QC is optional/non-blocking by business contract. It must never
-            # turn a valid sale into a false Function completion either.
             self.context.log(
                 "AUTO quảng cáo • "
                 f"{checkpoint} lỗi non-blocking: {type(exc).__name__}: {exc} • "
@@ -206,9 +200,6 @@ class AutoVpSaleWorkflow:
                     + (" • FINAL BOUNDARY CHECK" if final_boundary else "")
                 )
 
-                # Operator-approved order: sold gold -> QC -> empty slot ->
-                # warehouse/item selection. Gold collection scans all 8 visible
-                # cells and is verified before we try to fill an empty slot.
                 collected += self.auto.stall.collect_own_stall_gold(maximum=8)
                 self._check_advertisement_checkpoint(view)
 
