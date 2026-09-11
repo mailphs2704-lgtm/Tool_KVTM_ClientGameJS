@@ -17,7 +17,7 @@ VISION = CLEAN / "runtime/vision.py"
 DRIVER_FACTORY = CLEAN / "runtime/driver.py"
 RESOLUTION = CLEAN / "runtime/resolution.py"
 AUTOMATION = CLEAN / "automation.py"
-PRODUCTION = CLEAN / "actions/production.py"
+PRODUCTION_PANEL = CLEAN / "actions/production_panel.py"
 INVENTORY = CLEAN / "actions/inventory.py"
 STALL = CLEAN / "actions/stall.py"
 STALL_AD = CLEAN / "actions/stall_advertising.py"
@@ -29,7 +29,7 @@ BUILDER_MATCH = CLEAN / "workflows/auto_builder/image_match.py"
 AUDITED_DIRECT_MATCH = {
     Path("runtime/vision.py"),
     Path("runtime/down_floor_button.py"),
-    Path("actions/production.py"),
+    Path("actions/production_panel.py"),
     Path("actions/inventory.py"),
     Path("workflows/auto_builder/image_match.py"),
 }
@@ -75,7 +75,7 @@ def main() -> int:
     driver = read_python(DRIVER_FACTORY)
     resolution = read_python(RESOLUTION)
     automation = read_python(AUTOMATION)
-    production = read_python(PRODUCTION)
+    production_panel = read_python(PRODUCTION_PANEL)
     inventory = read_python(INVENTORY)
     stall = read_python(STALL)
     stall_ad = read_python(STALL_AD)
@@ -149,8 +149,15 @@ def main() -> int:
     require(vision, "center=self.frame_point_to_logical(frame_center, source)",
             "Vision match center is not returned logical")
 
-    require(production, "self.vision.logical_zone_to_frame(zone, frame)",
-            "Production direct ROI is not resolution-aware")
+    # Direct production ROI/template matching belongs to the shared panel engine,
+    # not to the Táo sấy product transaction. Keep the dual-resolution audit on
+    # the canonical owner after the ProductionPanelActions refactor.
+    require(production_panel, "self.vision.logical_zone_to_frame(zone, frame)",
+            "Production panel direct ROI is not resolution-aware")
+    require(production_panel, "self.vision.frame_scales(frame)",
+            "Production panel template scale is not native-frame aware")
+    require(production_panel, "self.vision.frame_point_to_logical(frame_center, frame)",
+            "Production panel direct match center is not returned logical")
     require(inventory, "self.vision.logical_zone_to_frame(",
             "Inventory direct ROI is not resolution-aware")
     require(inventory, "N500_PICKER_THRESHOLD = 0.72",
@@ -200,6 +207,7 @@ def main() -> int:
     print("startup=preserve-existing-client-size+no-resize")
     print("capture=native-CAPTURE3-no-upscale")
     print("recognition_table=selected-from-native-size")
+    print("production_direct_match=shared-panel-native-aware")
     print("input=logical1000->actual-client-once")
     return 0
 
