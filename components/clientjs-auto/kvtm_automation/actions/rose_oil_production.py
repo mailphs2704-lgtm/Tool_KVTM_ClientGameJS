@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from ..errors import ScreenTimeout
-from .production import ProductionActions, ProductionResult
+from .production import ProductionResult
+from .production_panel import ProductionPanelActions
 
 
 __all__ = ["RoseOilProductionActions"]
 FILE_FUNCTIONS = (
     "Mở đúng máy TDHH tại logical machine point dùng chung của các tầng sản xuất",
+    "Dùng ProductionPanelActions cho panel/slot/kho đầy/sai máy dùng chung",
     "Xác minh panel bằng template tinh_dau_hh trước mọi thao tác",
     "Chờ đủ bảy ô trống rồi xếp đúng bảy TDHH",
     "Hậu kiểm mỗi lần kéo bằng số ô trống giảm và fail-close khi thiếu nguyên liệu",
@@ -15,7 +17,7 @@ FILE_FUNCTIONS = (
 )
 
 
-class RoseOilProductionActions(ProductionActions):
+class RoseOilProductionActions(ProductionPanelActions):
     """1000-target exact-7 Tinh dầu hoa hồng production transaction."""
 
     ROSE_OIL_FLOOR = 5
@@ -24,6 +26,11 @@ class RoseOilProductionActions(ProductionActions):
     ROSE_OIL_GUARD_THRESHOLD = 0.70
     TARGET_COUNT = 7
     REQUIRED_COUNT = TARGET_COUNT
+    MATERIAL_ERROR_TEMPLATE = "x"
+    MATERIAL_ERROR_ZONE = (682, 337, 142, 120)
+    DRAG_ATTEMPTS = 3
+    VERIFY_RECHECKS = 4
+    VERIFY_RECHECK_SECONDS = 0.18
     KNOWN_PRODUCT_TEMPLATES = (
         "tao_say",
         "nuoc_tao",
@@ -32,11 +39,6 @@ class RoseOilProductionActions(ProductionActions):
     )
 
     def close_panel_for_navigation(self, *, settle_seconds: float = 0.35) -> None:
-        """Close the current TDHH/production panel before a camera route.
-
-        The Recipe owns *when* the route is needed; the Action owns the concrete
-        click/wait required to leave the production panel safely.
-        """
         self.context.ensure_running()
         self.vision.driver.click(*self.CLOSE_POINT)
         self.waiter.sleep(max(0.0, float(settle_seconds)))
@@ -124,7 +126,9 @@ class RoseOilProductionActions(ProductionActions):
         return last_empty
 
     def produce_7_rose_oils(
-        self, *, close_after_success: bool = True
+        self,
+        *,
+        close_after_success: bool = True,
     ) -> ProductionResult:
         empty_before, product_point, top_point = self._open_verified_rose_oil_machine()
         empty_after = empty_before
