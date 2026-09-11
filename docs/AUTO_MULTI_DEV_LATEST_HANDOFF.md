@@ -3,24 +3,22 @@
 Cập nhật: 2026-09-11
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
-Trạng thái: **WHOLE-AUTO STANDARDIZATION IN PROGRESS — SOURCE REFACTORED, NOT RUNTIME PASS**
+Trạng thái: **PRE-LIVE STANDARDIZATION — SOURCE REFACTORED, NOT STATIC PASS, NOT RUNTIME PASS**
 
-> Operator đã yêu cầu chuẩn hóa toàn bộ AUTO và cho phép triển khai/refactor từng đoạn ngay khi mô tả. Build/static PASS không thay cho live/runtime evidence.
+> Operator đã yêu cầu chuẩn hóa toàn bộ AUTO. Không tiếp tục refactor lớn nếu không phát hiện regression thật. Build/static PASS không thay cho live/runtime evidence.
 
 ## 1. Read-first bắt buộc
 
 1. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md` — handoff hiện hành;
-2. `docs/AUTO_MULTI_DEV_ACTIONS_AUDIT_20260911.md` — audit Action mới nhất;
-3. `docs/AUTO_MULTI_DEV_STANDARDIZATION_CHECKPOINT_20260911.md` — checkpoint source/refactor;
+2. `docs/AUTO_MULTI_DEV_STANDARDIZATION_CHECKPOINT_20260911.md` — checkpoint pre-live mới nhất;
+3. `docs/AUTO_MULTI_DEV_ACTIONS_AUDIT_20260911.md` — audit Action;
 4. `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md` — thiết kế tích lũy;
-5. `docs/AUTO_MULTI_DEV_CONFIRMED_FLOW_LATEST.md`;
-6. `docs/AUTO_MULTI_DEV_ACTIONS_STANDARDIZATION.md`;
-7. `docs/AUTO_MULTI_DEV_FUNCTION_RECOVERY_MAPPING.md`;
-8. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md`;
-9. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`;
-10. `AI_COORDINATION.md`.
+5. `docs/AUTO_MULTI_DEV_FUNCTION_RECOVERY_MAPPING.md`;
+6. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md`;
+7. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`;
+8. `AI_COORDINATION.md`.
 
-Nếu tài liệu cũ nói popup chỉ sweep sau khi chờ 60s, restart 2h, TDHH là cây, worker catch-all rerun pipeline, Sale chỉ 4 View, hoặc Function 1 là owner của farm routes thì coi là **lịch sử đã bị override**.
+Nếu tài liệu cũ nói popup chỉ sweep sau 60s, restart 2h, TDHH là cây, worker catch-all rerun pipeline, Sale 4 View, Function 1 sở hữu farm routes, hoặc product khác phải mượn `ProductionActions` Táo sấy để dùng panel helper thì coi là **lịch sử đã bị override**.
 
 ## 2. Kiến trúc hiện hành
 
@@ -49,26 +47,25 @@ Recovery = interrupt → recover → resume same work
 - Action = HOW reusable manipulation/verification.
 - Recovery = typed error + checkpoint + resume/escalation.
 
-## 3. Startup/Login/Popup — CHỐT, SOURCE ĐÃ REFACTOR
+## 3. Startup/Login/Popup — CHỐT + SOURCE
 
 ```text
 login/restart
 → camera mặc định MAIN
-→ bắt đầu timer 60s
-→ trong đủ 60s liên tục scan popup
-→ popup nào xuất hiện thì đóng ngay
-→ tiếp tục scan tới hết 60s
+→ popup watch 60s
+→ popup xuất hiện lúc nào đóng ngay lúc đó
+→ tiếp tục scan đủ 60s
 → bàn giao MAIN
 ```
 
-Không dùng `goDown(1)` để tạo exact-main sau login/restart.
+Không `goDown(1)` để tạo exact-main sau login/restart.
 
-## 4. Sale VP — CHỐT, SOURCE ĐÃ REFACTOR
+## 4. Sale VP — CHỐT + SOURCE
 
 Mỗi View:
 
 ```text
-thu vàng nếu có
+thu vàng
 → QC nếu có
 → tìm ô trống
 → Kho 2
@@ -77,110 +74,57 @@ thu vàng nếu có
 → đăng bán
 ```
 
-Nếu View hết ô trống:
+- chuyển view = đúng 2 swipe;
+- tổng 5 View;
+- View 5 = final overlap/boundary check;
+- canonical transaction facade = `VpSaleTransactionActions`.
 
-```text
-stall.next_view()
-= đúng 2 swipe
-```
+## 5. Function boundary delay — CHỐT + SOURCE
 
-Tổng **5 View**; View 5 là final boundary/overlap check.
-
-Canonical one-listing transaction Action:
-
-```text
-VpSaleTransactionActions
-```
-
-`AutoMainSellingActions` là tên/base lịch sử; code Sale mới không phụ thuộc tên AUTO Main.
-
-## 5. Function boundary delay — CHỐT + SOURCE IMPLEMENTED
-
-Operator phát hiện lỗi cũ:
+Delay là **minimum boundary time**:
 
 ```text
 Function PASS
-→ Sale
-→ sleep nguyên delay
-→ Function kế tiếp
-```
-
-Contract mới:
-
-```text
-Function PASS
-→ bắt đầu boundary timer
+→ start boundary timer
 → Sale/Friend Refresh/maintenance nếu đến hạn
-→ elapsed = thời gian maintenance đã dùng
-→ sleep chỉ phần delay còn thiếu
-→ Function kế tiếp
+→ maintenance time được tính vào delay
+→ chỉ sleep phần còn thiếu
+→ Function tiếp theo
 ```
 
 Ví dụ delay 60s:
 
 ```text
-Sale 25s → chờ thêm 35s
-Sale 65s → không chờ thêm
+Sale 25s → chờ 35s
+Sale 65s → chờ 0s
 ```
 
-Áp dụng cho:
+Áp dụng AUTO Main + Builder `sale_after_each_loop`.
 
-- AUTO Main;
-- AUTO Builder `sale_after_each_loop`.
+## 6. Navigation / Farm routes — CANONICAL
 
-Runtime AUTO Main export hiện dùng `workflows/auto_main/boundary_delay.py`.
-
-Verifier: `tools/verify_function_boundary_delay_contract.py`.
-
-## 6. Navigation primitive — CHỐT
-
-`goUp(n)` là mode hành động, không phải N lần swipe.
+`goUp(n)` là semantic mode:
 
 ```text
-goUp(1) = swipe ngắn một tầng
-          (514,214) → (514,314)
-
-goUp(2) = click anchor (257,191)
-          nếu tầng 1 → candidate tầng 3
-          KHÔNG bằng 2 x goUp(1)
-
-goUp(4) = long swipe (387,69) → (387,918)
-          nếu tầng 1 → candidate tầng 5
-
+goUp(1) = short swipe
+goUp(2) = click anchor (257,191); floor1 → candidate floor3
+goUp(4) = long swipe; floor1 → candidate floor5
 goUp(3) = undefined → fail-close
 ```
 
-Canonical primitive: `FloorNavigationActions`.
-
-## 7. Farm routes — CANONICAL OWNERSHIP ĐÃ CHUYỂN
-
-`actions/farm_routes.py` hiện sở hữu **implementation thật**:
-
-- `FarmRouteActions`
-- `FarmBoundaryRouteActions`
-- `NavigationEvidence`
-
-Các route dùng chung như MAIN→1, 1→5, 1→6, MAIN→2, 1→3, known-floor→MAIN/boundary proof nằm ở đây.
-
-Hai file lịch sử chỉ còn compatibility wrapper:
+Canonical:
 
 ```text
-FunctionOneNavigationActions(FarmRouteActions)
-FunctionOnePassThreeNavigationActions(FarmBoundaryRouteActions)
+FloorNavigationActions
+FarmRouteActions
+FarmBoundaryRouteActions
 ```
 
-Không thêm implementation mới vào file Function-specific.
+Function 1 navigation files chỉ compatibility wrappers.
 
-`KVAutomation` expose canonical facade:
+## 7. Planting — SHARED GEOMETRY
 
-```text
-farm_routes
-farm_boundary_routes
-```
-
-## 8. Planting — SHARED GEOMETRY
-
-`PlantingActions` hiện giữ verified shared paths:
+`PlantingActions` giữ:
 
 ```text
 PATH_5
@@ -190,128 +134,97 @@ PATH_28
 PATH_30
 ```
 
-`PATH_6` được promote từ exact geometry hàng 6 chậu tầng 6 đã tồn tại trong Apple Supply; không đổi gesture.
+Crop identity tách khỏi geometry. Apple Supply tái sử dụng `PATH_30` + `PATH_6`; Cotton Action không tự quyết định recovery policy.
 
-Apple Supply hiện dùng:
+## 8. Production — SHARED PANEL ENGINE
+
+Canonical reusable engine:
 
 ```text
-FIVE_FLOOR_PATH = PlantingActions.PATH_30
-FLOOR_6_ROW      = PlantingActions.PATH_6
+ProductionPanelActions
 ```
 
-Crop identity tách khỏi geometry; Action không quyết định floor route.
+Sở hữu:
+
+- panel/product proof;
+- empty-slot counting;
+- collect burst x5;
+- wrong-machine detection;
+- InventoryFull signal;
+- panel/capacity waits.
+
+Product transactions:
+
+```text
+ProductionActions             → Táo sấy
+AppleJuiceProductionActions   → Nước táo
+YellowFabricProductionActions → Vải vàng
+RoseOilProductionActions      → TDHH
+```
+
+`warehouse_full_guard.py` patch `ProductionPanelActions`, vì vậy KHO QUÁ TẢI dùng chung cho mọi product path.
+
+TDHH không kế thừa Táo sấy; contract riêng:
+
+```text
+TARGET_COUNT = 7
+DRAG_ATTEMPTS = 3
+VERIFY_RECHECKS = 4
+```
+
+MaterialShortage resume state hiện hữu được giữ nguyên qua refactor.
 
 ## 9. Function 2 / TDHH — CHỐT PHÂN LOẠI
 
 - Hồng = crop/material.
 - Tuyết = crop/material.
-- **TDHH/Tinh dầu hoa hồng = finished VP, không phải cây.**
-
-Flow hiện hiểu:
+- **TDHH = VP thành phẩm, không phải cây.**
 
 ```text
 Hồng 35
 → MAIN
 → Tuyết 28
-→ tới máy TDHH
-→ sản xuất TDHH x7
+→ máy TDHH
+→ TDHH x7
 → sửa máy
 → MAIN
 ```
 
-`RoseOilRecipe` sở hữu choreography; `PlantingActions` chỉ sở hữu crop gesture/path; `RoseOilProductionActions` sản xuất VP TDHH.
+`RoseOilRecipe` chỉ orchestration; production nằm trong `RoseOilProductionActions` và được expose qua `KVAutomation.rose_oil_production`.
 
-`actions/function_two_planting.py` là compatibility-only và choreography cũ bị chặn.
+## 10. Recipe / Function / Module boundary
 
-## 10. Function / Recipe standardization
+Đã audit và verifier khóa:
 
-- Function 1 dùng RecipeBook + generic farm routes.
-- Function 2 dùng cùng RecipeBook/RecoveryManager và thêm RoseOilRecipe.
-- `DriedAppleRecipe`, `AppleJuiceRecipe`, `YellowFabricRecipe`, `RoseOilRecipe` dùng chung **một RecoveryManager per Function**.
-- `auto_apple_dryer` là adapter gọi Recipe chuẩn.
+- Recipe/Function không raw input;
+- một `RecoveryManager` per Function;
+- Function 2 compose Function 1 core;
+- Builder Modules delegate đúng chức năng hiển thị;
+- FriendRefresh dùng semantic Navigation/Recovery;
+- boundary-delay wrapper không tạo scheduler `run()` thứ hai;
+- legacy workflow chỉ adapter khi phù hợp.
 
-## 11. Recovery / checkpoint
+## 11. Recovery / Worker
 
-Lifecycle:
-
-```text
-MODULE_STARTED
-MODULE_INTERRUPTED
-MODULE_RESUMED
-MODULE_COMPLETED
-```
-
-Known typed recovery hiện gồm các nhánh như:
+Known typed recovery gồm:
 
 - `WrongProductionMachine`;
 - `InventoryFull`;
-- typed MaterialShortage nơi đã được triển khai.
+- MaterialShortage nơi đã triển khai.
 
-Generic `ScreenTimeout` không được tự biến thành recovery/restart.
+Generic `ScreenTimeout` không tự retry.
 
-Worker:
-
-```text
-registered typed error
-→ RecoveryManager
-→ resume same module/checkpoint
-
-unregistered error
-→ fail-close + log
-```
-
-Không còn:
+Worker hiện:
 
 ```text
-Exception → MAIN → rerun whole pipeline
+typed recoverable error → RecoveryManager → same module/checkpoint
+unregistered error       → fail-close/log
+ClientRestartRequested   → lifecycle signal
 ```
 
-## 12. Material Shortage boundary
+Không còn `Exception → MAIN → rerun whole pipeline`.
 
-Action được giữ progress nhỏ để resume side effect:
-
-```text
-queued
-slot evidence
-recovery_count
-```
-
-Crop Action Bông chỉ biết cách lấy batch 27 Bông thật và gieo lại.
-
-Recovery mới biết:
-
-```text
-vì sao thiếu
-→ route về MAIN/floor cần thiết
-→ bổ sung
-→ quay máy
-→ resume
-```
-
-## 13. Machine Repair / Production audit
-
-Machine Repair hiện đúng boundary:
-
-```text
-verified production handoff
-→ ?
-→ Sửa
-→ verify UI change
-→ close modal
-```
-
-Không chứa Friend Refresh/restart/scheduler.
-
-Production shared engine sở hữu panel/product/slot proof và typed signals.
-
-Gesture retry hiện bounded:
-
-```text
-DRAG_ATTEMPTS = 3
-VERIFY_RECHECKS = 4
-```
-
-## 14. ClientJS scheduled restart — 3H
+## 12. Scheduled restart — 3H
 
 ```text
 CLIENT_RESTART_INTERVAL = 10800s
@@ -320,122 +233,86 @@ CLIENT_RESTART_INTERVAL = 10800s
 ```text
 3h due giữa Function
 → defer
-→ Function hiện tại PASS
-→ sale an toàn tại boundary nếu cần
+→ Function PASS
+→ safe sale nếu cần
 → ClientRestartRequested
-→ worker lifecycle signal
-→ supervisor đóng/relaunch đúng profile
-→ worker + Bridge generation mới
+→ supervisor relaunch exact profile
+→ new worker/Bridge generation
 → startup 60s
-→ skip startup sale đúng 1 lần
-→ timer ClientJS mới 3h
+→ skip initial sale once
 ```
 
-Chưa gọi runtime PASS cho đến live test.
+Emergency restart giữa Function chưa bật; cần durable checkpoint + operator policy.
 
-Emergency restart giữa Function chưa bật: cần durable checkpoint + operator-defined policy.
+## 13. Safety debt — KHÔNG TỰ SỬA
 
-## 15. Friend Refresh / escalation
+- `ProductionPanelActions._click_until_panel_open(...)` còn unbounded wait; chưa có operator max burst/time.
+- `ProductionPanelActions._wait_for_idle_open_panel(...)` còn unbounded wait; chưa có operator max wait.
+- TDHH thiếu Hồng/Tuyết chưa có typed replenishment recovery do operator mô tả.
+- InventoryFull recovery chưa có hard max round operator-defined; hiện fail-close khi Sale recovery không tạo tiến triển.
+- Emergency mid-Function restart chưa bật.
 
-Periodic Friend Refresh và Recovery Friend Refresh độc lập.
-
-Target escalation:
-
-```text
-specialized recovery
-→ bounded local retry
-→ Friend Refresh #1
-→ resume same checkpoint
-→ retry
-→ Friend Refresh #2
-→ resume
-→ retry
-→ emergency restart chỉ khi policy được chốt
-→ fail-close
-```
-
-Không invent retry/error policy khi operator chưa mô tả điểm lỗi.
-
-## 16. Safety debt — CẦN OPERATOR CHỐT
-
-### Production panel open
-
-`ProductionActions._click_until_panel_open(...)` còn wait loop không bounded.
-
-Chưa có max burst/time được operator quy định.
-
-### Production idle-slot wait
-
-`ProductionActions._wait_for_idle_open_panel(...)` còn wait không bounded để chờ máy/slot.
-
-Chưa có max wait operator-defined.
-
-### TDHH thiếu Hồng/Tuyết
-
-Chưa có typed recovery được operator mô tả. Không tự suy diễn cách bổ sung/resume.
-
-### Emergency mid-Function restart
-
-Chưa bật trước durable checkpoint + clear/restore policy.
-
-## 17. Static verification / CI
+## 14. Static verification / CI
 
 Workflow:
 
 `.github/workflows/auto-standardization-contract.yml`
 
-Verifiers:
+Verifiers hiện gồm:
 
 ```text
-tools/verify_recovery_architecture_contract.py
-tools/verify_function_boundary_delay_contract.py
-tools/verify_action_standardization_contract.py
+verify_recovery_architecture_contract.py
+verify_function_boundary_delay_contract.py
+verify_action_standardization_contract.py
+verify_recipe_function_standardization_contract.py
+verify_module_scheduler_boundaries_contract.py
+verify_production_action_boundaries_contract.py
 ```
 
-Action verifier khóa:
+Production verifier khóa:
 
-- PATH 5/6/27/28/30;
-- Apple Supply dùng shared paths;
-- generic farm routes sở hữu implementation;
-- Function 1 route files chỉ wrapper;
-- VP sale neutral transaction facade;
-- Sale 5 View + vàng→QC;
-- Function 2 planting compatibility-only.
+- `ProductionPanelActions` product-agnostic;
+- Táo sấy subclass shared panel engine;
+- Nước táo/Vải vàng không mượn Táo sấy làm slot helper;
+- TDHH trực tiếp dùng shared panel engine + explicit x7;
+- warehouse-full guard patch shared engine;
+- material-shortage resume-layer được giữ.
 
-GitHub Actions trước đó có lỗi hạ tầng `steps=null`; khi runner chưa thực thi, không được gọi static PASS cũng không kết luận compile fail.
-
-## 18. Checkpoint commits mới đáng chú ý
+GitHub Actions gần đây có blocker hạ tầng:
 
 ```text
-1b1a8697  refactor(auto): promote verified 6-pot planting path to shared Actions
-5c115ace  refactor(auto): reuse shared 6-pot path for apple supply
-224229a9  test(auto): lock shared Action standardization contracts
-6fae962a  ci(auto): verify shared Action standardization contracts
-fa649e33  refactor(auto): make generic farm routes canonical implementation
-80f73684  refactor(auto): reduce Function 1 navigation to compatibility wrapper
-b306f7a9  refactor(auto): reduce Function 1 boundary navigation to compatibility wrapper
-43fe1ec6  test(auto): lock generic farm route ownership
-8fd129eb  docs(auto): refresh Actions audit after route and path standardization
+job=auto-contract
+conclusion=failure
+steps=null
+logs_url=null
 ```
 
-Boundary-delay checkpoints trước đó:
+Nếu run mới vẫn như vậy, **không gọi source fail và cũng không gọi static PASS**; chuyển pre-live verification sang build DEV chính thức trên máy operator.
+
+## 15. Checkpoint commits gần nhất
 
 ```text
-5e9c7ec1  fix(auto): count sale time inside Function loop delay
-521c77cd  fix(auto): absorb maintenance time into AUTO Main loop delay
-97e89156  fix(auto): export boundary-aware AUTO Main scheduler
-3aa62fd4  test(auto): lock boundary-aware Function delay contract
-0aa39e07  ci(auto): verify Function boundary delay contract
-0108b5fe  docs(auto): define Function boundary delay semantics
+5526eb9f  refactor(auto): extract shared production panel engine
+f9448a0a  refactor(auto): keep warehouse-full guard on shared production engine
+3bae064f  refactor(auto): make dried apple transaction use shared panel engine
+705343ec  refactor(auto): move apple juice panel helpers to shared engine
+caaeb0e9  refactor(auto): move yellow fabric panel helpers to shared engine
+148ec9ca  refactor(auto): move TDHH production onto shared panel engine
+ae259553  refactor(auto): export shared production panel Action
+8d1e2d5a  test(auto): lock shared production panel architecture
+5d713a31  ci(auto): verify shared production Action boundaries
+047cac1e  docs(auto): refresh pre-live-test standardization checkpoint
 ```
 
-## 19. Tiếp tục chuẩn hóa
+## 16. Điểm tiếp tục ngay trước LIVE TEST
 
-Ưu tiên an toàn tiếp theo:
+Không mở rộng kiến trúc nữa nếu audit không phát hiện regression thật.
 
-1. audit remaining Action imports/aliases để code mới chỉ dùng canonical generic names;
-2. audit Recipe/Module để loại raw coordinate/gesture hoặc duplicated recovery còn sót;
-3. giữ production wait-loop/TDHH shortage untouched cho tới khi operator chốt;
-4. cập nhật verifier + docs theo từng boundary;
-5. khi CI runner thực thi được, yêu cầu compile/verifier xanh trước live test;
-6. live test theo từng Module/Function, không tự gọi runtime PASS.
+1. audit import/export/canonical aliases sau ProductionPanel refactor;
+2. xem CI run mới có thực thi steps không;
+3. chốt handoff pre-live;
+4. operator chạy `KVTM_DEV_CONTROL.bat` → `[1] Cap nhat source + build runtime DEV`;
+5. build/static sạch → LIVE TEST smoke từng Module;
+6. tiếp theo Function 1 full loop → Function 2 full loop.
+
+**Không gọi STATIC PASS hoặc RUNTIME PASS trước bằng chứng tương ứng.**
