@@ -5,23 +5,24 @@ Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
 Trạng thái: **WHOLE-AUTO STANDARDIZATION IN PROGRESS — SOURCE REFACTORED, NOT RUNTIME PASS**
 
-> Operator cho phép triển khai/refactor từng đoạn ngay khi mô tả và hiện đã yêu cầu chuẩn hóa toàn bộ AUTO. Không cần chờ mô tả xong toàn bộ Function. Build/static PASS không được thay cho live/runtime evidence.
+> Operator đã yêu cầu chuẩn hóa toàn bộ AUTO và cho phép triển khai/refactor từng đoạn ngay khi mô tả. Build/static PASS không thay cho live/runtime evidence.
 
 ## 1. Read-first bắt buộc
 
-1. `docs/AUTO_MULTI_DEV_STANDARDIZATION_CHECKPOINT_20260911.md` — checkpoint source/refactor mới nhất;
-2. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md` — handoff hiện hành;
-3. `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md` — thiết kế tích lũy, có thể chứa wording lịch sử;
-4. `docs/AUTO_MULTI_DEV_CONFIRMED_FLOW_LATEST.md` — Startup/Sale/Navigation đã xác nhận;
-5. `docs/AUTO_MULTI_DEV_ACTIONS_STANDARDIZATION.md`;
-6. `docs/AUTO_MULTI_DEV_FUNCTION_RECOVERY_MAPPING.md`;
-7. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md`;
-8. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`;
-9. `AI_COORDINATION.md`.
+1. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md` — handoff hiện hành;
+2. `docs/AUTO_MULTI_DEV_ACTIONS_AUDIT_20260911.md` — audit Action mới nhất;
+3. `docs/AUTO_MULTI_DEV_STANDARDIZATION_CHECKPOINT_20260911.md` — checkpoint source/refactor;
+4. `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md` — thiết kế tích lũy;
+5. `docs/AUTO_MULTI_DEV_CONFIRMED_FLOW_LATEST.md`;
+6. `docs/AUTO_MULTI_DEV_ACTIONS_STANDARDIZATION.md`;
+7. `docs/AUTO_MULTI_DEV_FUNCTION_RECOVERY_MAPPING.md`;
+8. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md`;
+9. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`;
+10. `AI_COORDINATION.md`.
 
-Nếu tài liệu cũ còn nói popup sweep sau khi chờ 60s, restart 2h, TDHH là planting/cây, hoặc worker catch-all rerun pipeline thì coi đó là **lịch sử đã bị override**.
+Nếu tài liệu cũ nói popup chỉ sweep sau khi chờ 60s, restart 2h, TDHH là cây, worker catch-all rerun pipeline, Sale chỉ 4 View, hoặc Function 1 là owner của farm routes thì coi là **lịch sử đã bị override**.
 
-## 2. Kiến trúc đang áp dụng
+## 2. Kiến trúc hiện hành
 
 ```text
 AUTO MAIN / SCHEDULER
@@ -38,136 +39,198 @@ GLOBAL RECOVERY / ERROR MANAGER
 ACTIVE CHECKPOINT (RAM, metadata-only)
 ```
 
-Nguyên tắc:
-
 ```text
 Recovery != Function completion
-Recovery = interrupt -> recover -> resume same work
+Recovery = interrupt → recover → resume same work
 ```
 
-- Function mô tả WHAT + thứ tự nghiệp vụ.
-- Recipe/Module ghép các Action.
-- Action thực hiện HOW dùng chung.
-- Recovery xử lý typed error/checkpoint/escalation; Action/Function không tự tạo loop recovery riêng.
+- Function = WHAT + order.
+- Module/Recipe = compose Actions.
+- Action = HOW reusable manipulation/verification.
+- Recovery = typed error + checkpoint + resume/escalation.
 
-## 3. Startup/Login/Popup — CHỐT + SOURCE ĐÃ REFACTOR, CHỜ LIVE TEST
-
-Sau ClientJS open/restart:
+## 3. Startup/Login/Popup — CHỐT, SOURCE ĐÃ REFACTOR
 
 ```text
-login game thành công
+login/restart
 → camera mặc định MAIN
 → bắt đầu timer 60s
-→ trong đủ 60s liên tục check popup
-→ popup xuất hiện thì đóng ngay
-→ tiếp tục scan cho tới hết 60s
-→ bàn giao MAIN cho scheduler
+→ trong đủ 60s liên tục scan popup
+→ popup nào xuất hiện thì đóng ngay
+→ tiếp tục scan tới hết 60s
+→ bàn giao MAIN
 ```
 
-- Không dùng `goDown(1)` để tạo exact-main sau login/restart.
-- `GameSessionWorkflow.POPUP_WATCH_SECONDS = 60.0`.
-- Startup ghi exact-main theo startup contract; nếu mất contract thì fail-close.
+Không dùng `goDown(1)` để tạo exact-main sau login/restart.
 
-## 4. Sale VP — CHỐT + SOURCE ĐÃ REFACTOR, CHỜ LIVE TEST
+## 4. Sale VP — CHỐT, SOURCE ĐÃ REFACTOR
 
-View 1 bắt đầu ở 8 ô đầu.
-
-Trong mỗi View:
+Mỗi View:
 
 ```text
-check vàng → thu vàng nếu có
-→ check QC
+thu vàng nếu có
+→ QC nếu có
 → tìm ô trống
-→ nếu có: mở Kho 2 → quét VP allowed theo Function → chứng minh x10 → đăng bán
-→ tiếp tục lấp ô trống
+→ Kho 2
+→ VP allowed theo Function
+→ chứng minh đủ x10
+→ đăng bán
 ```
 
-Nếu không có ô trống:
+Nếu View hết ô trống:
 
 ```text
-stall_next_view()
-= đúng 2 nhịp swipe
-→ scan lại vàng/QC/slot/sale
+stall.next_view()
+= đúng 2 swipe
 ```
 
-Tổng 5 View; View 5 là final overlap/end check. Sale dừng khi không còn VP hợp lệ đủ 10 hoặc đã quét hết boundary mà không còn chỗ hợp lệ.
+Tổng **5 View**; View 5 là final boundary/overlap check.
 
-## 5. Navigation Actions — CHỐT + SOURCE ĐÃ REFACTOR
+Canonical one-listing transaction Action:
 
-`goUp(n)` là mode hành động, không phải lặp swipe N lần.
+```text
+VpSaleTransactionActions
+```
+
+`AutoMainSellingActions` là tên/base lịch sử; code Sale mới không phụ thuộc tên AUTO Main.
+
+## 5. Function boundary delay — CHỐT + SOURCE IMPLEMENTED
+
+Operator phát hiện lỗi cũ:
+
+```text
+Function PASS
+→ Sale
+→ sleep nguyên delay
+→ Function kế tiếp
+```
+
+Contract mới:
+
+```text
+Function PASS
+→ bắt đầu boundary timer
+→ Sale/Friend Refresh/maintenance nếu đến hạn
+→ elapsed = thời gian maintenance đã dùng
+→ sleep chỉ phần delay còn thiếu
+→ Function kế tiếp
+```
+
+Ví dụ delay 60s:
+
+```text
+Sale 25s → chờ thêm 35s
+Sale 65s → không chờ thêm
+```
+
+Áp dụng cho:
+
+- AUTO Main;
+- AUTO Builder `sale_after_each_loop`.
+
+Runtime AUTO Main export hiện dùng `workflows/auto_main/boundary_delay.py`.
+
+Verifier: `tools/verify_function_boundary_delay_contract.py`.
+
+## 6. Navigation primitive — CHỐT
+
+`goUp(n)` là mode hành động, không phải N lần swipe.
 
 ```text
 goUp(1) = swipe ngắn một tầng
-          current reference (514,214) → (514,314)
+          (514,214) → (514,314)
 
-goUp(2) = click anchor chậu (257,191)
-          nếu đang tầng 1 → candidate tầng 3
-          KHÔNG bằng goUp(1) + goUp(1)
+goUp(2) = click anchor (257,191)
+          nếu tầng 1 → candidate tầng 3
+          KHÔNG bằng 2 x goUp(1)
 
-goUp(4) = swipe dài (387,69) → (387,918)
-          nếu đang tầng 1 → candidate tầng 5
+goUp(4) = long swipe (387,69) → (387,918)
+          nếu tầng 1 → candidate tầng 5
 
-goUp(3) = chưa định nghĩa → fail-close
+goUp(3) = undefined → fail-close
 ```
 
 Canonical primitive: `FloorNavigationActions`.
 
-Route composer dùng chung mới:
+## 7. Farm routes — CANONICAL OWNERSHIP ĐÃ CHUYỂN
+
+`actions/farm_routes.py` hiện sở hữu **implementation thật**:
 
 - `FarmRouteActions`
 - `FarmBoundaryRouteActions`
+- `NavigationEvidence`
 
-`KVAutomation` expose:
+Các route dùng chung như MAIN→1, 1→5, 1→6, MAIN→2, 1→3, known-floor→MAIN/boundary proof nằm ở đây.
+
+Hai file lịch sử chỉ còn compatibility wrapper:
+
+```text
+FunctionOneNavigationActions(FarmRouteActions)
+FunctionOnePassThreeNavigationActions(FarmBoundaryRouteActions)
+```
+
+Không thêm implementation mới vào file Function-specific.
+
+`KVAutomation` expose canonical facade:
 
 ```text
 farm_routes
 farm_boundary_routes
 ```
 
-Hai attribute lịch sử `function_one_navigation` và `function_one_pass_three_navigation` chỉ là compatibility aliases trỏ cùng object; code mới không được phụ thuộc tên Function-specific.
+## 8. Planting — SHARED GEOMETRY
 
-## 6. Planting / TDHH — CHỐT PHÂN LOẠI
-
-Planting path/count dùng chung:
+`PlantingActions` hiện giữ verified shared paths:
 
 ```text
 PATH_5
+PATH_6
 PATH_27
 PATH_28
 PATH_30
 ```
 
-Crop identity tách khỏi geometry.
+`PATH_6` được promote từ exact geometry hàng 6 chậu tầng 6 đã tồn tại trong Apple Supply; không đổi gesture.
 
-### Function 2
+Apple Supply hiện dùng:
 
-- Hoa hồng = cây/nguyên liệu.
-- Cây tuyết = cây/nguyên liệu.
-- **TDHH / Tinh dầu hoa hồng = VP thành phẩm, KHÔNG phải cây.**
+```text
+FIVE_FLOOR_PATH = PlantingActions.PATH_30
+FLOOR_6_ROW      = PlantingActions.PATH_6
+```
 
-Flow:
+Crop identity tách khỏi geometry; Action không quyết định floor route.
+
+## 9. Function 2 / TDHH — CHỐT PHÂN LOẠI
+
+- Hồng = crop/material.
+- Tuyết = crop/material.
+- **TDHH/Tinh dầu hoa hồng = finished VP, không phải cây.**
+
+Flow hiện hiểu:
 
 ```text
 Hồng 35
 → MAIN
 → Tuyết 28
 → tới máy TDHH
-→ sản xuất VP TDHH x7
+→ sản xuất TDHH x7
 → sửa máy
 → MAIN
 ```
 
-`RoseOilRecipe` ghép Material Preparation + Navigation + `RoseOilProductionActions` + Repair + Return MAIN.
+`RoseOilRecipe` sở hữu choreography; `PlantingActions` chỉ sở hữu crop gesture/path; `RoseOilProductionActions` sản xuất VP TDHH.
 
-## 7. Function / Recipe standardization hiện tại
+`actions/function_two_planting.py` là compatibility-only và choreography cũ bị chặn.
 
-- Function 1 dùng RecipeBook và `farm_routes`; không sở hữu primitive điều hướng.
-- Function 2 kế thừa Function 1 core và dùng cùng RecipeBook/RecoveryManager.
-- `DriedAppleRecipe`, `AppleJuiceRecipe`, `YellowFabricRecipe`, `RoseOilRecipe` dùng chung một `RecoveryManager` cho mỗi Function.
-- `auto_apple_dryer` là compatibility adapter gọi Recipe chuẩn; không giữ recovery riêng.
-- `actions/function_two_planting.py` đã retire khỏi runtime business path; Hồng/Tuyết choreography nằm ở Recipe, primitive/path nằm ở PlantingActions.
+## 10. Function / Recipe standardization
 
-## 8. Recovery/checkpoint — SOURCE ĐÃ CHUẨN HÓA MỘT PHẦN
+- Function 1 dùng RecipeBook + generic farm routes.
+- Function 2 dùng cùng RecipeBook/RecoveryManager và thêm RoseOilRecipe.
+- `DriedAppleRecipe`, `AppleJuiceRecipe`, `YellowFabricRecipe`, `RoseOilRecipe` dùng chung **một RecoveryManager per Function**.
+- `auto_apple_dryer` là adapter gọi Recipe chuẩn.
+
+## 11. Recovery / checkpoint
 
 Lifecycle:
 
@@ -178,125 +241,201 @@ MODULE_RESUMED
 MODULE_COMPLETED
 ```
 
-`RecoveryManager` là facade chung; `NavigationRecovery` dùng `farm_routes`/`farm_boundary_routes`.
-
-Production hiện chỉ đăng ký typed recovery đã biết như:
+Known typed recovery hiện gồm các nhánh như:
 
 - `WrongProductionMachine`;
-- `InventoryFull`.
+- `InventoryFull`;
+- typed MaterialShortage nơi đã được triển khai.
 
-Generic `ScreenTimeout` không được tự retry/restart nếu chưa có policy.
+Generic `ScreenTimeout` không được tự biến thành recovery/restart.
 
-Worker không còn:
-
-```text
-Exception → đưa MAIN → rerun toàn pipeline
-```
-
-Hiện tại:
+Worker:
 
 ```text
 registered typed error
 → RecoveryManager
-→ resume module/checkpoint
+→ resume same module/checkpoint
 
 unregistered error
 → fail-close + log
 ```
 
-Đây là thay đổi bắt buộc để không làm mất checkpoint hoặc chạy lại Function từ đầu.
-
-## 9. ClientJS scheduled restart — SOURCE TARGET ĐÃ ĐỔI 3H, CHỜ LIVE TEST
+Không còn:
 
 ```text
-CLIENT_RESTART_INTERVAL = 10800s = 3h
+Exception → MAIN → rerun whole pipeline
 ```
 
-Scheduled restart:
+## 12. Material Shortage boundary
+
+Action được giữ progress nhỏ để resume side effect:
+
+```text
+queued
+slot evidence
+recovery_count
+```
+
+Crop Action Bông chỉ biết cách lấy batch 27 Bông thật và gieo lại.
+
+Recovery mới biết:
+
+```text
+vì sao thiếu
+→ route về MAIN/floor cần thiết
+→ bổ sung
+→ quay máy
+→ resume
+```
+
+## 13. Machine Repair / Production audit
+
+Machine Repair hiện đúng boundary:
+
+```text
+verified production handoff
+→ ?
+→ Sửa
+→ verify UI change
+→ close modal
+```
+
+Không chứa Friend Refresh/restart/scheduler.
+
+Production shared engine sở hữu panel/product/slot proof và typed signals.
+
+Gesture retry hiện bounded:
+
+```text
+DRAG_ATTEMPTS = 3
+VERIFY_RECHECKS = 4
+```
+
+## 14. ClientJS scheduled restart — 3H
+
+```text
+CLIENT_RESTART_INTERVAL = 10800s
+```
 
 ```text
 3h due giữa Function
 → defer
 → Function hiện tại PASS
-→ sale an toàn tại safe boundary nếu cần
+→ sale an toàn tại boundary nếu cần
 → ClientRestartRequested
-→ worker phát lifecycle signal
-→ Multi supervisor đóng đúng ClientJS/profile
-→ chờ process/worker cũ kết thúc
-→ relaunch đúng profile
+→ worker lifecycle signal
+→ supervisor đóng/relaunch đúng profile
 → worker + Bridge generation mới
-→ startup/login + popup watch 60s
-→ skip startup sale đúng 1 lần vì sale đã chạy trước restart
-→ scheduler tiếp tục với timer ClientJS mới 3h
+→ startup 60s
+→ skip startup sale đúng 1 lần
+→ timer ClientJS mới 3h
 ```
 
-Source đã nối Scheduler → Worker → Multi integration theo flow trên. **Chưa gọi runtime PASS cho đến live test.**
+Chưa gọi runtime PASS cho đến live test.
 
-Emergency restart giữa Function là luồng khác và chưa được tự bật: muốn làm phải có durable checkpoint + policy theo các điểm lỗi operator mô tả.
+Emergency restart giữa Function chưa bật: cần durable checkpoint + operator-defined policy.
 
-## 10. Friend Refresh / escalation
+## 15. Friend Refresh / escalation
 
-Periodic Friend Refresh và Recovery Friend Refresh phải độc lập.
+Periodic Friend Refresh và Recovery Friend Refresh độc lập.
 
-Escalation mục tiêu:
+Target escalation:
 
 ```text
-specialized recovery nếu có
+specialized recovery
 → bounded local retry
 → Friend Refresh #1
 → resume same checkpoint
 → retry
 → Friend Refresh #2
-→ resume same checkpoint
+→ resume
 → retry
 → emergency restart chỉ khi policy được chốt
-→ fail-close khi hết giới hạn
+→ fail-close
 ```
 
-Không tự invent retry count/error policy trước khi operator mô tả điểm bắt lỗi tương ứng.
+Không invent retry/error policy khi operator chưa mô tả điểm lỗi.
 
-## 11. Static verification / CI
+## 16. Safety debt — CẦN OPERATOR CHỐT
 
-Verifier chuẩn hóa:
+### Production panel open
 
-`tools/verify_recovery_architecture_contract.py`
+`ProductionActions._click_until_panel_open(...)` còn wait loop không bounded.
 
-Workflow tập trung:
+Chưa có max burst/time được operator quy định.
+
+### Production idle-slot wait
+
+`ProductionActions._wait_for_idle_open_panel(...)` còn wait không bounded để chờ máy/slot.
+
+Chưa có max wait operator-defined.
+
+### TDHH thiếu Hồng/Tuyết
+
+Chưa có typed recovery được operator mô tả. Không tự suy diễn cách bổ sung/resume.
+
+### Emergency mid-Function restart
+
+Chưa bật trước durable checkpoint + clear/restore policy.
+
+## 17. Static verification / CI
+
+Workflow:
 
 `.github/workflows/auto-standardization-contract.yml`
 
-Workflow kiểm tra:
+Verifiers:
 
-- compile `kvtm_automation`;
-- py_compile worker/integration/profile settings/verifier;
-- chạy recovery/architecture contract verifier.
+```text
+tools/verify_recovery_architecture_contract.py
+tools/verify_function_boundary_delay_contract.py
+tools/verify_action_standardization_contract.py
+```
 
-Hiện GitHub Actions đang có lỗi hạ tầng: job được tạo nhưng `steps=null`, tức runner chưa thực thi bất kỳ step nào. Vì vậy trạng thái CI `failure` hiện tại **không được diễn giải là compile fail**, đồng thời cũng không được gọi static PASS.
+Action verifier khóa:
 
-## 12. Checkpoint commits quan trọng của đợt chuẩn hóa này
+- PATH 5/6/27/28/30;
+- Apple Supply dùng shared paths;
+- generic farm routes sở hữu implementation;
+- Function 1 route files chỉ wrapper;
+- VP sale neutral transaction facade;
+- Sale 5 View + vàng→QC;
+- Function 2 planting compatibility-only.
 
-- `82bc3da80d62e2d56691761dc28583aa9c9f690c` — one RecoveryManager per Function.
-- `e26bbfbc26776a242bf806f9d3e5a23ccb49ddf2` — TDHH = finished VP, Hồng/Tuyết = materials.
-- `aa41cdcb0c8556ce300839778d0f6d1222c941e1` — standardization checkpoint doc.
-- `9e3267ec4dd9ae09394459969ed367d50519693c` — worker typed-recovery boundary.
-- `1e83c1031a5574070a84f27d1aadd8332f343c5b` — scheduled restart lifecycle bridge.
-- `df863951654a1e8e42637fcbee39abe2b273e463` — 3h ClientJS restart integration.
-- `f2dd4f749f63bd1c90bf311c1914b2483ea2fb5d` — per-profile UI/config 3h.
-- `c28220b65bdf80276c64ce3c1fb903cebc6f5dd2` — verifier locks new contracts.
-- `eb66b63352e867beb1f985fee4f75a49eb8fff4e` — focused AUTO contract workflow.
-- `3aa21dec65e5dcec2c7790e97c37d6db70c4c4d6` — generic FarmRouteActions facade.
-- `f229749c21c01968a08ad9b9f08f3a730dff6f30` — KVAutomation exposes generic route facade.
-- `ceb621d4b22bcf26079f43ae7eec0e6712b0d4bb` — Global Recovery uses generic farm routes.
-- `a3e00d5962c85c1c4bce74a9e138d13d985cf555` — TDHH Recipe uses generic farm routes.
-- `6413f6084391da2489dc999a362e688fcb6c3bc5` — Function 1 uses generic farm routes.
+GitHub Actions trước đó có lỗi hạ tầng `steps=null`; khi runner chưa thực thi, không được gọi static PASS cũng không kết luận compile fail.
 
-## 13. Điểm tiếp tục chuẩn hóa
+## 18. Checkpoint commits mới đáng chú ý
 
-Ưu tiên tiếp theo:
+```text
+1b1a8697  refactor(auto): promote verified 6-pot planting path to shared Actions
+5c115ace  refactor(auto): reuse shared 6-pot path for apple supply
+224229a9  test(auto): lock shared Action standardization contracts
+6fae962a  ci(auto): verify shared Action standardization contracts
+fa649e33  refactor(auto): make generic farm routes canonical implementation
+80f73684  refactor(auto): reduce Function 1 navigation to compatibility wrapper
+b306f7a9  refactor(auto): reduce Function 1 boundary navigation to compatibility wrapper
+43fe1ec6  test(auto): lock generic farm route ownership
+8fd129eb  docs(auto): refresh Actions audit after route and path standardization
+```
 
-1. audit `material_shortage_production.py` và production subclasses để tách Action / Recipe / Recovery đúng ranh giới;
-2. retire dần các class/file `FunctionOneNavigation*` thành compatibility-only;
-3. kiểm tra Machine Repair/Production không chứa scheduler/recovery escalation;
-4. cập nhật verifier khi mỗi boundary mới được chuyển;
-5. khi runner GitHub hoạt động, yêu cầu compile/verifier xanh trước live test;
-6. sau static evidence mới chuyển sang operator live test, không tự gọi runtime PASS.
+Boundary-delay checkpoints trước đó:
+
+```text
+5e9c7ec1  fix(auto): count sale time inside Function loop delay
+521c77cd  fix(auto): absorb maintenance time into AUTO Main loop delay
+97e89156  fix(auto): export boundary-aware AUTO Main scheduler
+3aa62fd4  test(auto): lock boundary-aware Function delay contract
+0aa39e07  ci(auto): verify Function boundary delay contract
+0108b5fe  docs(auto): define Function boundary delay semantics
+```
+
+## 19. Tiếp tục chuẩn hóa
+
+Ưu tiên an toàn tiếp theo:
+
+1. audit remaining Action imports/aliases để code mới chỉ dùng canonical generic names;
+2. audit Recipe/Module để loại raw coordinate/gesture hoặc duplicated recovery còn sót;
+3. giữ production wait-loop/TDHH shortage untouched cho tới khi operator chốt;
+4. cập nhật verifier + docs theo từng boundary;
+5. khi CI runner thực thi được, yêu cầu compile/verifier xanh trước live test;
+6. live test theo từng Module/Function, không tự gọi runtime PASS.
