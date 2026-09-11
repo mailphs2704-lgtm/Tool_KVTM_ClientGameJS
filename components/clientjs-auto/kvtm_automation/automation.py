@@ -19,6 +19,7 @@ from .actions import (
     PopupActions,
     PlantingActions,
     ProductionActions,
+    RoseOilProductionActions,
     SellingActions,
     StallActions,
     YellowFabricProductionActions,
@@ -192,6 +193,9 @@ class KVAutomation:
             context, self.vision, self.wait, self.speed_config
         )
         self.yellow_fabric_production = YellowFabricProductionActions(
+            context, self.vision, self.wait, self.speed_config
+        )
+        self.rose_oil_production = RoseOilProductionActions(
             context, self.vision, self.wait, self.speed_config
         )
         self.navigation = NavigationActions(
