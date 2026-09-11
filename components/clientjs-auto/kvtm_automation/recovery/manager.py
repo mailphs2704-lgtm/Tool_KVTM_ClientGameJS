@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, TypeVar
 
 from .events import RecoveryEvent, RecoveryEventKind
+from .module_execution import ModuleErrorHandler, ModuleRecoveryExecutor
 from .navigation import NavigationRecovery, RouteHandler
 from .production import ProductionRecovery
 
@@ -19,9 +20,9 @@ class RecoveryManager:
     """Facade consumed by Functions/Recipes instead of embedding recovery logic.
 
     A Function normally calls only high-level recovery methods and
-    ``run_production``. Optional event handlers let a specific Function add
-    bookkeeping at one recovery position. Optional route maps let future
-    Functions add new floors without copying recovery algorithms.
+    ``run_production``. ``run_module`` is the common checkpoint executor for
+    future modules that expose typed recoverable errors. Optional event handlers
+    let a Function add bookkeeping without owning the recovery policy itself.
     """
 
     def __init__(
@@ -122,6 +123,34 @@ class RecoveryManager:
         label: str,
     ) -> None:
         self.navigation.from_floor_to_floor(source_floor, target_floor, label)
+
+    def run_module(
+        self,
+        *,
+        module_id: str,
+        label: str,
+        runner: Callable[[], _T],
+        floor: int | None = None,
+        handlers: Sequence[tuple[type[Exception], ModuleErrorHandler]] = (),
+    ) -> _T:
+        """Execute a module behind one checkpoint until it succeeds/fails closed.
+
+        Business modules may emit typed errors and register recovery handlers here.
+        The executor itself never guesses a policy and never swallows unregistered
+        errors, so generic visual failures remain fail-close.
+        """
+        executor = ModuleRecoveryExecutor(
+            self.auto,
+            function_id=self.function_id,
+            emit=self._emit,
+        )
+        return executor.run(
+            module_id=module_id,
+            label=label,
+            floor=floor,
+            runner=runner,
+            handlers=handlers,
+        )
 
     def run_production(
         self,

@@ -8,6 +8,10 @@ from typing import Mapping
 class RecoveryEventKind(str, Enum):
     """Stable recovery events emitted around recoverable runtime transitions."""
 
+    MODULE_STARTED = "module_started"
+    MODULE_INTERRUPTED = "module_interrupted"
+    MODULE_RESUMED = "module_resumed"
+    MODULE_COMPLETED = "module_completed"
     UNKNOWN_CAMERA = "unknown_camera"
     WRONG_PRODUCTION_MACHINE = "wrong_production_machine"
     INVENTORY_FULL = "inventory_full"

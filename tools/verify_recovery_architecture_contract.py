@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CLEAN = ROOT / "components/clientjs-auto/kvtm_automation"
 ERRORS = CLEAN / "errors.py"
 EVENTS = CLEAN / "recovery/events.py"
+MODULE_EXECUTION = CLEAN / "recovery/module_execution.py"
 NAV = CLEAN / "recovery/navigation.py"
 PRODUCTION = CLEAN / "recovery/production.py"
 MANAGER = CLEAN / "recovery/manager.py"
@@ -45,6 +46,7 @@ def forbid_top_level_import_from(text: str, module_name: str, message: str) -> N
 def main() -> int:
     errors = read(ERRORS)
     events = read(EVENTS)
+    module_execution = read(MODULE_EXECUTION)
     nav = read(NAV)
     production = read(PRODUCTION)
     manager = read(MANAGER)
@@ -63,10 +65,29 @@ def main() -> int:
     require(events, "class RecoveryEventKind(str, Enum):", "Typed event kind missing")
     require(events, "class RecoveryEvent:", "Typed recovery event missing")
     for token in (
+        "MODULE_STARTED", "MODULE_INTERRUPTED", "MODULE_RESUMED", "MODULE_COMPLETED",
         "UNKNOWN_CAMERA", "WRONG_PRODUCTION_MACHINE", "INVENTORY_FULL",
         "MAIN_PROVEN", "FLOOR_REENTERED", "RECOVERY_EXHAUSTED",
     ):
         require(events, token, f"Recovery event missing: {token}")
+
+    # Generic module executor owns the in-flight checkpoint. It may only recover
+    # exception types explicitly registered by the module policy.
+    require(module_execution, "class ModuleCheckpoint:", "ModuleCheckpoint missing")
+    require(module_execution, "class ModuleRecoveryExecutor:", "ModuleRecoveryExecutor missing")
+    require(module_execution, "def interrupted(self, exc: Exception)", "Checkpoint interruption update missing")
+    require(module_execution, "handler = self._select_handler(exc, handlers)", "Typed handler dispatch missing")
+    require(module_execution, "if handler is None:", "Unregistered errors are not fail-close")
+    require(
+        module_execution,
+        "GIỮ NGUYÊN module, chưa trả control về Function/AutoMain",
+        "Module checkpoint does not explicitly preserve scheduler boundary",
+    )
+    require(
+        module_execution,
+        "chạy tiếp cùng module trước khi cho phép vòng Function mới",
+        "Module resume contract missing",
+    )
 
     # Navigation owns all reusable position recovery and supports injected routes.
     require(nav, "class NavigationRecovery:", "NavigationRecovery missing")
@@ -80,13 +101,20 @@ def main() -> int:
     require(nav, "from_main_routes:", "Injected from-main routes missing")
     require(nav, "between_floor_routes:", "Injected between-floor routes missing")
 
-    # Production catches only recoverable business/navigation signals.
+    # Production registers only explicit recoverable signals with the generic
+    # module executor. Generic ScreenTimeout is never a registered handler.
     require(production, "class ProductionRecovery:", "ProductionRecovery missing")
-    require(production, "except WrongProductionMachine as exc:", "Wrong-machine policy missing")
-    require(production, "except InventoryFull as exc:", "Inventory-full policy missing")
-    forbid(production, "except ScreenTimeout", "Generic ScreenTimeout swallowed by recovery")
+    require(production, "ModuleRecoveryExecutor(", "Production is not checkpointed as a module")
+    require(production, "(WrongProductionMachine, recover_wrong_machine)", "Wrong-machine handler missing")
+    require(production, "(InventoryFull, recover_inventory_full)", "Inventory-full handler missing")
+    forbid(production, "(ScreenTimeout,", "Generic ScreenTimeout registered as recoverable")
     require(production, "self.navigation.recover_unknown_to_floor(", "Wrong machine not routed through nav recovery")
     require(production, "AutoVpSaleWorkflow(", "Warehouse-full sale recovery missing")
+    require(
+        production,
+        "if sold <= 0 and collected <= 0:",
+        "Warehouse recovery must accept either listing or gold-collection progress",
+    )
 
     # Recovery imports auto_builder.catalog for Function sale metadata. The
     # package initializer must stay side-effect free: eagerly importing runner
@@ -111,6 +139,7 @@ def main() -> int:
     require(manager, "between_floor_routes:", "Per-Function route injection missing")
     require(manager, "def recover_unknown_to_floor(", "Manager unknown-floor facade missing")
     require(manager, "def from_floor_to_floor(", "Manager known-floor facade missing")
+    require(manager, "def run_module(", "Manager module checkpoint facade missing")
     require(manager, "def run_production(", "Manager production facade missing")
 
     require(recipe_book, "from ..recovery import RecoveryManager", "RecipeBook recovery import missing")
@@ -130,9 +159,11 @@ def main() -> int:
 
     print("AUTO MULTI DEV RECOVERY ARCHITECTURE CONTRACT VERIFIED")
     print("errors=signals-only")
-    print("events=typed-observer-hooks")
+    print("events=typed-observer-hooks+module-lifecycle")
+    print("module_executor=checkpointed+typed-handler-only+no-scheduler-return-on-recovery")
     print("navigation=centralized+injectable-routes")
-    print("production=explicit-signals-only+no-generic-screen-timeout-retry")
+    print("production=checkpointed-explicit-signals+no-generic-screen-timeout-retry")
+    print("warehouse_progress=listing-or-gold-collection")
     print("auto_builder_import=lazy-runner-no-recovery-cycle")
     print("recipes=share-one-RecoveryManager-per-function")
     print("functions=business-flow-composes-RecipeBook")
