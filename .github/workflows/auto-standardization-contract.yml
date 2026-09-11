@@ -1,0 +1,38 @@
+name: AUTO standardization contract
+
+on:
+  push:
+    branches:
+      - develop/multi-auto-dev
+    paths:
+      - 'components/clientjs-auto/kvtm_automation/**'
+      - 'components/clientjs-auto/worker/auto_multi_dev_worker.py'
+      - 'source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py'
+      - 'source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py'
+      - 'tools/verify_recovery_architecture_contract.py'
+      - '.github/workflows/auto-standardization-contract.yml'
+  workflow_dispatch:
+
+jobs:
+  auto-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile standardized AUTO sources
+        run: |
+          python -m compileall -q components/clientjs-auto/kvtm_automation
+          python -m py_compile \
+            components/clientjs-auto/worker/auto_multi_dev_worker.py \
+            source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py \
+            source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py \
+            tools/verify_recovery_architecture_contract.py
+
+      - name: Verify AUTO architecture contracts
+        run: python tools/verify_recovery_architecture_contract.py
