@@ -26,16 +26,10 @@ class YellowFabricRecipeResult:
 
 
 class YellowFabricRecipe:
-    """Reusable Vải vàng recipe with optional Nước táo dependency.
-
-    ``run_from_main`` can be used independently by a future Function. When
-    ``include_apple_juice_dependency=True`` it first runs the reusable Nước táo
-    recipe, returns floor 2 -> exact-main, then continues Bông -> tầng 3 -> Vải
-    vàng. Function 1 already produces Nước táo earlier, so it uses the dedicated
-    ``run_after_floor_2`` entry to avoid duplicate production.
-    """
+    """Reusable Vải vàng recipe composed from shared Navigation/Planting Actions."""
 
     REQUIRED_COUNT = 9
+    COTTON_COUNT = 27
 
     def __init__(
         self,
@@ -65,11 +59,15 @@ class YellowFabricRecipe:
         self._require_supported_count(count)
         self.recovery.ensure_main("Vải vàng recipe: trước trồng Bông")
         self.context.stage("auto-recipe-yellow-fabric-cotton")
+
+        # Recipe owns the business route. CottonPlantingActions is current-view
+        # only and never hides a goUp inside the planting gesture.
+        self.auto.floors.go_up(1, label="yellow-fabric-main-to-floor1")
         cotton = self.auto.cotton_planting.plant_27_cotton()
         self.context.ensure_running()
 
-        # Cotton planting enters from main using its proven goUp(1) and leaves the
-        # camera at known floor 1. Never pretend that state is still exact-main.
+        # From the known floor1 anchor, the operator-defined goUp(2) action clicks
+        # the first pot of floor4 and lands at candidate floor3.
         self.recovery.from_floor_to_floor(1, 3, "Vải vàng recipe")
         self.context.stage("auto-recipe-yellow-fabric-production")
         produced = self.recovery.run_production(
@@ -84,7 +82,8 @@ class YellowFabricRecipe:
         self.context.ensure_running()
         self.context.stage("auto-recipe-yellow-fabric-pass")
         self.context.log(
-            "AUTO recipe Vải vàng • PASS • trồng 27 Bông + SX 9/9 + Sửa máy"
+            "AUTO recipe Vải vàng • PASS • goUp(1) + trồng 27 Bông + "
+            "goUp(2) + SX 9/9 + Sửa máy"
         )
         return YellowFabricRecipeResult(
             cotton_planted=int(cotton),
@@ -98,7 +97,6 @@ class YellowFabricRecipe:
         count: int = 9,
         include_apple_juice_dependency: bool = False,
     ) -> YellowFabricRecipeResult:
-        """Run Vải vàng from exact-main, optionally producing Nước táo first."""
         self._require_supported_count(count)
         self.recovery.ensure_main("Vải vàng recipe: entry main")
         juice_result: AppleJuiceRecipeResult | None = None
