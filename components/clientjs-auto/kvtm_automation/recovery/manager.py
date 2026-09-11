@@ -17,12 +17,11 @@ RecoveryEventHandler = Callable[[RecoveryEvent], None]
 
 
 class RecoveryManager:
-    """Facade consumed by Functions/Recipes instead of embedding recovery logic.
+    """One recovery facade shared by all Recipes in a Function.
 
-    A Function normally calls only high-level recovery methods and
-    ``run_production``. ``run_module`` is the common checkpoint executor for
-    future modules that expose typed recoverable errors. Optional event handlers
-    let a Function add bookkeeping without owning the recovery policy itself.
+    Recipes may register additional verified navigation routes on this same
+    manager. They must not create a second manager merely because a later Recipe
+    uses another floor; one manager keeps event/checkpoint ownership coherent.
     """
 
     def __init__(
@@ -79,6 +78,19 @@ class RecoveryManager:
                 f"event={event.kind.value} • {exc!r}"
             )
 
+    def register_navigation_routes(
+        self,
+        *,
+        to_main_routes: Mapping[int, RouteHandler] | None = None,
+        from_main_routes: Mapping[int, RouteHandler] | None = None,
+        between_floor_routes: Mapping[tuple[int, int], RouteHandler] | None = None,
+    ) -> None:
+        self.navigation.register_routes(
+            to_main_routes=to_main_routes,
+            from_main_routes=from_main_routes,
+            between_floor_routes=between_floor_routes,
+        )
+
     def ensure_main(self, label: str) -> None:
         self.navigation.ensure_main(label)
 
@@ -133,12 +145,7 @@ class RecoveryManager:
         floor: int | None = None,
         handlers: Sequence[tuple[type[Exception], ModuleErrorHandler]] = (),
     ) -> _T:
-        """Execute a module behind one checkpoint until it succeeds/fails closed.
-
-        Business modules may emit typed errors and register recovery handlers here.
-        The executor itself never guesses a policy and never swallows unregistered
-        errors, so generic visual failures remain fail-close.
-        """
+        """Execute a module behind one checkpoint until it succeeds/fails closed."""
         executor = ModuleRecoveryExecutor(
             self.auto,
             function_id=self.function_id,
