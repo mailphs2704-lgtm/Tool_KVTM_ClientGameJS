@@ -73,7 +73,7 @@ Module là một khối nghiệp vụ có thể tái sử dụng, ví dụ:
 
 ### Action
 
-Action là thao tác nguyên tử:
+Action là thao tác nguyên tử/tái sử dụng:
 
 - click;
 - swipe;
@@ -82,7 +82,8 @@ Action là thao tác nguyên tử:
 - chọn kho;
 - chọn VP;
 - đợi state;
-- verify state.
+- verify state;
+- trồng/thu hoạch theo path/count đã xác minh.
 
 ### Global Recovery
 
@@ -575,7 +576,8 @@ Target mới chưa triển khai đầy đủ:
 - Friend Refresh escalation cho lỗi chưa có handler;
 - restart interval 3h;
 - recovery escalation sau 2 Friend Refresh;
-- durable checkpoint nếu Emergency Restart được chốt.
+- durable checkpoint nếu Emergency Restart được chốt;
+- chuẩn hóa toàn bộ `Actions` thành thư viện thao tác dùng chung/parameterized theo mục 16.
 
 ## 14. Quy tắc triển khai sau khi user nói "kết thúc" phần thiết kế
 
@@ -602,9 +604,96 @@ Khi user nói **"kết thúc"**:
 Đọc theo thứ tự:
 
 1. `docs/AUTO_MULTI_DEV_STANDARDIZATION_LATEST.md` — source of truth cho phiên chuẩn hóa hiện tại;
-2. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md`;
-3. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md` — lịch sử/kiến trúc cũ, lưu ý có một số target cũ như restart 2h;
-4. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`;
-5. `AI_COORDINATION.md`.
+2. `docs/AUTO_MULTI_DEV_ACTIONS_STANDARDIZATION.md` — chi tiết contract Actions dùng chung;
+3. `docs/AUTO_MULTI_DEV_GLOBAL_RECOVERY_CHECKPOINTS.md`;
+4. `docs/AUTO_MULTI_DEV_LATEST_HANDOFF.md` — lịch sử/kiến trúc cũ, lưu ý có một số target cũ như restart 2h;
+5. `docs/AUTO_MULTI_DEV_RECOVERY_ARCHITECTURE.md`;
+6. `AI_COORDINATION.md`.
 
 Nếu có xung đột giữa target chuẩn hóa mới và tài liệu cũ, **không tự sửa theo tài liệu cũ**. Đối chiếu trạng thái CHỐT/CẦN CHỐT trong file này và hỏi/tiếp tục theo yêu cầu mới nhất của operator.
+
+## 16. Actions dùng chung toàn dự án — CHỐT HƯỚNG
+
+Operator xác định `Actions` là nơi chứa toàn bộ khả năng thao tác dùng chung của AUTO. Function/Module không tự viết lại click/swipe/vision nếu đã có action tương ứng.
+
+### 16.1 Ranh giới trách nhiệm
+
+```text
+FUNCTION
+= nói cần làm gì / thứ tự nghiệp vụ
+
+MODULE / RECIPE
+= ghép các action thành một công việc có nghĩa
+
+ACTION
+= biết cách thực hiện một thao tác tái sử dụng
+
+GLOBAL RECOVERY
+= xử lý retry/escalation/checkpoint
+```
+
+Action không được tự tăng vòng Function, tự đổi Function, tự schedule sale/friend/restart hoặc tự reset checkpoint.
+
+### 16.2 Trồng/thu hoạch phải được tái sử dụng
+
+Các thao tác như trồng 27, 28, 30 cây hoặc một nhóm 5 cây có thể tồn tại sẵn dưới dạng action/path đã xác minh.
+
+Tuy nhiên Function không nên tự ghép kiểu `plant_27 + tự xử lý cây thứ 28` để đạt 28. Geometry phải nằm trong Actions.
+
+Target ưu tiên:
+
+```python
+plant_crop(
+    seed_template="cay_tuyet",
+    path=PATH_28,
+    expected_count=28,
+)
+```
+
+hoặc API tương đương:
+
+```python
+select_seed("cay_tuyet")
+plant_path(PATH_28, expected_count=28)
+```
+
+Nếu gameplay bắt buộc choreography riêng theo count, có thể expose `plant_27`, `plant_28`, `plant_30`, `plant_5`, nhưng các hàm này vẫn dùng chung primitive/path engine thay vì copy logic.
+
+### 16.3 Loại cây và geometry phải tách nhau
+
+Ví dụ:
+
+```text
+seed_template = cay_tuyet
+path = PATH_28
+expected_count = 28
+```
+
+Như vậy cùng path/action có thể dùng lại cho cây khác nếu gameplay cho phép.
+
+### 16.4 Action có side effect phải hậu kiểm
+
+Không coi `click`/`swipe` đã gửi là thành công. Action phải verify hậu điều kiện hoặc trả evidence/progress đủ cho Module/Recovery quyết định.
+
+Ví dụ production/trồng cây bị ngắt giữa chừng phải biết đã hoàn thành bao nhiêu để resume phần còn lại, không replay mù từ đầu.
+
+### 16.5 Actions không được trở thành một file/class khổng lồ
+
+Nên chia theo domain, ví dụ:
+
+```text
+actions/
+  popup.py
+  navigation.py
+  planting.py
+  harvesting.py
+  inventory.py
+  stall.py
+  selling.py
+  production.py
+  machine_repair.py
+```
+
+Tên/file cụ thể chỉ chốt sau khi audit source hiện tại; không di chuyển/xóa code chỉ để làm đẹp cấu trúc.
+
+Chi tiết đầy đủ: `docs/AUTO_MULTI_DEV_ACTIONS_STANDARDIZATION.md`.
