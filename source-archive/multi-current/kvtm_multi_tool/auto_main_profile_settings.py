@@ -17,6 +17,7 @@ FILE_FUNCTIONS = (
     "Start nhiều acc sẽ đóng băng snapshot scheduler riêng của từng profile",
     "Migrate công tắc qua bạn global cũ sang từng profile một lần để không mất hành vi hiện tại",
     "Giữ FPS render Multi DEV theo vòng đời ClientJS/Bridge thay vì chỉ khi Function bắt đầu",
+    "Tái khẳng định FPS trong bootstrap và định kỳ để chống ClientJS ghi đè animation interval",
 )
 
 _PROFILE_SETTINGS_KEY = "auto_multi_dev_profiles"
@@ -26,6 +27,10 @@ _RENDER_FPS_ENV_KEY = "KVTM_MULTI_DEV_RENDER_FPS"
 _RENDER_FPS_PRESETS = (10, 15, 20, 25, 30, 40, 60)
 _RENDER_FPS_DEFAULT = 20
 _RENDER_FPS_CAPABILITY = "FPS_LIMIT1"
+_RENDER_FPS_STARTUP_WINDOW_SECONDS = 60.0
+_RENDER_FPS_STARTUP_REASSERT_SECONDS = 2.0
+_RENDER_FPS_STEADY_REASSERT_SECONDS = 30.0
+_RENDER_FPS_SUCCESS_LOG_SECONDS = 30.0
 _DEFAULT_PROFILE_SETTINGS = {
     "sale_every_loops": 1,
     "function_loop_delay_seconds": 0.0,
@@ -291,6 +296,22 @@ def install_auto_main_profile_settings(app_class, core) -> None:
                 continue
         return live
 
+    def _prune_multi_dev_fps_state(self, live_pids) -> None:
+        live = {int(pid) for pid in live_pids if int(pid) > 0}
+        for attribute in (
+            "_multi_dev_fps_applied",
+            "_multi_dev_fps_retry_at",
+            "_multi_dev_fps_applied_at",
+            "_multi_dev_fps_first_seen",
+            "_multi_dev_fps_log_at",
+        ):
+            state = getattr(self, attribute, None)
+            if not isinstance(state, dict):
+                continue
+            for pid in tuple(state):
+                if int(pid) not in live:
+                    state.pop(pid, None)
+
     def _apply_multi_dev_fps_pid(
         self,
         pid: int,
@@ -308,10 +329,35 @@ def install_auto_main_profile_settings(app_class, core) -> None:
         if not isinstance(retry_at, dict):
             retry_at = {}
             self._multi_dev_fps_retry_at = retry_at
+        applied_at = getattr(self, "_multi_dev_fps_applied_at", None)
+        if not isinstance(applied_at, dict):
+            applied_at = {}
+            self._multi_dev_fps_applied_at = applied_at
+        first_seen = getattr(self, "_multi_dev_fps_first_seen", None)
+        if not isinstance(first_seen, dict):
+            first_seen = {}
+            self._multi_dev_fps_first_seen = first_seen
+        log_at = getattr(self, "_multi_dev_fps_log_at", None)
+        if not isinstance(log_at, dict):
+            log_at = {}
+            self._multi_dev_fps_log_at = log_at
 
-        if not force and applied.get(pid) == target:
-            return True
         now = time.monotonic()
+        first_seen.setdefault(pid, now)
+        startup_age = max(0.0, now - float(first_seen.get(pid, now) or now))
+        reassert_seconds = (
+            _RENDER_FPS_STARTUP_REASSERT_SECONDS
+            if startup_age <= _RENDER_FPS_STARTUP_WINDOW_SECONDS
+            else _RENDER_FPS_STEADY_REASSERT_SECONDS
+        )
+        previous_target = applied.get(pid)
+        previous_applied_at = float(applied_at.get(pid, 0.0) or 0.0)
+        if (
+            not force
+            and previous_target == target
+            and now - previous_applied_at < reassert_seconds
+        ):
+            return True
         if not force and now < float(retry_at.get(pid, 0.0) or 0.0):
             return False
 
@@ -341,13 +387,26 @@ def install_auto_main_profile_settings(app_class, core) -> None:
             return False
 
         applied[pid] = target
+        applied_at[pid] = now
         retry_at.pop(pid, None)
-        print(
-            "[KVTM DEV] FPS policy APPLIED • "
-            f"pid={pid} • target={target} • source={source} • "
-            "Director::setAnimationInterval • CAPTURE3 unchanged",
-            flush=True,
+        repeated = previous_target == target and previous_applied_at > 0.0
+        should_log = (
+            force
+            or not repeated
+            or source != "adopt"
+            or now - float(log_at.get(pid, 0.0) or 0.0)
+            >= _RENDER_FPS_SUCCESS_LOG_SECONDS
         )
+        if should_log:
+            event = "REASSERT" if repeated else "APPLIED"
+            print(
+                f"[KVTM DEV] FPS policy {event} • "
+                f"pid={pid} • target={target} • source={source} • "
+                f"startup_age={startup_age:.1f}s • lease={reassert_seconds:.1f}s • "
+                "Director::setAnimationInterval • CAPTURE3 unchanged",
+                flush=True,
+            )
+            log_at[pid] = now
         return True
 
     def _schedule_multi_dev_fps_policy(
@@ -390,6 +449,9 @@ def install_auto_main_profile_settings(app_class, core) -> None:
         applied = getattr(self, "_multi_dev_fps_applied", None)
         if isinstance(applied, dict):
             applied.clear()
+        applied_at = getattr(self, "_multi_dev_fps_applied_at", None)
+        if isinstance(applied_at, dict):
+            applied_at.clear()
         core.save_settings(self.settings)
 
         if callable(original_set_render_fps):
@@ -418,6 +480,9 @@ def install_auto_main_profile_settings(app_class, core) -> None:
         self._multi_dev_fps_target = target
         self._multi_dev_fps_applied = {}
         self._multi_dev_fps_retry_at = {}
+        self._multi_dev_fps_applied_at = {}
+        self._multi_dev_fps_first_seen = {}
+        self._multi_dev_fps_log_at = {}
         self.settings[_RENDER_FPS_SETTINGS_KEY] = target
         os.environ[_RENDER_FPS_ENV_KEY] = str(target)
 
@@ -444,15 +509,20 @@ def install_auto_main_profile_settings(app_class, core) -> None:
 
         print(
             "[KVTM DEV] FPS persistent policy READY • "
-            f"target={target} • apply=ClientJS/Bridge lifecycle • "
+            f"target={target} • bootstrap reassert="
+            f"{_RENDER_FPS_STARTUP_REASSERT_SECONDS:g}s/"
+            f"{_RENDER_FPS_STARTUP_WINDOW_SECONDS:g}s • steady reassert="
+            f"{_RENDER_FPS_STEADY_REASSERT_SECONDS:g}s • "
             "AUTO worker inherits same target",
             flush=True,
         )
 
     def adopt_running_clients(self, rows: list[dict]) -> None:
         result = original_adopt_running_clients(self, rows)
+        live_pids = self._live_client_pids()
+        self._prune_multi_dev_fps_state(live_pids)
         self._schedule_multi_dev_fps_policy(
-            self._live_client_pids(),
+            live_pids,
             source="adopt",
             force=False,
         )
@@ -585,6 +655,7 @@ def install_auto_main_profile_settings(app_class, core) -> None:
     app_class._set_multi_dev_render_fps = _set_persistent_multi_dev_render_fps
     app_class._multi_dev_render_fps_target = _multi_dev_render_fps_target
     app_class._live_client_pids = _live_client_pids
+    app_class._prune_multi_dev_fps_state = _prune_multi_dev_fps_state
     app_class._apply_multi_dev_fps_pid = _apply_multi_dev_fps_pid
     app_class._schedule_multi_dev_fps_policy = _schedule_multi_dev_fps_policy
     app_class._load_auto_multi_dev_profile_store = (
