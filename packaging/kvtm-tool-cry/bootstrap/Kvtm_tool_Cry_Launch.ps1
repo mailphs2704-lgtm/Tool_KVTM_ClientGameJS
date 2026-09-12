@@ -15,9 +15,18 @@ function Write-CryLaunchLog {
     Add-Content -LiteralPath $LogPath -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Message) -Encoding UTF8
 }
 
+function Read-LogTail {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return ""
+    }
+    return (@(Get-Content -LiteralPath $Path -Tail 30 -ErrorAction SilentlyContinue) -join " | ").Trim()
+}
+
 function Invoke-CryBootstrapChild {
     param(
         [Parameter(Mandatory = $true)][string]$Script,
+        [Parameter(Mandatory = $true)][string]$Label,
         [string[]]$Arguments = @()
     )
     $quotedScript = '"' + $Script + '"'
@@ -27,8 +36,15 @@ function Invoke-CryBootstrapChild {
         "-WindowStyle", "Hidden",
         "-File", $quotedScript
     ) + $Arguments
-    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $argumentLine -WindowStyle Hidden -PassThru -Wait
-    return [int]$process.ExitCode
+    $stdout = Join-Path $LogRoot ("bootstrap-" + $Label + ".out.log")
+    $stderr = Join-Path $LogRoot ("bootstrap-" + $Label + ".err.log")
+    Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
+    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $argumentLine -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -Wait
+    return @{
+        ExitCode = [int]$process.ExitCode
+        Stdout = $stdout
+        Stderr = $stderr
+    }
 }
 
 try {
@@ -40,18 +56,20 @@ try {
     # child PowerShell because updater uses exit codes; it must never terminate
     # this launch orchestrator before the known-good runtime gets a chance to run.
     if (Test-Path -LiteralPath $UpdateScript -PathType Leaf) {
-        $updateRc = Invoke-CryBootstrapChild -Script $UpdateScript
-        if ($updateRc -eq 0) {
+        $updateResult = Invoke-CryBootstrapChild -Script $UpdateScript -Label "update"
+        if ($updateResult.ExitCode -eq 0) {
             Write-CryLaunchLog "update check PASS"
         }
         else {
-            Write-CryLaunchLog "update check failed rc=$updateRc; launching last verified version"
+            $updateTail = Read-LogTail -Path $updateResult.Stderr
+            Write-CryLaunchLog "update check failed rc=$($updateResult.ExitCode); launching last verified version; stderr=$updateTail"
         }
     }
 
-    $runtimeRc = Invoke-CryBootstrapChild -Script $RuntimeScript
-    if ($runtimeRc -ne 0) {
-        throw "Runtime bootstrap failed rc=$runtimeRc"
+    $runtimeResult = Invoke-CryBootstrapChild -Script $RuntimeScript -Label "runtime"
+    if ($runtimeResult.ExitCode -ne 0) {
+        $runtimeTail = Read-LogTail -Path $runtimeResult.Stderr
+        throw "Runtime bootstrap failed rc=$($runtimeResult.ExitCode); stderr=$runtimeTail"
     }
     Write-CryLaunchLog "launch PASS"
     exit 0
