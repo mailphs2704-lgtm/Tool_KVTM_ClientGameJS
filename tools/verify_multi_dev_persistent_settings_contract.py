@@ -169,8 +169,8 @@ def main() -> int:
         "Legacy global friend-refresh migration missing",
     )
 
-    # Daily successful-sale counter: per stable profile, durable across process
-    # restarts, zero for a new local date, and observational/non-blocking.
+    # Daily VP sale-turn counter. One successfully posted x10 listing equals one
+    # game sale turn: a workflow result sold_listings=N must add exactly +N.
     require(
         daily_sale_counter,
         '_COUNTER_DIRNAME = "daily-sale-counters"',
@@ -183,8 +183,13 @@ def main() -> int:
     )
     require(
         daily_sale_counter,
-        '"successful_sales": count',
-        "Daily sale counter payload missing successful_sales",
+        '"successful_listings": count',
+        "Daily sale counter payload missing successful_listings",
+    )
+    require(
+        daily_sale_counter,
+        "count = previous + sold",
+        "Daily sale counter no longer increments by every posted listing",
     )
     require(
         daily_sale_counter,
@@ -203,8 +208,8 @@ def main() -> int:
     )
     require(
         auto_vp_sale_init,
-        "record_successful_sale(",
-        "Successful VP sale workflow is not wired to the daily counter",
+        "record_successful_listings(",
+        "Successful VP listings are not wired to the daily counter",
     )
     require(
         auto_vp_sale_init,
@@ -213,13 +218,18 @@ def main() -> int:
     )
     require(
         daily_sale_ui,
-        'text = f"Lần bán hôm nay: {count}"',
-        "Daily sale count is not shown in AUTO Main UI",
+        'sales_var = detail_vars.get("sales")',
+        "Daily sale count is not bound to the existing LƯỢT BÁN AUTO field",
     )
     require(
         daily_sale_ui,
-        "sale_box = sale_spin.master",
-        "Daily sale label is not anchored under the sale cadence control",
+        'text = f"{count} / {_GAME_DAILY_SALE_LIMIT}"',
+        "Daily sale field does not show current count against the 1000-turn limit",
+    )
+    require(
+        daily_sale_ui,
+        "app_class._show_account_details = show_account_details",
+        "Account switch/detail refresh does not update the daily sale field",
     )
     require(
         daily_sale_ui,
@@ -245,7 +255,8 @@ def main() -> int:
     print("auto_main_profile_switch=save-old+load-new")
     print("auto_main_multi_start=per-profile-frozen-snapshot")
     print("daily_sale_counter=per-profile+restart-persistent+local-midnight-reset")
-    print("daily_sale_success=one-session-if-sold_listings>0")
+    print("daily_sale_success=one-turn-per-sold-listing-x10")
+    print("daily_sale_ui=account-detail-LƯỢT-BÁN-AUTO-current/1000")
     return 0
 
 
