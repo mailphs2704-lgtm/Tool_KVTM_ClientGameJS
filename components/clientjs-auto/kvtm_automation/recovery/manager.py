@@ -22,6 +22,11 @@ class RecoveryManager:
     Recipes may register additional verified navigation routes on this same
     manager. They must not create a second manager merely because a later Recipe
     uses another floor; one manager keeps event/checkpoint ownership coherent.
+
+    Navigation recovery is intentionally independent from production metadata.
+    ProductionRecovery is created lazily only when production policy/spec is
+    actually requested. This lets lifecycle re-entry normalize an unknown camera
+    without inventing an AUTO Builder Function merely to use navigation recovery.
     """
 
     def __init__(
@@ -51,13 +56,24 @@ class RecoveryManager:
             from_main_routes=from_main_routes,
             between_floor_routes=between_floor_routes,
         )
-        self.production = ProductionRecovery(
-            automation,
-            navigation=self.navigation,
-            emit=self._emit,
-            function_id=self.function_id,
-        )
-        self.spec = self.production.spec
+        self._production: ProductionRecovery | None = None
+
+    @property
+    def production(self) -> ProductionRecovery:
+        """Create product/catalog recovery policy only when production needs it."""
+        if self._production is None:
+            self._production = ProductionRecovery(
+                self.auto,
+                navigation=self.navigation,
+                emit=self._emit,
+                function_id=self.function_id,
+            )
+        return self._production
+
+    @property
+    def spec(self):
+        """Compatibility facade for callers that need the Function product spec."""
+        return self.production.spec
 
     def _emit(self, event: RecoveryEvent) -> None:
         self.context.detail(
