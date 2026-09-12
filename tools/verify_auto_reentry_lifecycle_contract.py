@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 HOST = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py"
+MANAGER = ROOT / "components/clientjs-auto/kvtm_automation/recovery/manager.py"
 MARKER = ".fresh-client-start.json"
 
 
@@ -31,6 +32,7 @@ def forbid(text: str, token: str, message: str) -> None:
 def main() -> int:
     worker = read(WORKER)
     host = read(HOST)
+    manager = read(MANAGER)
 
     # Parent lifecycle ownership: a fresh marker exists only when AUTO Main
     # itself had to launch ClientJS. Adopting an already-running ClientJS must
@@ -65,13 +67,23 @@ def main() -> int:
     forbid(worker, 'if args.startup_mode == "fresh":', "Worker bypasses resolved lifecycle decision")
 
     # Fresh startup alone owns the 60-second GameSession popup watch. Re-entry
-    # must use the existing bounded global navigation recovery and prove MAIN.
+    # uses bounded global navigation recovery and proves MAIN.
     require(worker, "GameSessionWorkflow(automation).run(timeout=args.timeout)", "Fresh startup workflow missing")
     require(worker, 'function_id="lifecycle_reentry"', "Re-entry RecoveryManager ownership missing")
     require(worker, "recovery.recover_unknown_to_main(", "Re-entry does not use global unknown->MAIN recovery")
     require(worker, 'reason="auto-reentry-existing-client"', "Re-entry recovery reason missing")
     require(worker, "bỏ popup startup 60s", "Re-entry log does not make popup skip explicit")
     require(worker, "AUTO re-entry recovery kết thúc nhưng chưa chứng minh exact-main", "Re-entry exact-MAIN fail-close proof missing")
+
+    # Navigation-only lifecycle recovery must not eagerly resolve an AUTO Builder
+    # production Function spec. Production metadata/policy is instantiated only
+    # when run_production()/spec is actually requested.
+    require(manager, "self._production: ProductionRecovery | None = None", "RecoveryManager production policy is not lazy")
+    require(manager, "def production(self) -> ProductionRecovery:", "Lazy ProductionRecovery property missing")
+    require(manager, "if self._production is None:", "Lazy ProductionRecovery guard missing")
+    require(manager, "self._production = ProductionRecovery(", "ProductionRecovery lazy construction missing")
+    require(manager, "return self.production.run_production(", "Production facade no longer resolves lazy policy")
+    forbid(manager, "self.production = ProductionRecovery(", "Navigation recovery must not eagerly load production catalog")
 
     print("AUTO MULTI DEV RE-ENTRY LIFECYCLE CONTRACT VERIFIED")
     return 0
