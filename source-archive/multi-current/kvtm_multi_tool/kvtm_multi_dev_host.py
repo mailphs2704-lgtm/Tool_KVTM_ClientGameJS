@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+from ctypes import wintypes
 import json
 from pathlib import Path
 import struct
@@ -11,6 +12,9 @@ import traceback
 
 
 _RUNTIME_TIMEOUT_SECONDS = 15.0
+_MULTI_DEV_FPS_PRESETS = (10, 15, 20, 25, 30, 40, 60)
+_MULTI_DEV_FPS_DEFAULT = 20
+_MULTI_DEV_FPS_CAPABILITY = "FPS_LIMIT1"
 _PINNED_MULTI_DEV_TUNING = {
     # Operator-verified Multi DEV values. These are the source fallback if a new
     # machine/profile has no settings.json yet; persistent saved values still win.
@@ -170,32 +174,41 @@ def _install_pinned_dev_settings(core) -> None:
     )
 
 
-
 def _install_gpu_runtime_policy(dev_entry) -> None:
-    """Disable DWM Live View in Multi DEV while preserving AUTO capture."""
+    """Remove Live View from Multi DEV and expose a Bridge V3 FPS menu."""
     app_cls = dev_entry.MultiDevApp
     if getattr(app_cls, "_gpu_runtime_policy_installed", False):
         return
 
+    core = dev_entry.core
     original_unregister = app_cls._unregister_live_thumbnail
+    original_build_ui = app_cls._build_ui
+
+    def bridge_command(pid: int, command: str, timeout_ms: int = 1000) -> str:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CallNamedPipeW.argtypes = [
+            wintypes.LPCWSTR, wintypes.LPVOID, wintypes.DWORD,
+            wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+            wintypes.DWORD,
+        ]
+        kernel32.CallNamedPipeW.restype = wintypes.BOOL
+        pipe_name = rf"\\.\pipe\KVTM-Cocos-{int(pid)}"
+        payload = (str(command).rstrip("\r\n") + "\n").encode("ascii")
+        output = ctypes.create_string_buffer(256)
+        read = wintypes.DWORD()
+        if not kernel32.CallNamedPipeW(
+            pipe_name, ctypes.c_char_p(payload), len(payload), output,
+            len(output), ctypes.byref(read), int(timeout_ms),
+        ):
+            raise ctypes.WinError()
+        return output.raw[:read.value].decode("ascii", "replace").strip()
 
     def disabled_register_live_thumbnail(self, profile_id: str, source_hwnd: int) -> None:
         del source_hwnd
         profile_id = str(profile_id)
         self._live_enabled.discard(profile_id)
-        # A DEV runtime must not create a DWM thumbnail at all. AUTO still owns
-        # native Bridge V3 capture at the ClientJS physical resolution.
-        try:
-            self.note.set(
-                "MULTI DEV: Live View DWM đã tắt để giảm GPU • "
-                "AUTO capture vẫn giữ nguyên độ phân giải client"
-            )
-        except Exception:
-            pass
 
     def disabled_update_live_dwm(self) -> None:
-        # Defensive cleanup for an adopted/partially initialized UI, then stop
-        # the historical 100 ms DWM composition loop by not rescheduling it.
         self._live_enabled.clear()
         for profile_id in tuple(getattr(self, "_live_thumbnails", {})):
             try:
@@ -204,24 +217,163 @@ def _install_gpu_runtime_policy(dev_entry) -> None:
                 self._live_thumbnails.pop(profile_id, None)
 
     def disabled_live_worker(self) -> None:
-        # The old thumbnail capture thread becomes an idle daemon instead of
-        # reading 1000x1000 frames solely for the account-list Live View.
         stop = getattr(self, "_bridge_stop", None)
         if stop is not None:
             stop.wait()
 
     def disabled_poll_live_results(self) -> None:
-        # No Live View worker => no PhotoImage polling loop in DEV.
         return None
+
+    def disabled_preview_selected(self) -> None:
+        # DEV deliberately has no Preview/Live View route. AUTO owns native
+        # Bridge V3 CAPTURE3 independently at the physical ClientJS resolution.
+        self.note.set(
+            "MULTI DEV: Live View đã được loại bỏ • "
+            "AUTO CAPTURE3 giữ nguyên độ phân giải native"
+        )
+
+    def remove_live_view_widgets(widget) -> None:
+        for child in tuple(widget.winfo_children()):
+            try:
+                text = str(child.cget("text")).strip()
+            except Exception:
+                text = ""
+            if text == "Live View":
+                child.destroy()
+                continue
+            remove_live_view_widgets(child)
+
+    def apply_render_fps(self, fps: int) -> None:
+        fps = int(fps)
+        if fps not in _MULTI_DEV_FPS_PRESETS:
+            self.note.set(f"FPS không hợp lệ: {fps}")
+            return
+
+        self._multi_dev_fps_value.set(fps)
+        try:
+            self._adopt_running_clients(core.running_clients())
+        except Exception as exc:
+            print(
+                "[KVTM DEV] WARN FPS client scan failed: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+
+        targets: list[int] = []
+        for process in tuple(getattr(self, "processes", {}).values()):
+            try:
+                if process is not None and process.poll() is None:
+                    pid = int(process.pid)
+                    if pid not in targets:
+                        targets.append(pid)
+            except Exception:
+                continue
+
+        if not targets:
+            self.note.set(
+                f"FPS {fps} đã chọn • chưa có ClientJS đang chạy • "
+                "mặc định AUTO vẫn 20 FPS"
+            )
+            return
+
+        self.note.set(
+            f"Đang áp dụng {fps} FPS cho {len(targets)} ClientJS qua Bridge V3..."
+        )
+
+        def worker() -> None:
+            applied: list[int] = []
+            unsupported: list[int] = []
+            failed: list[tuple[int, str]] = []
+            for pid in targets:
+                try:
+                    protocol = bridge_command(pid, "PING")
+                    if _MULTI_DEV_FPS_CAPABILITY not in protocol.split():
+                        unsupported.append(pid)
+                        continue
+                    response = bridge_command(pid, f"FPS {fps}")
+                    if response != f"OK FPS {fps}":
+                        raise RuntimeError(response or "empty Bridge response")
+                    applied.append(pid)
+                except Exception as exc:
+                    failed.append((pid, f"{type(exc).__name__}: {exc}"))
+
+            def finish() -> None:
+                if applied:
+                    message = (
+                        f"FPS {fps} • Bridge V3 áp dụng {len(applied)}/{len(targets)} "
+                        "ClientJS • AUTO CAPTURE3/native size không đổi"
+                    )
+                    if unsupported:
+                        message += f" • {len(unsupported)} client cần nạp Bridge V3 mới"
+                    if failed:
+                        message += f" • lỗi {len(failed)} client"
+                    self.note.set(message)
+                elif unsupported:
+                    self.note.set(
+                        f"FPS {fps}: Bridge đang chạy chưa có FPS_LIMIT1 • "
+                        "hãy restart ClientJS sau khi build DEV"
+                    )
+                else:
+                    self.note.set(
+                        f"FPS {fps}: chưa áp dụng được cho ClientJS • xem log DEV"
+                    )
+                if failed:
+                    print(
+                        "[KVTM DEV] FPS apply errors | "
+                        + "; ".join(f"pid={pid} {error}" for pid, error in failed),
+                        flush=True,
+                    )
+
+            try:
+                self.after(0, finish)
+            except Exception:
+                pass
+
+        threading.Thread(
+            target=worker,
+            name=f"kvtm-dev-fps-{fps}",
+            daemon=True,
+        ).start()
+
+    def build_ui_without_live_view(self) -> None:
+        original_build_ui(self)
+        remove_live_view_widgets(self)
+
+        self._multi_dev_fps_value = core.tk.IntVar(
+            master=self, value=_MULTI_DEV_FPS_DEFAULT
+        )
+        try:
+            menu_name = str(self.cget("menu") or "")
+            menubar = self.nametowidget(menu_name) if menu_name else None
+        except Exception:
+            menubar = None
+        if menubar is None:
+            menubar = core.tk.Menu(self, tearoff=False)
+            self.configure(menu=menubar)
+
+        fps_menu = core.tk.Menu(menubar, tearoff=False)
+        for fps in _MULTI_DEV_FPS_PRESETS:
+            fps_menu.add_radiobutton(
+                label=f"{fps} FPS",
+                variable=self._multi_dev_fps_value,
+                value=fps,
+                command=lambda value=fps: apply_render_fps(self, value),
+            )
+        menubar.add_cascade(label="FPS", menu=fps_menu)
+        self._multi_dev_fps_menu = fps_menu
 
     app_cls._register_live_thumbnail = disabled_register_live_thumbnail
     app_cls._update_live_dwm = disabled_update_live_dwm
     app_cls._live_worker = disabled_live_worker
     app_cls._poll_live_results = disabled_poll_live_results
+    app_cls.preview_selected = disabled_preview_selected
+    app_cls._build_ui = build_ui_without_live_view
+    app_cls._set_multi_dev_render_fps = apply_render_fps
     app_cls._gpu_runtime_policy_installed = True
     print(
-        "[KVTM DEV] GPU policy READY • DWM Live View=OFF • "
-        "AUTO capture/native resolution=UNCHANGED • FPS governor=20 when V3 supports it",
+        "[KVTM DEV] GPU policy READY • Live View=REMOVED • DWM Live View=OFF • "
+        "FPS menu=10/15/20/25/30/40/60 • default=20 • "
+        "AUTO capture/native resolution=UNCHANGED",
         flush=True,
     )
 
