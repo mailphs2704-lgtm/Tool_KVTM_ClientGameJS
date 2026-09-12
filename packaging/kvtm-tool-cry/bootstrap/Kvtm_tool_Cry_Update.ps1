@@ -182,6 +182,9 @@ try {
     if ([int]$manifest.schema -ne 1) {
         throw "Unsupported manifest schema: $($manifest.schema)"
     }
+    if ([string]$manifest.channel -ne "stable") {
+        throw "Manifest channel mismatch: $($manifest.channel)"
+    }
 
     $nextVersionText = [string]$manifest.version
     $nextVersion = [version]$nextVersionText
@@ -214,11 +217,9 @@ try {
 
         $target = Join-Path $VersionsRoot $nextVersionText
         if (Test-Path -LiteralPath $target -PathType Container) {
-            Remove-Item -LiteralPath $stage -Recurse -Force
+            Remove-Item -LiteralPath $target -Recurse -Force
         }
-        else {
-            Move-Item -LiteralPath $stage -Destination $target
-        }
+        Move-Item -LiteralPath $stage -Destination $target
 
         $newCurrent = [ordered]@{
             schema = 1
