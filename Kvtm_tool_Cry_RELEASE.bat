@@ -14,6 +14,27 @@ if /I not "%CUR_BRANCH%"=="%EXPECTED_BRANCH%" (
   exit /b 1
 )
 
+set "DIRTY_COUNT=0"
+for /f "usebackq delims=" %%L in (`git status --porcelain --untracked-files=no 2^>nul`) do set /a DIRTY_COUNT+=1
+if not "%DIRTY_COUNT%"=="0" (
+  echo ===============================================================================
+  echo  [STOP] WORKING TREE CO TRACKED FILE DANG THAY DOI
+  echo  Stable chi duoc dong tu committed HEAD sach.
+  echo  Script KHONG tu reset/stash de tranh lam mat code DEV cua ban.
+  echo -------------------------------------------------------------------------------
+  git status --short --untracked-files=no
+  echo -------------------------------------------------------------------------------
+  echo  Hay kiem tra cac file tren bang:
+  echo    git diff --name-status
+  echo    git diff --cached --name-status
+  echo.
+  echo  Neu la thay doi can giu: commit/push truoc khi release.
+  echo  Neu la thay doi khong can giu: restore DUNG file do, khong dung reset --hard.
+  echo ===============================================================================
+  pause
+  exit /b 2
+)
+
 set "VERSION_ARG="
 if not "%~1"=="" set "VERSION_ARG=-Version "%~1""
 
