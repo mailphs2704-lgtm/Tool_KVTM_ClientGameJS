@@ -147,25 +147,46 @@ class ProductionRecovery:
             )
 
             self.navigation.to_main_from_floor(work_floor, label)
-            sale = AutoVpSaleWorkflow(
-                self.auto,
-                function_id=self.spec.function_id,
-                allowed_item_ids=self.spec.sale_item_ids,
-            ).run(timeout=120.0)
 
-            sold = int(sale.sold_listings)
-            collected = int(sale.collected_gold_slots)
-            if sold <= 0 and collected <= 0:
-                raise ScreenTimeout(
-                    f"Kho đầy khi thu {label} nhưng lượt bán recovery không tạo tiến triển "
-                    f"(treo={sold}, thu_vàng={collected}); dừng để tránh lặp vô hạn"
-                ) from exc
+            # Operator-approved warehouse-full policy: there is intentionally no
+            # no-progress round limit here. Advertising can cause a listing to be
+            # purchased later, which opens a stall slot; the next sale scan can
+            # then move one x10 batch out of the warehouse and make real space.
+            # Keep this checkpoint suspended at MAIN and repeat Sale + QC until a
+            # new listing is actually posted. context.ensure_running() keeps the
+            # wait interruptible by Stop AUTO without inventing a timeout.
+            sale_wait_round = 0
+            while True:
+                self.context.ensure_running()
+                sale_wait_round += 1
+                sale = AutoVpSaleWorkflow(
+                    self.auto,
+                    function_id=self.spec.function_id,
+                    allowed_item_ids=self.spec.sale_item_ids,
+                ).run(timeout=120.0)
 
-            self.context.log(
-                f"AUTO kho đầy • bán VP recovery có tiến triển • {label} • "
-                f"treo={sold} ô • thu_vàng={collected} • "
-                f"checkpoint={checkpoint.key} • quay lại đúng tầng {work_floor}"
-            )
+                sold = int(sale.sold_listings)
+                collected = int(sale.collected_gold_slots)
+                if sold > 0:
+                    self.context.log(
+                        f"AUTO kho đầy • bán VP recovery có chỗ thật • {label} • "
+                        f"wait_round={sale_wait_round} • treo={sold} ô • "
+                        f"thu_vàng={collected} • checkpoint={checkpoint.key} • "
+                        f"quay lại đúng tầng {work_floor}"
+                    )
+                    break
+
+                self.context.log(
+                    f"AUTO kho đầy • chưa treo được VP x10 • {label} • "
+                    f"wait_round={sale_wait_round} • treo={sold} • "
+                    f"thu_vàng={collected} • giữ checkpoint tại MAIN • "
+                    "tiếp tục quét 5 View + QC cho tới khi người mua tạo ô trống"
+                )
+                self.navigation.ensure_main(
+                    f"{label}: chờ quầy có ô trống sau sale recovery"
+                )
+                self.auto.wait.sleep(1.0)
+
             self.navigation.ensure_main(f"{label}: sau bán VP recovery")
             self.navigation.from_main_to_floor(work_floor, label)
 
