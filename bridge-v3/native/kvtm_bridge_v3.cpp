@@ -1,4 +1,4 @@
-// KVTM Bridge V3 - capture + input only.
+// KVTM Bridge V3 - capture + input + render FPS governor.
 // Intentionally excluded: resize, DPI, window placement, layout and AUTO logic.
 // This file is isolated from the production bridge until V3 live gates pass.
 #define WIN32_LEAN_AND_MEAN
@@ -11,6 +11,7 @@
 namespace {
 constexpr UINT WM_KVTM_TOUCH = WM_APP + 0x417;
 constexpr UINT WM_KVTM_CAPTURE = WM_APP + 0x418;
+constexpr UINT WM_KVTM_FPS = WM_APP + 0x419;
 constexpr wchar_t kWindowProperty[] = L"KVTM_BRIDGE_V3_CAPTURE_INPUT_ONLY";
 constexpr DWORD kCaptureVersion = 3;
 constexpr DWORD kPixelFormatBgra8TopDown = 2;
@@ -25,6 +26,7 @@ constexpr unsigned int GL_UNSIGNED_BYTE_VALUE = 0x1401;
 
 enum class Phase : int { Down = 1, Move = 2, Up = 3 };
 struct TouchCommand { Phase phase; float x; float y; LONG result; };
+struct FpsCommand { int fps; LONG result; };
 struct GesturePoint { float x; float y; };
 struct GestureCommand {
     int segment_steps;
@@ -58,6 +60,8 @@ constexpr DWORD kCaptureMappingBytes =
 
 using DirectorGetInstance = void* (__cdecl*)();
 using DirectorGetOpenGLView = void* (__thiscall*)(void*);
+using DirectorSetAnimationIntervalDouble = void (__thiscall*)(void*, double);
+using DirectorSetAnimationIntervalFloat = void (__thiscall*)(void*, float);
 using HandleTouches = void (__thiscall*)(void*, int, int*, float*, float*);
 using GlReadPixels = void (WINAPI*)(int, int, int, int, unsigned int, unsigned int, void*);
 using GlGetError = unsigned int (WINAPI*)();
@@ -69,6 +73,8 @@ HWND g_window = nullptr;
 HMODULE g_self = nullptr;
 DirectorGetInstance g_get_director = nullptr;
 DirectorGetOpenGLView g_get_view = nullptr;
+DirectorSetAnimationIntervalDouble g_set_animation_interval_double = nullptr;
+DirectorSetAnimationIntervalFloat g_set_animation_interval_float = nullptr;
 HandleTouches g_touch_begin = nullptr;
 HandleTouches g_touch_move = nullptr;
 HandleTouches g_touch_end = nullptr;
@@ -163,6 +169,24 @@ bool resolve_cocos() {
     g_touch_end = reinterpret_cast<HandleTouches>(GetProcAddress(
         cocos, "?handleTouchesEnd@GLView@cocos2d@@UAEXHQAHQAM1@Z"));
     return g_get_director && g_get_view && g_touch_begin && g_touch_move && g_touch_end;
+}
+
+bool resolve_fps_control() {
+    if (g_set_animation_interval_double || g_set_animation_interval_float)
+        return true;
+    HMODULE cocos = GetModuleHandleW(L"libcocos2d.dll");
+    if (!cocos) return false;
+
+    // ClientJS builds in the field span Cocos revisions whose public Director
+    // setter uses either double or float. Resolve both x86 MSVC decorations
+    // and call only the signature that is actually exported.
+    g_set_animation_interval_double =
+        reinterpret_cast<DirectorSetAnimationIntervalDouble>(GetProcAddress(
+            cocos, "?setAnimationInterval@Director@cocos2d@@QAEXN@Z"));
+    g_set_animation_interval_float =
+        reinterpret_cast<DirectorSetAnimationIntervalFloat>(GetProcAddress(
+            cocos, "?setAnimationInterval@Director@cocos2d@@QAEXM@Z"));
+    return g_set_animation_interval_double || g_set_animation_interval_float;
 }
 
 bool resolve_opengl() {
@@ -333,6 +357,26 @@ LONG dispatch_capture(CaptureCommand* command) {
     return ERROR_SUCCESS;
 }
 
+LONG dispatch_fps(FpsCommand* command) {
+    if (!command || command->fps < 5 || command->fps > 120)
+        return ERROR_INVALID_PARAMETER;
+    if (!resolve_cocos() || !resolve_fps_control())
+        return ERROR_PROC_NOT_FOUND;
+
+    void* director = g_get_director();
+    if (!director) return ERROR_NOT_READY;
+
+    const double interval = 1.0 / static_cast<double>(command->fps);
+    if (g_set_animation_interval_double) {
+        g_set_animation_interval_double(director, interval);
+    } else if (g_set_animation_interval_float) {
+        g_set_animation_interval_float(director, static_cast<float>(interval));
+    } else {
+        return ERROR_PROC_NOT_FOUND;
+    }
+    return ERROR_SUCCESS;
+}
+
 LONG dispatch_touch(TouchCommand* command) {
     if (!command || !resolve_cocos()) return ERROR_PROC_NOT_FOUND;
     void* director = g_get_director();
@@ -357,6 +401,11 @@ LRESULT CALLBACK bridge_window_proc(HWND hwnd, UINT message, WPARAM wp, LPARAM l
     if (message == WM_KVTM_TOUCH) {
         auto* command = reinterpret_cast<TouchCommand*>(lp);
         command->result = dispatch_touch(command);
+        return command->result;
+    }
+    if (message == WM_KVTM_FPS) {
+        auto* command = reinterpret_cast<FpsCommand*>(lp);
+        command->result = dispatch_fps(command);
         return command->result;
     }
     if (message == WM_KVTM_CAPTURE ||
@@ -398,6 +447,18 @@ bool parse_command(const char* line, TouchCommand& command) {
     else return false;
     if (x < 0 || x > 1000 || y < 0 || y > 1000) return false;
     command.x = x; command.y = y; command.result = ERROR_SUCCESS;
+    return true;
+}
+
+bool parse_fps(const char* line, FpsCommand& command) {
+    std::istringstream stream(line);
+    std::string name;
+    if (!(stream >> name >> command.fps) || name != "FPS")
+        return false;
+    stream >> std::ws;
+    if (!stream.eof() || command.fps < 5 || command.fps > 120)
+        return false;
+    command.result = ERROR_SUCCESS;
     return true;
 }
 
@@ -505,12 +566,21 @@ DWORD WINAPI pipe_thread(void*) {
                 char output[192]{};
 
                 if (std::strncmp(input, "PING", 4) == 0) {
-                    sprintf_s(
-                        output,
-                        "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
-                        "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP "
-                        "CAPTURE3_WRITERMAP2 CAPTURE3_WRITERMSG1 %016llX\n",
-                        static_cast<unsigned long long>(g_writer_id));
+                    if (resolve_fps_control()) {
+                        sprintf_s(
+                            output,
+                            "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
+                            "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP "
+                            "CAPTURE3_WRITERMAP2 CAPTURE3_WRITERMSG1 FPS_LIMIT1 %016llX\n",
+                            static_cast<unsigned long long>(g_writer_id));
+                    } else {
+                        sprintf_s(
+                            output,
+                            "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
+                            "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP "
+                            "CAPTURE3_WRITERMAP2 CAPTURE3_WRITERMSG1 %016llX\n",
+                            static_cast<unsigned long long>(g_writer_id));
+                    }
                     response = output;
                 } else if (std::strncmp(input, "CAPTUREW", 8) == 0) {
                     CaptureCommand command{};
@@ -553,6 +623,19 @@ DWORD WINAPI pipe_thread(void*) {
                         sprintf_s(output, "ERR %ld\n", command.result);
                     }
                     response = output;
+                } else if (std::strncmp(input, "FPS ", 4) == 0) {
+                    FpsCommand command{};
+                    if (parse_fps(input, command)) {
+                        SendMessageW(
+                            g_window, WM_KVTM_FPS, 0,
+                            reinterpret_cast<LPARAM>(&command));
+                        if (command.result == ERROR_SUCCESS) {
+                            sprintf_s(output, "OK FPS %d\n", command.fps);
+                        } else {
+                            sprintf_s(output, "ERR %ld\n", command.result);
+                        }
+                        response = output;
+                    }
                 } else if (std::strncmp(input, "SWIPE ", 6) == 0) {
                     GestureCommand gesture{};
                     if (parse_gesture(input, gesture)) {
