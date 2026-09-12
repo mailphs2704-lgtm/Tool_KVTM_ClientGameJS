@@ -39,52 +39,54 @@ def main() -> int:
     cry_runtime = text(CRY_RUNTIME)
     cry_update = text(CRY_UPDATE)
 
-    # Parse the new integration sources so a source-only commit cannot ship a
-    # syntactically invalid runtime that is discovered only after packaging.
     ast.parse(ownership, filename=str(OWNERSHIP))
     ast.parse(owned_host, filename=str(OWNED_HOST))
 
-    # Shared ownership is outside either tool's private APP_DIR and protected by
-    # a cross-process mutex plus atomic replacement.
     require(
         ownership,
         'REGISTRY_DIR = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Client Ownership"',
         "Ownership registry is not in the shared APPDATA namespace",
     )
     require(ownership, 'MUTEX_NAME = r"Local\\KVTM_Client_Ownership_v1"', "Named ownership mutex missing")
+    require(ownership, "REGISTRY_SCHEMA = 2", "Ownership registry schema was not upgraded for account identity")
     require(ownership, "os.replace(temp, REGISTRY_FILE)", "Ownership registry write is not atomic")
     require(ownership, "GetProcessTimes", "PID creation-token validation missing")
     require(ownership, '"creation_token"', "Registry creation token field missing")
     require(ownership, '"profile_id"', "Registry profile id field missing")
+    require(ownership, '"account_key"', "Registry account fingerprint field missing")
     require(ownership, '"owner"', "Registry owner field missing")
     require(ownership, '"account_name"', "Registry account display name missing")
 
-    # One profile/PID has one live owner. Foreign ownership is fail-close; a
-    # losing launch terminates only its own newly-created process.
     require(ownership, "class ForeignOwnershipError", "Foreign ownership error type missing")
-    require(ownership, "same_pid or same_profile", "Profile/PID duplicate claim guard missing")
+    require(ownership, "same_pid or same_profile or same_account or same_alias", "Account/PID/profile duplicate claim guard missing")
+    require(ownership, "lookup_identity", "Pre-launch account identity lookup missing")
+    require(ownership, "hashlib.sha256(payload).hexdigest()", "Account credential fingerprint is not hashed")
+    require(ownership, "self._profile_signature(profile)", "Account identity is not derived from the saved launch signature")
     require(ownership, "process.terminate()", "Losing duplicate launch is not fail-close")
     require(ownership, "registry.self_owned", "Adoption is not owner-scoped")
     require(ownership, "owned_pids", "Foreign PID adoption filter missing")
+    require(ownership, 'get("ProcessId")', "Ownership adoption does not read running_clients ProcessId")
     require(ownership, "Bỏ qua ClientJS thuộc tool khác", "Foreign stop protection marker missing")
 
-    # Both tools can display a live foreign account, but the owner remains
-    # explicit in the Online row and only the owner sets the ClientJS title.
     require(ownership, "• ONL • {entry['owner']}", "ONL owner label missing from account list")
+    require(ownership, 'tree.heading("pid", text="PID • TOOL")', "Owner status column heading missing")
+    require(ownership, 'width=155, minwidth=145', "Owner status column remains too narrow")
     require(ownership, "SetWindowTextW", "ClientJS account-name title update missing")
-    require(ownership, 'entry["owner"] == registry.owner', "Window title is not owner-scoped")
-    require(ownership, "schedule_title", "Window title retry path missing")
+    require(ownership, 'entry["owner"] != registry.owner', "Window title is not owner-scoped")
+    require(ownership, 'str(entry["account_name"])', "Window title does not use account display name")
+    require(ownership, "attempt < 120", "ClientJS title retry window is too short")
 
-    # Shared metadata must not read or publish account credentials.
-    forbid(ownership, 'profile["secret"]', "Ownership integration reads encrypted profile secret")
-    forbid(ownership, "unprotect(", "Ownership integration decrypts account credentials")
-    forbid(ownership, "secret_args", "Ownership registry depends on launcher secrets")
+    forbid(ownership, 'profile["secret"]', "Ownership integration directly reads encrypted profile secret")
+    forbid(ownership, "unprotect(", "Ownership integration directly decrypts account credentials")
+    require(
+        ownership,
+        '"account_key": account_key',
+        "Ownership registry does not publish the hashed account identity",
+    )
+    forbid(ownership, '"secret":', "Ownership registry must never publish account secrets")
 
-    # The original AUTO PID map remains private to each tool's APP_DIR. It is not
-    # repurposed as the shared owner registry.
     require(core, 'RUNNING_MAP_FILE = APP_DIR / "running_clients.json"', "Per-tool AUTO running map was moved/shared")
 
-    # Use a wrapper host so the proven kvtm_multi.py/AUTO core is not rewritten.
     require(owned_host, "install_client_ownership_integration(app_cls, core)", "Ownership wrapper does not install integration")
     require(owned_host, "kvtm_multi_dev_host.main()", "Ownership wrapper bypasses resident host")
     require(dev_start, '$HostScript = Join-Path $MultiRoot "kvtm_multi_owned_host.py"', "DEV does not launch ownership wrapper")
@@ -94,15 +96,15 @@ def main() -> int:
     require(cry_update, 'kvtm_multi_owned_host.py', "Stable updater singleton check still targets old host")
 
     version = tuple(int(part) for part in text(VERSION).strip().split("."))
-    if version < (0, 1, 3):
-        raise AssertionError("ClientJS ownership release must be Kvtm_tool_Cry >= 0.1.3")
+    if version < (0, 1, 4):
+        raise AssertionError("Account-level ClientJS ownership release must be Kvtm_tool_Cry >= 0.1.4")
 
     print("CLIENTJS OWNERSHIP CONTRACT VERIFIED")
-    print("registry=shared-appdata+named-mutex+atomic-json")
-    print("identity=DEV-or-CRY+pid-creation-token")
-    print("ui=ONL-owner+account-window-title")
-    print("control=foreign-read-only+owner-only-adopt-stop")
-    print("secrets=not-read-not-published")
+    print("registry=shared-appdata+named-mutex+atomic-json+schema2")
+    print("identity=account-key+alias+profile+pid-creation-token")
+    print("ui=wide-owner-column+account-window-title")
+    print("control=foreign-read-only+owner-only-adopt-stop+fail-close")
+    print("secrets=hashed-identity-only-not-published")
     return 0
 
 
