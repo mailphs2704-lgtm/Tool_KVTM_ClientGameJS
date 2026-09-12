@@ -91,6 +91,14 @@ def main() -> int:
     require(runtime, '$RuntimePidPath = Join-Path $DataRoot "runtime.pid.json"', "Stable runtime PID ownership missing")
     require(runtime, 'Test-CryRuntimeRunning', "Stable singleton guard missing")
 
+    # Stable Python stdout/stderr is redirected to files. Force UTF-8 in the
+    # child process so Vietnamese logs can never crash startup under cp1252.
+    require(runtime, '$env:PYTHONUTF8 = "1"', "Stable runtime does not force Python UTF-8 mode")
+    require(runtime, '$env:PYTHONIOENCODING = "utf-8"', "Stable runtime Python IO encoding is not UTF-8")
+    require(runtime, '$env:PYTHONUNBUFFERED = "1"', "Stable runtime Python logging is not unbuffered")
+    require(runtime, 'RedirectStandardOutput = $stdout', "Stable runtime stdout redirection missing")
+    require(runtime, 'RedirectStandardError = $stderr', "Stable runtime stderr redirection missing")
+
     # Updater supports the same-PC local release channel now and HTTPS later.
     # It must be atomic, hash-verified, rollback-safe and refuse live mutation.
     require(update, 'if (Test-CryRuntimeRunning)', "Updater does not protect active Stable runtime")
@@ -111,7 +119,7 @@ def main() -> int:
     require(launch, 'Start-Process -FilePath "powershell.exe"', "Launcher does not isolate child bootstrap processes")
     require(launch, '$updateResult = Invoke-CryBootstrapChild -Script $UpdateScript -Label "update"', "Updater is not run as isolated child")
     require(launch, '$runtimeResult = Invoke-CryBootstrapChild -Script $RuntimeScript -Label "runtime"', "Runtime is not run as isolated child")
-    require(launch, 'bootstrap-runtime.err.log', "Runtime bootstrap stderr is not persisted")
+    require(launch, '("bootstrap-" + $Label + ".err.log")', "Bootstrap stderr is not persisted with a per-child label")
     require(launch, 'Read-LogTail', "Launcher does not append hidden bootstrap stderr to launcher.log")
     require(launcher_cs, 'MessageBoxW(', "Main EXE does not surface launch failure")
     require(launcher_cs, 'Kvtm_tool_Cry - Launch failed', "Main EXE failure dialog identity missing")
@@ -141,6 +149,7 @@ def main() -> int:
     print("identity=Kvtm_tool_Cry+stable-appdata+isolated-instance")
     print("install=localappdata-programs+versioned-runtime+current-pointer")
     print("release-branch=normalized-name-no-LASTEXITCODE-dependency")
+    print("runtime-io=utf8+unbuffered+redirect-safe")
     print("update=file-or-https+sha256+staging+atomic-switch+rollback")
     print("bootstrap=child-process-exit-isolation+stderr-persistence+visible-failure")
     print("seed=exact-safe-allowlist+no-runtime-process-map-migration")
