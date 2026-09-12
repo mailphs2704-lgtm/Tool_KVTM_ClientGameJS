@@ -29,19 +29,38 @@ if (-not (Test-Path -LiteralPath $Verifier -PathType Leaf)) {
     throw "Missing Kvtm_tool_Cry packaging verifier: $Verifier"
 }
 
-$branchOutput = (& git -C $RepoRoot branch --show-current 2>$null | Select-Object -First 1)
-$branchExit = $LASTEXITCODE
-$branch = ([string]$branchOutput).Trim()
-if ($branchExit -ne 0 -or -not [string]::Equals(
+# Do not trust $LASTEXITCODE for this read-only branch probe. On Windows PowerShell
+# a native command used inside a pipeline can leave an unrelated/stale exit code
+# even when the branch text is returned correctly. The authoritative condition is
+# the normalized branch name itself; detached HEAD or a real wrong branch still
+# fail closed because they cannot equal the expected branch.
+$expectedBranch = "develop/multi-auto-dev"
+$branchLines = @(& git -C $RepoRoot rev-parse --abbrev-ref HEAD 2>$null)
+$branch = ""
+if ($branchLines.Count -gt 0) {
+    $branch = ([string]($branchLines | Select-Object -First 1)).Trim()
+}
+if (-not [string]::Equals(
     $branch,
-    "develop/multi-auto-dev",
+    $expectedBranch,
     [System.StringComparison]::OrdinalIgnoreCase
 )) {
-    throw "Kvtm_tool_Cry release must be built from develop/multi-auto-dev; current=$branch"
+    $branchCodes = if ([string]::IsNullOrEmpty($branch)) {
+        "<empty>"
+    } else {
+        (($branch.ToCharArray() | ForEach-Object { [int][char]$_ }) -join ",")
+    }
+    throw "Kvtm_tool_Cry release must be built from $expectedBranch; current=[$branch]; charcodes=$branchCodes"
 }
-$sourceHead = (& git -C $RepoRoot rev-parse HEAD 2>$null | Select-Object -First 1).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceHead)) {
-    throw "Cannot determine source HEAD"
+Write-Host "Branch : $branch" -ForegroundColor Green
+
+$sourceHeadLines = @(& git -C $RepoRoot rev-parse HEAD 2>$null)
+$sourceHead = ""
+if ($sourceHeadLines.Count -gt 0) {
+    $sourceHead = ([string]($sourceHeadLines | Select-Object -First 1)).Trim()
+}
+if ([string]::IsNullOrWhiteSpace($sourceHead) -or $sourceHead -notmatch '^[0-9a-fA-F]{40}$') {
+    throw "Cannot determine valid source HEAD; value=[$sourceHead]"
 }
 $dirty = @(& git -C $RepoRoot status --porcelain --untracked-files=no 2>$null)
 if ($LASTEXITCODE -ne 0) {
