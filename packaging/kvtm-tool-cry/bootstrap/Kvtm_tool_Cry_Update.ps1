@@ -35,7 +35,7 @@ function Test-CryRuntimeRunning {
         $commandLine = [string]$process.CommandLine
         if ([string]::IsNullOrWhiteSpace($commandLine)) { return $false }
         $installNeedle = ([System.IO.Path]::GetFullPath($InstallRoot)).ToLowerInvariant()
-        return $commandLine.ToLowerInvariant().Contains($installNeedle) -and $commandLine.Contains("kvtm_multi_dev_host.py")
+        return $commandLine.ToLowerInvariant().Contains($installNeedle) -and $commandLine.Contains("kvtm_multi_owned_host.py")
     }
     catch {
         return $false
