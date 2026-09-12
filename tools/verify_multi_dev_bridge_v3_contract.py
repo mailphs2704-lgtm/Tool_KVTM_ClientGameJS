@@ -59,8 +59,8 @@ def main() -> int:
 
     for token in (
         "KVTM-CocosV3-",
+        'self._pipe("CAPTURE',
         "CAPTURE3",
-        "CAPTUREW",
     ):
         require(engine, token, "AUTO Multi DEV V3 driver")
 
