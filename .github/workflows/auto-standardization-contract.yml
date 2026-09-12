@@ -10,6 +10,8 @@ on:
       - 'source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py'
       - 'source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py'
       - 'source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py'
+      - 'packaging/kvtm-tool-cry/**'
+      - 'Kvtm_tool_Cry_RELEASE.bat'
       - 'tools/verify_recovery_architecture_contract.py'
       - 'tools/verify_function_boundary_delay_contract.py'
       - 'tools/verify_action_standardization_contract.py'
@@ -17,6 +19,7 @@ on:
       - 'tools/verify_module_scheduler_boundaries_contract.py'
       - 'tools/verify_production_action_boundaries_contract.py'
       - 'tools/verify_auto_reentry_lifecycle_contract.py'
+      - 'tools/verify_kvtm_tool_cry_packaging_contract.py'
       - '.github/workflows/auto-standardization-contract.yml'
   workflow_dispatch:
 
@@ -46,7 +49,8 @@ jobs:
             tools/verify_recipe_function_standardization_contract.py \
             tools/verify_module_scheduler_boundaries_contract.py \
             tools/verify_production_action_boundaries_contract.py \
-            tools/verify_auto_reentry_lifecycle_contract.py
+            tools/verify_auto_reentry_lifecycle_contract.py \
+            tools/verify_kvtm_tool_cry_packaging_contract.py
 
       - name: Verify AUTO architecture contracts
         run: |
@@ -57,3 +61,4 @@ jobs:
           python tools/verify_module_scheduler_boundaries_contract.py
           python tools/verify_production_action_boundaries_contract.py
           python tools/verify_auto_reentry_lifecycle_contract.py
+          python tools/verify_kvtm_tool_cry_packaging_contract.py
