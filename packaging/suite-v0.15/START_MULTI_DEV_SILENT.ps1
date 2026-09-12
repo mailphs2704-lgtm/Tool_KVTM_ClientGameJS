@@ -3,7 +3,7 @@ param()
 $ErrorActionPreference = "Stop"
 $PackageRoot = (Resolve-Path $PSScriptRoot).Path
 $MultiRoot = Join-Path $PackageRoot "Multi"
-$HostScript = Join-Path $MultiRoot "kvtm_multi_dev_host.py"
+$HostScript = Join-Path $MultiRoot "kvtm_multi_owned_host.py"
 
 # DEV settings must live outside dist/package so git pull + full rebuild can never
 # delete or replace them. The old package-local data-dev folder is migration-only.
@@ -88,6 +88,7 @@ $stderr = Join-Path $LogRoot ("multi-dev-host-" + $stamp + ".err.log")
 $env:KVTM_MULTI_APP_DIR = $DataRoot
 $env:KVTM_MULTI_INSTANCE_NAME = "KVTM Multi DEV"
 $env:KVTM_MULTI_ISOLATED = "1"
+$env:KVTM_CLIENT_OWNER = "DEV"
 
 $startOptions = @{
     FilePath = $python
