@@ -1,9 +1,8 @@
 // KVTM Bridge V3 hard FPS cap wrapper.
 //
 // The historical CAPTURE3/input implementation lives byte-for-byte in
-// kvtm_bridge_v3_base.cpp.  This wrapper only intercepts the bridge FPS message
-// and installs a native present-path governor.  Keeping capture/input isolated
-// makes the GPU experiment easy to roll back and prevents AUTO regressions.
+// kvtm_bridge_v3_base.cpp. This wrapper intercepts only the bridge FPS message
+// and installs a native present-path governor. Capture/input remain unchanged.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cstdint>
@@ -34,6 +33,8 @@ LONGLONG g_qpc_frequency = 0;
 SwapBuffersFn g_original_swap_buffers = nullptr;
 WglSwapLayerBuffersFn g_original_wgl_swap_layer_buffers = nullptr;
 
+// One timer handle is created lazily on the actual presenting thread. There is
+// no governor worker thread, no frame buffer and no polling loop.
 thread_local HANDLE t_waitable_timer = nullptr;
 thread_local LONGLONG t_next_deadline = 0;
 thread_local LONG t_last_fps = 0;
@@ -58,8 +59,7 @@ HANDLE ensure_waitable_timer() {
 }
 
 void pace_after_present() {
-    const LONG fps = InterlockedCompareExchange(
-        const_cast<volatile LONG*>(&g_target_fps), 0, 0);
+    const LONG fps = InterlockedCompareExchange(&g_target_fps, 0, 0);
     if (fps < 5 || fps > 120 || g_qpc_frequency <= 0) return;
 
     LARGE_INTEGER now{};
@@ -186,8 +186,7 @@ bool patch_modules(
 }
 
 bool install_present_hook() {
-    if (InterlockedCompareExchange(
-            const_cast<volatile LONG*>(&g_hook_ready), 0, 0) == 1) {
+    if (InterlockedCompareExchange(&g_hook_ready, 0, 0) == 1) {
         return true;
     }
 
@@ -196,9 +195,9 @@ bool install_present_hook() {
         return false;
     g_qpc_frequency = frequency.QuadPart;
 
-    // Prefer the normal GDI SwapBuffers path.  Only if the executable/Cocos
-    // imports no such symbol do we fall back to wglSwapLayerBuffers.  Hooking
-    // one present primitive avoids accidentally pacing twice per frame.
+    // Prefer normal GDI SwapBuffers. If Cocos does not import it, fall back to
+    // wglSwapLayerBuffers. Only one present primitive is hooked to avoid double
+    // pacing a frame.
     HMODULE gdi32 = GetModuleHandleW(L"gdi32.dll");
     if (!gdi32) gdi32 = LoadLibraryW(L"gdi32.dll");
     if (gdi32) {
@@ -210,8 +209,7 @@ bool install_present_hook() {
                     "GDI32.dll",
                     reinterpret_cast<FARPROC>(target),
                     reinterpret_cast<FARPROC>(&hooked_swap_buffers))) {
-                InterlockedExchange(
-                    const_cast<volatile LONG*>(&g_hook_ready), 1);
+                InterlockedExchange(&g_hook_ready, 1);
                 return true;
             }
         }
@@ -228,8 +226,7 @@ bool install_present_hook() {
                     "OPENGL32.dll",
                     reinterpret_cast<FARPROC>(target),
                     reinterpret_cast<FARPROC>(&hooked_wgl_swap_layer_buffers))) {
-                InterlockedExchange(
-                    const_cast<volatile LONG*>(&g_hook_ready), 1);
+                InterlockedExchange(&g_hook_ready, 1);
                 return true;
             }
         }
@@ -240,24 +237,23 @@ bool install_present_hook() {
 LONG set_target(int fps) {
     if (fps < 5 || fps > 120) return ERROR_INVALID_PARAMETER;
     if (!install_present_hook()) return ERROR_PROC_NOT_FOUND;
-    InterlockedExchange(
-        const_cast<volatile LONG*>(&g_target_fps), static_cast<LONG>(fps));
+    InterlockedExchange(&g_target_fps, static_cast<LONG>(fps));
     return ERROR_SUCCESS;
 }
 
 }  // namespace kvtm_hardcap
 
-// The base bridge routes touch/capture/FPS commands through SendMessageW.
-// Intercept only WM_KVTM_FPS; all other messages are forwarded unchanged.
+// The base bridge routes touch/capture/FPS commands through SendMessageW. For
+// FPS we intentionally do NOT call Director::setAnimationInterval anymore: the
+// field test proved that setter acknowledged commands without changing actual
+// ClientJS frame cadence. OK FPS now means the native present hook is installed
+// and its target has been updated. Touch/capture messages are forwarded exactly.
 LRESULT WINAPI KvtmBridgeBaseSendMessageW(
     HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
     if (message == WM_KVTM_FPS && lp) {
         auto* command = reinterpret_cast<FpsCommand*>(lp);
-        const LONG hardcap = kvtm_hardcap::set_target(command->fps);
-        if (hardcap != ERROR_SUCCESS) {
-            command->result = hardcap;
-            return hardcap;
-        }
+        command->result = kvtm_hardcap::set_target(command->fps);
+        return command->result;
     }
     return ::SendMessageW(hwnd, message, wp, lp);
 }
