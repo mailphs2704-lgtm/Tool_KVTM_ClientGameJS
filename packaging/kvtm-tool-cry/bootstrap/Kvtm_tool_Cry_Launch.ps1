@@ -15,25 +15,41 @@ function Write-CryLaunchLog {
     Add-Content -LiteralPath $LogPath -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Message) -Encoding UTF8
 }
 
+function Invoke-CryBootstrapChild {
+    param(
+        [Parameter(Mandatory = $true)][string]$Script,
+        [string[]]$Arguments = @()
+    )
+    $quotedScript = '"' + $Script + '"'
+    $argumentLine = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-WindowStyle", "Hidden",
+        "-File", $quotedScript
+    ) + $Arguments
+    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $argumentLine -WindowStyle Hidden -PassThru -Wait
+    return [int]$process.ExitCode
+}
+
 try {
     if (-not (Test-Path -LiteralPath $RuntimeScript -PathType Leaf)) {
         throw "Missing runtime bootstrap: $RuntimeScript"
     }
 
-    # Update is intentionally attempted only before runtime launch. The updater
-    # itself refuses to touch versions/current while a Stable runtime is active.
+    # Update is intentionally attempted only before runtime launch. Run it in a
+    # child PowerShell because updater uses exit codes; it must never terminate
+    # this launch orchestrator before the known-good runtime gets a chance to run.
     if (Test-Path -LiteralPath $UpdateScript -PathType Leaf) {
-        & $UpdateScript
-        if ($LASTEXITCODE -eq 0) {
+        $updateRc = Invoke-CryBootstrapChild -Script $UpdateScript
+        if ($updateRc -eq 0) {
             Write-CryLaunchLog "update check PASS"
         }
         else {
-            Write-CryLaunchLog "update check failed rc=$LASTEXITCODE; launching last verified version"
+            Write-CryLaunchLog "update check failed rc=$updateRc; launching last verified version"
         }
     }
 
-    & $RuntimeScript
-    $runtimeRc = $LASTEXITCODE
+    $runtimeRc = Invoke-CryBootstrapChild -Script $RuntimeScript
     if ($runtimeRc -ne 0) {
         throw "Runtime bootstrap failed rc=$runtimeRc"
     }
