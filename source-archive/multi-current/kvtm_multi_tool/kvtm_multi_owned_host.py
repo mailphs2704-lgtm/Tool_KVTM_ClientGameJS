@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import client_ownership_integration
 import client_video_recorder
+import daily_sale_counter_integration
 import fps_hardcap_integration
 
 
@@ -13,6 +14,12 @@ def _install_runtime_integrations(app_cls, core) -> None:
     # Install after auto_main_profile_settings so this layer owns the final
     # FPS transport/menu methods and routes them to Bridge V3 hard-cap.
     fps_hardcap_integration.install_fps_hardcap_integration(app_cls, core)
+    # The daily sale counter is observational UI/state only. Install after the
+    # final AUTO Main profile layer so it can place the counter directly under
+    # the existing sale cadence control without changing Function logic.
+    daily_sale_counter_integration.install_daily_sale_counter_integration(
+        app_cls, core
+    )
     _ORIGINAL_RECORDER_INSTALL(app_cls, core)
 
 
