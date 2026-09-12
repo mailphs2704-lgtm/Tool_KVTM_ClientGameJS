@@ -14,6 +14,8 @@ from verify_recovery_architecture_contract import main as verify_recovery_archit
 ROOT = Path(__file__).resolve().parents[1]
 CLEAN = ROOT / "components/clientjs-auto/kvtm_automation"
 PRODUCTION_PANEL = CLEAN / "actions/production_panel.py"
+WAREHOUSE_GUARD = CLEAN / "actions/warehouse_full_guard.py"
+NAVIGATION_RECOVERY = CLEAN / "recovery/navigation.py"
 DRIED_APPLE = CLEAN / "actions/production.py"
 APPLE_JUICE = CLEAN / "actions/apple_juice_production.py"
 YELLOW_FABRIC = CLEAN / "actions/yellow_fabric_production.py"
@@ -70,6 +72,8 @@ def main() -> int:
         raise AssertionError("Recovery architecture contract failed")
 
     panel = read(PRODUCTION_PANEL)
+    warehouse_guard = read(WAREHOUSE_GUARD)
+    navigation_recovery = read(NAVIGATION_RECOVERY)
     dried = read(DRIED_APPLE)
     apple = read(APPLE_JUICE)
     yellow = read(YELLOW_FABRIC)
@@ -113,6 +117,43 @@ def main() -> int:
     require(panel, "def _click_until_panel_open", "Shared panel opener missing")
     require(panel, "def _wait_for_idle_open_panel", "Shared capacity waiter missing")
 
+    # Warehouse-full is a global typed interruption. Live observation proved the
+    # board may blink while the x5 collect burst is still landing. The guard must
+    # stop business clicks, dismiss via a neutral backdrop point and prove the
+    # board absent on consecutive fresh frames before InventoryFull reaches
+    # RecoveryManager. Navigation must also use the generic floor-3 recovery path
+    # rather than the Function-1 end-of-loop route/error text.
+    for token in (
+        "WAREHOUSE_FULL_DISMISS_POINT = (500, 185)",
+        "WAREHOUSE_FULL_CLEAR_STABLE_FRAMES = 2",
+        "def warehouse_full_visible(self, frame) -> bool:",
+        "def dismiss_warehouse_full_popup(self, label: str) -> None:",
+        "popup CLOSED PASS",
+        "dừng trước khi điều hướng để giữ nguyên checkpoint",
+        "dismiss_warehouse_full_popup(self, label)",
+    ):
+        require(
+            warehouse_guard,
+            token,
+            f"Warehouse popup stable-dismiss contract missing: {token}",
+        )
+    dismiss_call = warehouse_guard.find("dismiss_warehouse_full_popup(self, label)")
+    inventory_raise = warehouse_guard.rfind("raise InventoryFull(")
+    if dismiss_call < 0 or inventory_raise < 0 or dismiss_call > inventory_raise:
+        raise AssertionError(
+            "Warehouse popup must be dismissed/proven closed before InventoryFull handoff"
+        )
+    require(
+        navigation_recovery,
+        "known_upper_floor_to_main_via_down_floor(",
+        "Floor-3 recovery is not using the generic deterministic route",
+    )
+    forbid(
+        navigation_recovery,
+        "self.auto.farm_boundary_routes.floor_3_to_main_via_down_floor()",
+        "Global floor-3 recovery still uses Function-1 end-loop route/error text",
+    )
+
     # Product transactions stay separate and explicit.
     require(dried, "class ProductionActions(ProductionPanelActions):", "Dried Apple does not use shared panel engine")
     require(dried, "def produce_9_dried_apples", "Dried Apple x9 transaction missing")
@@ -153,12 +194,14 @@ def main() -> int:
     forbid(legacy_recovery, "except WrongProductionMachine", "Wrong-machine loop duplicated in legacy facade")
     forbid(legacy_recovery, "except InventoryFull", "Inventory-full loop duplicated in legacy facade")
 
-    for text in (panel, dried, apple, yellow, rose, function_one, legacy_recovery):
+    for text in (panel, warehouse_guard, navigation_recovery, dried, apple, yellow, rose, function_one, legacy_recovery):
         forbid(text, "clear_stall_probe_runtime", "Production path touches Dọn quầy runtime")
         forbid(text, ".pyc", "Production path loads legacy pyc")
 
     print("AUTO MULTI DEV FUNCTION ONE / PRODUCTION STATIC CONTRACT VERIFIED")
     print("production_engine=shared-ProductionPanelActions")
+    print("warehouse_popup=dismiss-backdrop+2-stable-clear-frames-before-recovery")
+    print("floor3_recovery=generic-route-not-function1-end-loop")
     print("transactions=dried9+juice9+fabric9+tdhh7")
     print("function1=RecipeBook+shared-RecoveryManager+generic-farm-routes")
     print("recovery=typed+checkpointed+fail-close-for-unregistered")
