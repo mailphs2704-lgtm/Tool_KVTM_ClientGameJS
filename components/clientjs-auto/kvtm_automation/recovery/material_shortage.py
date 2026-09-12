@@ -242,14 +242,20 @@ class MaterialAwareProductionRecovery(BaseProductionRecovery):
 
 
 class MaterialAwareRecoveryManager(BaseRecoveryManager):
-    """Recovery facade whose production policy understands MaterialShortage."""
+    """Recovery facade whose production policy understands MaterialShortage.
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.production = MaterialAwareProductionRecovery(
-            self.auto,
-            navigation=self.navigation,
-            emit=self._emit,
-            function_id=self.function_id,
-        )
-        self.spec = self.production.spec
+    Navigation-only lifecycle recovery must stay independent from Function
+    product metadata. Material-aware production policy is created lazily only
+    when a caller actually needs production/spec behavior.
+    """
+
+    @property
+    def production(self) -> MaterialAwareProductionRecovery:
+        if self._production is None:
+            self._production = MaterialAwareProductionRecovery(
+                self.auto,
+                navigation=self.navigation,
+                emit=self._emit,
+                function_id=self.function_id,
+            )
+        return self._production
