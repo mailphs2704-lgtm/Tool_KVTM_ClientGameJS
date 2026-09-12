@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-"""Persistent per-profile counter for successful VP sale sessions.
+"""Persistent per-profile counter for successful VP x10 listings.
 
-A successful sale session is counted once when AutoVpSaleWorkflow returns with
-at least one newly posted x10 listing. The counter is tied to the stable KVTM
-profile id, not the transient ClientJS PID, so scheduled ClientJS restarts and
-tool restarts do not reset it. A new local calendar day starts from zero.
+One successful AUTO sale turn means one VP x10 batch was actually posted to one
+stall slot. Therefore a single AutoVpSaleWorkflow run that posts N listings adds
+N turns, not one session. A zero-listing scan adds nothing.
+
+The counter is tied to the stable KVTM profile id, not the transient ClientJS
+PID, so scheduled ClientJS restarts and tool restarts do not reset it. A new
+local calendar day starts from zero at 00:00 local time.
 """
 
 from datetime import datetime
@@ -19,11 +22,11 @@ import threading
 __all__ = [
     "counter_file_for_profile",
     "read_daily_sale_count",
-    "record_successful_sale",
+    "record_successful_listings",
 ]
 
 _COUNTER_DIRNAME = "daily-sale-counters"
-_COUNTER_VERSION = 1
+_COUNTER_VERSION = 2
 _SAFE_PROFILE_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 _PROCESS_LOCK = threading.RLock()
 
@@ -53,6 +56,16 @@ def _read_payload(path: Path) -> dict:
     return raw if isinstance(raw, dict) else {}
 
 
+def _payload_count(payload: dict) -> int:
+    # Compatibility with the short-lived v1 prototype before the operator
+    # clarified that one posted x10 slot equals one game sale turn.
+    raw = payload.get("successful_listings", payload.get("successful_sales", 0))
+    try:
+        return max(0, int(raw or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def read_daily_sale_count(
     app_dir: Path,
     profile_id: str,
@@ -64,11 +77,7 @@ def read_daily_sale_count(
     payload = _read_payload(counter_file_for_profile(app_dir, profile_id))
     if str(payload.get("date") or "") != today:
         return 0
-    try:
-        count = int(payload.get("successful_sales", 0) or 0)
-    except (TypeError, ValueError):
-        return 0
-    return max(0, count)
+    return _payload_count(payload)
 
 
 def _app_dir_from_context(context) -> Path:
@@ -84,18 +93,19 @@ def _app_dir_from_context(context) -> Path:
     return work_dir
 
 
-def record_successful_sale(
+def record_successful_listings(
     context,
     *,
     sold_listings: int,
     now: datetime | None = None,
 ) -> int:
-    """Increment one successful sale session for the context's stable profile.
+    """Add one daily sale turn for every successfully posted VP x10 listing.
 
-    ``sold_listings`` is evidence only. Zero-listing scans are not successful
-    sale sessions and therefore never increment the daily counter.
+    Examples: sold_listings=6 adds +6; sold_listings=1 adds +1; sold_listings=0
+    adds +0. The returned value is the profile's total successful listing turns
+    for the current local calendar day.
     """
-    sold = int(sold_listings)
+    sold = max(0, int(sold_listings))
     app_dir = _app_dir_from_context(context)
     profile_id = str(getattr(context, "profile_id", "") or "")
     if sold <= 0:
@@ -110,18 +120,18 @@ def record_successful_sale(
     # cross-account read/modify/write contention completely.
     with _PROCESS_LOCK:
         payload = _read_payload(path)
-        previous = 0
-        if str(payload.get("date") or "") == today:
-            try:
-                previous = max(0, int(payload.get("successful_sales", 0) or 0))
-            except (TypeError, ValueError):
-                previous = 0
-        count = previous + 1
+        previous = (
+            _payload_count(payload)
+            if str(payload.get("date") or "") == today
+            else 0
+        )
+        count = previous + sold
         data = {
             "version": _COUNTER_VERSION,
             "profile_id": profile_id,
             "date": today,
-            "successful_sales": count,
+            "successful_listings": count,
+            "vp_units_posted": count * 10,
             "updated_at": current.isoformat(timespec="seconds"),
             "last_client_pid": int(getattr(context, "pid", 0) or 0),
             "last_sold_listings": sold,
