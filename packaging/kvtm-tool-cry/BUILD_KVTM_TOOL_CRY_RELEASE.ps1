@@ -29,8 +29,14 @@ if (-not (Test-Path -LiteralPath $Verifier -PathType Leaf)) {
     throw "Missing Kvtm_tool_Cry packaging verifier: $Verifier"
 }
 
-$branch = (& git -C $RepoRoot branch --show-current 2>$null | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0 -or [string]$branch -ne "develop/multi-auto-dev") {
+$branchOutput = (& git -C $RepoRoot branch --show-current 2>$null | Select-Object -First 1)
+$branchExit = $LASTEXITCODE
+$branch = ([string]$branchOutput).Trim()
+if ($branchExit -ne 0 -or -not [string]::Equals(
+    $branch,
+    "develop/multi-auto-dev",
+    [System.StringComparison]::OrdinalIgnoreCase
+)) {
     throw "Kvtm_tool_Cry release must be built from develop/multi-auto-dev; current=$branch"
 }
 $sourceHead = (& git -C $RepoRoot rev-parse HEAD 2>$null | Select-Object -First 1).Trim()
