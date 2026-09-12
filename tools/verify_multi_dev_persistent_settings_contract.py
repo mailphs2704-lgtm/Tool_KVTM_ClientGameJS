@@ -7,9 +7,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "packaging/suite-v0.15/START_MULTI_DEV_SILENT.ps1"
 HOST = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py"
+OWNED_HOST = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_owned_host.py"
 AUTO_MAIN_PROFILE_SETTINGS = (
     ROOT
     / "source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py"
+)
+DAILY_SALE_UI = (
+    ROOT
+    / "source-archive/multi-current/kvtm_multi_tool/daily_sale_counter_integration.py"
+)
+DAILY_SALE_COUNTER = (
+    ROOT / "components/clientjs-auto/kvtm_automation/daily_sale_counter.py"
+)
+AUTO_VP_SALE_INIT = (
+    ROOT
+    / "components/clientjs-auto/kvtm_automation/workflows/auto_vp_sale/__init__.py"
 )
 
 
@@ -19,20 +31,36 @@ def require(text: str, token: str, message: str) -> None:
 
 
 def main() -> int:
-    if not LAUNCHER.is_file():
-        raise AssertionError(f"Missing persistent settings launcher: {LAUNCHER}")
-    if not HOST.is_file():
-        raise AssertionError(f"Missing Multi DEV host: {HOST}")
-    if not AUTO_MAIN_PROFILE_SETTINGS.is_file():
-        raise AssertionError(
-            f"Missing AUTO Main per-profile settings layer: {AUTO_MAIN_PROFILE_SETTINGS}"
-        )
+    required = (
+        (LAUNCHER, "persistent settings launcher"),
+        (HOST, "Multi DEV host"),
+        (OWNED_HOST, "owned Multi DEV host"),
+        (AUTO_MAIN_PROFILE_SETTINGS, "AUTO Main per-profile settings layer"),
+        (DAILY_SALE_UI, "daily sale counter UI integration"),
+        (DAILY_SALE_COUNTER, "daily sale counter storage"),
+        (AUTO_VP_SALE_INIT, "AUTO VP sale package hook"),
+    )
+    for path, label in required:
+        if not path.is_file():
+            raise AssertionError(f"Missing {label}: {path}")
 
     launcher = LAUNCHER.read_text(encoding="utf-8")
     host = HOST.read_text(encoding="utf-8")
+    owned_host = OWNED_HOST.read_text(encoding="utf-8")
     profile_settings = AUTO_MAIN_PROFILE_SETTINGS.read_text(encoding="utf-8")
-    ast.parse(host, filename=str(HOST))
-    ast.parse(profile_settings, filename=str(AUTO_MAIN_PROFILE_SETTINGS))
+    daily_sale_ui = DAILY_SALE_UI.read_text(encoding="utf-8")
+    daily_sale_counter = DAILY_SALE_COUNTER.read_text(encoding="utf-8")
+    auto_vp_sale_init = AUTO_VP_SALE_INIT.read_text(encoding="utf-8")
+
+    for path, text in (
+        (HOST, host),
+        (OWNED_HOST, owned_host),
+        (AUTO_MAIN_PROFILE_SETTINGS, profile_settings),
+        (DAILY_SALE_UI, daily_sale_ui),
+        (DAILY_SALE_COUNTER, daily_sale_counter),
+        (AUTO_VP_SALE_INIT, auto_vp_sale_init),
+    ):
+        ast.parse(text, filename=str(path))
 
     # Settings/profile data must be outside dist so package rebuild cannot erase it.
     require(
@@ -58,8 +86,7 @@ def main() -> int:
         "Multi DEV runtime is not bound to persistent APPDATA",
     )
 
-    # Source-controlled fallback values: proven operator tuning + stable Dọn quầy
-    # baseline. Existing per-profile clear-stall settings must win over defaults.
+    # Source-controlled fallback values: proven operator tuning + stable Dọn quầy.
     require(host, '"floor_swipe_duration": 0.350', "Pinned floor speed changed")
     require(host, '"plant_harvest_duration": 0.035', "Pinned plant speed changed")
     require(host, '"vp_production_delay": 0.070', "Pinned VP production speed changed")
@@ -75,9 +102,7 @@ def main() -> int:
     require(host, "core.DEFAULT_AUTO_TUNING.update(_PINNED_MULTI_DEV_TUNING)", "Pinned speed defaults not installed")
     require(host, "_install_pinned_dev_settings(kvtm_multi_dev_entry.core)", "Pinned settings installer is not wired")
 
-    # AUTO Main scheduler settings belong to each account/profile. The old global
-    # friend-refresh key is migration input only; all active reads/writes use the
-    # profile-id keyed map and a multi-account start freezes one snapshot per acc.
+    # AUTO Main scheduler settings belong to each account/profile.
     require(
         host,
         "from auto_main_profile_settings import install_auto_main_profile_settings",
@@ -144,6 +169,69 @@ def main() -> int:
         "Legacy global friend-refresh migration missing",
     )
 
+    # Daily successful-sale counter: per stable profile, durable across process
+    # restarts, zero for a new local date, and observational/non-blocking.
+    require(
+        daily_sale_counter,
+        '_COUNTER_DIRNAME = "daily-sale-counters"',
+        "Daily sale counter directory contract changed",
+    )
+    require(
+        daily_sale_counter,
+        "datetime.now().astimezone()",
+        "Daily sale counter does not use local calendar time",
+    )
+    require(
+        daily_sale_counter,
+        '"successful_sales": count',
+        "Daily sale counter payload missing successful_sales",
+    )
+    require(
+        daily_sale_counter,
+        "if str(payload.get(\"date\") or \"\") != today:\n        return 0",
+        "Daily sale counter does not reset logically after local midnight",
+    )
+    require(
+        daily_sale_counter,
+        "os.replace(temporary, path)",
+        "Daily sale counter write is not atomic",
+    )
+    require(
+        auto_vp_sale_init,
+        "if sold <= 0:\n            return result",
+        "Zero-listing sale scans may incorrectly increment the counter",
+    )
+    require(
+        auto_vp_sale_init,
+        "record_successful_sale(",
+        "Successful VP sale workflow is not wired to the daily counter",
+    )
+    require(
+        auto_vp_sale_init,
+        "non-blocking write failed",
+        "Counter persistence failure is no longer non-blocking",
+    )
+    require(
+        daily_sale_ui,
+        'text = f"Lần bán hôm nay: {count}"',
+        "Daily sale count is not shown in AUTO Main UI",
+    )
+    require(
+        daily_sale_ui,
+        "sale_box = sale_spin.master",
+        "Daily sale label is not anchored under the sale cadence control",
+    )
+    require(
+        daily_sale_ui,
+        "_REFRESH_MS = 1000",
+        "Daily sale UI is not refreshed across midnight/account switches",
+    )
+    require(
+        owned_host,
+        "daily_sale_counter_integration.install_daily_sale_counter_integration(",
+        "Daily sale counter UI integration is not installed by owned DEV host",
+    )
+
     print("AUTO MULTI DEV PERSISTENT SETTINGS CONTRACT VERIFIED")
     print("storage=%APPDATA%/KVTM Multi DEV")
     print("migration=package-data-dev-to-appdata-once-no-overwrite")
@@ -156,6 +244,8 @@ def main() -> int:
     )
     print("auto_main_profile_switch=save-old+load-new")
     print("auto_main_multi_start=per-profile-frozen-snapshot")
+    print("daily_sale_counter=per-profile+restart-persistent+local-midnight-reset")
+    print("daily_sale_success=one-session-if-sold_listings>0")
     return 0
 
 
