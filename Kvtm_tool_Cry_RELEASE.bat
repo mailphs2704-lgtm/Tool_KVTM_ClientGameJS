@@ -35,9 +35,6 @@ if not "%DIRTY_COUNT%"=="0" (
   exit /b 2
 )
 
-set "VERSION_ARG="
-if not "%~1"=="" set "VERSION_ARG=-Version "%~1""
-
 echo ===============================================================================
 echo  Kvtm_tool_Cry - BUILD/PUBLISH STABLE LOCAL CHANNEL
 echo  DEV va Stable la 2 runtime doc lap.
@@ -52,13 +49,23 @@ if "%~1"=="" (
   powershell -NoProfile -ExecutionPolicy Bypass -File ".\packaging\kvtm-tool-cry\BUILD_KVTM_TOOL_CRY_RELEASE.ps1" -Version "%~1"
 )
 set "RC=%ERRORLEVEL%"
-echo.
+
 if not "%RC%"=="0" (
-  echo [FAIL] Kvtm_tool_Cry release build that bai. rc=%RC%
-  pause
-  exit /b %RC%
+  echo.
+  echo [WARN] Primary Setup packager that bai. rc=%RC%
+  echo [INFO] Dang thu self-extract Setup builder doc lap IExpress...
+  powershell -NoProfile -ExecutionPolicy Bypass -File ".\packaging\kvtm-tool-cry\BUILD_KVTM_TOOL_CRY_SETUP_FALLBACK.ps1"
+  set "FALLBACK_RC=%ERRORLEVEL%"
+  if not "%FALLBACK_RC%"=="0" (
+    echo.
+    echo [FAIL] Kvtm_tool_Cry release build that bai. primary=%RC% fallback=%FALLBACK_RC%
+    pause
+    exit /b %FALLBACK_RC%
+  )
+  echo [PASS] Primary IExpress bo qua; self-extract Setup VERIFIED.
 )
 
+echo.
 echo [PASS] Kvtm_tool_Cry installer + local auto-update channel da san sang.
 echo [INFO] Installer: dist\Kvtm_tool_Cry_Setup_*.exe
 echo [INFO] Channel  : dist\Kvtm_tool_Cry-channel\stable-manifest.json
