@@ -170,6 +170,62 @@ def _install_pinned_dev_settings(core) -> None:
     )
 
 
+
+def _install_gpu_runtime_policy(dev_entry) -> None:
+    """Disable DWM Live View in Multi DEV while preserving AUTO capture."""
+    app_cls = dev_entry.MultiDevApp
+    if getattr(app_cls, "_gpu_runtime_policy_installed", False):
+        return
+
+    original_unregister = app_cls._unregister_live_thumbnail
+
+    def disabled_register_live_thumbnail(self, profile_id: str, source_hwnd: int) -> None:
+        del source_hwnd
+        profile_id = str(profile_id)
+        self._live_enabled.discard(profile_id)
+        # A DEV runtime must not create a DWM thumbnail at all. AUTO still owns
+        # native Bridge V3 capture at the ClientJS physical resolution.
+        try:
+            self.note.set(
+                "MULTI DEV: Live View DWM đã tắt để giảm GPU • "
+                "AUTO capture vẫn giữ nguyên độ phân giải client"
+            )
+        except Exception:
+            pass
+
+    def disabled_update_live_dwm(self) -> None:
+        # Defensive cleanup for an adopted/partially initialized UI, then stop
+        # the historical 100 ms DWM composition loop by not rescheduling it.
+        self._live_enabled.clear()
+        for profile_id in tuple(getattr(self, "_live_thumbnails", {})):
+            try:
+                original_unregister(self, profile_id)
+            except Exception:
+                self._live_thumbnails.pop(profile_id, None)
+
+    def disabled_live_worker(self) -> None:
+        # The old thumbnail capture thread becomes an idle daemon instead of
+        # reading 1000x1000 frames solely for the account-list Live View.
+        stop = getattr(self, "_bridge_stop", None)
+        if stop is not None:
+            stop.wait()
+
+    def disabled_poll_live_results(self) -> None:
+        # No Live View worker => no PhotoImage polling loop in DEV.
+        return None
+
+    app_cls._register_live_thumbnail = disabled_register_live_thumbnail
+    app_cls._update_live_dwm = disabled_update_live_dwm
+    app_cls._live_worker = disabled_live_worker
+    app_cls._poll_live_results = disabled_poll_live_results
+    app_cls._gpu_runtime_policy_installed = True
+    print(
+        "[KVTM DEV] GPU policy READY • DWM Live View=OFF • "
+        "AUTO capture/native resolution=UNCHANGED • FPS governor=20 when V3 supports it",
+        flush=True,
+    )
+
+
 def _install_auto_main_lifecycle_tracking(dev_entry) -> None:
     """Give each ClientJS generation one fresh-start gate per tool session.
 
@@ -318,6 +374,7 @@ def main() -> int:
         # remains in action/detail logs.
         _install_non_modal_error_ui(kvtm_multi_dev_entry.core)
         _install_pinned_dev_settings(kvtm_multi_dev_entry.core)
+        _install_gpu_runtime_policy(kvtm_multi_dev_entry)
         _install_auto_main_lifecycle_tracking(kvtm_multi_dev_entry)
 
         # Builder is DEV-only and is layered onto MultiDevApp after import. This
