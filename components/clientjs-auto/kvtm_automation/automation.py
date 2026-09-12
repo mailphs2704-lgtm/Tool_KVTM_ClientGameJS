@@ -39,6 +39,44 @@ from .runtime.vision import VisionEngine
 from .runtime.wait import Waiter
 
 
+
+_AUTO_MULTI_DEV_FPS_LIMIT = 20
+_AUTO_MULTI_DEV_FPS_CAPABILITY = "FPS_LIMIT1"
+
+
+def _apply_auto_multi_dev_fps_governor(
+    driver: Any,
+    context: AutomationContext,
+) -> None:
+    """Lower ClientJS render FPS without changing capture size or input timing."""
+    pipe = getattr(driver, "_pipe", None)
+    if not callable(pipe):
+        context.detail(
+            "GPU policy • Bridge V3 không expose pipe trực tiếp • bỏ qua FPS governor"
+        )
+        return
+
+    protocol = str(pipe("PING\n", 1000))
+    if _AUTO_MULTI_DEV_FPS_CAPABILITY not in protocol.split():
+        context.detail(
+            "GPU policy • Bridge V3 resident chưa có FPS_LIMIT1 • "
+            "giữ FPS hiện tại; restart ClientJS sau khi cập nhật để nạp DLL mới"
+        )
+        return
+
+    response = str(pipe(f"FPS {_AUTO_MULTI_DEV_FPS_LIMIT}\n", 1000))
+    expected = f"OK FPS {_AUTO_MULTI_DEV_FPS_LIMIT}"
+    if response != expected:
+        raise RuntimeError(
+            "Bridge V3 quảng bá FPS_LIMIT1 nhưng không áp dụng được governor: "
+            f"{response}"
+        )
+    context.log(
+        "GPU policy • ClientJS render=20 FPS qua "
+        "Director::setAnimationInterval • AUTO capture giữ nguyên native size"
+    )
+
+
 def _load_image_runtime(context: AutomationContext) -> float:
     """Load native image libraries on the worker main thread."""
     started = time.monotonic()
@@ -118,6 +156,7 @@ class KVAutomation:
             )
             self.driver = bundle.driver
             if auto_multi_resolution:
+                _apply_auto_multi_dev_fps_governor(self.driver, context)
                 contract = detect_client_resolution(self.driver)
                 self.resolution_contract = contract
                 self.driver = NativeCaptureDriver(
