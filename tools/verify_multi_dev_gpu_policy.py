@@ -92,13 +92,23 @@ def main() -> int:
         '_RENDER_FPS_SETTINGS_KEY = "multi_dev_render_fps"',
         '_RENDER_FPS_ENV_KEY = "KVTM_MULTI_DEV_RENDER_FPS"',
         "_RENDER_FPS_PRESETS = (10, 15, 20, 25, 30, 40, 60)",
+        "_RENDER_FPS_STARTUP_WINDOW_SECONDS = 60.0",
+        "_RENDER_FPS_STARTUP_REASSERT_SECONDS = 2.0",
+        "_RENDER_FPS_STEADY_REASSERT_SECONDS = 30.0",
+        "def _prune_multi_dev_fps_state(",
         "def _apply_multi_dev_fps_pid(",
+        "_multi_dev_fps_applied_at",
+        "_multi_dev_fps_first_seen",
+        "startup_age <= _RENDER_FPS_STARTUP_WINDOW_SECONDS",
+        "now - previous_applied_at < reassert_seconds",
+        'event = "REASSERT" if repeated else "APPLIED"',
         "def _schedule_multi_dev_fps_policy(",
         "def _set_persistent_multi_dev_render_fps(self, fps: int) -> None:",
         'source="bridge-ready"',
         'source="adopt"',
         'source="menu-change"',
         "os.environ[_RENDER_FPS_ENV_KEY] = str(fps)",
+        "self._prune_multi_dev_fps_state(live_pids)",
         "app_class._adopt_running_clients = adopt_running_clients",
         "app_class._inject_bridge = inject_bridge",
         "app_class._set_multi_dev_render_fps = _set_persistent_multi_dev_render_fps",
@@ -117,6 +127,7 @@ def main() -> int:
     print("fps_default=20")
     print("fps_persistence=settings+environment")
     print("fps_lifecycle=adopt+bridge-ready+menu")
+    print("fps_reassert=2s-for-60s+30s-steady")
     print("fps_worker=inherits-host-target")
     print("fps_transport=Bridge-V3-FPS_LIMIT1")
     print("governor=Director::setAnimationInterval")
