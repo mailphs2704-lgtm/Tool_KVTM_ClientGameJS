@@ -171,11 +171,17 @@ def _install_pinned_dev_settings(core) -> None:
 
 
 def _install_auto_main_lifecycle_tracking(dev_entry) -> None:
-    """Mark only ClientJS processes that AUTO Main itself launched.
+    """Give each ClientJS generation one fresh-start gate per tool session.
 
-    The worker consumes this one-shot marker to decide whether startup popup
-    watch is valid. Stop AUTO -> Start AUTO on an already-running ClientJS does
-    not call _launch(), so it must re-enter through unknown-camera recovery.
+    The first AUTO start for a live ``profile + ClientJS PID`` in this resident
+    Multi DEV process is fresh, even when the ClientJS process was already open
+    or adopted before AUTO started. This matches the operator lifecycle: after
+    restarting the tool/ClientJS, popup handling owns a full 60-second window
+    before any camera recovery is allowed.
+
+    Stop AUTO -> Start AUTO again on the same ClientJS PID does not receive a new
+    marker, so it re-enters through unknown-camera recovery instead. A new PID is
+    a new ClientJS generation and receives the fresh gate once.
     """
     app_cls = dev_entry.MultiDevApp
     if getattr(app_cls, "_auto_main_lifecycle_tracking_installed", False):
@@ -184,7 +190,64 @@ def _install_auto_main_lifecycle_tracking(dev_entry) -> None:
     original_start = app_cls._start_clean_auto_session
     original_launch = app_cls._launch
 
+    def _is_alive(process) -> bool:
+        try:
+            return bool(process and process.poll() is None)
+        except Exception:
+            return False
+
+    def _mark_fresh_client(self, profile_id: str, process, *, source: str) -> bool:
+        profile_id = str(profile_id or "")
+        if not profile_id or not _is_alive(process):
+            return False
+
+        pid = int(process.pid)
+        key = (profile_id, pid)
+        seen = getattr(self, "_auto_main_fresh_marked_clients", None)
+        if not isinstance(seen, set):
+            seen = set()
+            self._auto_main_fresh_marked_clients = seen
+        if key in seen:
+            return False
+
+        marker_root = dev_entry.core.APP_DIR / "auto-multi-dev" / profile_id
+        marker_root.mkdir(parents=True, exist_ok=True)
+        marker = marker_root / _AUTO_MAIN_FRESH_MARKER
+        payload = {
+            "version": 1,
+            "profile_id": profile_id,
+            "pid": pid,
+            "created_at": time.time(),
+        }
+        marker.write_text(
+            json.dumps(payload, ensure_ascii=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        seen.add(key)
+        print(
+            "[KVTM DEV] AUTO lifecycle marker • "
+            f"fresh ClientJS profile={profile_id} pid={pid} source={source}",
+            flush=True,
+        )
+        return True
+
     def tracked_start(self, *args, **kwargs):
+        # A restarted resident tool may adopt ClientJS processes that were
+        # already running before AUTO is pressed. The first AUTO start for each
+        # current PID must still own the 60-second startup popup-only window.
+        try:
+            selected = list(map(str, self.selected_ids()))
+        except Exception:
+            selected = []
+        for profile_id in selected:
+            process = self.processes.get(profile_id)
+            _mark_fresh_client(
+                self,
+                profile_id,
+                process,
+                source="existing-client-first-auto-start",
+            )
+
         previous_depth = int(getattr(self, "_auto_main_launch_tracking_depth", 0) or 0)
         self._auto_main_launch_tracking_depth = previous_depth + 1
         try:
@@ -199,30 +262,11 @@ def _install_auto_main_lifecycle_tracking(dev_entry) -> None:
 
         profile_id = str((profile or {}).get("id") or "")
         process = self.processes.get(profile_id) if profile_id else None
-        try:
-            alive = bool(process and process.poll() is None)
-        except Exception:
-            alive = False
-        if not alive:
-            return result
-
-        marker_root = dev_entry.core.APP_DIR / "auto-multi-dev" / profile_id
-        marker_root.mkdir(parents=True, exist_ok=True)
-        marker = marker_root / _AUTO_MAIN_FRESH_MARKER
-        payload = {
-            "version": 1,
-            "profile_id": profile_id,
-            "pid": int(process.pid),
-            "created_at": time.time(),
-        }
-        marker.write_text(
-            json.dumps(payload, ensure_ascii=True, separators=(",", ":")),
-            encoding="utf-8",
-        )
-        print(
-            "[KVTM DEV] AUTO lifecycle marker • "
-            f"fresh ClientJS profile={profile_id} pid={int(process.pid)}",
-            flush=True,
+        _mark_fresh_client(
+            self,
+            profile_id,
+            process,
+            source="auto-launched-client",
         )
         return result
 
@@ -230,7 +274,8 @@ def _install_auto_main_lifecycle_tracking(dev_entry) -> None:
     app_cls._launch = tracked_launch
     app_cls._auto_main_lifecycle_tracking_installed = True
     print(
-        "[KVTM DEV] AUTO lifecycle tracking READY • fresh launch marker=one-shot",
+        "[KVTM DEV] AUTO lifecycle tracking READY • "
+        "first AUTO start per ClientJS PID=fresh; same PID re-entry afterwards",
         flush=True,
     )
 
