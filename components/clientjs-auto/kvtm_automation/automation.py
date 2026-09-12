@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import time
 from typing import Any
@@ -39,16 +40,26 @@ from .runtime.vision import VisionEngine
 from .runtime.wait import Waiter
 
 
-
-_AUTO_MULTI_DEV_FPS_LIMIT = 20
+_AUTO_MULTI_DEV_FPS_ENV = "KVTM_MULTI_DEV_RENDER_FPS"
+_AUTO_MULTI_DEV_FPS_DEFAULT = 20
 _AUTO_MULTI_DEV_FPS_CAPABILITY = "FPS_LIMIT1"
+
+
+def _auto_multi_dev_fps_limit() -> int:
+    """Read the Multi DEV host-selected FPS inherited by the isolated worker."""
+    raw = os.environ.get(_AUTO_MULTI_DEV_FPS_ENV, str(_AUTO_MULTI_DEV_FPS_DEFAULT))
+    try:
+        fps = int(raw)
+    except (TypeError, ValueError):
+        fps = _AUTO_MULTI_DEV_FPS_DEFAULT
+    return fps if 5 <= fps <= 120 else _AUTO_MULTI_DEV_FPS_DEFAULT
 
 
 def _apply_auto_multi_dev_fps_governor(
     driver: Any,
     context: AutomationContext,
 ) -> None:
-    """Lower ClientJS render FPS without changing capture size or input timing."""
+    """Confirm the host-selected ClientJS render FPS without changing capture/input."""
     pipe = getattr(driver, "_pipe", None)
     if not callable(pipe):
         context.detail(
@@ -64,16 +75,18 @@ def _apply_auto_multi_dev_fps_governor(
         )
         return
 
-    response = str(pipe(f"FPS {_AUTO_MULTI_DEV_FPS_LIMIT}\n", 1000))
-    expected = f"OK FPS {_AUTO_MULTI_DEV_FPS_LIMIT}"
+    fps = _auto_multi_dev_fps_limit()
+    response = str(pipe(f"FPS {fps}\n", 1000))
+    expected = f"OK FPS {fps}"
     if response != expected:
         raise RuntimeError(
             "Bridge V3 quảng bá FPS_LIMIT1 nhưng không áp dụng được governor: "
             f"{response}"
         )
     context.log(
-        "GPU policy • ClientJS render=20 FPS qua "
-        "Director::setAnimationInterval • AUTO capture giữ nguyên native size"
+        f"GPU policy • ClientJS render={fps} FPS qua "
+        "Director::setAnimationInterval • target kế thừa từ Multi DEV • "
+        "AUTO capture giữ nguyên native size"
     )
 
 
