@@ -58,18 +58,32 @@ def main() -> int:
 
     for token in (
         "def _install_gpu_runtime_policy(dev_entry) -> None:",
+        "_MULTI_DEV_FPS_PRESETS = (10, 15, 20, 25, 30, 40, 60)",
+        "_MULTI_DEV_FPS_DEFAULT = 20",
+        '_MULTI_DEV_FPS_CAPABILITY = "FPS_LIMIT1"',
+        'pipe_name = rf"\\\\.\\pipe\\KVTM-Cocos-{int(pid)}"',
+        'response = bridge_command(pid, f"FPS {fps}")',
+        'menubar.add_cascade(label="FPS", menu=fps_menu)',
+        "fps_menu.add_radiobutton(",
+        'if text == "Live View":',
+        "app_cls.preview_selected = disabled_preview_selected",
         "app_cls._register_live_thumbnail = disabled_register_live_thumbnail",
         "app_cls._update_live_dwm = disabled_update_live_dwm",
         "app_cls._live_worker = disabled_live_worker",
         "app_cls._poll_live_results = disabled_poll_live_results",
         "_install_gpu_runtime_policy(kvtm_multi_dev_entry)",
+        "Live View=REMOVED",
         "DWM Live View=OFF",
+        "AUTO capture/native resolution=UNCHANGED",
     ):
-        require(host, token, f"Multi DEV DWM policy missing: {token}")
+        require(host, token, f"Multi DEV GPU/UI policy missing: {token}")
 
     print("AUTO MULTI DEV GPU POLICY VERIFIED")
+    print("live_view=removed-dev-ui-and-route")
     print("dwm_live_view=disabled-dev-only")
-    print("client_fps=20-when-FPS_LIMIT1")
+    print("fps_menu=10,15,20,25,30,40,60")
+    print("fps_default=20")
+    print("fps_transport=Bridge-V3-FPS_LIMIT1")
     print("governor=Director::setAnimationInterval")
     print("sleep_throttle=false")
     print("capture_resolution=unchanged")
