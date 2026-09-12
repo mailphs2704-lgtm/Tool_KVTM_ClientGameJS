@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul 2>&1
 cd /d "%~dp0"
 title Kvtm_tool_Cry - STABLE RELEASE BUILDER
@@ -55,12 +55,12 @@ if not "%RC%"=="0" (
   echo [WARN] Primary Setup packager that bai. rc=%RC%
   echo [INFO] Dang thu self-extract Setup builder doc lap IExpress...
   powershell -NoProfile -ExecutionPolicy Bypass -File ".\packaging\kvtm-tool-cry\BUILD_KVTM_TOOL_CRY_SETUP_FALLBACK.ps1"
-  set "FALLBACK_RC=%ERRORLEVEL%"
-  if not "%FALLBACK_RC%"=="0" (
+  set "FALLBACK_RC=!ERRORLEVEL!"
+  if not "!FALLBACK_RC!"=="0" (
     echo.
-    echo [FAIL] Kvtm_tool_Cry release build that bai. primary=%RC% fallback=%FALLBACK_RC%
+    echo [FAIL] Kvtm_tool_Cry release build that bai. primary=%RC% fallback=!FALLBACK_RC!
     pause
-    exit /b %FALLBACK_RC%
+    exit /b !FALLBACK_RC!
   )
   echo [PASS] Primary IExpress bo qua; self-extract Setup VERIFIED.
 )
