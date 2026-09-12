@@ -85,7 +85,7 @@ def main() -> int:
     require(update, '$StagingRoot = Join-Path $InstallRoot "staging"', "Update staging root missing")
     require(update, 'Move-Item -LiteralPath $temp -Destination $Path -Force', "Atomic pointer write missing")
     require(update, 'if ($nextVersion -le $currentVersion)', "Monotonic version gate missing")
-    require(update, 'launching last verified version', "Launcher rollback/fail-open marker missing")
+    require(launch, 'launching last verified version', "Launcher rollback/fail-open marker missing")
     forbid(update.lower(), "authorization: bearer", "Updater must not embed GitHub/private bearer auth")
     forbid(update.lower(), "github_pat_", "Updater must not contain a GitHub PAT")
     forbid(update.lower(), "ghp_", "Updater must not contain a legacy GitHub PAT")
