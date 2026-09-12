@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 HOST = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py"
+GAME_SESSION = ROOT / "components/clientjs-auto/kvtm_automation/workflows/game_session/workflow.py"
 MANAGER = ROOT / "components/clientjs-auto/kvtm_automation/recovery/manager.py"
 MATERIAL_RECOVERY = ROOT / "components/clientjs-auto/kvtm_automation/recovery/material_shortage.py"
 MARKER = ".fresh-client-start.json"
@@ -33,20 +34,30 @@ def forbid(text: str, token: str, message: str) -> None:
 def main() -> int:
     worker = read(WORKER)
     host = read(HOST)
+    game_session = read(GAME_SESSION)
     manager = read(MANAGER)
     material_recovery = read(MATERIAL_RECOVERY)
 
-    # Parent lifecycle ownership: a fresh marker exists only when AUTO Main
-    # itself had to launch ClientJS. Adopting an already-running ClientJS must
-    # not manufacture a fresh-start marker.
+    # One resident-tool session grants exactly one fresh startup gate to each
+    # live profile + ClientJS PID generation. This includes ClientJS processes
+    # already running/adopted when AUTO is pressed after a tool restart. Stop ->
+    # Start on the same PID must not manufacture a second fresh marker.
     require(host, f'_AUTO_MAIN_FRESH_MARKER = "{MARKER}"', "Host fresh marker name changed")
     require(host, "def _install_auto_main_lifecycle_tracking(dev_entry)", "Host lifecycle tracking missing")
     require(host, "original_start = app_cls._start_clean_auto_session", "AUTO Main start is not tracked")
     require(host, "original_launch = app_cls._launch", "ClientJS launch hook missing")
+    require(host, "def _mark_fresh_client(self, profile_id: str, process, *, source: str)", "Per-ClientJS fresh marker helper missing")
+    require(host, 'key = (profile_id, pid)', "Fresh gate is not keyed by profile + ClientJS PID")
+    require(host, 'seen = getattr(self, "_auto_main_fresh_marked_clients", None)', "Tool-session ClientJS generation set missing")
+    require(host, "if key in seen:", "Same ClientJS PID can receive duplicate fresh gates")
+    require(host, "seen.add(key)", "Fresh ClientJS generation is not remembered")
+    require(host, "selected = list(map(str, self.selected_ids()))", "Existing/adopted ClientJS profiles are not inspected on AUTO start")
+    require(host, 'source="existing-client-first-auto-start"', "Existing ClientJS first-start fresh marker missing")
     require(host, 'self._auto_main_launch_tracking_depth = previous_depth + 1', "AUTO Main launch scope missing")
     require(host, 'if int(getattr(self, "_auto_main_launch_tracking_depth", 0) or 0) <= 0:', "Non-AUTO launches are not excluded")
+    require(host, 'source="auto-launched-client"', "AUTO-launched ClientJS fresh marker missing")
     require(host, 'marker_root = dev_entry.core.APP_DIR / "auto-multi-dev" / profile_id', "Fresh marker is not profile-scoped")
-    require(host, '"pid": int(process.pid)', "Fresh marker does not bind ClientJS PID")
+    require(host, '"pid": pid', "Fresh marker does not bind ClientJS PID")
     require(host, '"profile_id": profile_id', "Fresh marker does not bind profile")
     require(host, '"created_at": time.time()', "Fresh marker has no creation timestamp")
     require(host, "marker.write_text(", "Fresh marker is never written")
@@ -68,8 +79,17 @@ def main() -> int:
     require(worker, 'if startup_mode == "fresh":', "Fresh startup branch missing")
     forbid(worker, 'if args.startup_mode == "fresh":', "Worker bypasses resolved lifecycle decision")
 
-    # Fresh startup alone owns the 60-second GameSession popup watch. Re-entry
-    # uses bounded global navigation recovery and proves MAIN.
+    # Fresh startup is a strict popup-only phase. It owns the complete 60-second
+    # watch before control can reach navigation/recovery. GameSession may record
+    # the approved startup MAIN invariant, but it must never emit goDown itself.
+    require(game_session, "POPUP_WATCH_SECONDS = 60.0", "Fresh popup watch is not fixed at 60 seconds")
+    require(game_session, "self._watch_popups(self.POPUP_WATCH_SECONDS)", "Fresh startup does not wait through the popup window")
+    require(game_session, "mark_startup_exact_main(", "Fresh startup MAIN invariant marker missing")
+    forbid(game_session, "go_down_one_toward_main(", "Fresh popup window must not run goDown recovery")
+    forbid(game_session, "farm_boundary_routes", "Fresh popup window must not own boundary navigation")
+
+    # Fresh startup alone owns GameSession. Re-entry skips the popup window and
+    # only then may use bounded global navigation recovery to prove exact MAIN.
     require(worker, "GameSessionWorkflow(automation).run(timeout=args.timeout)", "Fresh startup workflow missing")
     require(worker, 'function_id="lifecycle_reentry"', "Re-entry RecoveryManager ownership missing")
     require(worker, "recovery.recover_unknown_to_main(", "Re-entry does not use global unknown->MAIN recovery")
