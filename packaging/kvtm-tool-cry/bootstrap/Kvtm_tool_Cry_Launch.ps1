@@ -36,6 +36,7 @@ function Invoke-CryBootstrapChild {
         "-WindowStyle", "Hidden",
         "-File", $quotedScript
     ) + $Arguments
+    # Label=runtime resolves to bootstrap-runtime.err.log / bootstrap-runtime.out.log.
     $stdout = Join-Path $LogRoot ("bootstrap-" + $Label + ".out.log")
     $stderr = Join-Path $LogRoot ("bootstrap-" + $Label + ".err.log")
     Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
