@@ -10,6 +10,9 @@ on:
       - 'source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py'
       - 'source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py'
       - 'source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py'
+      - 'source-archive/multi-current/kvtm_multi_tool/kvtm_multi_owned_host.py'
+      - 'source-archive/multi-current/kvtm_multi_tool/client_ownership_integration.py'
+      - 'packaging/suite-v0.15/START_MULTI_DEV_SILENT.ps1'
       - 'packaging/kvtm-tool-cry/**'
       - 'Kvtm_tool_Cry_RELEASE.bat'
       - 'tools/verify_recovery_architecture_contract.py'
@@ -20,6 +23,7 @@ on:
       - 'tools/verify_production_action_boundaries_contract.py'
       - 'tools/verify_auto_reentry_lifecycle_contract.py'
       - 'tools/verify_kvtm_tool_cry_packaging_contract.py'
+      - 'tools/verify_client_ownership_contract.py'
       - '.github/workflows/auto-standardization-contract.yml'
   workflow_dispatch:
 
@@ -43,6 +47,8 @@ jobs:
             source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py \
             source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py \
             source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py \
+            source-archive/multi-current/kvtm_multi_tool/kvtm_multi_owned_host.py \
+            source-archive/multi-current/kvtm_multi_tool/client_ownership_integration.py \
             tools/verify_recovery_architecture_contract.py \
             tools/verify_function_boundary_delay_contract.py \
             tools/verify_action_standardization_contract.py \
@@ -50,7 +56,8 @@ jobs:
             tools/verify_module_scheduler_boundaries_contract.py \
             tools/verify_production_action_boundaries_contract.py \
             tools/verify_auto_reentry_lifecycle_contract.py \
-            tools/verify_kvtm_tool_cry_packaging_contract.py
+            tools/verify_kvtm_tool_cry_packaging_contract.py \
+            tools/verify_client_ownership_contract.py
 
       - name: Verify AUTO architecture contracts
         run: |
@@ -62,3 +69,4 @@ jobs:
           python tools/verify_production_action_boundaries_contract.py
           python tools/verify_auto_reentry_lifecycle_contract.py
           python tools/verify_kvtm_tool_cry_packaging_contract.py
+          python tools/verify_client_ownership_contract.py
