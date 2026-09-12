@@ -8,6 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 NATIVE = ROOT / "bridge-v3/native/kvtm_bridge_v3.cpp"
 AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
 DEV_HOST = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py"
+PROFILE_SETTINGS = (
+    ROOT
+    / "source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py"
+)
 
 
 def require(text: str, token: str, message: str) -> None:
@@ -16,15 +20,17 @@ def require(text: str, token: str, message: str) -> None:
 
 
 def main() -> int:
-    for path in (NATIVE, AUTOMATION, DEV_HOST):
+    for path in (NATIVE, AUTOMATION, DEV_HOST, PROFILE_SETTINGS):
         if not path.is_file():
             raise AssertionError(f"Missing GPU policy source: {path}")
 
     native = NATIVE.read_text(encoding="utf-8")
     automation = AUTOMATION.read_text(encoding="utf-8")
     host = DEV_HOST.read_text(encoding="utf-8")
+    profile_settings = PROFILE_SETTINGS.read_text(encoding="utf-8")
     ast.parse(automation, filename=str(AUTOMATION))
     ast.parse(host, filename=str(DEV_HOST))
+    ast.parse(profile_settings, filename=str(PROFILE_SETTINGS))
 
     for token in (
         "WM_KVTM_FPS",
@@ -48,13 +54,17 @@ def main() -> int:
     )
 
     for token in (
-        "_AUTO_MULTI_DEV_FPS_LIMIT = 20",
-        '_AUTO_MULTI_DEV_FPS_CAPABILITY = "FPS_LIMIT1"',
-        'pipe(f"FPS {_AUTO_MULTI_DEV_FPS_LIMIT}\\n", 1000)',
+        '_AUTO_MULTI_DEV_FPS_ENV = "KVTM_MULTI_DEV_RENDER_FPS"',
+        "def _auto_multi_dev_fps_limit() -> int:",
+        "fps = _auto_multi_dev_fps_limit()",
+        'pipe(f"FPS {fps}\\n", 1000)',
+        "target kế thừa từ Multi DEV",
         "AUTO capture giữ nguyên native size",
         "_apply_auto_multi_dev_fps_governor(self.driver, context)",
     ):
         require(automation, token, f"AUTO MULTI DEV GPU policy missing: {token}")
+    if "_AUTO_MULTI_DEV_FPS_LIMIT = 20" in automation:
+        raise AssertionError("AUTO worker must not hard-code 20 FPS anymore")
 
     for token in (
         "def _install_gpu_runtime_policy(dev_entry) -> None:",
@@ -78,11 +88,36 @@ def main() -> int:
     ):
         require(host, token, f"Multi DEV GPU/UI policy missing: {token}")
 
+    for token in (
+        '_RENDER_FPS_SETTINGS_KEY = "multi_dev_render_fps"',
+        '_RENDER_FPS_ENV_KEY = "KVTM_MULTI_DEV_RENDER_FPS"',
+        "_RENDER_FPS_PRESETS = (10, 15, 20, 25, 30, 40, 60)",
+        "def _apply_multi_dev_fps_pid(",
+        "def _schedule_multi_dev_fps_policy(",
+        "def _set_persistent_multi_dev_render_fps(self, fps: int) -> None:",
+        'source="bridge-ready"',
+        'source="adopt"',
+        'source="menu-change"',
+        "os.environ[_RENDER_FPS_ENV_KEY] = str(fps)",
+        "app_class._adopt_running_clients = adopt_running_clients",
+        "app_class._inject_bridge = inject_bridge",
+        "app_class._set_multi_dev_render_fps = _set_persistent_multi_dev_render_fps",
+        "FPS persistent policy READY",
+    ):
+        require(
+            profile_settings,
+            token,
+            f"Persistent Multi DEV FPS lifecycle policy missing: {token}",
+        )
+
     print("AUTO MULTI DEV GPU POLICY VERIFIED")
     print("live_view=removed-dev-ui-and-route")
     print("dwm_live_view=disabled-dev-only")
     print("fps_menu=10,15,20,25,30,40,60")
     print("fps_default=20")
+    print("fps_persistence=settings+environment")
+    print("fps_lifecycle=adopt+bridge-ready+menu")
+    print("fps_worker=inherits-host-target")
     print("fps_transport=Bridge-V3-FPS_LIMIT1")
     print("governor=Director::setAnimationInterval")
     print("sleep_throttle=false")
