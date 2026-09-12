@@ -33,6 +33,14 @@ def forbid(body: str, token: str, message: str) -> None:
         raise AssertionError(message)
 
 
+def without_full_line_comments(body: str) -> str:
+    """Ignore descriptive PowerShell comments while keeping executable lines."""
+    return "\n".join(
+        line for line in body.splitlines()
+        if not line.lstrip().startswith("#")
+    )
+
+
 def main() -> int:
     version = text(VERSION).strip()
     parts = version.split(".")
@@ -46,6 +54,7 @@ def main() -> int:
     update = text(UPDATE)
     runtime = text(RUNTIME)
     install = text(INSTALL)
+    install_code = without_full_line_comments(install)
     dev_start = text(DEV_START)
 
     # Product identity is stable/final; DEV remains a separate product/data root.
@@ -106,10 +115,12 @@ def main() -> int:
     forbid(update.lower(), "github_pat_", "Updater must not contain a GitHub PAT")
     forbid(update.lower(), "ghp_", "Updater must not contain a legacy GitHub PAT")
 
-    # Installer seeds profiles/settings once but never imports process/runtime state.
+    # Installer seeds only the exact safe DEV data allowlist. Descriptive comments
+    # may explicitly say that running_clients.json is NOT migrated; inspect only
+    # executable lines for a forbidden process-map migration token.
     require(install, '$DevDataRoot = Join-Path $env:APPDATA "KVTM Multi DEV"', "First-install DEV settings seed missing")
     require(install, '@("profiles.json", "settings.json", "clear-stall-history.jsonl")', "Stable seed allowlist changed")
-    forbid(install, 'running_clients.json', "Installer must not migrate DEV running process map")
+    forbid(install_code, '"running_clients.json"', "Installer executable code must not migrate DEV running process map")
     require(install, 'Kvtm_tool_Cry.lnk', "Stable desktop/start-menu shortcut missing")
 
     # User-facing executables are thin wrappers around auditable bootstrap scripts.
@@ -125,6 +136,7 @@ def main() -> int:
     print("release-branch=normalized-name-no-LASTEXITCODE-dependency")
     print("update=file-or-https+sha256+staging+atomic-switch+rollback")
     print("bootstrap=child-process-exit-isolation")
+    print("seed=exact-safe-allowlist+no-runtime-process-map-migration")
     print("dev-isolation=stable-running-not-stopped-by-release-build")
     print("security=no-embedded-github-token")
     return 0
