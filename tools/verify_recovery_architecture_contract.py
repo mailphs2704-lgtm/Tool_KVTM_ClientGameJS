@@ -47,6 +47,16 @@ def forbid(text: str, token: str, message: str) -> None:
         raise AssertionError(message)
 
 
+def section_between(text: str, start_token: str, end_token: str) -> str:
+    start = text.find(start_token)
+    if start < 0:
+        raise AssertionError(f"Missing section start: {start_token}")
+    end = text.find(end_token, start + len(start_token))
+    if end < 0:
+        raise AssertionError(f"Missing section end: {end_token}")
+    return text[start:end]
+
+
 def forbid_top_level_import_from(text: str, module_name: str, message: str) -> None:
     tree = ast.parse(text)
     for node in tree.body:
@@ -147,18 +157,24 @@ def main() -> int:
     forbid(production, "(ScreenTimeout,", "Generic ScreenTimeout registered as recoverable")
     require(production, "self.navigation.recover_unknown_to_floor(", "Wrong machine not routed through nav recovery")
     require(production, "AutoVpSaleWorkflow(", "Warehouse-full sale recovery missing")
-    require(production, "sale_wait_round = 0", "Warehouse-full recovery wait counter missing")
-    require(production, "while True:", "Warehouse-full sale recovery must be unbounded")
-    require(production, "self.context.ensure_running()", "Unbounded warehouse recovery must remain stoppable")
-    require(production, "if sold > 0:", "Warehouse recovery must wait for a real x10 listing")
-    require(
+
+    inventory_recovery = section_between(
         production,
+        "        def recover_inventory_full(",
+        "        return self.executor.run(",
+    )
+    require(inventory_recovery, "sale_wait_round = 0", "Warehouse-full recovery wait counter missing")
+    require(inventory_recovery, "while True:", "Warehouse-full sale recovery must be unbounded")
+    require(inventory_recovery, "self.context.ensure_running()", "Unbounded warehouse recovery must remain stoppable")
+    require(inventory_recovery, "if sold > 0:", "Warehouse recovery must wait for a real x10 listing")
+    require(
+        inventory_recovery,
         "tiếp tục quét 5 View + QC cho tới khi người mua tạo ô trống",
         "Warehouse recovery no-progress continuation marker missing",
     )
     forbid(
-        production,
-        "dừng để tránh lặp vô hạn",
+        inventory_recovery,
+        "raise ScreenTimeout(",
         "Warehouse-full recovery must not fail merely because Sale has no progress yet",
     )
 
