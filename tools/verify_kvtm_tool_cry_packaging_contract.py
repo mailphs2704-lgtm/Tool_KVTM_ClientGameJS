@@ -67,6 +67,14 @@ def main() -> int:
     forbid(build, 'Stop-Process -Name', "Release builder contains broad process kill")
     forbid(build, 'taskkill', "Release builder contains broad taskkill")
 
+    # Release branch gate must trust the normalized branch name itself, not an
+    # unreliable/stale LASTEXITCODE produced by a native Git command in a PS5.1
+    # pipeline. Detached HEAD or a real wrong branch still fails by name.
+    require(build, '$expectedBranch = "develop/multi-auto-dev"', "Stable release expected branch marker missing")
+    require(build, 'rev-parse --abbrev-ref HEAD', "Stable release branch probe is not canonical")
+    require(build, '[System.StringComparison]::OrdinalIgnoreCase', "Stable release branch comparison is not normalized")
+    forbid(build, '$branchExit', "Stable release branch gate must not depend on unreliable LASTEXITCODE")
+
     # Runtime uses current.json -> versions/<version>, so an update never replaces
     # the files currently executing. Stable singleton is tracked in APPDATA.
     require(runtime, '$CurrentPath = Join-Path $InstallRoot "current.json"', "Runtime current pointer missing")
@@ -114,6 +122,7 @@ def main() -> int:
     print("KVTM_TOOL_CRY PACKAGING CONTRACT VERIFIED")
     print("identity=Kvtm_tool_Cry+stable-appdata+isolated-instance")
     print("install=localappdata-programs+versioned-runtime+current-pointer")
+    print("release-branch=normalized-name-no-LASTEXITCODE-dependency")
     print("update=file-or-https+sha256+staging+atomic-switch+rollback")
     print("bootstrap=child-process-exit-isolation")
     print("dev-isolation=stable-running-not-stopped-by-release-build")
