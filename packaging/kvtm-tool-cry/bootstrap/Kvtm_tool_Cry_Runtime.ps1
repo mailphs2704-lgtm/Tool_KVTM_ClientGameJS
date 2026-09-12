@@ -103,6 +103,15 @@ $env:KVTM_MULTI_ISOLATED = "1"
 $env:KVTM_PRODUCT_CHANNEL = "stable"
 $env:KVTM_PRODUCT_VERSION = $version
 
+# Stable redirects Python stdout/stderr to files. On Windows, CPython otherwise
+# inherits the active ANSI code page (for example cp1252), which cannot encode
+# Vietnamese UI/log text and can crash the whole resident host during startup.
+# These variables are process-local to this bootstrap and inherited by the
+# Stable Python child only; they do not modify the user's global environment.
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUNBUFFERED = "1"
+
 $startOptions = @{
     FilePath = $python
     ArgumentList = @($HostScript)
