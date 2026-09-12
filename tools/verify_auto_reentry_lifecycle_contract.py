@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 HOST = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py"
 MANAGER = ROOT / "components/clientjs-auto/kvtm_automation/recovery/manager.py"
+MATERIAL_RECOVERY = ROOT / "components/clientjs-auto/kvtm_automation/recovery/material_shortage.py"
 MARKER = ".fresh-client-start.json"
 
 
@@ -33,6 +34,7 @@ def main() -> int:
     worker = read(WORKER)
     host = read(HOST)
     manager = read(MANAGER)
+    material_recovery = read(MATERIAL_RECOVERY)
 
     # Parent lifecycle ownership: a fresh marker exists only when AUTO Main
     # itself had to launch ClientJS. Adopting an already-running ClientJS must
@@ -84,6 +86,15 @@ def main() -> int:
     require(manager, "self._production = ProductionRecovery(", "ProductionRecovery lazy construction missing")
     require(manager, "return self.production.run_production(", "Production facade no longer resolves lazy policy")
     forbid(manager, "self.production = ProductionRecovery(", "Navigation recovery must not eagerly load production catalog")
+
+    # The public RecoveryManager export is material-aware, so the subclass must
+    # preserve the same lazy boundary. Otherwise re-entry still touches the AUTO
+    # Builder catalog before navigation recovery starts.
+    require(material_recovery, "class MaterialAwareRecoveryManager(BaseRecoveryManager):", "Material-aware manager missing")
+    require(material_recovery, "def production(self) -> MaterialAwareProductionRecovery:", "Material-aware production policy is not lazy")
+    require(material_recovery, "if self._production is None:", "Material-aware lazy guard missing")
+    require(material_recovery, "self._production = MaterialAwareProductionRecovery(", "Material-aware lazy construction missing")
+    forbid(material_recovery, "self.production = MaterialAwareProductionRecovery(", "Material-aware manager eagerly loads production catalog")
 
     print("AUTO MULTI DEV RE-ENTRY LIFECYCLE CONTRACT VERIFIED")
     return 0
