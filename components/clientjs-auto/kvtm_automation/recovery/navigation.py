@@ -123,7 +123,12 @@ class NavigationRecovery:
         elif floor == 2:
             self.auto.farm_boundary_routes.floor_2_to_main()
         elif floor == 3:
-            self.auto.farm_boundary_routes.floor_3_to_main_via_down_floor()
+            # Recovery is a global runtime path, not Function 1 end-of-loop.
+            # Use the generic deterministic floor->main route so any error/log
+            # keeps the real module label (e.g. Vải vàng inventory recovery).
+            self.auto.farm_boundary_routes.known_upper_floor_to_main_via_down_floor(
+                f"recovery-{label}-floor3"
+            )
         else:
             raise ValueError(
                 f"Chưa có route tầng {floor} → main; Recipe phải register route đã xác minh"
