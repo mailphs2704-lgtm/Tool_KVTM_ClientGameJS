@@ -13,6 +13,11 @@ REQUIRED_SOURCE = (
     "Local\\\\KVTM-CaptureV3-",
     "KVTM-CocosV3-",
     "kCaptureVersion = 3",
+    "WM_KVTM_FPS",
+    "FPS_LIMIT1",
+    "?setAnimationInterval@Director@cocos2d@@QAEXN@Z",
+    "?setAnimationInterval@Director@cocos2d@@QAEXM@Z",
+    'std::strncmp(input, "FPS ", 4)',
 )
 FORBIDDEN_SOURCE = (
     "WM_SIZING",
@@ -71,7 +76,8 @@ def main() -> int:
     print("BRIDGE V3 STATIC VERIFIED")
     print(f"dll_size={len(raw)}")
     print(f"dll_sha256={hashlib.sha256(raw).hexdigest()}")
-    print("scope=capture,input")
+    print("scope=capture,input,fps-governor")
+    print("fps_control=Director::setAnimationInterval dynamic double/float")
     print("layout=absent")
     print("runtime_installed=false")
     return 0
