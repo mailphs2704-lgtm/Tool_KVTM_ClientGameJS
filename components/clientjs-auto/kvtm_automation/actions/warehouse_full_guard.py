@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..errors import InventoryFull
+from ..errors import InventoryFull, ScreenTimeout
 
 
 __all__ = ["install_warehouse_full_guard"]
@@ -10,15 +10,26 @@ __all__ = ["install_warehouse_full_guard"]
 # - red X near logical (717, 392)
 # - orange "Nang cap" button near logical (500, 606)
 #
+# Operator-confirmed behavior on 2026-09-12:
+# - while harvest/production clicks continue, this popup can blink open/closed;
+# - one click on an empty backdrop area closes the popup;
+# - recovery MUST NOT start moving the farm camera until the popup is proven
+#   absent on consecutive fresh frames.
+#
 # Keep coordinates in logical 1000 space. VisionEngine owns native scaling.
 WAREHOUSE_FULL_MODAL_ZONE = (270, 385, 455, 225)
 WAREHOUSE_FULL_X_ZONE = (665, 345, 115, 115)
 WAREHOUSE_FULL_UPGRADE_ZONE = (440, 565, 125, 85)
 WAREHOUSE_FULL_FALLBACK_X = (717, 392)
+WAREHOUSE_FULL_DISMISS_POINT = (500, 185)
 WAREHOUSE_FULL_X_THRESHOLD = 0.72
 WAREHOUSE_FULL_GREEN_RATIO_MIN = 0.45
 WAREHOUSE_FULL_ORANGE_RATIO_MIN = 0.08
 WAREHOUSE_FULL_RED_X_RATIO_MIN = 0.035
+WAREHOUSE_FULL_DISMISS_ATTEMPTS = 4
+WAREHOUSE_FULL_CLEAR_STABLE_FRAMES = 2
+WAREHOUSE_FULL_DISMISS_SETTLE_SECONDS = 0.18
+WAREHOUSE_FULL_CLEAR_CONFIRM_SECONDS = 0.10
 
 
 def _logical_crop(action, frame, zone):
@@ -107,6 +118,11 @@ def install_warehouse_full_guard() -> None:
     Every product transaction reaches panel state through ProductionPanelActions,
     directly or by inheritance. Patching this one shared primitive preserves the
     same recoverable InventoryFull evidence for Táo sấy/Nước táo/Vải vàng/TDHH.
+
+    The popup is dismissed and visually proven absent BEFORE InventoryFull is
+    handed to Global Recovery. This prevents the recovery navigation gesture from
+    being swallowed by a warehouse popup that happened to be visible on the exact
+    blink frame where production stopped.
     """
     from .production_panel import ProductionPanelActions
 
@@ -114,6 +130,12 @@ def install_warehouse_full_guard() -> None:
         return
 
     original_panel_state = ProductionPanelActions._panel_state
+
+    def warehouse_full_visible(self, frame) -> bool:
+        original_full, _empty_ready = original_panel_state(self, frame=frame)
+        if original_full:
+            return True
+        return _detect_live_warehouse_full(self, frame) is not None
 
     def panel_state(self, frame=None):
         source = self.vision.frame() if frame is None else frame
@@ -145,19 +167,76 @@ def install_warehouse_full_guard() -> None:
         )
         return True, empty_ready
 
-    def raise_inventory_full(self, label: str) -> None:
-        close_point = getattr(
-            self,
-            "_warehouse_full_close_point",
-            WAREHOUSE_FULL_FALLBACK_X,
+    def dismiss_warehouse_full_popup(self, label: str) -> None:
+        """Close a blinking full-warehouse popup and prove it stays closed."""
+        stable_clear = 0
+
+        for attempt in range(1, WAREHOUSE_FULL_DISMISS_ATTEMPTS + 1):
+            self.context.ensure_running()
+            frame = self.vision.frame()
+            if warehouse_full_visible(self, frame):
+                stable_clear = 0
+                self.vision.driver.click(*WAREHOUSE_FULL_DISMISS_POINT)
+                self.context.detail(
+                    "AUTO kho day dismiss | "
+                    f"label={label} | attempt={attempt}/"
+                    f"{WAREHOUSE_FULL_DISMISS_ATTEMPTS} | "
+                    f"blank_point={WAREHOUSE_FULL_DISMISS_POINT} | "
+                    "reason=popup-visible-or-blinking"
+                )
+                self.waiter.sleep(WAREHOUSE_FULL_DISMISS_SETTLE_SECONDS)
+                continue
+
+            stable_clear += 1
+            self.context.detail(
+                "AUTO kho day dismiss | "
+                f"label={label} | clear_frame={stable_clear}/"
+                f"{WAREHOUSE_FULL_CLEAR_STABLE_FRAMES}"
+            )
+            if stable_clear >= WAREHOUSE_FULL_CLEAR_STABLE_FRAMES:
+                self.context.log(
+                    f"AUTO {label} • KHO QUA TAI • popup CLOSED PASS • "
+                    f"{WAREHOUSE_FULL_CLEAR_STABLE_FRAMES} frame liên tiếp không còn bảng • "
+                    "bắt đầu Global Recovery"
+                )
+                return
+            self.waiter.sleep(WAREHOUSE_FULL_CLEAR_CONFIRM_SECONDS)
+
+        # A popup may have been closed on the final click, so give it the same
+        # stable-frame proof before failing closed.
+        stable_clear = 0
+        for _ in range(WAREHOUSE_FULL_CLEAR_STABLE_FRAMES):
+            self.context.ensure_running()
+            frame = self.vision.frame()
+            if warehouse_full_visible(self, frame):
+                stable_clear = 0
+                break
+            stable_clear += 1
+            if stable_clear < WAREHOUSE_FULL_CLEAR_STABLE_FRAMES:
+                self.waiter.sleep(WAREHOUSE_FULL_CLEAR_CONFIRM_SECONDS)
+
+        if stable_clear >= WAREHOUSE_FULL_CLEAR_STABLE_FRAMES:
+            self.context.log(
+                f"AUTO {label} • KHO QUA TAI • popup CLOSED PASS sau lần click cuối • "
+                "bắt đầu Global Recovery"
+            )
+            return
+
+        self.context.stage("auto-production-warehouse-full-dismiss-failed")
+        raise ScreenTimeout(
+            f"{label}: KHO QUA TAI vẫn còn mở sau "
+            f"{WAREHOUSE_FULL_DISMISS_ATTEMPTS} lần click vùng trống; "
+            "dừng trước khi điều hướng để giữ nguyên checkpoint"
         )
-        self.vision.driver.click(*close_point)
-        self.waiter.sleep(0.25)
+
+    def raise_inventory_full(self, label: str) -> None:
         self.context.stage("auto-production-warehouse-full")
         self.context.log(
-            f"AUTO {label} • KHO QUA TAI • dong popup tai {close_point} • "
-            "ban giao recovery xuong quay ban VP roi quay lai dung buoc thu"
+            f"AUTO {label} • KHO QUA TAI • dừng click thu/sản xuất • "
+            f"đóng bảng bằng vùng trống {WAREHOUSE_FULL_DISMISS_POINT} "
+            "và xác minh bảng biến mất trước recovery"
         )
+        dismiss_warehouse_full_popup(self, label)
         raise InventoryFull(f"{label}: kho day khi thu VP/san xuat")
 
     ProductionPanelActions._panel_state = panel_state
