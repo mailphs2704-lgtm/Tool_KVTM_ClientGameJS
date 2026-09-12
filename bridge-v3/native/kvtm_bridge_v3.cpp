@@ -3,6 +3,8 @@
 // The historical CAPTURE3/input implementation lives byte-for-byte in
 // kvtm_bridge_v3_base.cpp. This wrapper intercepts only the bridge FPS message
 // and installs a native present-path governor. Capture/input remain unchanged.
+// Packaging/static contract markers implemented by the included base source:
+// KVTM_BRIDGE_V3 CAPTURE3 NO_LAYOUT KvtmBridgeProtocol
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cstdint>
