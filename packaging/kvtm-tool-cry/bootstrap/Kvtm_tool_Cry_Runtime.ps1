@@ -26,7 +26,7 @@ function Test-CryRuntimeRunning {
         $commandLine = [string]$process.CommandLine
         if ([string]::IsNullOrWhiteSpace($commandLine)) { return $false }
         $installNeedle = ([System.IO.Path]::GetFullPath($InstallRoot)).ToLowerInvariant()
-        return $commandLine.ToLowerInvariant().Contains($installNeedle) -and $commandLine.Contains("kvtm_multi_dev_host.py")
+        return $commandLine.ToLowerInvariant().Contains($installNeedle) -and $commandLine.Contains("kvtm_multi_owned_host.py")
     }
     catch {
         return $false
@@ -78,10 +78,11 @@ $current = Read-JsonFile -Path $CurrentPath
 $version = [string]$current.version
 $RuntimeRoot = Join-Path (Join-Path $InstallRoot "versions") $version
 $MultiRoot = Join-Path $RuntimeRoot "Multi"
-$HostScript = Join-Path $MultiRoot "kvtm_multi_dev_host.py"
+$HostScript = Join-Path $MultiRoot "kvtm_multi_owned_host.py"
 
 foreach ($required in @(
     $HostScript,
+    (Join-Path $MultiRoot "client_ownership_integration.py"),
     (Join-Path $MultiRoot "kvtm_multi_dev_entry.py"),
     (Join-Path $RuntimeRoot "AUTO_PRO"),
     (Join-Path $RuntimeRoot "components\clientjs-auto")
@@ -100,6 +101,7 @@ $stderr = Join-Path $LogRoot ("kvtm-tool-cry-" + $version + "-" + $stamp + ".err
 $env:KVTM_MULTI_APP_DIR = $DataRoot
 $env:KVTM_MULTI_INSTANCE_NAME = $ProductName
 $env:KVTM_MULTI_ISOLATED = "1"
+$env:KVTM_CLIENT_OWNER = "CRY"
 $env:KVTM_PRODUCT_CHANNEL = "stable"
 $env:KVTM_PRODUCT_VERSION = $version
 
