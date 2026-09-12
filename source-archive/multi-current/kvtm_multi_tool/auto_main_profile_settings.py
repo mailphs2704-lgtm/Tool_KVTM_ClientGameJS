@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import ctypes
+from ctypes import wintypes
 import json
+import os
+import threading
+import time
 
 import auto_builder_integration as builder_integration
 
@@ -11,10 +16,16 @@ FILE_FUNCTIONS = (
     "Đổi acc sẽ nạp ngay số vòng bán, thời gian chờ và công tắc qua bạn của acc đó",
     "Start nhiều acc sẽ đóng băng snapshot scheduler riêng của từng profile",
     "Migrate công tắc qua bạn global cũ sang từng profile một lần để không mất hành vi hiện tại",
+    "Giữ FPS render Multi DEV theo vòng đời ClientJS/Bridge thay vì chỉ khi Function bắt đầu",
 )
 
 _PROFILE_SETTINGS_KEY = "auto_multi_dev_profiles"
 _LEGACY_FRIEND_REFRESH_KEY = "auto_multi_dev_friend_refresh_enabled"
+_RENDER_FPS_SETTINGS_KEY = "multi_dev_render_fps"
+_RENDER_FPS_ENV_KEY = "KVTM_MULTI_DEV_RENDER_FPS"
+_RENDER_FPS_PRESETS = (10, 15, 20, 25, 30, 40, 60)
+_RENDER_FPS_DEFAULT = 20
+_RENDER_FPS_CAPABILITY = "FPS_LIMIT1"
 _DEFAULT_PROFILE_SETTINGS = {
     "sale_every_loops": 1,
     "function_loop_delay_seconds": 0.0,
@@ -47,14 +58,55 @@ def _normalize_profile_settings(raw) -> dict:
     }
 
 
+def _normalize_render_fps(raw) -> int:
+    try:
+        fps = int(raw)
+    except (TypeError, ValueError):
+        fps = _RENDER_FPS_DEFAULT
+    return fps if fps in _RENDER_FPS_PRESETS else _RENDER_FPS_DEFAULT
+
+
+def _fps_bridge_command(pid: int, command: str, timeout_ms: int = 1000) -> str:
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CallNamedPipeW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.DWORD,
+    ]
+    kernel32.CallNamedPipeW.restype = wintypes.BOOL
+    pipe_name = rf"\\.\pipe\KVTM-Cocos-{int(pid)}"
+    payload = (str(command).rstrip("\r\n") + "\n").encode("ascii")
+    output = ctypes.create_string_buffer(256)
+    read = wintypes.DWORD()
+    if not kernel32.CallNamedPipeW(
+        pipe_name,
+        ctypes.c_char_p(payload),
+        len(payload),
+        output,
+        len(output),
+        ctypes.byref(read),
+        int(timeout_ms),
+    ):
+        raise ctypes.WinError()
+    return output.raw[: read.value].decode("ascii", "replace").strip()
+
+
 def install_auto_main_profile_settings(app_class, core) -> None:
-    """Layer per-profile scheduler persistence on top of AUTO Builder integration."""
+    """Layer per-profile scheduler and persistent render-FPS policy on Multi DEV."""
     if getattr(app_class, "_kvtm_auto_main_profile_settings_installed", False):
         return
 
     original_build = app_class._build_auto_panel
+    original_build_ui = app_class._build_ui
     original_account_click = app_class._on_account_click
     original_refresh = app_class.refresh
+    original_adopt_running_clients = app_class._adopt_running_clients
+    original_inject_bridge = app_class._inject_bridge
+    original_set_render_fps = getattr(app_class, "_set_multi_dev_render_fps", None)
 
     def _load_auto_multi_dev_profile_store(self) -> None:
         raw = {}
@@ -219,6 +271,205 @@ def install_auto_main_profile_settings(app_class, core) -> None:
     def _save_auto_multi_dev_friend_refresh(self) -> None:
         self._save_auto_multi_dev_profile_settings()
 
+    def _multi_dev_render_fps_target(self) -> int:
+        target = getattr(self, "_multi_dev_fps_target", None)
+        if target is None:
+            target = self.settings.get(_RENDER_FPS_SETTINGS_KEY, _RENDER_FPS_DEFAULT)
+        target = _normalize_render_fps(target)
+        self._multi_dev_fps_target = target
+        return target
+
+    def _live_client_pids(self) -> list[int]:
+        live: list[int] = []
+        for process in tuple(getattr(self, "processes", {}).values()):
+            try:
+                if process is not None and process.poll() is None:
+                    pid = int(process.pid)
+                    if pid > 0 and pid not in live:
+                        live.append(pid)
+            except Exception:
+                continue
+        return live
+
+    def _apply_multi_dev_fps_pid(
+        self,
+        pid: int,
+        *,
+        source: str,
+        force: bool = False,
+    ) -> bool:
+        pid = int(pid)
+        target = self._multi_dev_render_fps_target()
+        applied = getattr(self, "_multi_dev_fps_applied", None)
+        if not isinstance(applied, dict):
+            applied = {}
+            self._multi_dev_fps_applied = applied
+        retry_at = getattr(self, "_multi_dev_fps_retry_at", None)
+        if not isinstance(retry_at, dict):
+            retry_at = {}
+            self._multi_dev_fps_retry_at = retry_at
+
+        if not force and applied.get(pid) == target:
+            return True
+        now = time.monotonic()
+        if not force and now < float(retry_at.get(pid, 0.0) or 0.0):
+            return False
+
+        try:
+            protocol = _fps_bridge_command(pid, "PING")
+            if _RENDER_FPS_CAPABILITY not in protocol.split():
+                retry_at[pid] = now + 5.0
+                print(
+                    "[KVTM DEV] FPS policy WAIT • "
+                    f"pid={pid} • target={target} • source={source} • "
+                    "Bridge chưa quảng bá FPS_LIMIT1",
+                    flush=True,
+                )
+                return False
+            response = _fps_bridge_command(pid, f"FPS {target}")
+            expected = f"OK FPS {target}"
+            if response != expected:
+                raise RuntimeError(response or "empty Bridge response")
+        except Exception as exc:
+            retry_at[pid] = now + 1.0
+            print(
+                "[KVTM DEV] FPS policy RETRY • "
+                f"pid={pid} • target={target} • source={source} • "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            return False
+
+        applied[pid] = target
+        retry_at.pop(pid, None)
+        print(
+            "[KVTM DEV] FPS policy APPLIED • "
+            f"pid={pid} • target={target} • source={source} • "
+            "Director::setAnimationInterval • CAPTURE3 unchanged",
+            flush=True,
+        )
+        return True
+
+    def _schedule_multi_dev_fps_policy(
+        self,
+        pids,
+        *,
+        source: str,
+        force: bool = False,
+    ) -> None:
+        targets = []
+        for raw_pid in pids:
+            try:
+                pid = int(raw_pid)
+            except (TypeError, ValueError):
+                continue
+            if pid > 0 and pid not in targets:
+                targets.append(pid)
+        if not targets:
+            return
+
+        def worker() -> None:
+            for pid in targets:
+                self._apply_multi_dev_fps_pid(
+                    pid,
+                    source=source,
+                    force=force,
+                )
+
+        threading.Thread(
+            target=worker,
+            name=f"kvtm-dev-fps-policy-{source}",
+            daemon=True,
+        ).start()
+
+    def _set_persistent_multi_dev_render_fps(self, fps: int) -> None:
+        fps = _normalize_render_fps(fps)
+        self._multi_dev_fps_target = fps
+        self.settings[_RENDER_FPS_SETTINGS_KEY] = fps
+        os.environ[_RENDER_FPS_ENV_KEY] = str(fps)
+        applied = getattr(self, "_multi_dev_fps_applied", None)
+        if isinstance(applied, dict):
+            applied.clear()
+        core.save_settings(self.settings)
+
+        if callable(original_set_render_fps):
+            original_set_render_fps(self, fps)
+        else:
+            try:
+                self._multi_dev_fps_value.set(fps)
+            except Exception:
+                pass
+
+        self._schedule_multi_dev_fps_policy(
+            self._live_client_pids(),
+            source="menu-change",
+            force=True,
+        )
+        print(
+            "[KVTM DEV] FPS policy SELECTED • "
+            f"target={fps} • persisted=true • worker_env={_RENDER_FPS_ENV_KEY}",
+            flush=True,
+        )
+
+    def build_ui_with_persistent_fps(self) -> None:
+        target = _normalize_render_fps(
+            self.settings.get(_RENDER_FPS_SETTINGS_KEY, _RENDER_FPS_DEFAULT)
+        )
+        self._multi_dev_fps_target = target
+        self._multi_dev_fps_applied = {}
+        self._multi_dev_fps_retry_at = {}
+        self.settings[_RENDER_FPS_SETTINGS_KEY] = target
+        os.environ[_RENDER_FPS_ENV_KEY] = str(target)
+
+        original_build_ui(self)
+
+        try:
+            self._multi_dev_fps_value.set(target)
+        except Exception:
+            pass
+        fps_menu = getattr(self, "_multi_dev_fps_menu", None)
+        if fps_menu is not None:
+            for index, fps in enumerate(_RENDER_FPS_PRESETS):
+                try:
+                    fps_menu.entryconfigure(
+                        index,
+                        command=lambda value=fps: self._set_multi_dev_render_fps(value),
+                    )
+                except Exception as exc:
+                    print(
+                        "[KVTM DEV] WARN FPS menu rebind failed • "
+                        f"index={index} • fps={fps} • {type(exc).__name__}: {exc}",
+                        flush=True,
+                    )
+
+        print(
+            "[KVTM DEV] FPS persistent policy READY • "
+            f"target={target} • apply=ClientJS/Bridge lifecycle • "
+            "AUTO worker inherits same target",
+            flush=True,
+        )
+
+    def adopt_running_clients(self, rows: list[dict]) -> None:
+        result = original_adopt_running_clients(self, rows)
+        self._schedule_multi_dev_fps_policy(
+            self._live_client_pids(),
+            source="adopt",
+            force=False,
+        )
+        return result
+
+    def inject_bridge(self, pid: int) -> bool:
+        pid = int(pid)
+        already_bridged = pid in set(getattr(self, "_bridged_pids", set()))
+        ready = bool(original_inject_bridge(self, pid))
+        if ready:
+            self._schedule_multi_dev_fps_policy(
+                (pid,),
+                source="bridge-ready",
+                force=not already_bridged,
+            )
+        return ready
+
     def build_auto_panel(self) -> None:
         self._auto_multi_dev_profile_refreshing = False
         self._load_auto_multi_dev_profile_store()
@@ -325,9 +576,17 @@ def install_auto_main_profile_settings(app_class, core) -> None:
 
         self._start_clean_auto_session()
 
+    app_class._build_ui = build_ui_with_persistent_fps
     app_class._build_auto_panel = build_auto_panel
     app_class._on_account_click = account_click
     app_class.refresh = refresh
+    app_class._adopt_running_clients = adopt_running_clients
+    app_class._inject_bridge = inject_bridge
+    app_class._set_multi_dev_render_fps = _set_persistent_multi_dev_render_fps
+    app_class._multi_dev_render_fps_target = _multi_dev_render_fps_target
+    app_class._live_client_pids = _live_client_pids
+    app_class._apply_multi_dev_fps_pid = _apply_multi_dev_fps_pid
+    app_class._schedule_multi_dev_fps_policy = _schedule_multi_dev_fps_policy
     app_class._load_auto_multi_dev_profile_store = (
         _load_auto_multi_dev_profile_store
     )
