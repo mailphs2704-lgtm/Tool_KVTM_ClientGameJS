@@ -147,10 +147,19 @@ def main() -> int:
     forbid(production, "(ScreenTimeout,", "Generic ScreenTimeout registered as recoverable")
     require(production, "self.navigation.recover_unknown_to_floor(", "Wrong machine not routed through nav recovery")
     require(production, "AutoVpSaleWorkflow(", "Warehouse-full sale recovery missing")
+    require(production, "sale_wait_round = 0", "Warehouse-full recovery wait counter missing")
+    require(production, "while True:", "Warehouse-full sale recovery must be unbounded")
+    require(production, "self.context.ensure_running()", "Unbounded warehouse recovery must remain stoppable")
+    require(production, "if sold > 0:", "Warehouse recovery must wait for a real x10 listing")
     require(
         production,
-        "if sold <= 0 and collected <= 0:",
-        "Warehouse recovery must accept either listing or gold-collection progress",
+        "tiếp tục quét 5 View + QC cho tới khi người mua tạo ô trống",
+        "Warehouse recovery no-progress continuation marker missing",
+    )
+    forbid(
+        production,
+        "dừng để tránh lặp vô hạn",
+        "Warehouse-full recovery must not fail merely because Sale has no progress yet",
     )
 
     # Crop Action owns HOW to obtain a real cotton batch; Recovery owns WHY it is
@@ -263,7 +272,7 @@ def main() -> int:
     print("navigation=canonical-primitives+generic-farm-routes+injectable-recovery-routes")
     print("production=checkpointed-explicit-signals+no-generic-screen-timeout-retry")
     print("material_shortage=crop-action-how+recovery-policy-why")
-    print("warehouse_progress=listing-or-gold-collection")
+    print("warehouse_progress=unbounded-sale+qc-until-real-x10-listing")
     print("startup=continuous-popup-watch-60s+no-goDown-main-normalize")
     print("tdhh=finished-vp+rose-snow-materials+resident-production-facade")
     print("scheduled_restart=3h+safe-function-boundary+exact-profile-relaunch")
