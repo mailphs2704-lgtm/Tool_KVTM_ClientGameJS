@@ -2,8 +2,6 @@ from __future__ import annotations
 
 """Multi DEV UI for the persistent per-profile daily VP sale counter."""
 
-from kvtm_automation.daily_sale_counter import read_daily_sale_count
-
 
 _REFRESH_MS = 1000
 
@@ -11,6 +9,12 @@ _REFRESH_MS = 1000
 def install_daily_sale_counter_integration(app_class, core) -> None:
     if getattr(app_class, "_kvtm_daily_sale_counter_installed", False):
         return
+
+    # This module is imported by kvtm_multi_owned_host before the resident host
+    # has inserted components/clientjs-auto into sys.path. Resolve the shared
+    # counter reader only when integrations are installed, after image/runtime
+    # bootstrap has already made the component package importable.
+    from kvtm_automation.daily_sale_counter import read_daily_sale_count
 
     original_build_auto_panel = app_class._build_auto_panel
 
