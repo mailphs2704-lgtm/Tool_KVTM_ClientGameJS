@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,7 +13,7 @@ import uuid
 OWNER_ENV = "KVTM_CLIENT_OWNER"
 OWNER_DEV = "DEV"
 OWNER_CRY = "CRY"
-REGISTRY_SCHEMA = 1
+REGISTRY_SCHEMA = 2
 REGISTRY_DIR = Path(os.environ.get("APPDATA", Path.home())) / "KVTM Client Ownership"
 REGISTRY_FILE = REGISTRY_DIR / "clients.json"
 MUTEX_NAME = r"Local\KVTM_Client_Ownership_v1"
@@ -27,6 +28,10 @@ class OwnershipError(RuntimeError):
 
 class ForeignOwnershipError(OwnershipError):
     pass
+
+
+def _alias(value: str) -> str:
+    return " ".join(str(value or "").strip().casefold().split())
 
 
 class _FILETIME(ctypes.Structure):
@@ -100,7 +105,7 @@ class _NamedMutex:
 
 
 class ClientOwnershipRegistry:
-    """Cross-tool ownership for ClientJS processes; metadata only, never secrets."""
+    """Shared metadata-only ownership for ClientJS processes."""
 
     def __init__(self, owner: str | None = None, instance: str | None = None):
         self.owner = str(owner or current_owner()).strip().upper()
@@ -123,12 +128,15 @@ class ClientOwnershipRegistry:
             payload = json.loads(REGISTRY_FILE.read_text(encoding="utf-8-sig"))
         except Exception as exc:
             raise OwnershipError(f"ClientJS ownership registry is unreadable: {exc}") from exc
-        if not isinstance(payload, dict) or int(payload.get("schema") or 0) != REGISTRY_SCHEMA:
+        if not isinstance(payload, dict):
+            raise OwnershipError("ClientJS ownership registry is invalid")
+        schema = int(payload.get("schema") or 0)
+        if schema not in {1, REGISTRY_SCHEMA}:
             raise OwnershipError("ClientJS ownership registry schema is invalid")
         clients = payload.get("clients")
         if not isinstance(clients, list):
             raise OwnershipError("ClientJS ownership registry clients list is invalid")
-        return {"schema": REGISTRY_SCHEMA, "clients": clients}
+        return {"schema": schema, "clients": clients}
 
     def _write_unlocked(self, clients: list[dict]) -> None:
         REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
@@ -137,9 +145,7 @@ class ClientOwnershipRegistry:
             "updated_at": time.time(),
             "clients": clients,
         }
-        temp = REGISTRY_DIR / (
-            f".{REGISTRY_FILE.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
-        )
+        temp = REGISTRY_DIR / f".{REGISTRY_FILE.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
         try:
             temp.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -163,6 +169,8 @@ class ClientOwnershipRegistry:
             return None
         creation_token = str(entry.get("creation_token") or "")
         profile_id = str(entry.get("profile_id") or "")
+        account_name = str(entry.get("account_name") or profile_id)
+        account_key = str(entry.get("account_key") or f"profile:{profile_id}")
         owner = str(entry.get("owner") or "").upper()
         if pid <= 0 or not creation_token or not profile_id or owner not in {OWNER_DEV, OWNER_CRY}:
             return None
@@ -170,7 +178,8 @@ class ClientOwnershipRegistry:
             "pid": pid,
             "creation_token": creation_token,
             "profile_id": profile_id,
-            "account_name": str(entry.get("account_name") or profile_id),
+            "account_key": account_key,
+            "account_name": account_name,
             "owner": owner,
             "instance": str(entry.get("instance") or owner),
             "claimed_at": float(entry.get("claimed_at") or 0.0),
@@ -181,6 +190,8 @@ class ClientOwnershipRegistry:
         changed = False
         seen_pids: set[int] = set()
         seen_profiles: set[str] = set()
+        seen_accounts: set[str] = set()
+        seen_aliases: set[str] = set()
         for raw in clients:
             entry = self._normalized(raw)
             if entry is None:
@@ -190,11 +201,21 @@ class ClientOwnershipRegistry:
             if token is None or token != entry["creation_token"]:
                 changed = True
                 continue
-            if entry["pid"] in seen_pids or entry["profile_id"] in seen_profiles:
+            account_key = entry["account_key"]
+            account_alias = _alias(entry["account_name"])
+            if (
+                entry["pid"] in seen_pids
+                or entry["profile_id"] in seen_profiles
+                or account_key in seen_accounts
+                or (account_alias and account_alias in seen_aliases)
+            ):
                 changed = True
                 continue
             seen_pids.add(entry["pid"])
             seen_profiles.add(entry["profile_id"])
+            seen_accounts.add(account_key)
+            if account_alias:
+                seen_aliases.add(account_alias)
             kept.append(entry)
         return kept, changed
 
@@ -202,14 +223,29 @@ class ClientOwnershipRegistry:
         with _NamedMutex():
             payload = self._read_unlocked()
             clients, changed = self._prune(payload["clients"])
-            if changed:
+            if changed or int(payload.get("schema") or 0) != REGISTRY_SCHEMA:
                 self._write_unlocked(clients)
             return [dict(item) for item in clients]
 
-    def lookup_profile(self, profile_id: str) -> dict | None:
-        wanted = str(profile_id or "")
+    @staticmethod
+    def _matches_identity(
+        item: dict, profile_id: str, account_key: str, account_name: str
+    ) -> bool:
+        same_profile = item["profile_id"] == str(profile_id or "")
+        same_account = bool(account_key) and item["account_key"] == str(account_key)
+        wanted_alias = _alias(account_name)
+        same_alias = bool(wanted_alias) and _alias(item["account_name"]) == wanted_alias
+        return same_profile or same_account or same_alias
+
+    def lookup_identity(
+        self, profile_id: str, account_key: str, account_name: str
+    ) -> dict | None:
         return next(
-            (item for item in self.snapshot() if item["profile_id"] == wanted),
+            (
+                item
+                for item in self.snapshot()
+                if self._matches_identity(item, profile_id, account_key, account_name)
+            ),
             None,
         )
 
@@ -221,14 +257,17 @@ class ClientOwnershipRegistry:
         self,
         pid: int,
         profile_id: str,
+        account_key: str,
         account_name: str,
         *,
         replace_pid: int | None = None,
     ) -> dict:
         pid = int(pid)
         profile_id = str(profile_id or "")
-        if pid <= 0 or not profile_id:
-            raise OwnershipError("Cannot claim ClientJS without pid/profile_id")
+        account_key = str(account_key or "")
+        account_name = str(account_name or profile_id)
+        if pid <= 0 or not profile_id or not account_key:
+            raise OwnershipError("Cannot claim ClientJS without pid/profile/account identity")
         token = _creation_token(pid)
         if token is None:
             raise OwnershipError(f"ClientJS PID {pid} is not alive")
@@ -241,7 +280,10 @@ class ClientOwnershipRegistry:
                 old_pid = int(replace_pid)
                 retained: list[dict] = []
                 for item in clients:
-                    if item["pid"] == old_pid or item["profile_id"] == profile_id:
+                    same_identity = self._matches_identity(
+                        item, profile_id, account_key, account_name
+                    )
+                    if item["pid"] == old_pid or same_identity:
                         if item["owner"] != self.owner:
                             raise ForeignOwnershipError(
                                 f"{account_name} đang thuộc {item['owner']}"
@@ -253,19 +295,23 @@ class ClientOwnershipRegistry:
             for item in clients:
                 same_pid = item["pid"] == pid
                 same_profile = item["profile_id"] == profile_id
-                if not (same_pid or same_profile):
+                same_account = item["account_key"] == account_key
+                same_alias = bool(_alias(account_name)) and _alias(item["account_name"]) == _alias(account_name)
+                if not (same_pid or same_profile or same_account or same_alias):
                     continue
                 if (
                     item["owner"] == self.owner
                     and same_pid
-                    and same_profile
                     and item["creation_token"] == token
                 ):
-                    item["account_name"] = str(account_name or profile_id)
+                    item["profile_id"] = profile_id
+                    item["account_key"] = account_key
+                    item["account_name"] = account_name
                     item["instance"] = self.instance
                     self._write_unlocked(clients)
                     return dict(item)
-                raise ForeignOwnershipError(
+                error_type = ForeignOwnershipError if item["owner"] != self.owner else OwnershipError
+                raise error_type(
                     f"{account_name} đang chạy bởi {item['owner']} "
                     f"(PID {item['pid']})"
                 )
@@ -274,7 +320,8 @@ class ClientOwnershipRegistry:
                 "pid": pid,
                 "creation_token": token,
                 "profile_id": profile_id,
-                "account_name": str(account_name or profile_id),
+                "account_key": account_key,
+                "account_name": account_name,
                 "owner": self.owner,
                 "instance": self.instance,
                 "claimed_at": time.time(),
@@ -282,9 +329,6 @@ class ClientOwnershipRegistry:
             clients.append(entry)
             self._write_unlocked(clients)
             return dict(entry)
-
-    def release_dead(self) -> None:
-        self.snapshot()
 
     def self_owned(self, pid: int, profile_id: str | None = None) -> bool:
         entry = self.lookup_pid(int(pid))
@@ -302,7 +346,6 @@ class ClientOwnershipRegistry:
         safe_title = str(title or "").strip()
         if not safe_title:
             return False
-
         enum_proc_type = ctypes.WINFUNCTYPE(
             wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
         )
@@ -314,8 +357,6 @@ class ClientOwnershipRegistry:
             if int(window_pid.value) != target_pid:
                 return True
             if not user32.IsWindowVisible(hwnd):
-                return True
-            if int(user32.GetWindowTextLengthW(hwnd)) <= 0:
                 return True
             if user32.SetWindowTextW(hwnd, safe_title):
                 found["value"] = True
@@ -350,9 +391,47 @@ def install_client_ownership_integration(app_cls, core) -> None:
             None,
         )
 
-    def account_name(self, profile_id: str) -> str:
-        profile = profile_for(self, profile_id)
-        return str((profile or {}).get("name") or profile_id)
+    def account_name_for_profile(self, profile: dict | None) -> str:
+        profile = profile or {}
+        return str(profile.get("name") or profile.get("id") or "Tài khoản")
+
+    def account_key_for_profile(self, profile: dict | None) -> str:
+        profile = profile or {}
+        try:
+            signature = self._profile_signature(profile)
+        except Exception:
+            signature = None
+        if signature:
+            payload = json.dumps(
+                signature,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+            return "sig:" + hashlib.sha256(payload).hexdigest()
+        fallback = _alias(account_name_for_profile(self, profile))
+        return "alias:" + hashlib.sha256(fallback.encode("utf-8")).hexdigest()
+
+    def identity_for_profile(self, profile: dict | None) -> tuple[str, str, str]:
+        profile = profile or {}
+        return (
+            str(profile.get("id") or ""),
+            account_key_for_profile(self, profile),
+            account_name_for_profile(self, profile),
+        )
+
+    def entry_for_profile(self, profile: dict | None, snapshot: list[dict] | None = None) -> dict | None:
+        profile_id, account_key, account_name = identity_for_profile(self, profile)
+        rows = snapshot if snapshot is not None else registry.snapshot()
+        return next(
+            (
+                item
+                for item in rows
+                if registry._matches_identity(item, profile_id, account_key, account_name)
+            ),
+            None,
+        )
 
     def schedule_title(self, profile_id: str, pid: int, attempt: int = 0) -> None:
         try:
@@ -361,9 +440,9 @@ def install_client_ownership_integration(app_cls, core) -> None:
             return
         if not entry or entry["owner"] != registry.owner:
             return
-        if registry.set_window_title(int(pid), account_name(self, profile_id)):
+        if registry.set_window_title(int(pid), str(entry["account_name"])):
             return
-        if attempt < 20:
+        if attempt < 120:
             self.after(
                 500,
                 lambda p=str(profile_id), n=int(pid), a=attempt + 1:
@@ -372,43 +451,31 @@ def install_client_ownership_integration(app_cls, core) -> None:
 
     def decorate_rows(self) -> None:
         try:
-            by_profile = {item["profile_id"]: item for item in registry.snapshot()}
+            snapshot = registry.snapshot()
         except OwnershipError as exc:
             self.note.set(f"ClientJS ownership registry lỗi: {exc}")
             return
 
-        profiles = {
-            str(profile.get("id") or ""): profile for profile in self.profiles
-        }
-        for profile_id, profile in profiles.items():
-            entry = by_profile.get(profile_id)
-            if not entry:
+        for profile in self.profiles:
+            profile_id = str(profile.get("id") or "")
+            entry = entry_for_profile(self, profile, snapshot)
+            if not profile_id or not entry:
                 continue
-
+            values = (
+                str(profile.get("name") or "Chưa đặt tên"),
+                f"{entry['pid']} • ONL • {entry['owner']}",
+            )
             if self.offline_tree.exists(profile_id):
                 icon = self.offline_tree.item(profile_id, "text")
                 was_selected = profile_id in self.offline_tree.selection()
                 self.offline_tree.delete(profile_id)
                 self.online_tree.insert(
-                    "",
-                    "end",
-                    iid=profile_id,
-                    text=icon,
-                    values=(
-                        str(profile.get("name") or "Chưa đặt tên"),
-                        f"{entry['pid']} • ONL • {entry['owner']}",
-                    ),
+                    "", "end", iid=profile_id, text=icon, values=values
                 )
                 if was_selected:
                     self.online_tree.selection_set(profile_id)
             elif self.online_tree.exists(profile_id):
-                self.online_tree.item(
-                    profile_id,
-                    values=(
-                        str(profile.get("name") or "Chưa đặt tên"),
-                        f"{entry['pid']} • ONL • {entry['owner']}",
-                    ),
-                )
+                self.online_tree.item(profile_id, values=values)
 
             if entry["owner"] == registry.owner:
                 schedule_title(self, profile_id, int(entry["pid"]))
@@ -431,7 +498,7 @@ def install_client_ownership_integration(app_cls, core) -> None:
         filtered = []
         for row in rows or []:
             try:
-                pid = int((row or {}).get("pid") or 0)
+                pid = int((row or {}).get("ProcessId") or (row or {}).get("pid") or 0)
             except (TypeError, ValueError):
                 continue
             if pid in owned_pids:
@@ -450,17 +517,21 @@ def install_client_ownership_integration(app_cls, core) -> None:
 
     def ownership_launch(self, profile, *args, **kwargs):
         profile = profile or {}
-        profile_id = str(profile.get("id") or "")
-        name = str(profile.get("name") or profile_id)
+        profile_id, account_key, account_name = identity_for_profile(self, profile)
         if not profile_id:
             raise OwnershipError("Profile không có id để claim ClientJS")
 
-        existing = registry.lookup_profile(profile_id)
+        existing = registry.lookup_identity(profile_id, account_key, account_name)
         if existing:
             if existing["owner"] != registry.owner:
                 raise ForeignOwnershipError(
-                    f"{name} đang chạy bởi {existing['owner']} "
+                    f"{account_name} đang chạy bởi {existing['owner']} "
                     f"(PID {existing['pid']}); {registry.owner} chỉ theo dõi read-only"
+                )
+            if existing["profile_id"] != profile_id:
+                raise OwnershipError(
+                    f"{account_name} đã chạy trong {registry.owner} "
+                    f"(PID {existing['pid']}); không mở trùng account"
                 )
             process = self.processes.get(profile_id)
             if (
@@ -476,9 +547,10 @@ def install_client_ownership_integration(app_cls, core) -> None:
         process = self.processes.get(profile_id)
         if not process or process.poll() is not None:
             return result
-
         try:
-            registry.claim(int(process.pid), profile_id, name)
+            registry.claim(
+                int(process.pid), profile_id, account_key, account_name
+            )
         except Exception:
             try:
                 process.terminate()
@@ -486,7 +558,6 @@ def install_client_ownership_integration(app_cls, core) -> None:
                 pass
             self.processes.pop(profile_id, None)
             raise
-
         schedule_title(self, profile_id, int(process.pid))
         return result
 
@@ -494,30 +565,28 @@ def install_client_ownership_integration(app_cls, core) -> None:
         selected = list(map(str, self.selected_ids()))
         if not selected:
             return original_stop_selected(self, *args, **kwargs)
-
         try:
-            by_profile = {item["profile_id"]: item for item in registry.snapshot()}
+            snapshot = registry.snapshot()
         except OwnershipError as exc:
             self.note.set(f"Không dừng ClientJS: ownership registry lỗi: {exc}")
             return None
 
-        foreign = [
-            profile_id
-            for profile_id in selected
-            if (
-                by_profile.get(profile_id)
-                and by_profile[profile_id]["owner"] != registry.owner
-            )
-        ]
-        allowed = [profile_id for profile_id in selected if profile_id not in foreign]
+        foreign: list[str] = []
+        allowed: list[str] = []
+        foreign_entries: dict[str, dict] = {}
+        for profile_id in selected:
+            profile = profile_for(self, profile_id)
+            entry = entry_for_profile(self, profile, snapshot)
+            if entry and entry["owner"] != registry.owner:
+                foreign.append(profile_id)
+                foreign_entries[profile_id] = entry
+            else:
+                allowed.append(profile_id)
+
         if foreign and not allowed:
-            labels = ", ".join(account_name(self, item) for item in foreign)
-            owners = ", ".join(
-                sorted({by_profile[item]["owner"] for item in foreign})
-            )
-            self.note.set(
-                f"Không dừng {labels}: ClientJS đang thuộc tool khác ({owners})"
-            )
+            labels = ", ".join(account_name_for_profile(self, profile_for(self, item)) for item in foreign)
+            owners = ", ".join(sorted({foreign_entries[item]["owner"] for item in foreign}))
+            self.note.set(f"Không dừng {labels}: ClientJS đang thuộc tool khác ({owners})")
             return None
 
         saved_checked = set(self._checked_profiles)
@@ -526,9 +595,8 @@ def install_client_ownership_integration(app_cls, core) -> None:
             result = original_stop_selected(self, *args, **kwargs)
         finally:
             self._checked_profiles = saved_checked
-
         if foreign:
-            labels = ", ".join(account_name(self, item) for item in foreign)
+            labels = ", ".join(account_name_for_profile(self, profile_for(self, item)) for item in foreign)
             self.note.set(f"Bỏ qua ClientJS thuộc tool khác: {labels}")
         self.after(700, lambda: ownership_refresh(self))
         return result
@@ -537,18 +605,19 @@ def install_client_ownership_integration(app_cls, core) -> None:
         result = original_worker_event(self, payload)
         if str((payload or {}).get("event") or "") != "client_pid_changed":
             return result
-
         profile_id = str((payload or {}).get("profile_id") or "")
         new_pid = int((payload or {}).get("new_pid") or 0)
         old_pid = int((payload or {}).get("old_pid") or 0)
-        if not profile_id or new_pid <= 0:
+        profile = profile_for(self, profile_id)
+        if not profile or new_pid <= 0:
             return result
-
+        _profile_id, account_key, account_name = identity_for_profile(self, profile)
         try:
             registry.claim(
                 new_pid,
                 profile_id,
-                account_name(self, profile_id),
+                account_key,
+                account_name,
                 replace_pid=old_pid if old_pid > 0 else None,
             )
             schedule_title(self, profile_id, new_pid)
@@ -565,6 +634,10 @@ def install_client_ownership_integration(app_cls, core) -> None:
 
     def ownership_init(self, *args, **kwargs):
         result = original_init(self, *args, **kwargs)
+        for tree in (self.online_tree, self.offline_tree):
+            tree.heading("pid", text="PID • TOOL")
+            tree.column("pid", width=155, minwidth=145, stretch=False, anchor="center")
+            tree.column("name", width=190, minwidth=120, stretch=True, anchor="w")
 
         def tick():
             if not self.winfo_exists():
@@ -578,7 +651,7 @@ def install_client_ownership_integration(app_cls, core) -> None:
                     pass
             self.after(1500, tick)
 
-        self.after(500, tick)
+        self.after(300, tick)
         return result
 
     app_cls.__init__ = ownership_init
@@ -592,6 +665,6 @@ def install_client_ownership_integration(app_cls, core) -> None:
 
     print(
         f"[KVTM {registry.owner}] ClientJS ownership READY • "
-        "shared PID+creation-token registry • foreign clients read-only",
+        "account-key+alias+PID creation token • foreign clients read-only",
         flush=True,
     )
