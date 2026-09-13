@@ -5,6 +5,7 @@ import client_ownership_integration
 import client_video_recorder
 import daily_sale_counter_integration
 import fps_hardcap_integration
+import optional_features_integration
 
 
 _ORIGINAL_RECORDER_INSTALL = client_video_recorder.install_client_video_recorder
@@ -20,6 +21,12 @@ def _install_runtime_integrations(app_cls, core) -> None:
     # in the existing LƯỢT BÁN AUTO account-detail field. It does not alter
     # Function, recovery, Bridge, capture, or scheduler behavior.
     daily_sale_counter_integration.install_daily_sale_counter_integration(
+        app_cls, core
+    )
+    # Optional features now own the old Function-selector slot in AUTO MULTI DEV.
+    # Install after scheduler persistence so per-profile settings/config snapshots
+    # can be layered without modifying the proven Function/sale/restart engine.
+    optional_features_integration.install_optional_features_integration(
         app_cls, core
     )
     _ORIGINAL_RECORDER_INSTALL(app_cls, core)
