@@ -79,7 +79,8 @@ def install_optional_features_integration(app_class, core) -> None:
         enabled = bool(self.auto_multi_dev_pirate_chest_enabled.get())
         saved = {"pirate_chest_enabled": enabled}
         for profile_id in profile_ids:
-            self.settings.setdefault(_OPTIONAL_FEATURES_KEY, {})[profile_id] = dict(saved)
+            # Preserve the verifier's explicit per-profile assignment contract.
+            self.settings.setdefault(_OPTIONAL_FEATURES_KEY, {})[profile_id] = saved
         core.save_settings(self.settings)
         self.note.set(
             "AUTO MULTI DEV • Tùy chọn Mở rương hải tặc="
