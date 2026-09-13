@@ -8,7 +8,7 @@ Trạng thái: **SOURCE READY FOR LOCAL BUILD/LIVE TEST — NOT RUNTIME PASS**
 
 - Các chức năng tùy chọn từ đây thay vào vị trí AUTO chức năng chính cũ trên UI Multi DEV.
 - Tùy chọn đầu tiên: **Mở rương hải tặc**.
-- Điểm vào Kho Báu Hải Tặc là hitbox/tọa độ logic của chiếc thuyền rương + đèn thần; không nhận diện template/background vì skin/background có thể khác nhau.
+- Điểm vào Kho Báu Hải Tặc là hitbox thân thuyền tại logical `(363, 620)`; tuyệt đối không click hai bong bóng rương/đèn thần phía trên và không nhận diện template/background vì skin/background có thể khác nhau.
 - Chỉ được phép thao tác **rương đầu tiên / slot 0**. Các rương còn lại có thể tốn kim cương nên không được tồn tại tọa độ click cho chúng trong workflow.
 - Check đầu tiên chỉ chạy **sau sale đầu tiên hoàn tất**.
 - Từ đó bắt đầu chu kỳ **20 phút**. Khi đến hạn chỉ đánh dấu due; thao tác UI phải chờ safe Function boundary, không cắt ngang Function.
@@ -22,7 +22,7 @@ Trạng thái: **SOURCE READY FOR LOCAL BUILD/LIVE TEST — NOT RUNTIME PASS**
 
 `components/clientjs-auto/kvtm_automation/workflows/pirate_chest/workflow.py`
 
-- logical coordinate/hitbox entry;
+- logical coordinate/hitbox entry tại thân thuyền, có log logical/native/content;
 - slot 0 only;
 - READY / COOLDOWN bằng ROI màu/hình học;
 - modal KHO QUÁ TẢI là trạng thái chung, không phụ thuộc tên kho;
