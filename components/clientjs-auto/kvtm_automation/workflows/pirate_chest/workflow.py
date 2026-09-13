@@ -246,6 +246,18 @@ class PirateChestWorkflow:
         self.driver.click(*self.PANEL_CLOSE_POINT)
         self.auto.wait.sleep(0.20)
 
+    def _back_out_of_unclassified_chest_overlay(self, *, reason: str) -> None:
+        """One safe back action; scheduler owns the later friend-house reset."""
+        self.context.stage("pirate-chest-safe-abort-back")
+        self.context.log(
+            "AUTO rương hải tặc • trạng thái overlay không xác định • "
+            "thoát UI một lần trước recovery qua nhà bạn • "
+            f"reason={reason}"
+        )
+        self.driver.click(*self.REWARD_BACK_POINT)
+        self.auto.wait.sleep(0.25)
+        self._close_panel_if_visible()
+
     def _exit_after_storage_full(self) -> None:
         """Close the generic overload modal and leave Pirate Chest best-effort."""
         self.context.stage("pirate-chest-storage-full-close-modal")
@@ -400,6 +412,7 @@ class PirateChestWorkflow:
                 "storage-full-before-claim",
             )
         if reward_state != "PASS":
+            self._back_out_of_unclassified_chest_overlay(reason="reward-timeout")
             return self._result(
                 PirateChestStatus.SAFE_ABORT,
                 started,
@@ -425,10 +438,12 @@ class PirateChestWorkflow:
                 "storage-full-on-claim",
             )
         if final_state != "PASS":
-            # If the panel returned but the timer color changed unexpectedly,
-            # close it rather than attempting any second chest/paid action.
-            if final_frame is not None and self._panel_normal(final_frame):
-                self._close_panel_if_visible()
+            # Never hand an unclassified reward/panel overlay to the next
+            # Function. Exit once; the scheduler then owns the error-only
+            # friend-house scene reset and exact-main proof.
+            self._back_out_of_unclassified_chest_overlay(
+                reason="cooldown-confirm-timeout"
+            )
             return self._result(
                 PirateChestStatus.SAFE_ABORT,
                 started,
