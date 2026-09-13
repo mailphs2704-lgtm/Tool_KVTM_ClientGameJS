@@ -13,7 +13,7 @@ _POLL_MS = 50
 
 
 def install_clear_stall_window_position(app_cls, core) -> None:
-    """Pin only newly launched Dọn quầy ClientJS windows to work-area top-right."""
+    """Pin every newly launched ClientJS window to the work-area top-right."""
     if getattr(app_cls, "_clear_stall_window_position_installed", False):
         return
 
@@ -38,21 +38,11 @@ def install_clear_stall_window_position(app_cls, core) -> None:
     original_launch = app_cls._launch
     original_apply_display = app_cls._apply_display_to_process
 
-    def is_clear_stall_launch(self, profile_id: str) -> bool:
-        profile_id = str(profile_id or "")
-        return bool(
-            profile_id
-            and (
-                profile_id in getattr(self, "_clear_stall_probe_starting", ())
-                or profile_id in getattr(self, "_clear_stall_starting", ())
-            )
-        )
-
     def tracked_pids(self) -> set[int]:
-        value = getattr(self, "_clear_stall_position_pids", None)
+        value = getattr(self, "_client_top_right_position_pids", None)
         if not isinstance(value, set):
             value = set()
-            self._clear_stall_position_pids = value
+            self._client_top_right_position_pids = value
         return value
 
     def process_alive(self, pid: int) -> bool:
@@ -115,15 +105,14 @@ def install_clear_stall_window_position(app_cls, core) -> None:
             hwnd = 0
         if hwnd and pin_top_right(hwnd):
             print(
-                f"[KVTM DEV] Dọn quầy ClientJS pinned top-right | pid={pid} hwnd={hwnd}",
+                f"[KVTM DEV] ClientJS pinned top-right | pid={pid} hwnd={hwnd}",
                 flush=True,
             )
             return
         self.after(_POLL_MS, lambda target_pid=pid: pin_when_window_exists(self, target_pid))
 
-    def launch_with_clear_stall_position(self, profile: dict):
+    def launch_with_top_right_position(self, profile: dict):
         profile_id = str((profile or {}).get("id") or "")
-        clear_stall_launch = is_clear_stall_launch(self, profile_id)
         result = original_launch(self, profile)
         process = getattr(self, "processes", {}).get(profile_id)
         try:
@@ -131,13 +120,8 @@ def install_clear_stall_window_position(app_cls, core) -> None:
         except Exception:
             pid = 0
         if pid:
-            marks = tracked_pids(self)
-            if clear_stall_launch:
-                marks.add(pid)
-                self.after(0, lambda target_pid=pid: pin_when_window_exists(self, target_pid))
-            else:
-                # Avoid a stale PID ever affecting a later non-Dọn-quầy launch.
-                marks.discard(pid)
+            tracked_pids(self).add(pid)
+            self.after(0, lambda target_pid=pid: pin_when_window_exists(self, target_pid))
         return result
 
     def apply_display_then_restore_position(self, proc) -> None:
@@ -159,11 +143,11 @@ def install_clear_stall_window_position(app_cls, core) -> None:
             marks.discard(pid)
         return result
 
-    app_cls._launch = launch_with_clear_stall_position
+    app_cls._launch = launch_with_top_right_position
     app_cls._apply_display_to_process = apply_display_then_restore_position
     app_cls._clear_stall_window_position_installed = True
     print(
-        "[KVTM DEV] Dọn quầy window position READY • top-right work area • "
+        "[KVTM DEV] ClientJS window position READY • top-right work area • "
         "size/z-order/focus unchanged",
         flush=True,
     )
