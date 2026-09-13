@@ -12,6 +12,22 @@ AUTO_MAIN_PROFILE_SETTINGS = (
     ROOT
     / "source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py"
 )
+OPTIONAL_FEATURES = (
+    ROOT
+    / "source-archive/multi-current/kvtm_multi_tool/optional_features_integration.py"
+)
+PIRATE_CHEST_WORKFLOW = (
+    ROOT
+    / "components/clientjs-auto/kvtm_automation/workflows/pirate_chest/workflow.py"
+)
+PIRATE_CHEST_SCHEDULE = (
+    ROOT
+    / "components/clientjs-auto/kvtm_automation/workflows/auto_main/pirate_chest_schedule.py"
+)
+AUTO_MAIN_INIT = (
+    ROOT
+    / "components/clientjs-auto/kvtm_automation/workflows/auto_main/__init__.py"
+)
 DAILY_SALE_UI = (
     ROOT
     / "source-archive/multi-current/kvtm_multi_tool/daily_sale_counter_integration.py"
@@ -30,12 +46,21 @@ def require(text: str, token: str, message: str) -> None:
         raise AssertionError(message)
 
 
+def forbid(text: str, token: str, message: str) -> None:
+    if token in text:
+        raise AssertionError(message)
+
+
 def main() -> int:
     required = (
         (LAUNCHER, "persistent settings launcher"),
         (HOST, "Multi DEV host"),
         (OWNED_HOST, "owned Multi DEV host"),
         (AUTO_MAIN_PROFILE_SETTINGS, "AUTO Main per-profile settings layer"),
+        (OPTIONAL_FEATURES, "AUTO Main optional-features layer"),
+        (PIRATE_CHEST_WORKFLOW, "Pirate Chest workflow"),
+        (PIRATE_CHEST_SCHEDULE, "Pirate Chest safe-boundary scheduler"),
+        (AUTO_MAIN_INIT, "AUTO Main package entry"),
         (DAILY_SALE_UI, "daily sale counter UI integration"),
         (DAILY_SALE_COUNTER, "daily sale counter storage"),
         (AUTO_VP_SALE_INIT, "AUTO VP sale package hook"),
@@ -48,6 +73,10 @@ def main() -> int:
     host = HOST.read_text(encoding="utf-8")
     owned_host = OWNED_HOST.read_text(encoding="utf-8")
     profile_settings = AUTO_MAIN_PROFILE_SETTINGS.read_text(encoding="utf-8")
+    optional_features = OPTIONAL_FEATURES.read_text(encoding="utf-8")
+    pirate_chest_workflow = PIRATE_CHEST_WORKFLOW.read_text(encoding="utf-8")
+    pirate_chest_schedule = PIRATE_CHEST_SCHEDULE.read_text(encoding="utf-8")
+    auto_main_init = AUTO_MAIN_INIT.read_text(encoding="utf-8")
     daily_sale_ui = DAILY_SALE_UI.read_text(encoding="utf-8")
     daily_sale_counter = DAILY_SALE_COUNTER.read_text(encoding="utf-8")
     auto_vp_sale_init = AUTO_VP_SALE_INIT.read_text(encoding="utf-8")
@@ -56,6 +85,10 @@ def main() -> int:
         (HOST, host),
         (OWNED_HOST, owned_host),
         (AUTO_MAIN_PROFILE_SETTINGS, profile_settings),
+        (OPTIONAL_FEATURES, optional_features),
+        (PIRATE_CHEST_WORKFLOW, pirate_chest_workflow),
+        (PIRATE_CHEST_SCHEDULE, pirate_chest_schedule),
+        (AUTO_MAIN_INIT, auto_main_init),
         (DAILY_SALE_UI, daily_sale_ui),
         (DAILY_SALE_COUNTER, daily_sale_counter),
         (AUTO_VP_SALE_INIT, auto_vp_sale_init),
@@ -84,6 +117,11 @@ def main() -> int:
         launcher,
         "$env:KVTM_MULTI_APP_DIR = $DataRoot",
         "Multi DEV runtime is not bound to persistent APPDATA",
+    )
+    require(
+        launcher,
+        '$HostScript = Join-Path $MultiRoot "kvtm_multi_owned_host.py"',
+        "DEV launcher no longer starts the owned integration host",
     )
 
     # Source-controlled fallback values: proven operator tuning + stable Dọn quầy.
@@ -167,6 +205,158 @@ def main() -> int:
         profile_settings,
         "if not store and _LEGACY_FRIEND_REFRESH_KEY in raw:",
         "Legacy global friend-refresh migration missing",
+    )
+
+    # Optional Features now own the old Function-selector slot. Pirate Chest is
+    # the first option and must be persistent per profile but frozen per run.
+    require(
+        owned_host,
+        "import optional_features_integration",
+        "Owned DEV host does not import Optional Features integration",
+    )
+    require(
+        owned_host,
+        "optional_features_integration.install_optional_features_integration(",
+        "Owned DEV host does not install Optional Features after scheduler layers",
+    )
+    require(
+        optional_features,
+        '_OPTIONAL_FEATURES_KEY = "auto_multi_dev_optional_features"',
+        "Optional Features per-profile settings key changed",
+    )
+    require(
+        optional_features,
+        '"pirate_chest_enabled": False',
+        "Pirate Chest option must default OFF",
+    )
+    require(
+        optional_features,
+        'text="TÙY CHỌN"',
+        "Old Function-selector slot is not relabeled as TÙY CHỌN",
+    )
+    require(
+        optional_features,
+        '"Mở rương hải tặc"',
+        "Pirate Chest toggle is missing from Optional Features UI",
+    )
+    require(
+        optional_features,
+        "self.settings.setdefault(_OPTIONAL_FEATURES_KEY, {})[profile_id] = saved",
+        "Pirate Chest option is not saved by profile id",
+    )
+    require(
+        optional_features,
+        "self._optional_features_run_snapshot",
+        "Optional Features are not frozen per run",
+    )
+    require(
+        optional_features,
+        'config["pirate_chest_enabled"] = enabled',
+        "Pirate Chest flag is not injected into AUTO Main run config",
+    )
+    require(
+        optional_features,
+        'getattr(self, "_auto_main_active_config", None)',
+        "Pirate Chest flag is not preserved in active config for scheduled restart",
+    )
+
+    # Pirate Chest scheduler contract: first check only after first completed
+    # sale, then 20-minute due marking consumed at a safe Function boundary.
+    require(
+        auto_main_init,
+        "from .pirate_chest_schedule import AutoMainResult, AutoMainWorkflow",
+        "AUTO Main package is not wired through Pirate Chest scheduler",
+    )
+    require(
+        pirate_chest_schedule,
+        "PIRATE_CHEST_INTERVAL_SECONDS = 1200.0",
+        "Pirate Chest interval changed from 20 minutes",
+    )
+    require(
+        pirate_chest_schedule,
+        'raw.get("pirate_chest_enabled")',
+        "Pirate Chest scheduler does not read explicit run config flag",
+    )
+    require(
+        pirate_chest_schedule,
+        "if self.pirate_chest_enabled and not self._pirate_chest_initialized:",
+        "First Pirate Chest check is no longer gated to the first completed sale",
+    )
+    require(
+        pirate_chest_schedule,
+        'reason=f"first-completed-sale-{ordinal}"',
+        "First Pirate Chest check no longer records completed-sale boundary",
+    )
+    require(
+        pirate_chest_schedule,
+        'reason="post-function-boundary"',
+        "20-minute Pirate Chest due check is not consumed post-Function",
+    )
+    require(
+        pirate_chest_schedule,
+        "self._schedule_next_pirate_chest_check()",
+        "Pirate Chest does not schedule the next 20-minute cycle",
+    )
+    require(
+        pirate_chest_schedule,
+        'status = "SAFE_ABORT"',
+        "Optional Pirate Chest failure is no longer non-blocking",
+    )
+
+    # Pirate Chest click safety: coordinate/hitbox entry, slot 0 only, no image
+    # template dependency for the variable farm background and no paid-slot map.
+    require(
+        pirate_chest_workflow,
+        "ENTRY_POINT =",
+        "Pirate Chest logical entry hitbox is missing",
+    )
+    require(
+        pirate_chest_workflow,
+        "SLOT_ZERO_POINT =",
+        "Pirate Chest slot-0 coordinate is missing",
+    )
+    for forbidden_slot in (
+        "SLOT_ONE_POINT",
+        "SLOT_TWO_POINT",
+        "SLOT_THREE_POINT",
+        "SLOT_FOUR_POINT",
+        "PAID_CHEST_POINT",
+    ):
+        forbid(
+            pirate_chest_workflow,
+            forbidden_slot,
+            f"Paid chest coordinate must not exist: {forbidden_slot}",
+        )
+    for forbidden_image_call in (
+        "find_template(",
+        "match_template(",
+        "locate_template(",
+        "template_path=",
+    ):
+        forbid(
+            pirate_chest_workflow,
+            forbidden_image_call,
+            f"Pirate Chest must not depend on background templates: {forbidden_image_call}",
+        )
+    require(
+        pirate_chest_workflow,
+        "if not self._ready(frame):",
+        "Pirate Chest no longer fail-closes an unclassified slot-0 state",
+    )
+    require(
+        pirate_chest_workflow,
+        "PirateChestStatus.STORAGE_FULL",
+        "Pirate Chest storage-full branch missing",
+    )
+    require(
+        pirate_chest_workflow,
+        "self._exit_after_storage_full()",
+        "Storage-full modal no longer exits the Pirate Chest flow",
+    )
+    require(
+        pirate_chest_workflow,
+        "PirateChestStatus.COOLDOWN",
+        "Pirate Chest cooldown branch missing",
     )
 
     # Daily VP sale-turn counter. One successfully posted x10 listing equals one
@@ -254,6 +444,9 @@ def main() -> int:
     )
     print("auto_main_profile_switch=save-old+load-new")
     print("auto_main_multi_start=per-profile-frozen-snapshot")
+    print("optional_features=old-function-slot-replaced+per-profile")
+    print("pirate_chest=default-off+slot0-only+safe-boundary+20m")
+    print("pirate_chest_storage_full=close-and-continue-next-function")
     print("daily_sale_counter=per-profile+restart-persistent+local-midnight-reset")
     print("daily_sale_success=one-turn-per-sold-listing-x10")
     print("daily_sale_ui=account-detail-LƯỢT-BÁN-AUTO-current/1000")
