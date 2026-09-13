@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 
-from ...errors import AutomationStopped
+from ...errors import AutomationStopped, ScreenTimeout
 from ...recovery import RecoveryManager
 from ..pirate_chest import PirateChestWorkflow
 from .boundary_delay import AutoMainResult, AutoMainWorkflow as _BoundaryAutoMainWorkflow
