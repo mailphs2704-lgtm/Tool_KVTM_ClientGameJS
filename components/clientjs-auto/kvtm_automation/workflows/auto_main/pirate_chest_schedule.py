@@ -4,6 +4,7 @@ import json
 import time
 
 from ...errors import AutomationStopped
+from ...recovery import RecoveryManager
 from ..pirate_chest import PirateChestWorkflow
 from .boundary_delay import AutoMainResult, AutoMainWorkflow as _BoundaryAutoMainWorkflow
 
@@ -18,6 +19,11 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
     that, a 20-minute deadline only marks the maintenance as due; the click flow
     itself runs from a post-Function safe boundary and never interrupts a
     Function in progress.
+
+    Pirate Chest is an overlay maintenance flow, while every production Function
+    starts only from exact-main. The scheduler therefore owns an explicit public
+    boundary recovery before and after chest maintenance. Recipes keep their
+    strict fail-close contract and never hide recovery/navigation internally.
     """
 
     PIRATE_CHEST_INTERVAL_SECONDS = 1200.0
@@ -28,6 +34,10 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self.pirate_chest_calls = 0
         self._pirate_chest_initialized = False
         self._pirate_chest_next_check_at = 0.0
+        self._pirate_chest_boundary_recovery = RecoveryManager(
+            self.auto,
+            function_id=self.spec.function_id,
+        )
 
     def _load_pirate_chest_enabled(self) -> bool:
         """Read option #1 without coupling AUTO Main to one GUI serialization."""
@@ -69,6 +79,40 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             time.monotonic() + self.PIRATE_CHEST_INTERVAL_SECONDS
         )
 
+    def _prove_exact_main_boundary(self, *, reason: str) -> None:
+        """Explicitly restore the caller contract before/after optional UI work."""
+        self.context.ensure_running()
+        if self.auto.popup.is_own_exact_main_screen():
+            self.context.detail(
+                "AUTO rương hải tặc | exact-main boundary already proven | "
+                f"reason={reason}"
+            )
+            return
+
+        self.context.stage("auto-main-pirate-chest-exact-main-recovery")
+        self.context.log(
+            "AUTO rương hải tặc • boundary chưa có exact-main • "
+            f"recovery công khai trước Function • reason={reason}"
+        )
+
+        # First remove/recover any overlay or visited-home state and reach the
+        # clone farm HUD. PopupActions intentionally invalidates camera proof;
+        # NavigationRecovery then re-proves the bottom/main boundary by behavior.
+        self.auto.ensure_main_screen(timeout=12.0)
+        if not self.auto.popup.is_own_exact_main_screen():
+            self._pirate_chest_boundary_recovery.recover_unknown_to_main(
+                f"rương hải tặc boundary {reason}",
+                reason=f"pirate-chest-boundary-{reason}",
+            )
+        self._pirate_chest_boundary_recovery.ensure_main(
+            f"rương hải tặc boundary {reason}"
+        )
+        self.context.stage("auto-main-pirate-chest-exact-main-ready")
+        self.context.log(
+            "AUTO rương hải tặc • boundary exact-main PASS • "
+            f"reason={reason}"
+        )
+
     def _run_pirate_chest(self, *, reason: str) -> None:
         if not self.pirate_chest_enabled:
             return
@@ -81,6 +125,10 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             f"lần={ordinal} • reason={reason}"
         )
 
+        # The optional flow must never inherit an unproved camera from sale or
+        # another maintenance action. Prove exact-main before touching the ship.
+        self._prove_exact_main_boundary(reason=f"{reason}-before-chest")
+
         status = "ERROR"
         detail = ""
         try:
@@ -90,9 +138,9 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         except AutomationStopped:
             raise
         except Exception as exc:
-            # Pirate Chest is optional maintenance. A capture/classification
-            # failure must not turn a completed main Function into a pipeline
-            # failure. The next attempt is deferred for a fresh 20-minute cycle.
+            # Pirate Chest business/capture errors remain non-blocking. The
+            # boundary recovery below is separate: if exact-main cannot be
+            # restored, the main pipeline still fail-closes before a Recipe.
             status = "SAFE_ABORT"
             detail = f"{type(exc).__name__}: {exc}"
             self.context.detail(
@@ -102,11 +150,16 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             self.pirate_chest_calls += 1
             self._schedule_next_pirate_chest_check()
 
+        # Critical handoff: closing a panel/overlay is not itself proof that the
+        # farm camera is at exact-main. Re-establish the caller contract before
+        # AUTO Main is allowed to start Táo sấy or any other Function recipe.
+        self._prove_exact_main_boundary(reason=f"{reason}-after-chest")
+
         self.context.stage(f"auto-main-pirate-chest-{ordinal}-finished")
         self.context.log(
             "AUTO rương hải tặc • kết thúc lượt check • "
             f"lần={ordinal} • status={status} • detail={detail} • "
-            f"check_lại_sau={self.PIRATE_CHEST_INTERVAL_SECONDS:.0f}s"
+            f"exact-main=PASS • check_lại_sau={self.PIRATE_CHEST_INTERVAL_SECONDS:.0f}s"
         )
 
     def _pirate_chest_checkpoint(self, *, reason: str) -> None:
