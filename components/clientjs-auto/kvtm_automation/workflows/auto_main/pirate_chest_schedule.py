@@ -7,6 +7,7 @@ from ...errors import AutomationStopped
 from ...recovery import RecoveryManager
 from ..pirate_chest import PirateChestWorkflow
 from .boundary_delay import AutoMainResult, AutoMainWorkflow as _BoundaryAutoMainWorkflow
+from .friend_refresh import FriendRefreshWorkflow
 
 
 __all__ = ["AutoMainResult", "AutoMainWorkflow"]
@@ -118,6 +119,28 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             f"reason={reason}"
         )
 
+    def _reset_scene_after_pirate_chest_abort(self, *, reason: str) -> None:
+        """Force a friend-house round trip before handing control to a Function."""
+        self.context.stage("auto-main-pirate-chest-safe-abort-scene-reset")
+        self.context.log(
+            "AUTO rương hải tặc • SAFE_ABORT • bắt buộc qua nhà bạn #1 "
+            "rồi về nhà để reset scene trước Function kế tiếp • "
+            f"reason={reason}"
+        )
+        refreshed = FriendRefreshWorkflow(
+            self.auto,
+            function_id=self.spec.function_id,
+        ).run(completed_loops=0)
+        if not refreshed:
+            raise ScreenTimeout(
+                "Rương hải tặc SAFE_ABORT nhưng chưa chứng minh được vòng "
+                "nhà bạn #1 → nhà mình; dừng trước Function kế tiếp"
+            )
+        self.context.log(
+            "AUTO rương hải tặc • scene reset PASS • "
+            "nhà bạn #1 → nhà mình → exact-main"
+        )
+
     def _run_pirate_chest(self, *, reason: str) -> None:
         if not self.pirate_chest_enabled:
             return
@@ -154,6 +177,14 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         finally:
             self.pirate_chest_calls += 1
             self._schedule_next_pirate_chest_check()
+
+        # A SAFE_ABORT means the chest UI/reward state was not classified. The
+        # own-farm HUD can remain visible behind that overlay and create a false
+        # exact-main positive, so never trust the shortcut proof in this branch.
+        # Force the proven friend#1 -> own-home world transition to rebuild the
+        # scene before any Recipe is allowed to start.
+        if status == "SAFE_ABORT":
+            self._reset_scene_after_pirate_chest_abort(reason=detail or reason)
 
         # Critical handoff: closing a panel/overlay is not itself proof that the
         # farm camera is at exact-main. Re-establish the caller contract before
