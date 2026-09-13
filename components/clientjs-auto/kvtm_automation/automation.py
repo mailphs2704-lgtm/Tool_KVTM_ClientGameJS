@@ -257,13 +257,13 @@ class KVAutomation:
             self.popup,
         )
         self.stall = StallActions(context, self.vision, self.wait)
-        self.stall.apply_runtime_policy(
-            swipe_duration=self.speed_config.shop_drag_speed,
-            settle_delay=self.stall.STALL_SWIPE_SETTLE,
-        )
+        # Stall geometry/pulse count are independent from timing. Only override
+        # the duration selected in the Multi DEV speed dialog, preserving the
+        # proven two-swipe route and render settle policy.
+        self.stall.swipe_duration = float(self.speed_config.shop_drag_speed)
         context.detail(
             "AUTO MULTI DEV stall speed • "
-            f"kéo quầy={self.speed_config.shop_drag_speed:.3f}s/swipe • "
+            f"kéo quầy={self.stall.swipe_duration:.3f}s/swipe • "
             f"settle={self.stall.swipe_settle:.3f}s"
         )
         self.inventory = InventoryActions(context, self.vision, self.wait)
