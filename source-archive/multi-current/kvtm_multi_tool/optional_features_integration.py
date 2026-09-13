@@ -5,7 +5,7 @@ __all__ = ["install_optional_features_integration"]
 
 FILE_FUNCTIONS = (
     "Giữ nguyên ô chọn Function của AUTO MULTI DEV và thêm hàng Tùy chọn riêng bên dưới",
-    "Tùy chọn đầu tiên là Mở rương hải tặc và mặc định OFF",
+    "Tùy chọn Mở rương hải tặc áp dụng cho toàn bộ tài khoản đang chọn và mặc định OFF",
     "Lưu trạng thái Mở rương riêng cho từng profile/tài khoản",
     "Đóng băng trạng thái tùy chọn theo từng run trước khi worker khởi động",
     "Ghi pirate_chest_enabled vào auto-main-config.json qua pending config hiện có",
@@ -33,7 +33,8 @@ def install_optional_features_integration(app_class, core) -> None:
 
     The verified Function selector remains the execution choice for AUTO Main.
     Optional features live in their own row immediately below the scheduler
-    controls and are persisted per profile, then frozen into each worker run.
+    controls. A toggle applies to every profile currently selected in Multi,
+    while the saved value remains per-profile and is frozen into each run.
     """
     if getattr(app_class, "_kvtm_optional_features_installed", False):
         return
@@ -45,14 +46,17 @@ def install_optional_features_integration(app_class, core) -> None:
     original_start_configured_auto_main = app_class._start_configured_auto_main
     original_run_clean_main_thread = app_class._run_clean_main_thread
 
-    def _optional_profile_id(self) -> str | None:
-        resolver = getattr(self, "_auto_multi_dev_profile_id", None)
-        if callable(resolver):
-            profile_id = resolver()
-            if profile_id:
-                return str(profile_id)
-        selected = list(map(str, self.selected_ids()))
-        return selected[0] if len(selected) == 1 else None
+    def _optional_target_profile_ids(self) -> list[str]:
+        known = {
+            str(item.get("id") or "")
+            for item in self.profiles
+            if str(item.get("id") or "")
+        }
+        result: list[str] = []
+        for profile_id in map(str, self.selected_ids()):
+            if profile_id in known and profile_id not in result:
+                result.append(profile_id)
+        return result
 
     def _optional_profile_settings(self, profile_id: str) -> dict[str, bool]:
         profile_id = str(profile_id or "")
@@ -67,16 +71,19 @@ def install_optional_features_integration(app_class, core) -> None:
     def _save_optional_features(self) -> None:
         if getattr(self, "_optional_features_refreshing", False):
             return
-        profile_id = self._optional_profile_id()
-        if not profile_id:
+        profile_ids = self._optional_target_profile_ids()
+        if not profile_ids:
             return
         enabled = bool(self.auto_multi_dev_pirate_chest_enabled.get())
         saved = {"pirate_chest_enabled": enabled}
-        self.settings.setdefault(_OPTIONAL_FEATURES_KEY, {})[profile_id] = saved
+        for profile_id in profile_ids:
+            self.settings.setdefault(_OPTIONAL_FEATURES_KEY, {})[profile_id] = saved
         core.save_settings(self.settings)
         self.note.set(
             "AUTO MULTI DEV • Tùy chọn Mở rương hải tặc="
-            + ("BẬT • check đầu sau sale đầu • chu kỳ 20 phút" if enabled else "TẮT")
+            + ("BẬT" if enabled else "TẮT")
+            + f" • áp dụng {len(profile_ids)} tài khoản"
+            + (" • check đầu sau sale đầu • chu kỳ 20 phút" if enabled else "")
         )
 
     def _refresh_optional_features(self) -> None:
@@ -84,25 +91,24 @@ def install_optional_features_integration(app_class, core) -> None:
             return
         self._optional_features_refreshing = True
         try:
-            profile_id = self._optional_profile_id()
-            profile = next(
-                (
-                    item for item in self.profiles
-                    if str(item.get("id") or "") == str(profile_id or "")
-                ),
-                None,
-            )
+            profile_ids = self._optional_target_profile_ids()
             enabled = False
-            if profile_id and profile is not None:
-                enabled = bool(
-                    self._optional_profile_settings(profile_id)[
-                        "pirate_chest_enabled"
-                    ]
+            if profile_ids:
+                enabled = all(
+                    bool(
+                        self._optional_profile_settings(profile_id)[
+                            "pirate_chest_enabled"
+                        ]
+                    )
+                    for profile_id in profile_ids
                 )
             self.auto_multi_dev_pirate_chest_enabled.set(enabled)
             button = getattr(self, "auto_multi_dev_pirate_chest_button", None)
             if button is not None:
-                button.configure(state="normal" if profile is not None else "disabled")
+                button.configure(
+                    state="normal" if profile_ids else "disabled",
+                    cursor="hand2" if profile_ids else "arrow",
+                )
         finally:
             self._optional_features_refreshing = False
 
@@ -208,7 +214,7 @@ def install_optional_features_integration(app_class, core) -> None:
     app_class._refresh_auto_multi_dev_profile_settings = refresh_profile_settings
     app_class._start_configured_auto_main = start_configured_auto_main
     app_class._run_clean_main_thread = run_clean_main_thread
-    app_class._optional_profile_id = _optional_profile_id
+    app_class._optional_target_profile_ids = _optional_target_profile_ids
     app_class._optional_profile_settings = _optional_profile_settings
     app_class._save_optional_features = _save_optional_features
     app_class._refresh_optional_features = _refresh_optional_features
@@ -216,6 +222,7 @@ def install_optional_features_integration(app_class, core) -> None:
     app_class._kvtm_optional_features_installed = True
     print(
         "[KVTM DEV] Optional Features READY • Function selector=PRESERVED • "
-        "#1 Mở rương hải tặc • per-profile • default=OFF • safe-boundary=20m",
+        "#1 Mở rương hải tặc • multi-select=READY • per-profile • "
+        "default=OFF • safe-boundary=20m",
         flush=True,
     )
