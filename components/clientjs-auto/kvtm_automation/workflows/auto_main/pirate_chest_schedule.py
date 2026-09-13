@@ -38,9 +38,14 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             self.auto,
             function_id=self.spec.function_id,
         )
+        self.context.log(
+            "AUTO tùy chọn • Mở rương hải tặc="
+            + ("BẬT" if self.pirate_chest_enabled else "TẮT")
+            + " • nguồn=auto-main-config.json • check đầu sau sale đầu • chu kỳ=20 phút"
+        )
 
     def _load_pirate_chest_enabled(self) -> bool:
-        """Read option #1 without coupling AUTO Main to one GUI serialization."""
+        """Read option #1 from the frozen per-run AUTO Main config."""
         marker = self.context.work_dir / "auto-main-config.json"
         try:
             raw = json.loads(marker.read_text(encoding="utf-8"))
@@ -52,8 +57,8 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         if "pirate_chest_enabled" in raw:
             return bool(raw.get("pirate_chest_enabled"))
 
-        # AUTO MULTI DEV historically serializes the option checkboxes as an
-        # ordered flag vector. Pirate Chest is option #1 => index 0.
+        # Compatibility only for older DEV run markers. New runs write the
+        # explicit pirate_chest_enabled field from Optional Features.
         for key in ("option_flags", "options", "auto_options"):
             flags = raw.get(key)
             if isinstance(flags, (list, tuple)) and flags:
