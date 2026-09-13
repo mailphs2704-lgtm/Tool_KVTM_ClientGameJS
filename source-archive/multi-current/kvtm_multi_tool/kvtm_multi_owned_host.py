@@ -6,6 +6,7 @@ import client_video_recorder
 import daily_sale_counter_integration
 import fps_hardcap_integration
 import optional_features_integration
+import stall_speed_integration
 
 
 _ORIGINAL_RECORDER_INSTALL = client_video_recorder.install_client_video_recorder
@@ -14,6 +15,9 @@ _ORIGINAL_RECORDER_INSTALL = client_video_recorder.install_client_video_recorder
 def _install_runtime_integrations(app_cls, core) -> None:
     client_ownership_integration.install_client_ownership_integration(app_cls, core)
     clear_stall_window_position.install_clear_stall_window_position(app_cls, core)
+    # MULTI DEV must expose the independent shop-drag timing before its speed
+    # dialog is built; clean runtime consumes the same key through AutoSpeedConfig.
+    stall_speed_integration.install_stall_speed_integration(app_cls, core)
     # Install after auto_main_profile_settings so this layer owns the final
     # FPS transport/menu methods and routes them to Bridge V3 hard-cap.
     fps_hardcap_integration.install_fps_hardcap_integration(app_cls, core)
@@ -23,9 +27,8 @@ def _install_runtime_integrations(app_cls, core) -> None:
     daily_sale_counter_integration.install_daily_sale_counter_integration(
         app_cls, core
     )
-    # Optional features now own the old Function-selector slot in AUTO MULTI DEV.
-    # Install after scheduler persistence so per-profile settings/config snapshots
-    # can be layered without modifying the proven Function/sale/restart engine.
+    # Optional features live beside the preserved Function selector in AUTO
+    # MULTI DEV and freeze per-profile state into each worker run.
     optional_features_integration.install_optional_features_integration(
         app_cls, core
     )
