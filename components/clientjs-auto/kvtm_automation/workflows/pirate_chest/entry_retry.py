@@ -12,8 +12,8 @@ from .workflow import (
 class PirateChestWorkflow(_BasePirateChestWorkflow):
     """Add one bounded retry only for the non-destructive Pirate Chest entry.
 
-    The retry clicks the exact same proven chest bubble coordinate. It never
-    searches around the ship (the Genie control is adjacent), and it does not
+    The retry clicks the exact same operator-confirmed ship-body hitbox. It
+    never searches either bubble above the ship, and it does not
     retry MỞ NGAY, chest-open, or reward-claim actions.
     """
 
@@ -37,11 +37,11 @@ class PirateChestWorkflow(_BasePirateChestWorkflow):
             return status, frame
 
         # Entry is the only safe action to retry: no chest has been opened and
-        # no reward state can have changed yet. Keep the exact x/y so we never
-        # drift toward the Genie bubble next to it.
+        # no reward state can have changed yet. Keep the exact ship-body x/y so
+        # we never drift upward into either bubble.
         self.context.log(
             "AUTO rương hải tặc • entry lần 1 chưa mở panel • "
-            "retry 1 lần tại đúng hitbox rương, không dò ảnh/background"
+            "retry 1 lần tại đúng hitbox thân thuyền, không click bong bóng"
         )
         self._tap(self.ENTRY_POINT, "pirate-chest-open-entry-retry-2")
         status, frame = super()._wait_for(
