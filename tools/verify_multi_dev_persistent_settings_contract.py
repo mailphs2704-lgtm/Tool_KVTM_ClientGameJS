@@ -302,6 +302,26 @@ def main() -> int:
         'status = "SAFE_ABORT"',
         "Optional Pirate Chest failure is no longer non-blocking",
     )
+    require(
+        pirate_chest_schedule,
+        'if status == "SAFE_ABORT":',
+        "Pirate Chest scene reset is no longer limited to SAFE_ABORT",
+    )
+    require(
+        pirate_chest_schedule,
+        "self._reset_scene_after_pirate_chest_abort(reason=detail or reason)",
+        "Pirate Chest SAFE_ABORT no longer forces the friend-house scene reset",
+    )
+    require(
+        pirate_chest_schedule,
+        "FriendRefreshWorkflow(",
+        "Pirate Chest SAFE_ABORT does not reuse the proven friend refresh workflow",
+    )
+    require(
+        pirate_chest_schedule,
+        "if not refreshed:",
+        "Pirate Chest SAFE_ABORT may hand off without a proven friend round trip",
+    )
 
     # Pirate Chest click safety: coordinate/hitbox entry, slot 0 only, no image
     # template dependency for the variable farm background and no paid-slot map.
