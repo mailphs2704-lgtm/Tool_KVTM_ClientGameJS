@@ -51,12 +51,14 @@ function Stop-KvtmDevRuntimeProcesses {
         }
         $parentId = [int]$process.ParentProcessId
         if (-not $byParent.ContainsKey($parentId)) {
-            $byParent[$parentId] = New-Object System.Collections.Generic.List[object]
+            $byParent[$parentId] = New-Object System.Collections.ArrayList
         }
-        $byParent[$parentId].Add($process)
+        [void]$byParent[$parentId].Add($process)
     }
 
-    $owned = New-Object "System.Collections.Generic.HashSet[int]"
+    # Use non-generic ArrayList here. Windows PowerShell 5.1 can throw
+    # "Argument types do not match" when @() expands generic HashSet/List values.
+    $owned = New-Object System.Collections.ArrayList
     $runtimeMarkers = @(
         "kvtm_multi_owned_host.py",
         "kvtm_multi_dev_host.py",
@@ -87,7 +89,7 @@ function Stop-KvtmDevRuntimeProcesses {
                 }
             }
         }
-        if ($matchesOutput -or $matchesKnownRuntime) {
+        if (($matchesOutput -or $matchesKnownRuntime) -and -not $owned.Contains($pidValue)) {
             [void]$owned.Add($pidValue)
         }
     }
@@ -113,7 +115,9 @@ function Stop-KvtmDevRuntimeProcesses {
                     $mappedExe.Contains("clientjs")
                 )
                 if ($looksClient) {
-                    [void]$owned.Add($mappedPid)
+                    if (-not $owned.Contains($mappedPid)) {
+                        [void]$owned.Add($mappedPid)
+                    }
                     Write-Host (
                         "[DEV] Persistent runtime map: ClientJS PID {0} se duoc release truoc build." -f $mappedPid
                     ) -ForegroundColor DarkCyan
@@ -129,15 +133,16 @@ function Stop-KvtmDevRuntimeProcesses {
 
     # Include descendants of proven DEV owners. This catches worker/ClientJS
     # children even when their command line is short or their EXE lives elsewhere.
-    $queue = New-Object System.Collections.Generic.Queue[int]
-    foreach ($ownedPid in @($owned)) { $queue.Enqueue([int]$ownedPid) }
+    $queue = New-Object System.Collections.Queue
+    foreach ($ownedPid in $owned) { $queue.Enqueue([int]$ownedPid) }
     while ($queue.Count -gt 0) {
-        $parent = $queue.Dequeue()
+        $parent = [int]$queue.Dequeue()
         if (-not $byParent.ContainsKey($parent)) { continue }
-        foreach ($child in @($byParent[$parent])) {
+        foreach ($child in $byParent[$parent]) {
             $childPid = [int]$child.ProcessId
             if ($childPid -le 0 -or $childPid -eq $PID) { continue }
-            if ($owned.Add($childPid)) {
+            if (-not $owned.Contains($childPid)) {
+                [void]$owned.Add($childPid)
                 $queue.Enqueue($childPid)
             }
         }
