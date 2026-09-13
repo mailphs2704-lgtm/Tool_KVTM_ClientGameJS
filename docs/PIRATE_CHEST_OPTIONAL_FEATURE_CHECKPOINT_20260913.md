@@ -96,7 +96,24 @@ Verifier này nằm trong luồng build DEV hiện hành thông qua persistent s
 
 Các commit Pirate Chest core/scheduler trước đó nằm cùng branch; `5f7fc33f3135652ab233261996a389020b8130e5` xác nhận AUTO Main entry đã được wire qua pirate chest scheduler.
 
-## 7. NEXT GATE
+## 7. Live regression 23:22 — reward-timeout handoff
+
+Live log xác nhận rương đã mở nhưng `_reward_ready` timeout. Flow cũ vẫn ghi
+`exact-main=PASS` từ HUD phía sau overlay rồi chạy Function kế tiếp, làm Planting
+nhận diện sai màn hình và fail-close.
+
+Source fix:
+
+- chỉ khi kết quả rương là `SAFE_ABORT` mới bắt buộc reset scene;
+- thoát reward/chest overlay đúng một lần, không retry `MỞ NGAY` hoặc nhận quà;
+- chạy route dùng chung `nhà bạn #1 → nhà mình`;
+- chỉ cho phép Function kế tiếp chạy khi vòng qua nhà bạn và exact-main đều PASS;
+- `OPENED`, `COOLDOWN`, `STORAGE_FULL` không chạy vòng qua nhà bạn;
+- nếu vòng reset lỗi, fail-close trước Function kế tiếp thay vì tiếp tục trên màn hình ảo.
+
+Đây là SOURCE/AST READY, chưa phải runtime PASS.
+
+## 8. NEXT GATE
 
 Theo `AGENTS.md`, operator chạy đúng Control Center:
 
