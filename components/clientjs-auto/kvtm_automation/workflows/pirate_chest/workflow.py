@@ -13,7 +13,7 @@ __all__ = ["PirateChestResult", "PirateChestStatus", "PirateChestWorkflow"]
 
 FILE_FUNCTIONS = (
     "Chỉ vào Kho Báu Hải Tặc từ exact-main bằng hitbox logical, không template-match background",
-    "Click đúng nút rương màu xanh phía trên thuyền hải tặc, không click thân thuyền/đèn thần",
+    "Click đúng hitbox thân thuyền hải tặc, không click bong bóng rương/đèn thần phía trên",
     "Luôn chọn đúng rương đầu tiên/slot 0 và không bao giờ thao tác các slot trả kim cương",
     "Phân loại READY/COOLDOWN bằng màu và hình học ROI, hỗ trợ native 500x500/1000x1000",
     "Chờ chuyển trạng thái có timeout thay vì sleep mù trong animation mở/nhận quà",
@@ -48,16 +48,16 @@ class PirateChestWorkflow:
     owns logical->client input scaling.
 
     Safety contract:
-    - entry clicks the blue Pirate Chest bubble above the ship, never Genie;
+    - entry clicks the Pirate ship body, never either bubble above the ship;
     - only slot 0 is selectable;
     - no paid-chest coordinate exists in this module;
     - an unclassified action state is a SAFE_ABORT, never a speculative click.
     """
 
-    # Observed native 1000x1000 main-screen geometry from operator evidence:
-    # blue Pirate Chest bubble center ~= (363, 549); Genie bubble is to its
-    # right around x=396 and is intentionally not represented in this module.
-    ENTRY_POINT = (363, 549)
+    # Operator-confirmed logical 1000x1000 entry geometry. The interactive
+    # target is the ship body below both bubbles; keeping y=620 deliberately
+    # excludes the Pirate Chest/Genie bubble row around y=549.
+    ENTRY_POINT = (363, 620)
     SLOT_ZERO_POINT = (263, 632)
     OPEN_NOW_POINT = (500, 558)
     CHEST_CENTER_POINT = (500, 580)
@@ -218,6 +218,22 @@ class PirateChestWorkflow:
     def _tap(self, point: tuple[int, int], stage: str) -> None:
         self.context.ensure_running()
         self.context.stage(stage)
+        if stage.startswith("pirate-chest-open-entry"):
+            try:
+                frame = self.vision.frame()
+                height, width = frame.shape[:2]
+                native_point = self.vision.logical_point_to_frame(point, frame)
+                self.context.log(
+                    "AUTO rương hải tặc • click thân thuyền • "
+                    f"stage={stage} • logical={point} • native={native_point} • "
+                    f"content={width}x{height}"
+                )
+            except Exception as exc:
+                self.context.log(
+                    "AUTO rương hải tặc • click thân thuyền • "
+                    f"stage={stage} • logical={point} • "
+                    f"không đọc được content geometry: {type(exc).__name__}"
+                )
         self.driver.click(*point)
 
     def _close_panel_if_visible(self) -> None:
