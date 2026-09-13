@@ -87,8 +87,11 @@ class FunctionOneWorkflow:
         normalize_end_to_main: bool = True,
     ) -> FunctionOneResult:
         started = time.monotonic()
-        self.context.stage("auto-function-1-optional-check")
-        self.context.log("AUTO chức năng 1 • check tùy chọn: chưa cấu hình • bỏ qua")
+        self.context.stage("auto-function-1-recipe-chain-start")
+        self.context.log(
+            "AUTO chức năng 1 • bắt đầu Recipe chain • "
+            "tùy chọn scheduler đã được xử lý ở safe boundary"
+        )
 
         dried_recipe = self.recipes.dried_apple.run_from_session(count=9)
         self.context.ensure_running()
