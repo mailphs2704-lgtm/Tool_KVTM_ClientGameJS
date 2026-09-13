@@ -20,33 +20,35 @@ function Resolve-KvtmGitExe {
     return $null
 }
 
-function Stop-KvtmPackagedRuntimeProcesses {
+function Stop-KvtmDevRuntimeProcesses {
     param(
         [Parameter(Mandatory = $true)][string]$OutputRoot,
-        [int]$TimeoutSeconds = 12
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [int]$TimeoutSeconds = 15
     )
 
-    # A hidden Multi DEV host is python/pythonw with its script/cwd under the
-    # packaged output. It can keep dist\...\Multi locked even after the visible
-    # window is gone. Detect only processes proven to belong to this exact output
-    # tree, then include their descendants. Never kill unrelated Python/ClientJS.
-    if (-not (Test-Path -LiteralPath $OutputRoot -PathType Container)) {
-        Write-Host "[DEV] Runtime cu khong ton tai; khong can giai phong process." -ForegroundColor DarkCyan
-        return
-    }
+    # DEV runtime data moved to %APPDATA% so the package can be rebuilt without
+    # deleting profiles/settings. The previous cleanup only recognized processes
+    # by the dist tree, which can miss an injected ClientJS process whose EXE is
+    # outside dist. Read the authoritative persistent running-client map as well.
+    $outputNeedle = [System.IO.Path]::GetFullPath($OutputRoot).TrimEnd('\').ToLowerInvariant()
+    $repoNeedle = [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\').ToLowerInvariant()
+    $persistentData = Join-Path $env:APPDATA "KVTM Multi DEV"
+    $runningMap = Join-Path $persistentData "running_clients.json"
 
-    $normalizedRoot = [System.IO.Path]::GetFullPath($OutputRoot).TrimEnd('\')
-    $rootNeedle = $normalizedRoot.ToLowerInvariant()
-    $all = @(
-        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
-    )
+    $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
     if ($all.Count -eq 0) {
-        Write-Host "[WARN] Khong doc duoc Win32_Process; se dung cleanup retry o buoc xoa output." -ForegroundColor Yellow
+        Write-Host "[WARN] Khong doc duoc Win32_Process; bo qua process scan." -ForegroundColor Yellow
         return
     }
 
+    $byPid = @{}
     $byParent = @{}
     foreach ($process in $all) {
+        $pidValue = [int]$process.ProcessId
+        if ($pidValue -gt 0) {
+            $byPid[$pidValue] = $process
+        }
         $parentId = [int]$process.ParentProcessId
         if (-not $byParent.ContainsKey($parentId)) {
             $byParent[$parentId] = New-Object System.Collections.Generic.List[object]
@@ -55,23 +57,78 @@ function Stop-KvtmPackagedRuntimeProcesses {
     }
 
     $owned = New-Object "System.Collections.Generic.HashSet[int]"
+    $runtimeMarkers = @(
+        "kvtm_multi_owned_host.py",
+        "kvtm_multi_dev_host.py",
+        "auto_multi_dev_worker.py",
+        "clear_stall_step1_probe.py",
+        "bridge_v3_gesture_probe.py"
+    )
+
     foreach ($process in $all) {
         $pidValue = [int]$process.ProcessId
         if ($pidValue -le 0 -or $pidValue -eq $PID) { continue }
-        $commandLine = [string]$process.CommandLine
-        $executablePath = [string]$process.ExecutablePath
+        $commandLine = ([string]$process.CommandLine).ToLowerInvariant()
+        $executablePath = ([string]$process.ExecutablePath).ToLowerInvariant()
+
         $matchesOutput = (
-            (-not [string]::IsNullOrWhiteSpace($commandLine) -and $commandLine.ToLowerInvariant().Contains($rootNeedle)) -or
-            (-not [string]::IsNullOrWhiteSpace($executablePath) -and $executablePath.ToLowerInvariant().StartsWith($rootNeedle))
+            (-not [string]::IsNullOrWhiteSpace($commandLine) -and $commandLine.Contains($outputNeedle)) -or
+            (-not [string]::IsNullOrWhiteSpace($executablePath) -and $executablePath.StartsWith($outputNeedle))
         )
-        if ($matchesOutput) {
+        $matchesKnownRuntime = $false
+        if (
+            (-not [string]::IsNullOrWhiteSpace($commandLine)) -and
+            ($commandLine.Contains($repoNeedle) -or $commandLine.Contains($outputNeedle))
+        ) {
+            foreach ($marker in $runtimeMarkers) {
+                if ($commandLine.Contains($marker)) {
+                    $matchesKnownRuntime = $true
+                    break
+                }
+            }
+        }
+        if ($matchesOutput -or $matchesKnownRuntime) {
             [void]$owned.Add($pidValue)
         }
     }
 
-    # Include children even when their command line is short/opaque. This catches
-    # ClientJS/worker descendants created by the packaged Multi host without
-    # widening the kill scope to processes from another project folder.
+    if (Test-Path -LiteralPath $runningMap -PathType Leaf) {
+        try {
+            $mapData = Get-Content -LiteralPath $runningMap -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($clientEntry in @($mapData.clients)) {
+                $mappedPid = 0
+                if (-not [int]::TryParse([string]$clientEntry.pid, [ref]$mappedPid)) { continue }
+                if ($mappedPid -le 0 -or $mappedPid -eq $PID) { continue }
+                if (-not $byPid.ContainsKey($mappedPid)) { continue }
+
+                # Guard against stale PID reuse. A mapped PID is stopped only if
+                # the live process still looks like a ClientJS process.
+                $mapped = $byPid[$mappedPid]
+                $mappedName = ([string]$mapped.Name).ToLowerInvariant()
+                $mappedCommand = ([string]$mapped.CommandLine).ToLowerInvariant()
+                $mappedExe = ([string]$mapped.ExecutablePath).ToLowerInvariant()
+                $looksClient = (
+                    $mappedName.Contains("clientjs") -or
+                    $mappedCommand.Contains("clientjs") -or
+                    $mappedExe.Contains("clientjs")
+                )
+                if ($looksClient) {
+                    [void]$owned.Add($mappedPid)
+                    Write-Host (
+                        "[DEV] Persistent runtime map: ClientJS PID {0} se duoc release truoc build." -f $mappedPid
+                    ) -ForegroundColor DarkCyan
+                }
+            }
+        }
+        catch {
+            Write-Host (
+                "[WARN] Khong doc duoc persistent running_clients.json: {0}" -f $_.Exception.Message
+            ) -ForegroundColor Yellow
+        }
+    }
+
+    # Include descendants of proven DEV owners. This catches worker/ClientJS
+    # children even when their command line is short or their EXE lives elsewhere.
     $queue = New-Object System.Collections.Generic.Queue[int]
     foreach ($ownedPid in @($owned)) { $queue.Enqueue([int]$ownedPid) }
     while ($queue.Count -gt 0) {
@@ -86,43 +143,79 @@ function Stop-KvtmPackagedRuntimeProcesses {
         }
     }
 
-    if ($owned.Count -eq 0) {
-        Write-Host "[DEV] Khong co process runtime cu nao dang giu package output." -ForegroundColor DarkCyan
-        return
-    }
-
-    Write-Host ("[DEV] Giai phong {0} process runtime cu truoc build..." -f $owned.Count) -ForegroundColor Yellow
-    foreach ($ownedPid in @($owned | Sort-Object -Descending)) {
-        $candidate = Get-Process -Id $ownedPid -ErrorAction SilentlyContinue
-        if ($null -eq $candidate) { continue }
-        try {
-            Write-Host ("[DEV] Stop packaged runtime PID {0} ({1})" -f $ownedPid, $candidate.ProcessName) -ForegroundColor DarkYellow
-            Stop-Process -Id $ownedPid -Force -ErrorAction Stop
+    if ($owned.Count -gt 0) {
+        Write-Host (
+            "[DEV] Giai phong {0} process Multi/ClientJS DEV truoc build..." -f $owned.Count
+        ) -ForegroundColor Yellow
+        foreach ($ownedPid in @($owned | Sort-Object -Descending)) {
+            $candidate = Get-Process -Id $ownedPid -ErrorAction SilentlyContinue
+            if ($null -eq $candidate) { continue }
+            try {
+                Write-Host (
+                    "[DEV] Stop DEV runtime PID {0} ({1})" -f $ownedPid, $candidate.ProcessName
+                ) -ForegroundColor DarkYellow
+                Stop-Process -Id $ownedPid -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Host (
+                    "[WARN] Chua stop duoc PID {0}: {1}" -f $ownedPid, $_.Exception.Message
+                ) -ForegroundColor Yellow
+            }
         }
-        catch {
-            Write-Host ("[WARN] Chua stop duoc PID {0}: {1}" -f $ownedPid, $_.Exception.Message) -ForegroundColor Yellow
-        }
-    }
 
-    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSeconds))
-    do {
-        $remaining = @(
+        $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSeconds))
+        do {
+            $remaining = @(
+                $owned | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) }
+            )
+            if ($remaining.Count -eq 0) { break }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTime]::UtcNow -lt $deadline)
+
+        $stillAlive = @(
             $owned | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) }
         )
-        if ($remaining.Count -eq 0) {
-            Write-Host "[DEV] Packaged runtime handles: RELEASED" -ForegroundColor Green
-            return
+        if ($stillAlive.Count -gt 0) {
+            throw (
+                "Khong giai phong duoc DEV runtime sau ${TimeoutSeconds}s; PID con song: " +
+                ($stillAlive -join ", ")
+            )
         }
-        Start-Sleep -Milliseconds 250
-    } while ([DateTime]::UtcNow -lt $deadline)
+    }
+    else {
+        Write-Host "[DEV] Khong co process Multi/ClientJS DEV dang chay." -ForegroundColor DarkCyan
+    }
 
-    $stillAlive = @(
-        $owned | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) }
-    )
-    throw (
-        "Khong giai phong duoc packaged runtime sau ${TimeoutSeconds}s; PID con song: " +
-        ($stillAlive -join ", ")
-    )
+    # Verify the exact legacy DLL that previously blocked the package rebuild.
+    # This is only a lock probe; the build still owns the actual replace/copy.
+    $bridgeInUse = Join-Path $OutputRoot "AUTO_PRO\bin\kvtm_bridge.dll"
+    if (Test-Path -LiteralPath $bridgeInUse -PathType Leaf) {
+        $released = $false
+        for ($attempt = 1; $attempt -le 20; $attempt++) {
+            try {
+                $stream = [System.IO.File]::Open(
+                    $bridgeInUse,
+                    [System.IO.FileMode]::Open,
+                    [System.IO.FileAccess]::ReadWrite,
+                    [System.IO.FileShare]::None
+                )
+                $stream.Dispose()
+                $released = $true
+                break
+            }
+            catch {
+                Start-Sleep -Milliseconds 250
+            }
+        }
+        if (-not $released) {
+            throw (
+                "kvtm_bridge.dll van bi khoa sau DEV cleanup; " +
+                "khong build de tranh xoa/copy runtime dang duoc su dung"
+            )
+        }
+    }
+
+    Write-Host "[DEV] Multi/ClientJS runtime handles: RELEASED" -ForegroundColor Green
 }
 
 [string]$KvtmGitExe = Resolve-KvtmGitExe
@@ -173,8 +266,9 @@ if (Test-Path -LiteralPath (Join-Path $RepoRoot "KVTM_QUAY_VIDEO_60FPS.bat") -Pa
 }
 Write-Host "VIDEO GUI contract: MP4 1920x1080@60 + GUI hook + legacy BAT removed" -ForegroundColor Green
 
-# Stop only runtime processes that are proven to belong to the old packaged output.
-Stop-KvtmPackagedRuntimeProcesses -OutputRoot $OutputRoot
+# Stop only processes proven to belong to this DEV runtime, including ClientJS
+# PIDs from the persistent %APPDATA% runtime map used by the current launcher.
+Stop-KvtmDevRuntimeProcesses -OutputRoot $OutputRoot -RepoRoot $RepoRoot
 
 $PersistentSettingsVerifier = Join-Path $RepoRoot "tools\verify_multi_dev_persistent_settings_contract.py"
 if (-not (Test-Path -LiteralPath $PersistentSettingsVerifier -PathType Leaf)) {
@@ -333,7 +427,7 @@ $previousGitExe = $env:KVTM_PS51_GIT_EXE
 $env:KVTM_PS51_GIT_EXE = $KvtmGitExe
 try {
     Write-Host "PS5.1 HEAD stamp patch: READY" -ForegroundColor Green
-    Write-Host "AUTO MULTI DEV old-runtime release: READY" -ForegroundColor Green
+    Write-Host "AUTO MULTI DEV persistent runtime release: READY" -ForegroundColor Green
     Write-Host "AUTO MULTI DEV output cleanup retry: READY" -ForegroundColor Green
     Write-Host "AUTO MULTI DEV clear-stall migration gate: READY" -ForegroundColor Green
     Write-Host "AUTO MULTI DEV integrated MP4 recorder packaging: READY" -ForegroundColor Green
