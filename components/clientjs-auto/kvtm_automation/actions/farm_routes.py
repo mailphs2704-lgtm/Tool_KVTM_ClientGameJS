@@ -238,7 +238,7 @@ class FarmBoundaryRouteActions(FarmRouteActions):
 
         if click_change is None:
             self.context.log(
-                "AUTO route • nút XUỐNG template MISS • "
+                "AUTO route • nút XUỐNG template MISS/no-response • "
                 f"fallback operator point={self.DOWN_FLOOR_POINT}"
             )
             self.context.invalidate_camera_main(
@@ -280,31 +280,30 @@ class FarmBoundaryRouteActions(FarmRouteActions):
         )
 
     def floor_3_to_main_via_down_floor(self) -> NavigationEvidence:
-        swipe_change = self._settle_down_one(
-            "function1-end-loop-floor3-goDown(1)"
-        )
-        click_change = self._click_down_floor_if_visible(
-            "function1-end-loop-floor3-goDown(1)"
-        )
-        if click_change is None:
-            self.context.invalidate_camera_main(
-                "end-loop down-floor button absent or no response"
-            )
-            raise ScreenTimeout(
-                "Cuối vòng Function 1: sau goDown(1) không xác minh/click được "
-                "nút XUỐNG ở mép dưới; dừng trước vòng kế tiếp"
-            )
-        self.context.mark_camera_exact_main(
-            "floor3-to-main-via-down-floor deterministic route",
-            source="navigation-route",
-        )
-        self.context.log(
-            "AUTO điều hướng • cuối vòng tầng 3 → goDown(1) → "
-            "click XUỐNG → exact-main PASS"
+        evidence = self.known_upper_floor_to_main_via_down_floor(
+            "tầng 3 → MAIN"
         )
         return NavigationEvidence(
             "floor3-to-main-via-down-floor",
-            (swipe_change, click_change),
+            evidence.frame_changes,
+        )
+
+    def floor_5_to_main_via_down_floor(self) -> NavigationEvidence:
+        evidence = self.known_upper_floor_to_main_via_down_floor(
+            "tầng 5 → MAIN"
+        )
+        return NavigationEvidence(
+            "floor5-to-main-via-down-floor",
+            evidence.frame_changes,
+        )
+
+    def floor_6_to_main_via_down_floor(self) -> NavigationEvidence:
+        evidence = self.known_upper_floor_to_main_via_down_floor(
+            "tầng 6 → MAIN"
+        )
+        return NavigationEvidence(
+            "floor6-to-main-via-down-floor",
+            evidence.frame_changes,
         )
 
     def floor_2_to_main(self) -> NavigationEvidence:
