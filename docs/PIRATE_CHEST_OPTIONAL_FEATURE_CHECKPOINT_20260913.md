@@ -186,3 +186,19 @@ bắt buộc đồng thời có panel thường và vùng rương giữa thay đ
 reward frame. Khi đạt, status là `OPENED`, đóng X về MAIN và tuyệt đối không
 chạy friend-house recovery. Verifier khóa tại `0ed715ff`; AST PASS. Windows
 rebuild/live retest vẫn PENDING.
+
+
+## 12. Animation race: claim prompt và panel return
+
+Live tiếp theo cho thấy claim có thể được game nhận trễ/ngẫu nhiên nếu click trong lúc
+animation vẫn khóa input; hậu kiểm 6 giây cũng có thể hết trước khi rương giữa ổn định.
+
+Fix `b91175ce` không tăng sleep mù:
+
+- nhận diện vùng chữ trắng `Chạm để nhận quà`, độc lập hình phần thưởng;
+- yêu cầu vùng chữ ổn định liên tục 0.60s trước một claim tap duy nhất;
+- reward animation timeout 10s;
+- sau claim chờ panel+rương giữa trở lại ổn định liên tục 0.60s, timeout 12s;
+- không retry claim và không dùng Back.
+
+Verifier `13126736`; workflow/verifier AST PASS. Windows live PENDING.
