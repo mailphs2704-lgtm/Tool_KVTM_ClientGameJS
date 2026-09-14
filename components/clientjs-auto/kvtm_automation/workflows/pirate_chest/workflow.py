@@ -16,7 +16,7 @@ FILE_FUNCTIONS = (
     "Click đúng hitbox thân thuyền hải tặc, không click bong bóng rương/đèn thần phía trên",
     "Luôn chọn đúng rương đầu tiên/slot 0 và không bao giờ thao tác các slot trả kim cương",
     "Phân loại READY/COOLDOWN bằng màu và hình học ROI, hỗ trợ native 500x500/1000x1000",
-    "Chờ chuyển trạng thái có timeout thay vì sleep mù trong animation mở/nhận quà",
+    "Dùng đúng ba khoảng chờ 3 giây không CAPTURE theo quy trình operator",
     "Bắt modal kho quá tải theo hình học/màu chung, không phụ thuộc Kho 2/Kho 3",
     "Mọi lỗi nhận diện an toàn đều đóng UI nếu có thể và trả caller, không dừng toàn AUTO",
 )
