@@ -55,10 +55,12 @@ def main() -> int:
     for token in (
         "PATH_5 = (",
         "PATH_6 = (",
+        "PATH_24 = (",
         "PATH_27 = (",
         "PATH_28 = (",
         "PATH_30 = (",
         "6: PATH_6",
+        "24: PATH_24",
         "def path_for_count(cls, count: int)",
     ):
         require(planting, token, f"Shared planting contract missing: {token}")
@@ -84,6 +86,23 @@ def main() -> int:
         "open_point=first_pot_point",
         "Planting retry regressed to using a drag waypoint as click hitbox",
     )
+
+    # Seed identity is dynamic across accounts/sessions. Page turning is legal
+    # only after the existing arrow template proves the seed picker is open.
+    for token in (
+        'SEED_PANEL_ARROW_TEMPLATE = "next_gieo_trai"',
+        "def _find_seed_panel_arrow(",
+        "def _prove_seed_picker_open_for_page_turn(",
+        "arrow = self._prove_seed_picker_open_for_page_turn()",
+        "if arrow is None:",
+        "KHÔNG chuyển trang",
+        "plant_path = (match.center,) + tuple(selected_path[1:])",
+    ):
+        require(
+            planting,
+            token,
+            f"Dynamic seed/picker proof contract missing: {token}",
+        )
 
     # Runtime ownership/call chain must stay:
     # RoseOilRecipe -> KVAutomation.planting -> shared PlantingActions method.
@@ -213,7 +232,7 @@ def main() -> int:
     )
 
     print("AUTO ACTION STANDARDIZATION CONTRACT VERIFIED")
-    print("planting=shared-paths-5-6-27-28-30+verified-picker-click+same-attempt-replant")
+    print("planting=shared-paths-5-6-24-27-28-30+verified-picker-click+arrow-proof-page-gate+same-attempt-replant")
     print("apple-supply=shared-geometry+crop-wait-only")
     print("farm-routes=generic-canonical+function1-wrappers-only")
     print("vp-sale=neutral-transaction-action+five-view-module")
