@@ -31,7 +31,7 @@ class ProductionPanelActions:
     """
 
     PRODUCT_SEARCH_ZONE = (420, 550, 170, 120)
-    KNOWN_PRODUCT_TEMPLATES = ("tao_say", "nuoc_tao", "vai_vang")
+    KNOWN_PRODUCT_TEMPLATES = ("tao_say", "nuoc_tao", "vai_vang", "tra_say")
     EMPTY_SLOT_TEMPLATE = "o_trong"
     TOP_EMPTY_SLOT_ZONE = (335, 650, 130, 135)
     EMPTY_SLOT_ZONE = (335, 781, 395, 186)
