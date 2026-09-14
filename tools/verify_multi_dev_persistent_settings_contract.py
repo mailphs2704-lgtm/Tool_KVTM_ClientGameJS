@@ -490,6 +490,21 @@ def main() -> int:
     )
     require(
         pirate_chest_workflow,
+        "POST_CLAIM_QUIET_SECONDS = 4.0",
+        "Pirate Chest claim input is no longer isolated from CAPTURE verification",
+    )
+    require(
+        pirate_chest_workflow,
+        "self.auto.wait.sleep(self.POST_CLAIM_QUIET_SECONDS)",
+        "Pirate Chest starts checking before the post-claim quiet window ends",
+    )
+    require(
+        pirate_chest_workflow,
+        '"không CAPTURE/check trong animation"',
+        "Pirate Chest post-claim quiet diagnostic is missing",
+    )
+    require(
+        pirate_chest_workflow,
         "settle_state, _ = self._wait_open_prompt_animation()",
         "Pirate Chest may tap the chest before its modal animation settles",
     )
