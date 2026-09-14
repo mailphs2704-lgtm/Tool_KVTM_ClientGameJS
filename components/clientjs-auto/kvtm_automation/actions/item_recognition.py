@@ -47,6 +47,7 @@ class AutoVpRecognitionActions:
 
     FUNCTION_1_ITEM_IDS = ("tao_say", "vai_vang")
     FUNCTION_2_ITEM_IDS = ("tao_say", "vai_vang", "tinh_dau_hh")
+    FUNCTION_3_ITEM_IDS = ("nuoc_hoa_hong", "tra_da", "vai_vang")
 
     SAMPLE_ITEMS = (
         AutoVpSpec("tao_say", "Táo sấy", ("kho_tao_say", "tao_say")),
@@ -55,6 +56,16 @@ class AutoVpRecognitionActions:
             "tinh_dau_hh",
             "Tinh dầu hoa hồng",
             ("kho_tinh_dau_hh", "tinh_dau_hh"),
+        ),
+        AutoVpSpec(
+            "nuoc_hoa_hong",
+            "Nước hoa hồng",
+            ("kho_nuoc_hoa_hong", "nuoc_hoa_hong"),
+        ),
+        AutoVpSpec(
+            "tra_da",
+            "Trà đá",
+            ("kho_tra_da", "tra_da"),
         ),
     )
     RECOGNITION_SCALES = (0.75, 0.85, 0.95, 1.00, 1.05, 1.15, 1.25)
