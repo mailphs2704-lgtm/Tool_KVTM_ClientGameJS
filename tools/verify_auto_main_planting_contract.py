@@ -47,6 +47,7 @@ def main() -> int:
     require(action, 'SNOW_TEMPLATE = "cay_tuyet"', "Snow template missing")
     require(action, 'TEA_TEMPLATE = "cay_tra"', "Tea template missing")
     for token in (
+        "PATH_3 = (",
         "PATH_5 = (",
         "PATH_6 = (",
         "PATH_24 = (",
@@ -56,6 +57,7 @@ def main() -> int:
     ):
         require(action, token, f"Shared planting geometry missing: {token}")
     require(action, "VERIFIED_PATHS = {", "Verified planting path table missing")
+    require(action, "3: PATH_3", "PATH_3 not registered")
     require(action, "5: PATH_5", "PATH_5 not registered")
     require(action, "6: PATH_6", "PATH_6 not registered")
     require(action, "24: PATH_24", "PATH_24 not registered")
@@ -66,10 +68,15 @@ def main() -> int:
     require(action, "Chưa có planting path được xác minh", "Unknown planting count must fail-close")
 
     # Current-view Action owns recognition + batch swipe only. Navigation is a
-    # separate caller responsibility for new code.
+    # separate caller responsibility for new code. Step 3 adds the explicit
+    # harvest-6/replant-3 contract without changing default same-count callers.
     require(action, "def harvest_and_replant_current_view", "Current-view planting Action missing")
     require(action, "seed_template: str", "Crop template parameter missing")
     require(action, "count: int", "Planting count parameter missing")
+    require(action, "plant_count: int | None = None", "Split replant count support missing")
+    require(action, "harvest_requested = int(count)", "Harvest count ownership missing")
+    require(action, "plant_requested = (", "Plant count normalization missing")
+    require(action, "replant_path = self.path_for_count(plant_requested)", "Replant path must be independently verified")
     require(action, '"thu_hoach", threshold=0.80', "Ripe-tree proof missing")
     require(
         action,
@@ -92,7 +99,7 @@ def main() -> int:
     require(action, "threshold=0.87", "Seed recognition threshold changed")
     require(action, "self.vision.driver.swipe_points(", "BATCH_SWIPE planting primitive missing")
     require(action, "duration=self.speed_config.plant_harvest_duration", "Configured planting speed missing")
-    require(action, "plant_path = (match.center,) + tuple(selected_path[1:])", "Seed center does not replace reference start")
+    require(action, "plant_path = (match.center,) + tuple(replant_path[1:])", "Seed center does not replace verified replant start")
     require(action, "PlantingSegmentResult", "Planting evidence result missing")
     require(action, "raise ScreenTimeout(", "Fail-close planting guard missing")
 
@@ -123,7 +130,8 @@ def main() -> int:
 
     print("AUTO MAIN PLANTING STATIC CONTRACT VERIFIED")
     print("crops=rose+apple+snow+tea")
-    print("shared_paths=5,6,24,27,28,30")
+    print("shared_paths=3,5,6,24,27,28,30")
+    print("split_counts=harvest6-replant3-supported")
     print("picker_page_turn=arrow-template-proof+fail-close")
     print("action=current-view-recognize+harvest/replant")
     print("navigation=separate-semantic-action")
