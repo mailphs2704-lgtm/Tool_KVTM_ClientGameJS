@@ -13,8 +13,8 @@ __all__ = ["AppleJuiceProductionActions"]
 FILE_FUNCTIONS = (
     "Mở máy tầng 2 và xác minh đúng ảnh sản xuất Nước táo",
     "Dùng ProductionPanelActions cho panel/slot/kho đầy/sai máy dùng chung",
-    "Probe bounded candidate tầng 2 sau goDown(4), đủ cửa sổ click để panel Nước táo kịp mở nhưng vẫn chặn sai tầng",
-    "Thu VP bằng burst x5 liên tục cho tới khi ảnh Nước táo xuất hiện trong vùng thư viện panel",
+    "Probe bounded candidate tầng 2 dùng shared thu VP tối thiểu 4 burst x5 = 20 click trước khi xác minh panel",
+    "Thu VP bằng shared collector cho tới khi ảnh Nước táo xuất hiện trong vùng thư viện panel",
     "Ô trống chỉ là tín hiệu phụ, không được tự xác nhận panel đã mở",
     "Giữ nguyên panel cho tới khi đủ đúng 9/9 ô trống mới sản xuất lượt mới",
     "Mất ảnh sản phẩm tạm thời khi chờ không làm dừng AUTO",
@@ -36,11 +36,6 @@ class AppleJuiceProductionActions:
     VERIFY_RECHECKS = 4
     VERIFY_RECHECK_SECONDS = 0.18
 
-    DIRECT_FLOOR_PROBE_BURSTS = 2
-    DIRECT_FLOOR_PROBE_EXTRA_BURSTS = 2
-    DIRECT_FLOOR_PROBE_MAX_BURSTS = (
-        DIRECT_FLOOR_PROBE_BURSTS + DIRECT_FLOOR_PROBE_EXTRA_BURSTS
-    )
     DIRECT_FLOOR_PROBE_RECHECKS = 3
     DIRECT_FLOOR_PROBE_RECHECK_SECONDS = 0.18
 
@@ -64,72 +59,64 @@ class AppleJuiceProductionActions:
 
     def probe_floor_2_machine(self) -> bool:
         """Bounded proof that the fast goDown(4) landed at the Nước táo machine."""
-        click_count = 0
-        for burst in range(1, self.DIRECT_FLOOR_PROBE_MAX_BURSTS + 1):
+        click_count = self.slots.collect_vp_before_machine_panel(
+            machine_point=self.MACHINE_POINT,
+            label="Nước táo probe tầng 2",
+        )
+
+        for recheck in range(1, self.DIRECT_FLOOR_PROBE_RECHECKS + 1):
             self.context.ensure_running()
-            click_count += self.slots._send_collect_burst(
-                machine_point=self.MACHINE_POINT
-            )
-            self.context.log(
-                "AUTO Nước táo • probe candidate tầng 2 • "
-                f"burst={burst}/{self.DIRECT_FLOOR_PROBE_MAX_BURSTS} • "
-                f"tổng click={click_count}"
-            )
-            self.waiter.sleep(self.speed_config.vp_collect_delay)
-
-            for recheck in range(1, self.DIRECT_FLOOR_PROBE_RECHECKS + 1):
-                self.context.ensure_running()
-                frame = self.vision.frame()
-                warehouse_full, _empty_ready = self.slots._panel_state(frame=frame)
-                if warehouse_full:
-                    self.vision.driver.click(*self.CLOSE_POINT)
-                    self.waiter.sleep(0.25)
-                    self.context.log(
-                        "AUTO Nước táo • probe direct gặp full_kho • "
-                        "không dùng popup này để chứng minh tầng • chuyển fallback exact-main"
-                    )
-                    return False
-
-                product = self.slots._find_product_match(
-                    self.PRODUCT_TEMPLATE,
-                    threshold=0.70,
-                    frame=frame,
+            frame = self.vision.frame()
+            warehouse_full, _empty_ready = self.slots._panel_state(frame=frame)
+            if warehouse_full:
+                self.vision.driver.click(*self.CLOSE_POINT)
+                self.waiter.sleep(0.25)
+                self.context.log(
+                    "AUTO Nước táo • probe direct gặp full_kho • "
+                    "không dùng popup này để chứng minh tầng • chuyển fallback exact-main"
                 )
-                if product is not None:
-                    self.context.log(
-                        "AUTO Nước táo • direct floor 2 PASS • "
-                        f"đã thấy anchor {self.PRODUCT_TEMPLATE} trong panel • "
-                        f"center={product.center} • burst={burst} • recheck={recheck} • "
-                        f"tổng click={click_count}"
-                    )
-                    self.vision.driver.click(*self.CLOSE_POINT)
-                    self.waiter.sleep(0.25)
-                    return True
+                return False
 
-                wrong = self.slots._find_wrong_product_match(
-                    self.PRODUCT_TEMPLATE,
-                    threshold=0.70,
-                    frame=frame,
+            product = self.slots._find_product_match(
+                self.PRODUCT_TEMPLATE,
+                threshold=0.70,
+                frame=frame,
+            )
+            if product is not None:
+                self.context.log(
+                    "AUTO Nước táo • direct floor 2 PASS • "
+                    f"đã thấy anchor {self.PRODUCT_TEMPLATE} trong panel sau shared thu VP • "
+                    f"center={product.center} • recheck={recheck} • "
+                    f"tổng click={click_count}"
                 )
-                if wrong is not None:
-                    actual_template, actual_match = wrong
-                    self.vision.driver.click(*self.CLOSE_POINT)
-                    self.waiter.sleep(0.25)
-                    self.context.log(
-                        "AUTO Nước táo • probe candidate SAI MÁY/SAI TẦNG • "
-                        f"thấy={actual_template} tại {actual_match.center} • "
-                        f"dừng sớm ở burst={burst} thay vì click đủ probe • fallback exact-main"
-                    )
-                    return False
+                self.vision.driver.click(*self.CLOSE_POINT)
+                self.waiter.sleep(0.25)
+                return True
 
-                if recheck < self.DIRECT_FLOOR_PROBE_RECHECKS:
-                    self.waiter.sleep(self.DIRECT_FLOOR_PROBE_RECHECK_SECONDS)
+            wrong = self.slots._find_wrong_product_match(
+                self.PRODUCT_TEMPLATE,
+                threshold=0.70,
+                frame=frame,
+            )
+            if wrong is not None:
+                actual_template, actual_match = wrong
+                self.vision.driver.click(*self.CLOSE_POINT)
+                self.waiter.sleep(0.25)
+                self.context.log(
+                    "AUTO Nước táo • probe candidate SAI MÁY/SAI TẦNG • "
+                    f"thấy={actual_template} tại {actual_match.center} • "
+                    "đã hoàn tất shared collector >=20 click trước khi kết luận fallback exact-main"
+                )
+                return False
+
+            if recheck < self.DIRECT_FLOOR_PROBE_RECHECKS:
+                self.waiter.sleep(self.DIRECT_FLOOR_PROBE_RECHECK_SECONDS)
 
         self.vision.driver.click(*self.CLOSE_POINT)
         self.waiter.sleep(0.25)
         self.context.log(
             "AUTO Nước táo • direct floor 2 MISS • không thấy anchor nuoc_tao sau "
-            f"{self.DIRECT_FLOOR_PROBE_MAX_BURSTS} burst x5 ({click_count} click) • "
+            f"shared collector {click_count} click + {self.DIRECT_FLOOR_PROBE_RECHECKS} recheck • "
             "đóng panel và fallback exact-main"
         )
         return False
