@@ -16,10 +16,10 @@ __all__ = ["AutoMainResult", "AutoMainWorkflow"]
 class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
     """AUTO Main with optional Pirate Chest maintenance at safe boundaries.
 
-    The first Pirate Chest check is attached to the first completed sale. After
-    that, a 20-minute deadline only marks the maintenance as due; the click flow
-    itself runs from a post-Function safe boundary and never interrupts a
-    Function in progress.
+    The first Pirate Chest check is attached to the first completed sale. Only
+    OPENED starts a 20-minute deadline. COOLDOWN or any other non-OPENED result
+    retries after the next completed VP sale. Timed work still runs only from a
+    safe Function boundary and never interrupts a Function in progress.
 
     Pirate Chest is an overlay maintenance flow, while every production Function
     starts only from exact-main. The scheduler therefore owns an explicit public
@@ -43,7 +43,8 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self.context.log(
             "AUTO tùy chọn • Mở rương hải tặc="
             + ("BẬT" if self.pirate_chest_enabled else "TẮT")
-            + " • nguồn=auto-main-config.json • check đầu sau sale đầu • chu kỳ=20 phút"
+            + " • nguồn=auto-main-config.json • check đầu sau sale đầu"
+            + " • OPENED=20 phút • chưa mở=retry sau sale VP kế tiếp"
         )
 
     def _load_pirate_chest_enabled(self) -> bool:
