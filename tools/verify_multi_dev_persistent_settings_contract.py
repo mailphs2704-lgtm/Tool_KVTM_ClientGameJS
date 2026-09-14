@@ -408,6 +408,16 @@ def main() -> int:
     )
     require(
         pirate_chest_workflow,
+        "Reward type is intentionally irrelevant",
+        "Pirate Chest reward detection is not explicitly reward-type agnostic",
+    )
+    forbid(
+        pirate_chest_workflow,
+        "reward-coin-roi",
+        "Pirate Chest must not require a coin-specific reward detector",
+    )
+    require(
+        pirate_chest_workflow,
         'self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")',
         "Pirate Chest reward is not claimed by the single authorized tap",
     )
