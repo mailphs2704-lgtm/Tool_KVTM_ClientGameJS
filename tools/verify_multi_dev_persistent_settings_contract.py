@@ -335,6 +335,21 @@ def main() -> int:
         "SLOT_ZERO_POINT =",
         "Pirate Chest slot-0 coordinate is missing",
     )
+    require(
+        pirate_chest_workflow,
+        "self._panel_normal(frame) or self._open_prompt(frame)",
+        "Pirate Chest entry no longer accepts the persisted tap-to-open modal",
+    )
+    require(
+        pirate_chest_workflow,
+        "if self._open_prompt(entry_frame):",
+        "Pirate Chest persisted modal resume branch is missing",
+    )
+    require(
+        pirate_chest_workflow,
+        "bỏ qua chọn slot và MỞ NGAY",
+        "Pirate Chest persisted modal may replay slot selection or MỞ NGAY",
+    )
     for forbidden_slot in (
         "SLOT_ONE_POINT",
         "SLOT_TWO_POINT",
