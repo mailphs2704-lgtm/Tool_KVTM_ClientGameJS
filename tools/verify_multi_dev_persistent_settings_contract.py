@@ -485,6 +485,31 @@ def main() -> int:
     )
     require(
         pirate_chest_workflow,
+        "ANIMATION_SETTLE_SECONDS = 4.0",
+        "Pirate Chest no longer uses the operator-approved 3-5s animation window",
+    )
+    require(
+        pirate_chest_workflow,
+        "settle_state, _ = self._wait_open_prompt_animation()",
+        "Pirate Chest may tap the chest before its modal animation settles",
+    )
+    require(
+        pirate_chest_workflow,
+        "animation_seconds >= self.ANIMATION_SETTLE_SECONDS",
+        "Pirate Chest may claim reward before the reward animation settles",
+    )
+    require(
+        pirate_chest_workflow,
+        "def _close_panel_and_prove_main(",
+        "Pirate Chest does not prove MAIN after closing the returned panel",
+    )
+    require(
+        pirate_chest_workflow,
+        '"Pirate chest panel closed | proof=exact-main"',
+        "Pirate Chest panel-close MAIN proof log is missing",
+    )
+    require(
+        pirate_chest_workflow,
         "không dùng nút quay lại",
         "Pirate Chest reward timeout may incorrectly use the Back button",
     )
