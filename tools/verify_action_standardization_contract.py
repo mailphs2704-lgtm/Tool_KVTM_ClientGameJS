@@ -59,6 +59,20 @@ def main() -> int:
     ):
         require(planting, token, f"Shared planting contract missing: {token}")
 
+    # Every generic planting attempt must reopen the picker by clicking the
+    # first real pot in the selected path. After a RIPE harvest the old panel is
+    # gone, so a retry may not rely on the historical fixed picker coordinate.
+    for token in (
+        "first_pot_point = tuple(selected_path[1])",
+        "open_point=first_pot_point",
+        "đã click lại chậu đầu=",
+    ):
+        require(
+            planting,
+            token,
+            f"Planting retry does not reopen from the first pot: {token}",
+        )
+
     # Apple supply keeps crop-specific wait semantics but no longer owns duplicate
     # 30-pot/6-pot geometry or floor navigation.
     require(
@@ -165,7 +179,7 @@ def main() -> int:
     )
 
     print("AUTO ACTION STANDARDIZATION CONTRACT VERIFIED")
-    print("planting=shared-paths-5-6-27-28-30")
+    print("planting=shared-paths-5-6-27-28-30+retry-first-pot-click")
     print("apple-supply=shared-geometry+crop-wait-only")
     print("farm-routes=generic-canonical+function1-wrappers-only")
     print("vp-sale=neutral-transaction-action+five-view-module")
