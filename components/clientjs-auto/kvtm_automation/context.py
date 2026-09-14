@@ -52,6 +52,11 @@ class AutomationContext:
     started_at: float = field(default_factory=time.time)
     camera_exact_main_proven: bool = field(default=False, init=False, repr=False)
     camera_main_boundary_streak: int = field(default=0, init=False, repr=False)
+    pirate_chest_opened_at_monotonic: float | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         self.pid = int(self.pid)
@@ -137,6 +142,16 @@ class AutomationContext:
             f"exact_main={str(self.camera_exact_main_proven).lower()}"
         )
         return bool(self.camera_exact_main_proven)
+
+    def mark_pirate_chest_opened(self) -> float:
+        """Record one proven open after reward modal close + center chest return."""
+        opened_at = time.monotonic()
+        self.pirate_chest_opened_at_monotonic = opened_at
+        self.detail(
+            "AUTO rương hải tặc | OPENED evidence stored | "
+            "reward_modal_closed=true | center_chest_visible=true"
+        )
+        return opened_at
 
     def ensure_running(self) -> None:
         if self.stop_event.is_set():
