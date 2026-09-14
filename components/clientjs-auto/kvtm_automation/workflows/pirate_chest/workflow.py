@@ -61,7 +61,9 @@ class PirateChestWorkflow:
     SLOT_ZERO_POINT = (263, 632)
     OPEN_NOW_POINT = (500, 558)
     CHEST_CENTER_POINT = (500, 580)
-    REWARD_CLAIM_POINT = (500, 610)
+    # Empty hitbox immediately below “Chạm để nhận quà”; the chest/reward art
+    # itself does not dismiss the reward presentation.
+    REWARD_CLAIM_POINT = (500, 715)
     PANEL_CLOSE_POINT = (840, 305)
     STORAGE_MODAL_CLOSE_POINT = (718, 392)
     REWARD_BACK_POINT = (30, 28)
@@ -71,6 +73,9 @@ class PirateChestWorkflow:
     COOLDOWN_ZONE = (448, 548, 104, 22)
     STORAGE_GREEN_ZONE = (300, 405, 400, 190)
     OPEN_PROMPT_CHEST_ZONE = (395, 500, 210, 170)
+    CENTER_CHEST_ZONE = (420, 400, 165, 130)
+    CENTER_CHEST_HIDDEN_CHANGE = 12.0
+    CENTER_CHEST_RETURN_MAX_CHANGE = 42.0
 
     POLL_SECONDS = 0.12
     ENTER_TIMEOUT_SECONDS = 4.0
@@ -192,6 +197,30 @@ class PirateChestWorkflow:
             return 0.0
         return float(abs(after.astype("int16") - before.astype("int16")).mean())
 
+    def _center_chest_change(self, reference_frame, frame) -> float:
+        reference = self._crop(reference_frame, self.CENTER_CHEST_ZONE)
+        current = self._crop(frame, self.CENTER_CHEST_ZONE)
+        return self._frame_change_score(reference, current)
+
+    def _center_chest_hidden(self, reference_frame, frame) -> bool:
+        return (
+            self._open_prompt(frame)
+            and self._center_chest_change(reference_frame, frame)
+            >= self.CENTER_CHEST_HIDDEN_CHANGE
+        )
+
+    def _center_chest_returned(self, reference_frame, frame) -> bool:
+        if not self._panel_normal(frame):
+            return False
+        if reference_frame is None:
+            # Persisted tap-to-open entry has no normal-panel reference. The
+            # panel header is the only safe return proof available in this path.
+            return True
+        return (
+            self._center_chest_change(reference_frame, frame)
+            <= self.CENTER_CHEST_RETURN_MAX_CHANGE
+        )
+
     def _wait_for_reward_claimable(self, open_prompt_frame) -> tuple[str, object | None]:
         """Prove any random reward by the completed screen transition.
 
@@ -287,17 +316,14 @@ class PirateChestWorkflow:
         self.driver.click(*self.PANEL_CLOSE_POINT)
         self.auto.wait.sleep(0.20)
 
-    def _back_out_of_unclassified_chest_overlay(self, *, reason: str) -> None:
-        """One safe back action; scheduler owns the later friend-house reset."""
-        self.context.stage("pirate-chest-safe-abort-back")
+    def _fail_close_reward_overlay(self, *, reason: str) -> None:
+        """Do not click Back: only a completed claim can dismiss this modal."""
+        self.context.stage("pirate-chest-safe-abort-reward-overlay")
         self.context.log(
-            "AUTO rương hải tặc • trạng thái overlay không xác định • "
-            "thoát UI một lần trước recovery qua nhà bạn • "
+            "AUTO rương hải tặc • reward overlay chưa hoàn tất • "
+            "fail-close, không dùng nút quay lại và không giao MAIN ảo • "
             f"reason={reason}"
         )
-        self.driver.click(*self.REWARD_BACK_POINT)
-        self.auto.wait.sleep(0.25)
-        self._close_panel_if_visible()
 
     def _exit_after_storage_full(self) -> None:
         """Close the generic overload modal and leave Pirate Chest best-effort."""
@@ -386,6 +412,7 @@ class PirateChestWorkflow:
         # therefore reopen directly at "Chạm để mở rương" without showing the
         # normal slot panel. This is a valid resumable state: never click slot 0
         # or MỞ NGAY again, because that could target a different/paid chest.
+        center_chest_reference = None
         if self._open_prompt(entry_frame):
             self.context.log(
                 "AUTO rương hải tặc • entry vào modal rương đang chờ mở • "
@@ -427,11 +454,14 @@ class PirateChestWorkflow:
                     "slot-0-unclassified",
                 )
 
+            center_chest_reference = frame.copy()
             self._tap(self.OPEN_NOW_POINT, "pirate-chest-open-now-slot-0")
             transition, _ = self._wait_for(
-                self._open_prompt,
+                lambda current: self._center_chest_hidden(
+                    center_chest_reference, current
+                ),
                 timeout=self.TRANSITION_TIMEOUT_SECONDS,
-                label="tap-to-open",
+                label="tap-to-open-center-chest-hidden",
                 storage_interrupt=True,
             )
             if transition == "STORAGE_FULL":
@@ -460,7 +490,7 @@ class PirateChestWorkflow:
                 "storage-full-before-claim",
             )
         if reward_state != "PASS":
-            self._back_out_of_unclassified_chest_overlay(reason="reward-timeout")
+            self._fail_close_reward_overlay(reason="reward-timeout")
             return self._result(
                 PirateChestStatus.SAFE_ABORT,
                 started,
@@ -471,9 +501,11 @@ class PirateChestWorkflow:
         # Never retry this action because the reward may already be credited.
         self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")
         final_state, final_frame = self._wait_for(
-            self._panel_normal,
+            lambda current: self._center_chest_returned(
+                center_chest_reference, current
+            ),
             timeout=self.RETURN_TIMEOUT_SECONDS,
-            label="panel-after-reward-claim",
+            label="panel-after-reward-claim-center-chest-returned",
             storage_interrupt=True,
         )
         if final_state == "STORAGE_FULL":
@@ -488,11 +520,10 @@ class PirateChestWorkflow:
                 "storage-full-on-claim",
             )
         if final_state != "PASS":
-            # Never hand an unclassified reward/panel overlay to the next
-            # Function. Exit once; the scheduler then owns the error-only
-            # friend-house scene reset and exact-main proof.
-            self._back_out_of_unclassified_chest_overlay(
-                reason="cooldown-confirm-timeout"
+            # Back cannot dismiss the reward modal. Fail closed without
+            # another click; the next Function must not receive a false MAIN.
+            self._fail_close_reward_overlay(
+                reason="center-chest-return-timeout"
             )
             return self._result(
                 PirateChestStatus.SAFE_ABORT,
