@@ -11,6 +11,7 @@ from .actions import (
     AutoVpRecognitionActions,
     BuyingActions,
     CottonPlantingActions,
+    DriedTeaProductionActions,
     FarmBoundaryRouteActions,
     FarmRouteActions,
     FloorNavigationActions,
@@ -245,6 +246,9 @@ class KVAutomation:
             context, self.vision, self.wait, self.speed_config
         )
         self.yellow_fabric_production = YellowFabricProductionActions(
+            context, self.vision, self.wait, self.speed_config
+        )
+        self.dried_tea_production = DriedTeaProductionActions(
             context, self.vision, self.wait, self.speed_config
         )
         self.rose_oil_production = RoseOilProductionActions(
