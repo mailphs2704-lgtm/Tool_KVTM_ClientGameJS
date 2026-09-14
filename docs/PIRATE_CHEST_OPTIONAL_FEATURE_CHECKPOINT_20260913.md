@@ -149,3 +149,26 @@ Sau build sạch, mở Multi DEV và kiểm tra theo thứ tự:
 8. Đến 20 phút giữa Function: không được chen ngang; chỉ chạy sau Function PASS.
 
 Không gọi RUNTIME PASS trước bằng chứng live từ operator.
+
+
+## 10. Live evidence: nhận quà bằng vùng trống và trạng thái rương giữa
+
+Hai ảnh operator cung cấp xác nhận reward presentation là modal phủ lên panel
+Kho Báu Hải Tặc. Quà là ngẫu nhiên nên không được phụ thuộc màu/ảnh đồng xu.
+
+Hợp đồng mới:
+
+- trước `MỞ NGAY`, lưu fresh frame của panel và vùng rương giữa;
+- chỉ công nhận modal mở khi vùng rương giữa biến mất/thay đổi đủ lớn;
+- sau khi quà xuất hiện, chạm đúng một lần tại logical `(500, 715)`, vùng trống
+  ngay dưới dòng `Chạm để nhận quà`; không chạm rương hoặc vật phẩm;
+- không dùng nút quay lại để thoát reward modal;
+- chỉ công nhận nhận quà xong khi panel thường quay lại và vùng rương giữa xuất
+  hiện lại; lúc đó mới bấm X đóng panel về MAIN;
+- nhánh vào thẳng persisted modal không có reference panel ban đầu, nên dùng
+  panel header làm return proof an toàn;
+- nếu modal không hoàn tất thì `SAFE_ABORT`, không báo MAIN giả và không retry
+  thao tác nhận quà.
+
+Commits: `613e24b`, `49e4bbd`, `b4230d92`, `1c17ca3`.
+Source AST PASS; Windows build/live vẫn PENDING.
