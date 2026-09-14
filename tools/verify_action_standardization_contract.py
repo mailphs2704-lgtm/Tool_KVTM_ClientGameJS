@@ -65,6 +65,8 @@ def main() -> int:
     for token in (
         "first_pot_point = tuple(selected_path[1])",
         "open_point=first_pot_point",
+        "never require an artificial attempt 7",
+        "sau thu hoạch đã click chậu trống đầu",
         "đã click lại chậu đầu=",
     ):
         require(
