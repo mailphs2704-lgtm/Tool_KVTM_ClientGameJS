@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from ..recovery import RecoveryManager
 from .apple_juice import AppleJuiceRecipe
 from .dried_apple import DriedAppleRecipe
+from .dried_tea_step_one import DriedTeaStepOneRecipe
 from .rose_oil import RoseOilRecipe
 from .yellow_fabric import YellowFabricRecipe
 
@@ -58,6 +59,12 @@ class RecipeBook:
         self.rose_oil: RoseOilRecipe | None = None
         if self.function_id == "function_2":
             self.rose_oil = RoseOilRecipe(
+                automation,
+                recovery=self.recovery,
+            )
+        self.dried_tea_step_one: DriedTeaStepOneRecipe | None = None
+        if self.function_id == "function_3":
+            self.dried_tea_step_one = DriedTeaStepOneRecipe(
                 automation,
                 recovery=self.recovery,
             )
