@@ -7,7 +7,8 @@ from .production_panel import ProductionPanelActions
 
 __all__ = ["DriedTeaProductionActions"]
 FILE_FUNCTIONS = (
-    "Thu VP và mở máy Trà sấy tại tầng 1 bằng điểm máy dùng chung",
+    "Thu VP và mở máy Trà sấy tại tầng 1 bằng shared collector tối thiểu 20 click",
+    "Chỉ được chuyển trang tìm Trà sấy sau khi đã chứng minh panel sản xuất đang mở",
     "Tìm ảnh Trà sấy; nếu chưa thấy thì click đúng một lần nút trang phải rồi quét frame mới",
     "Lặp chuyển trang có stop-check cho tới khi tìm đúng Trà sấy",
     "Dùng ProductionPanelActions cho kho đầy, ô trống và hậu kiểm số lượng",
@@ -33,16 +34,55 @@ class DriedTeaProductionActions(ProductionPanelActions):
         self.vision.driver.click(*self.CLOSE_POINT)
 
     def _open_and_find_product(self) -> tuple[int, tuple[int, int], tuple[int, int]]:
-        """Open once, then turn exactly one page per miss until tra_say is found."""
-        click_count = self._send_collect_burst(machine_point=self.MACHINE_POINT)
-        self.context.log(
-            "AUTO Trà sấy • thu VP/mở máy bằng burst x5 tại cùng tọa độ • "
-            f"tổng click={click_count}"
-        )
-        self.waiter.sleep(self.speed_config.vp_collect_delay)
+        """Collect first, prove the production panel, then page until tra_say appears."""
+        click_count = 0
+        open_round = 0
+        product = None
+
+        # Do not touch the page arrow while the machine panel is not proven open.
+        # A product match or the shared empty-slot anchor is valid panel evidence.
+        while True:
+            self.context.ensure_running()
+            open_round += 1
+            click_count += self.collect_vp_before_machine_panel(
+                machine_point=self.MACHINE_POINT,
+                label="Trà sấy",
+            )
+
+            frame = self.vision.frame()
+            warehouse_full, empty_ready = self._panel_state(frame=frame)
+            if warehouse_full:
+                self._raise_inventory_full("Trà sấy")
+
+            product = self._find_product_match(
+                self.PRODUCT_TEMPLATE,
+                threshold=0.70,
+                frame=frame,
+            )
+            if product is not None:
+                self.context.log(
+                    "AUTO Trà sấy • panel SX VERIFIED bằng product anchor ngay trang hiện tại • "
+                    f"open_round={open_round} • tổng click={click_count} • center={product.center}"
+                )
+                break
+
+            if empty_ready:
+                self.context.log(
+                    "AUTO Trà sấy • panel SX VERIFIED bằng empty-slot anchor • "
+                    f"open_round={open_round} • tổng click={click_count} • "
+                    "được phép bắt đầu chuyển trang"
+                )
+                break
+
+            self.context.log(
+                "AUTO Trà sấy • CHƯA chứng minh panel SX đang mở • "
+                "KHÔNG click mũi tên trang • lặp shared thu VP tối thiểu 20 click • "
+                f"open_round={open_round} • tổng click={click_count}"
+            )
 
         page_turns = 0
-        while True:
+        missing_panel_rounds = 0
+        while product is None:
             self.context.ensure_running()
             frame = self.vision.frame()
             warehouse_full, empty_ready = self._panel_state(frame=frame)
@@ -62,10 +102,24 @@ class DriedTeaProductionActions(ProductionPanelActions):
                 )
                 break
 
+            # The page arrow is never clicked on an unknown screen. If the panel
+            # anchor temporarily disappears, keep rechecking with stop support.
+            if not empty_ready:
+                missing_panel_rounds += 1
+                if missing_panel_rounds == 1 or missing_panel_rounds % 10 == 0:
+                    self.context.log(
+                        "AUTO Trà sấy • mất panel-open anchor khi đang tìm template • "
+                        "KHÔNG chuyển trang • chờ/recheck • "
+                        f"miss={missing_panel_rounds}"
+                    )
+                self.waiter.sleep(self.PAGE_SETTLE_SECONDS)
+                continue
+
+            missing_panel_rounds = 0
             self.context.log(
-                "AUTO Trà sấy • chưa thấy template • click mũi tên phải đúng 1 lần "
-                f"tại {self.PAGE_NEXT_POINT} • page_turn={page_turns + 1} • "
-                f"empty_anchor={'có' if empty_ready else 'chưa thấy'}"
+                "AUTO Trà sấy • panel SX đang mở VERIFIED • chưa thấy template • "
+                "click mũi tên phải đúng 1 lần "
+                f"tại {self.PAGE_NEXT_POINT} • page_turn={page_turns + 1}"
             )
             self.vision.driver.click(*self.PAGE_NEXT_POINT)
             page_turns += 1
@@ -78,7 +132,8 @@ class DriedTeaProductionActions(ProductionPanelActions):
         )
         self.context.log(
             "AUTO Trà sấy • panel READY • "
-            f"page_turns={page_turns} • đường kéo={product_point} → {top_point}"
+            f"page_turns={page_turns} • tổng click thu VP={click_count} • "
+            f"đường kéo={product_point} → {top_point}"
         )
         return empty, product_point, top_point
 
