@@ -239,8 +239,15 @@ def main() -> int:
     forbid(runner, "for segment in points", "Runtime must not split one Builder Swipe into independent swipes")
     require(runner, "segments={len(points) - 1}", "Runtime multi-segment Swipe diagnostic missing")
 
-    require(worker, 'choices=("main", "floor-demo", "builder")',
-            "Isolated worker Builder mode missing")
+    require(worker, 'choices=("main", "function-3-step-1", "builder")',
+            "Isolated worker Builder/Function-3-Step-1 modes missing")
+    require(worker, 'if effective_mode == "function-3-step-1":',
+            "Function 3 Step 1 isolated worker branch missing")
+    require(worker, "FunctionThreeWorkflow(automation).run_step_1()",
+            "Function 3 test mode must call Step 1 only")
+    require(worker, 'outcome="function_3_step_1_finished"',
+            "Function 3 Step 1 terminal event missing")
+    forbid(worker, "floor-demo", "Removed floor-demo mode returned")
     require(worker, 'marker = Path(args.work_dir).resolve() / "auto-builder-plan.json"',
             "Per-run Builder plan marker missing")
     require(worker, 'if effective_mode == "builder":', "Builder worker branch missing")
