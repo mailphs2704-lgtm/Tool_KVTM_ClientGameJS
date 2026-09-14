@@ -107,7 +107,12 @@ class GameSessionWorkflow:
         self._resume_pirate_chest_if_visible(
             require_exact_main_after_close=False
         )
-        self.auto.ensure_main_screen(timeout=float(timeout))
+        self.auto.ensure_main_screen(
+            timeout=float(timeout),
+            before_dismiss=lambda: self._resume_pirate_chest_if_visible(
+                require_exact_main_after_close=False
+            ),
+        )
         self.context.ensure_running()
 
         # User-approved invariant: after a fresh login/restart the game camera is
