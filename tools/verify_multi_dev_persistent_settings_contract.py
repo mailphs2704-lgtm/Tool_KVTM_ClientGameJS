@@ -394,6 +394,36 @@ def main() -> int:
         "Pirate Chest cooldown branch missing",
     )
 
+    # Reward presentation must be claimed exactly once, then the normal chest
+    # panel must be proven before its close button can return the client to MAIN.
+    require(
+        pirate_chest_workflow,
+        "def _wait_for_reward_claimable(",
+        "Pirate Chest no longer waits for a claimable reward presentation",
+    )
+    require(
+        pirate_chest_workflow,
+        "proof=stable-screen-transition",
+        "Pirate Chest reward detection lost its stable-transition fallback",
+    )
+    require(
+        pirate_chest_workflow,
+        'self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")',
+        "Pirate Chest reward is not claimed by the single authorized tap",
+    )
+    if pirate_chest_workflow.count("pirate-chest-claim-reward-once") != 1:
+        raise AssertionError("Pirate Chest reward claim may be retried or duplicated")
+    require(
+        pirate_chest_workflow,
+        'label="panel-after-reward-claim"',
+        "Pirate Chest does not prove the normal panel after reward claim",
+    )
+    require(
+        pirate_chest_workflow,
+        "self._close_panel_if_visible()",
+        "Pirate Chest does not close the proven panel after reward claim",
+    )
+
     # Daily VP sale-turn counter. One successfully posted x10 listing equals one
     # game sale turn: a workflow result sold_listings=N must add exactly +N.
     require(
