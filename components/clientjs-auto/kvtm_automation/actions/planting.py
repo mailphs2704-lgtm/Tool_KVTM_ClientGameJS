@@ -12,7 +12,7 @@ from ..runtime.wait import Waiter
 __all__ = ["PlantingActions", "PlantingSegmentResult"]
 FILE_FUNCTIONS = (
     "Sở hữu geometry/path trồng và thu hoạch dùng chung, không sở hữu Function choreography",
-    "Cung cấp path chuẩn 3/5/6/24/27/28/30 chậu ở logical 1000x1000",
+    "Cung cấp path chuẩn 3/5/6/15/24/27/28/30 chậu ở logical 1000x1000",
     "Nhận diện trạng thái chậu RIPE/EMPTY theo crop template",
     "Tìm seed động theo template qua các trang picker; không dùng tọa độ tuyệt đối của seed",
     "Chỉ chuyển trang tìm seed sau khi template mũi tên chứng minh bảng gieo đang mở",
@@ -55,6 +55,12 @@ class PlantingActions:
     PATH_3 = (
         START_POINT,
         (335, 940), (578, 940),
+    )
+    PATH_15 = (
+        START_POINT,
+        (335, 940), (835, 940),
+        (835, 725), (335, 725),
+        (335, 505), (578, 505),
     )
     PATH_24 = (
         START_POINT,
@@ -102,6 +108,7 @@ class PlantingActions:
         3: PATH_3,
         5: PATH_5,
         6: PATH_6,
+        15: PATH_15,
         24: PATH_24,
         27: PATH_27,
         28: PATH_28,
