@@ -239,14 +239,19 @@ def main() -> int:
     forbid(runner, "for segment in points", "Runtime must not split one Builder Swipe into independent swipes")
     require(runner, "segments={len(points) - 1}", "Runtime multi-segment Swipe diagnostic missing")
 
+    # The existing DEV button/mode name is retained for UI compatibility, but
+    # its runtime contract now live-gates the complete currently-defined prefix:
+    # exact MAIN -> Step 1 -> Step 2 -> floor 2.
     require(worker, 'choices=("main", "function-3-step-1", "builder")',
-            "Isolated worker Builder/Function-3-Step-1 modes missing")
+            "Isolated worker Builder/Function-3 DEV test modes missing")
     require(worker, 'if effective_mode == "function-3-step-1":',
-            "Function 3 Step 1 isolated worker branch missing")
-    require(worker, "FunctionThreeWorkflow(automation).run_step_1()",
-            "Function 3 test mode must call Step 1 only")
+            "Function 3 cumulative DEV worker branch missing")
+    require(worker, "FunctionThreeWorkflow(automation).run_steps_1_and_2()",
+            "Function 3 DEV test mode must run Step 1 then Step 2 cumulatively")
+    require(worker, "Function 3 Step 1 → Step 2",
+            "Function 3 cumulative DEV audit log missing")
     require(worker, 'outcome="function_3_step_1_finished"',
-            "Function 3 Step 1 terminal event missing")
+            "Function 3 compatibility terminal event missing")
     forbid(worker, "floor-demo", "Removed floor-demo mode returned")
     require(worker, 'marker = Path(args.work_dir).resolve() / "auto-builder-plan.json"',
             "Per-run Builder plan marker missing")
@@ -311,6 +316,7 @@ def main() -> int:
     print("swipe_runtime=one-native-swipe-points-batch")
     print("image_library=multi-dev-primary-auto-pro-import-only")
     print("runtime=isolated-worker-v3-same-lifecycle")
+    print("function3_dev_test=legacy-mode-name+cumulative-step1-step2")
     print("clear_stall=untouched")
     return 0
 
