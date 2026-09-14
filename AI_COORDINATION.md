@@ -588,3 +588,14 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Chỉ giữ sửa hẹp: nếu RIPE xuất hiện ở lần 6, sau thu hoạch gọi lại chính Action scan bằng hitbox chuẩn ngay trong cùng lần để còn gieo, không cần lần 7.
 - Verifier khóa không cho `open_point=first_pot_point` quay lại.
 - Static source review: PASS. Windows build/live: CHƯA PASS; cần `KVTM_DEV_CONTROL.bat -> [1]` và log có `đã click lại điểm mở chuẩn=(388, 946)`.
+
+
+## 2026-09-14 — Chuẩn bị asset Function 3 từ AUTO PRO
+
+- Phạm vi hiện tại chỉ chuyển template, chưa triển khai choreography Function 3.
+- Đã sao chép nguyên blob từ `source-archive/auto-pro-reference/assets/items` sang `components/clientjs-auto/assets/items`:
+  - `nuoc_hoa_hong.png` và `kho_nuoc_hoa_hong.png`
+  - `tra_da.png` và `kho_tra_da.png`
+- SHA blob nguồn/đích trùng tuyệt đối; không chỉnh sửa/cắt lại ảnh.
+- `vai_vang.png` và `kho_vai_vang.png` đã tồn tại nên không thay thế.
+- Chờ operator mô tả quy trình từng bước trước khi nối Function 3 vào runtime Multi DEV.
