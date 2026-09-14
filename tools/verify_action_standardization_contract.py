@@ -63,21 +63,27 @@ def main() -> int:
     ):
         require(planting, token, f"Shared planting contract missing: {token}")
 
-    # Every generic planting attempt must reopen the picker by clicking the
-    # first real pot in the selected path. After a RIPE harvest the old panel is
-    # gone, so a retry may not rely on the historical fixed picker coordinate.
+    # Every generic planting attempt must reopen the picker through the
+    # operator-verified click hitbox. The path's first point is drag geometry,
+    # not a valid replacement click point. RIPE on attempt 6 must still reopen
+    # and plant inside that same attempt.
     for token in (
-        "first_pot_point = tuple(selected_path[1])",
-        "open_point=first_pot_point",
+        "self.vision.driver.click(*self.OPEN_PLANT_POINT)",
+        "selected_path[1] is only a drag waypoint",
         "never require an artificial attempt 7",
-        "sau thu hoạch đã click chậu trống đầu",
-        "đã click lại chậu đầu=",
+        "sau thu hoạch đã mở lại bảng gieo",
+        "đã click lại điểm mở chuẩn=",
     ):
         require(
             planting,
             token,
-            f"Planting retry does not reopen from the first pot: {token}",
+            f"Planting picker contract missing: {token}",
         )
+    forbid(
+        planting,
+        "open_point=first_pot_point",
+        "Planting retry regressed to using a drag waypoint as click hitbox",
+    )
 
     # Runtime ownership/call chain must stay:
     # RoseOilRecipe -> KVAutomation.planting -> shared PlantingActions method.
@@ -207,7 +213,7 @@ def main() -> int:
     )
 
     print("AUTO ACTION STANDARDIZATION CONTRACT VERIFIED")
-    print("planting=shared-paths-5-6-27-28-30+retry-first-pot-click")
+    print("planting=shared-paths-5-6-27-28-30+verified-picker-click+same-attempt-replant")
     print("apple-supply=shared-geometry+crop-wait-only")
     print("farm-routes=generic-canonical+function1-wrappers-only")
     print("vp-sale=neutral-transaction-action+five-view-module")
