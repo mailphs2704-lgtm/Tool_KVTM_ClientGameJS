@@ -181,9 +181,19 @@ class PlantingActions:
     def _count_changed_pots(self, before, after) -> int:
         return self._count_changed_pots_27(before, after)
 
-    def _scan_first_pot_state(self, seed_template: str) -> tuple[str, object | None]:
+    def _scan_first_pot_state(
+        self,
+        seed_template: str,
+        *,
+        open_point: tuple[int, int] | None = None,
+    ) -> tuple[str, object | None]:
         self.context.ensure_running()
-        self.vision.driver.click(*self.OPEN_PLANT_POINT)
+        point = tuple(open_point or self.OPEN_PLANT_POINT)
+        self.vision.driver.click(*point)
+        self.context.detail(
+            "AUTO planting open picker | "
+            f"seed={seed_template} | first_pot={point}"
+        )
         self.waiter.sleep(0.45)
         frame = self.vision.frame()
         harvest = self.vision.find(
@@ -225,10 +235,21 @@ class PlantingActions:
         label = str(segment_label or f"{item_label} x{requested}")
         attempts_limit = max(1, int(max_attempts))
         harvested = 0
+        if len(selected_path) < 2:
+            raise ValueError(
+                f"Planting path {label} thiếu tọa độ chậu đầu tiên; fail-close"
+            )
+        first_pot_point = tuple(selected_path[1])
 
         for attempt in range(1, attempts_limit + 1):
             self.context.ensure_running()
-            state, match = self._scan_first_pot_state(seed_template)
+            # Every attempt must reopen the seed/harvest picker from the first
+            # pot. This is especially required immediately after a RIPE harvest:
+            # the previous panel is gone and merely scanning cannot expose seeds.
+            state, match = self._scan_first_pot_state(
+                seed_template,
+                open_point=first_pot_point,
+            )
 
             if state == "RIPE" and match is not None:
                 self.context.log(
@@ -268,7 +289,8 @@ class PlantingActions:
 
             self.context.log(
                 f"AUTO trồng • {label} • chưa chứng minh RIPE/EMPTY "
-                f"lần {attempt}/{attempts_limit}"
+                f"lần {attempt}/{attempts_limit} • "
+                f"đã click lại chậu đầu={first_pot_point}"
             )
             self.vision.driver.click(*self.CLOSE_POINT)
             self.waiter.sleep(0.30)
