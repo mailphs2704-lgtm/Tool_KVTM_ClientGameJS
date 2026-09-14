@@ -11,8 +11,10 @@ __all__ = [
     "FunctionThreeStepOneResult",
     "FunctionThreeStepTwoResult",
     "FunctionThreeStepThreeResult",
+    "FunctionThreeStepFourResult",
     "FunctionThreeStepsOneTwoResult",
     "FunctionThreeStepsOneTwoThreeResult",
+    "FunctionThreeStepsOneTwoThreeFourResult",
     "FunctionThreeWorkflow",
 ]
 
@@ -64,6 +66,22 @@ class FunctionThreeStepThreeResult:
 
 
 @dataclass(frozen=True)
+class FunctionThreeStepFourResult:
+    profile_id: str
+    roses_floor_1_planted: int
+    roses_floor_6_planted: int
+    roses_harvested: int
+    rose_oils: int
+    progress_steps: int
+    total_steps: int
+    end_floor: int
+    elapsed_seconds: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class FunctionThreeStepsOneTwoResult:
     profile_id: str
     apples_floor_1_to_5: int
@@ -103,16 +121,42 @@ class FunctionThreeStepsOneTwoThreeResult:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class FunctionThreeStepsOneTwoThreeFourResult:
+    profile_id: str
+    apples_floor_1_to_5: int
+    apples_floor_6: int
+    dried_teas: int
+    harvested_teas: int
+    planted_teas: int
+    apple_juices: int
+    harvested_tea_bottom_row: int
+    planted_tea_bottom_row: int
+    cotton_planted: int
+    yellow_fabrics: int
+    roses_floor_1_planted: int
+    roses_floor_6_planted: int
+    roses_harvested: int
+    rose_oils: int
+    progress_steps: int
+    total_steps: int
+    end_floor: int
+    elapsed_seconds: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 class FunctionThreeWorkflow:
     """Function 3 owner with one shared RecipeBook and RecoveryManager.
 
-    Steps 1-3 are operator-defined. Step 1 and Step 2 retain their isolated
-    boundaries for diagnostics. Step 3 starts from the live-PASS Step 2 floor-2
-    boundary and ends on floor 1. Full AUTO Main wiring stays fail-closed until
-    the operator finishes defining the remaining Function 3 work.
+    Steps 1-4 are operator-defined. Step 1-3 retain isolated boundaries for
+    diagnostics. Step 4 starts from the Step 3 floor-1 boundary and returns to
+    floor 1. Full AUTO Main wiring stays fail-closed until the operator finishes
+    defining the remaining Function 3 work.
     """
 
-    TOTAL_DEFINED_STEPS = 3
+    TOTAL_DEFINED_STEPS = 4
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
@@ -125,12 +169,15 @@ class FunctionThreeWorkflow:
         self.step_one = self.recipes.dried_tea_step_one
         self.step_two = self.recipes.dried_tea_step_two
         self.step_three = self.recipes.dried_tea_step_three
+        self.step_four = self.recipes.dried_tea_step_four
         if self.step_one is None:
             raise RuntimeError("Function 3 RecipeBook thiếu DriedTeaStepOneRecipe")
         if self.step_two is None:
             raise RuntimeError("Function 3 RecipeBook thiếu DriedTeaStepTwoRecipe")
         if self.step_three is None:
             raise RuntimeError("Function 3 RecipeBook thiếu DriedTeaStepThreeRecipe")
+        if self.step_four is None:
+            raise RuntimeError("Function 3 RecipeBook thiếu DriedTeaStepFourRecipe")
 
     def run_step_1(self) -> FunctionThreeStepOneResult:
         started = time.monotonic()
@@ -177,6 +224,22 @@ class FunctionThreeWorkflow:
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
 
+    def run_step_4_from_floor_1(self) -> FunctionThreeStepFourResult:
+        """Run only Step 4 when the caller already owns the Step 3 end state."""
+        started = time.monotonic()
+        result = self.step_four.run_from_floor_1()
+        return FunctionThreeStepFourResult(
+            profile_id=self.context.profile_id,
+            roses_floor_1_planted=int(result.roses_floor_1_planted),
+            roses_floor_6_planted=int(result.roses_floor_6_planted),
+            roses_harvested=int(result.roses_harvested),
+            rose_oils=int(result.rose_oils),
+            progress_steps=4,
+            total_steps=self.TOTAL_DEFINED_STEPS,
+            end_floor=1,
+            elapsed_seconds=round(time.monotonic() - started, 3),
+        )
+
     def run_steps_1_and_2(self) -> FunctionThreeStepsOneTwoResult:
         """Run the already-live-PASS Step 1-2 prefix from exact MAIN."""
         started = time.monotonic()
@@ -196,13 +259,14 @@ class FunctionThreeWorkflow:
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
 
-    def run_steps_1_2_and_3(self) -> FunctionThreeStepsOneTwoThreeResult:
+    def run_steps_1_2_3_and_4(self) -> FunctionThreeStepsOneTwoThreeFourResult:
         """Run the complete currently-defined Function 3 prefix from exact MAIN."""
         started = time.monotonic()
         step_one = self.step_one.run_from_main()
         step_two = self.step_two.run_from_floor_1()
         step_three = self.step_three.run_from_floor_2()
-        return FunctionThreeStepsOneTwoThreeResult(
+        step_four = self.step_four.run_from_floor_1()
+        return FunctionThreeStepsOneTwoThreeFourResult(
             profile_id=self.context.profile_id,
             apples_floor_1_to_5=int(step_one.replanted_five_floors),
             apples_floor_6=int(step_one.replanted_floor_6),
@@ -214,14 +278,22 @@ class FunctionThreeWorkflow:
             planted_tea_bottom_row=int(step_three.planted_tea_bottom_row),
             cotton_planted=int(step_three.cotton_planted),
             yellow_fabrics=int(step_three.yellow_fabrics),
-            progress_steps=3,
+            roses_floor_1_planted=int(step_four.roses_floor_1_planted),
+            roses_floor_6_planted=int(step_four.roses_floor_6_planted),
+            roses_harvested=int(step_four.roses_harvested),
+            rose_oils=int(step_four.rose_oils),
+            progress_steps=4,
             total_steps=self.TOTAL_DEFINED_STEPS,
             end_floor=1,
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
 
+    def run_steps_1_2_and_3(self) -> FunctionThreeStepsOneTwoThreeFourResult:
+        """Compatibility DEV gate: historical name now runs Step 1→2→3→4."""
+        return self.run_steps_1_2_3_and_4()
+
     def run(self):
         raise RuntimeError(
-            "Function 3 chưa được nối vào AUTO chính: Step 1-3 đã được định nghĩa; "
+            "Function 3 chưa được nối vào AUTO chính: Step 1-4 đã được định nghĩa; "
             "chờ operator mô tả phần tiếp theo"
         )
