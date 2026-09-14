@@ -108,7 +108,7 @@ class MultiDevApp(production.MultiApp):
         self._clean_vp_probe_requested: set[str] = set()
         self._clean_vp_sale_requested: set[str] = set()
         self._clean_rose_plant_requested: set[str] = set()
-        self._clean_floor_demo_requested: set[str] = set()
+        self._clean_function_3_step_1_requested: set[str] = set()
         self._clear_stall_probe_starting: set[str] = set()
         self._clear_stall_probe_terminal: dict[str, str] = {}
         self._clear_stall_gate2_profiles: set[str] = set()
@@ -126,16 +126,37 @@ class MultiDevApp(production.MultiApp):
         self.auto_clear_stall_probe_button = full_action
         self.auto_clear_stall_start_button = full_action
         clean_actions = self.auto_multi_dev_stop_button.master
-        self.auto_multi_dev_floor_demo_button = core.ttk.Button(
-            clean_actions,
-            text="↟ Demo Auto Pro tới tầng 6",
-            width=21,
+        clean_tab = clean_actions.master
+
+        # Put DEV-only Step tests and logs on a dedicated lower row. The old
+        # floor-6 demo is removed; this button owns only Function 3 Step 1.
+        self.auto_multi_dev_action_log_button.destroy()
+        self.auto_multi_dev_detail_log_button.destroy()
+        test_actions = core.ttk.Frame(clean_tab, style="Detail.TFrame")
+        test_actions.pack(fill="x", padx=8, pady=(6, 0))
+
+        self.auto_multi_dev_function_3_step_1_button = core.ttk.Button(
+            test_actions,
+            text="▶ Test Function 3 - Step 1",
+            width=28,
             style="Action.TButton",
-            command=self._start_clean_floor_demo,
+            command=self._start_clean_function_3_step_1,
         )
-        self.auto_multi_dev_floor_demo_button.pack(
-            side="left", padx=(0, 8), before=self.auto_multi_dev_stop_button
+        self.auto_multi_dev_function_3_step_1_button.pack(
+            side="left", padx=(0, 8)
         )
+        self.auto_multi_dev_action_log_button = core.ttk.Button(
+            test_actions, text="≡ Log hành động", width=18,
+            style="Action.TButton",
+            command=lambda: self._open_clean_main_log("action"),
+        )
+        self.auto_multi_dev_action_log_button.pack(side="left", padx=(0, 8))
+        self.auto_multi_dev_detail_log_button = core.ttk.Button(
+            test_actions, text="⌕ Log chi tiết", width=18,
+            style="Action.TButton",
+            command=lambda: self._open_clean_main_log("detail"),
+        )
+        self.auto_multi_dev_detail_log_button.pack(side="left")
         self._refresh_clear_stall_panel()
 
     def _clean_main_alive(self, profile_id: str | None) -> bool:
@@ -174,15 +195,15 @@ class MultiDevApp(production.MultiApp):
         self._clean_rose_plant_requested.update(selected)
         self._start_clean_auto_session()
 
-    def _start_clean_floor_demo(self) -> None:
-        """Demo only: replay Auto Pro target-6 state machine from main."""
+    def _start_clean_function_3_step_1(self) -> None:
+        """Run only operator-defined Function 3 Step 1 through the isolated worker."""
         selected = list(map(str, self.selected_ids()))
         if not selected:
             core.messagebox.showinfo(
-                core.APP_NAME, "Hãy chọn ít nhất một tài khoản đang ở màn hình chính."
+                core.APP_NAME, "Hãy chọn ít nhất một tài khoản để test Function 3 Step 1."
             )
             return
-        self._clean_floor_demo_requested.update(selected)
+        self._clean_function_3_step_1_requested.update(selected)
         self._start_clean_auto_session()
 
     def _start_clean_auto_session(self) -> None:
@@ -266,7 +287,7 @@ class MultiDevApp(production.MultiApp):
                     log_writer, profile_id in self._clean_vp_probe_requested,
                     profile_id in self._clean_vp_sale_requested,
                     profile_id in self._clean_rose_plant_requested,
-                    profile_id in self._clean_floor_demo_requested,
+                    profile_id in self._clean_function_3_step_1_requested,
                     self._collect_auto_tuning(),
                 ),
                 name=f"kvtm-dev-clean-main-{profile_id[:8]}",
@@ -278,13 +299,13 @@ class MultiDevApp(production.MultiApp):
             self._clean_vp_probe_requested.discard(profile_id)
             self._clean_vp_sale_requested.discard(profile_id)
             self._clean_rose_plant_requested.discard(profile_id)
-            self._clean_floor_demo_requested.discard(profile_id)
+            self._clean_function_3_step_1_requested.discard(profile_id)
             launched += 1
 
         self._clean_vp_probe_requested.difference_update(selected)
         self._clean_vp_sale_requested.difference_update(selected)
         self._clean_rose_plant_requested.difference_update(selected)
-        self._clean_floor_demo_requested.difference_update(selected)
+        self._clean_function_3_step_1_requested.difference_update(selected)
         if launched:
             self.auto_multi_dev_status.set(
                 f"AUTO MULTI DEV • đang chạy chuỗi bán → trồng • {launched} tài khoản"
@@ -309,7 +330,7 @@ class MultiDevApp(production.MultiApp):
         run_vp_probe: bool,
         run_vp_sale: bool,
         run_rose_plant: bool,
-        run_floor_demo: bool,
+        run_function_3_step_1: bool,
         speed_values: dict,
     ) -> None:
         """Supervise one isolated AUTO MULTI DEV worker process."""
@@ -333,7 +354,7 @@ class MultiDevApp(production.MultiApp):
             "--profile-name", str(profile.get("name") or profile_id),
             "--profile-file", str(core.PROFILE_FILE),
             "--work-dir", str(work_dir),
-            "--mode", "floor-demo" if run_floor_demo else "main",
+            "--mode", "function-3-step-1" if run_function_3_step_1 else "main",
             "--speed-json", json.dumps(
                 speed_values, ensure_ascii=True, separators=(",", ":")
             ),
@@ -507,10 +528,15 @@ class MultiDevApp(production.MultiApp):
         if outcome == "stopped":
             self.auto_multi_dev_status.set("ĐÃ DỪNG • worker AUTO MULTI DEV đã thoát an toàn")
             return
-        if outcome == "floor_demo_finished":
-            completed = int(payload.get("completed_steps", 0) or 0)
+        if outcome == "function_3_step_1_finished":
+            apples_1_5 = int(payload.get("apples_floor_1_to_5", 0) or 0)
+            apples_6 = int(payload.get("apples_floor_6", 0) or 0)
+            dried_teas = int(payload.get("dried_teas", 0) or 0)
+            end_floor = int(payload.get("end_floor", 0) or 0)
             self.auto_multi_dev_status.set(
-                f"DEMO ĐÃ GỬI • goUp(1) → goUp(4) → goUp(1) • commands={completed}/3"
+                "STEP 1 PASS • Function 3 • "
+                f"Táo={apples_1_5}+{apples_6}/36 • "
+                f"Trà sấy={dried_teas}/9 • đứng tại tầng {end_floor}"
             )
             return
         if outcome == "auto_main_ready":
