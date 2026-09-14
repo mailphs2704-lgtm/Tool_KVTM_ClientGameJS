@@ -12,11 +12,11 @@ from ..runtime.wait import Waiter
 __all__ = ["PlantingActions", "PlantingSegmentResult"]
 FILE_FUNCTIONS = (
     "Sở hữu geometry/path trồng và thu hoạch dùng chung, không sở hữu Function choreography",
-    "Cung cấp path chuẩn 5/6/24/27/28/30 chậu ở logical 1000x1000",
+    "Cung cấp path chuẩn 3/5/6/24/27/28/30 chậu ở logical 1000x1000",
     "Nhận diện trạng thái chậu RIPE/EMPTY theo crop template",
     "Tìm seed động theo template qua các trang picker; không dùng tọa độ tuyệt đối của seed",
     "Chỉ chuyển trang tìm seed sau khi template mũi tên chứng minh bảng gieo đang mở",
-    "Thu hoạch và gieo lại đúng count trên view hiện tại bằng một BATCH_SWIPE",
+    "Cho phép thu hoạch count A rồi gieo lại count B bằng các path đã xác minh",
     "Crop/template tách khỏi geometry để cùng path dùng được cho nhiều loại cây",
     "Giữ wrapper 27 cũ chỉ để tương thích; code mới dùng current-view Action + Navigation Action riêng",
 )
@@ -52,6 +52,10 @@ class PlantingActions:
     X_COORDS_EVEN = (335, 430, 505, 595, 665, 835)
     Y_LAYERS = (940, 725, 505, 280, 40)
 
+    PATH_3 = (
+        START_POINT,
+        (335, 940), (578, 940),
+    )
     PATH_24 = (
         START_POINT,
         (335, 940), (835, 940),
@@ -95,6 +99,7 @@ class PlantingActions:
     # Historical public name retained for compatibility.
     FARM_PATH_27 = PATH_27
     VERIFIED_PATHS = {
+        3: PATH_3,
         5: PATH_5,
         6: PATH_6,
         24: PATH_24,
@@ -315,42 +320,54 @@ class PlantingActions:
         seed_template: str,
         item_label: str,
         count: int,
+        plant_count: int | None = None,
         path: tuple[tuple[int, int], ...] | None = None,
         segment_label: str = "",
         max_attempts: int = 6,
     ) -> PlantingSegmentResult:
-        """Harvest if ripe, then plant the requested crop/count on current view.
+        """Harvest current-view pots, then plant a verified count of the crop.
 
-        The caller must position the camera first. This keeps Navigation separate
-        from planting and allows the same 5/6/24/27/28/30 geometry to be reused by
-        any crop whose seed template is supplied.
+        ``count`` owns the harvest geometry. ``plant_count`` defaults to the same
+        value, preserving every existing caller. A caller may explicitly request
+        a smaller verified replant count, such as harvest 6 then plant 3.
 
         Seed position/order inside the picker is dynamic. If the requested seed is
         not on the current picker page, the shared Action advances only with the
         fixed right-page arrow after the picker is proven open, then drags from the
         detected template center.
         """
-        requested = int(count)
-        selected_path = tuple(path or self.path_for_count(requested))
-        label = str(segment_label or f"{item_label} x{requested}")
+        harvest_requested = int(count)
+        plant_requested = (
+            harvest_requested if plant_count is None else int(plant_count)
+        )
+        harvest_path = tuple(path or self.path_for_count(harvest_requested))
+        replant_path = self.path_for_count(plant_requested)
+        label = str(
+            segment_label
+            or (
+                f"{item_label} thu {harvest_requested} / gieo {plant_requested}"
+                if harvest_requested != plant_requested
+                else f"{item_label} x{harvest_requested}"
+            )
+        )
         attempts_limit = max(1, int(max_attempts))
         harvested = 0
 
         for attempt in range(1, attempts_limit + 1):
             self.context.ensure_running()
             # Every attempt reopens the picker through the verified click hitbox.
-            # selected_path[1] is only a drag waypoint and must never replace it.
+            # harvest_path[1] is only a drag waypoint and must never replace it.
             state, match = self._scan_first_pot_state(seed_template)
 
             if state == "RIPE" and match is not None:
                 self.context.log(
-                    f"AUTO trồng • {label} • RIPE → thu hoạch {requested} chậu"
+                    f"AUTO trồng • {label} • RIPE → thu hoạch {harvest_requested} chậu"
                 )
                 self.vision.driver.swipe_points(
-                    selected_path,
+                    harvest_path,
                     duration=self.speed_config.plant_harvest_duration,
                 )
-                harvested = requested
+                harvested = harvest_requested
                 self.waiter.sleep(0.55)
 
                 # RIPE may be discovered on the last allowed attempt. Reopen the
@@ -368,10 +385,10 @@ class PlantingActions:
                     item_label,
                     first_match=match,
                 )
-                plant_path = (match.center,) + tuple(selected_path[1:])
+                plant_path = (match.center,) + tuple(replant_path[1:])
                 self.context.log(
                     f"AUTO trồng • {label} • seed {item_label} READY động "
-                    f"center={match.center} → gieo {requested} chậu"
+                    f"center={match.center} → gieo {plant_requested} chậu"
                 )
                 self.vision.driver.swipe_points(
                     plant_path,
@@ -381,14 +398,14 @@ class PlantingActions:
                 self.vision.driver.click(*self.CLOSE_POINT)
                 self.waiter.sleep(0.45)
                 self.context.log(
-                    f"AUTO trồng • {label} • PASS {requested}/{requested}"
+                    f"AUTO trồng • {label} • PASS gieo {plant_requested}/{plant_requested}"
                 )
                 return PlantingSegmentResult(
                     seed_template=str(seed_template),
                     item_label=str(item_label),
-                    target_count=requested,
+                    target_count=plant_requested,
                     harvested_count=harvested,
-                    planted_count=requested,
+                    planted_count=plant_requested,
                     attempts=attempt,
                 )
 
