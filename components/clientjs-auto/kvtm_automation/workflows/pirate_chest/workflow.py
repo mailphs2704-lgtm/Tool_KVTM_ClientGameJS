@@ -74,14 +74,20 @@ class PirateChestWorkflow:
     STORAGE_GREEN_ZONE = (300, 405, 400, 190)
     OPEN_PROMPT_CHEST_ZONE = (395, 500, 210, 170)
     CENTER_CHEST_ZONE = (420, 400, 165, 130)
+    REWARD_CLAIM_TEXT_ZONE = (420, 675, 160, 40)
     CENTER_CHEST_HIDDEN_CHANGE = 12.0
     CENTER_CHEST_RETURN_MIN_CHANGE = 12.0
+    REWARD_TEXT_WHITE_RATIO = 0.045
+    REWARD_TEXT_MAX_MEAN = 100.0
+    REWARD_TEXT_STABLE_MAX_CHANGE = 3.5
+    REWARD_TEXT_STABLE_SECONDS = 0.60
+    RETURN_STABLE_SECONDS = 0.60
 
     POLL_SECONDS = 0.12
     ENTER_TIMEOUT_SECONDS = 4.0
     TRANSITION_TIMEOUT_SECONDS = 5.0
-    REWARD_TIMEOUT_SECONDS = 6.0
-    RETURN_TIMEOUT_SECONDS = 6.0
+    REWARD_TIMEOUT_SECONDS = 10.0
+    RETURN_TIMEOUT_SECONDS = 12.0
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
@@ -218,47 +224,120 @@ class PirateChestWorkflow:
             >= self.CENTER_CHEST_RETURN_MIN_CHANGE
         )
 
-    def _wait_for_reward_claimable(self, open_prompt_frame) -> tuple[str, object | None]:
-        """Prove any random reward by the completed screen transition.
+    def _reward_claim_prompt(self, frame) -> tuple[bool, float, float]:
+        """Recognize the stable white claim text, independent of reward art."""
+        if (
+            self._panel_normal(frame)
+            or self._open_prompt(frame)
+            or self._storage_full(frame)
+        ):
+            return False, 0.0, 255.0
+        roi = self._crop(frame, self.REWARD_CLAIM_TEXT_ZONE)
+        white_ratio = self._color_ratio(
+            roi,
+            lambda r, g, b: (
+                (r >= 180)
+                & (g >= 180)
+                & (b >= 180)
+                & ((r.astype("int16") - b.astype("int16")) < 55)
+            ),
+        )
+        mean = float(roi.mean()) if getattr(roi, "size", 0) else 255.0
+        ready = (
+            white_ratio >= self.REWARD_TEXT_WHITE_RATIO
+            and mean <= self.REWARD_TEXT_MAX_MEAN
+        )
+        return ready, white_ratio, mean
 
-        Reward type is intentionally irrelevant: coins, items, materials, or any
-        later reward art must all pass through the same stable-state proof.
-        """
+    def _wait_for_reward_claimable(self, open_prompt_frame) -> tuple[str, object | None]:
+        """Wait until “Chạm để nhận quà” is visible and animation-safe."""
         deadline = time.monotonic() + self.REWARD_TIMEOUT_SECONDS
-        previous = None
-        stable_frames = 0
+        previous_text_roi = None
+        stable_since = None
         best_prompt_change = 0.0
+        best_white_ratio = 0.0
         while time.monotonic() < deadline:
             self.context.ensure_running()
             frame = self.vision.frame()
             if self._storage_full(frame):
                 return "STORAGE_FULL", frame
+
             prompt_change = self._frame_change_score(open_prompt_frame, frame)
             best_prompt_change = max(best_prompt_change, prompt_change)
-            known_non_reward = self._open_prompt(frame) or self._panel_normal(frame)
-            if not known_non_reward and prompt_change >= 8.0:
-                frame_change = (
-                    self._frame_change_score(previous, frame)
-                    if previous is not None
-                    else 999.0
-                )
-                stable_frames = stable_frames + 1 if frame_change <= 6.0 else 0
-                if stable_frames >= 2:
+            ready, white_ratio, text_mean = self._reward_claim_prompt(frame)
+            best_white_ratio = max(best_white_ratio, white_ratio)
+            text_roi = self._crop(frame, self.REWARD_CLAIM_TEXT_ZONE).copy()
+            text_change = (
+                self._frame_change_score(previous_text_roi, text_roi)
+                if previous_text_roi is not None
+                else 999.0
+            )
+
+            if (
+                ready
+                and prompt_change >= 8.0
+                and text_change <= self.REWARD_TEXT_STABLE_MAX_CHANGE
+            ):
+                if stable_since is None:
+                    stable_since = time.monotonic()
+                stable_seconds = time.monotonic() - stable_since
+                if stable_seconds >= self.REWARD_TEXT_STABLE_SECONDS:
                     self.context.detail(
                         "Pirate chest reward claimable | "
-                        "proof=stable-screen-transition | "
-                        f"prompt_change={prompt_change:.2f} | "
-                        f"frame_change={frame_change:.2f}"
+                        "proof=claim-text-stable | "
+                        f"white_ratio={white_ratio:.3f} | "
+                        f"text_mean={text_mean:.1f} | "
+                        f"text_change={text_change:.2f} | "
+                        f"stable={stable_seconds:.2f}s"
                     )
-                    return "PASS", frame
+                    return "PASS", frame.copy()
             else:
-                stable_frames = 0
-            previous = frame.copy()
+                stable_since = None
+
+            previous_text_roi = text_roi
             self.auto.wait.sleep(self.POLL_SECONDS)
 
         self.context.detail(
             "Pirate chest wait timeout | state=reward-claimable | "
-            f"best_prompt_change={best_prompt_change:.2f}"
+            f"best_prompt_change={best_prompt_change:.2f} | "
+            f"best_white_ratio={best_white_ratio:.3f}"
+        )
+        return "TIMEOUT", None
+
+    def _wait_for_center_chest_returned(
+        self,
+        reward_frame,
+    ) -> tuple[str, object | None]:
+        """Wait for a stable normal panel after the one authorized claim tap."""
+        deadline = time.monotonic() + self.RETURN_TIMEOUT_SECONDS
+        stable_since = None
+        last_change = 0.0
+        while time.monotonic() < deadline:
+            self.context.ensure_running()
+            frame = self.vision.frame()
+            if self._storage_full(frame):
+                return "STORAGE_FULL", frame
+            if self._center_chest_returned(reward_frame, frame):
+                last_change = self._center_chest_change(reward_frame, frame)
+                if stable_since is None:
+                    stable_since = time.monotonic()
+                stable_seconds = time.monotonic() - stable_since
+                if stable_seconds >= self.RETURN_STABLE_SECONDS:
+                    self.context.detail(
+                        "Pirate chest panel returned | "
+                        "proof=center-chest-stable | "
+                        f"reward_change={last_change:.2f} | "
+                        f"stable={stable_seconds:.2f}s"
+                    )
+                    return "PASS", frame
+            else:
+                stable_since = None
+            self.auto.wait.sleep(self.POLL_SECONDS)
+
+        self.context.detail(
+            "Pirate chest wait timeout | "
+            "state=panel-after-reward-claim-center-chest-returned | "
+            f"last_reward_change={last_change:.2f}"
         )
         return "TIMEOUT", None
 
@@ -499,13 +578,8 @@ class PirateChestWorkflow:
         # The return proof compares against this exact reward frame, not the
         # earlier panel frame whose animation/cooldown art can legitimately vary.
         self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")
-        final_state, final_frame = self._wait_for(
-            lambda current: self._center_chest_returned(
-                reward_frame, current
-            ),
-            timeout=self.RETURN_TIMEOUT_SECONDS,
-            label="panel-after-reward-claim-center-chest-returned",
-            storage_interrupt=True,
+        final_state, final_frame = self._wait_for_center_chest_returned(
+            reward_frame
         )
         if final_state == "STORAGE_FULL":
             self.context.log(
