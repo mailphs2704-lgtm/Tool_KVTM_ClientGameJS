@@ -202,3 +202,18 @@ Fix `b91175ce` không tăng sleep mù:
 - không retry claim và không dùng Back.
 
 Verifier `13126736`; workflow/verifier AST PASS. Windows live PENDING.
+
+
+## 13. Operator-approved exact sequence
+
+Quy trình cuối được operator chốt:
+
+1. vào thuyền và phân loại panel thường hoặc persisted open modal;
+2. nếu panel thường, chỉ chọn slot 0 rồi MỞ NGAY;
+3. khi open modal đã được chứng minh, giữ đúng trạng thái 4.0s rồi mới tap rương;
+4. sau tap rương, chờ tối thiểu 4.0s và claim text ổn định mới claim đúng một lần
+   tại `(500,715)`;
+5. chờ reward modal tự đóng; panel/rương giữa phải trở lại ổn định;
+6. đóng X và bắt buộc chứng minh exact-main trước khi trả `OPENED`.
+
+Commit `866a0219`; contract `c9722329`; AST PASS. Live PENDING.
