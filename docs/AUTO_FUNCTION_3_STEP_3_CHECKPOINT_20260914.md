@@ -2,7 +2,7 @@
 
 Date: 2026-09-14
 Branch: `develop/multi-auto-dev`
-Status: **STEP 2 LIVE PASS — STEP 3 SOURCE COMPLETE / BUILD+LIVE PENDING**
+Status: **STEP 2 LIVE PASS — STEP 3 LIVE BLOCKED AT DOWN-FLOOR CLICK — FIX DEFERRED TO STEP 4 BATCH**
 
 ## Operator evidence before this checkpoint
 
@@ -115,27 +115,33 @@ exact MAIN → Step 1 → Step 2 → Step 3 → end floor 1
 
 Function 3 full `run()` remains fail-closed and is still not connected to AUTO Main because the operator has not finished defining the remaining Function 3 steps.
 
+## Live regression recorded at 22:46:23
+
+Operator live evidence:
+
+```text
+[22:46:23] AUTO MULTI DEV dừng yên lặng • ScreenTimeout: Cuối vòng Function 1: sau goDown(1) không xác minh/click được nút XUỐNG ở mép dưới; dừng trước vòng kế tiếp
+```
+
+Interpretation/status:
+
+- Step 3 is **not** runtime PASS.
+- The live run reached the final floor-3 → MAIN boundary and failed at the XUỐNG-button click/verification stage.
+- Operator explicitly reports that the down-floor click point is wrong.
+- Do **not** patch this boundary route in isolation now.
+- Operator requested that the down-floor fix be implemented together with the upcoming Step 4 change set.
+- When Step 4 is described, inspect the shared `FarmBoundaryRouteActions` / down-floor button path and fix it at the shared Action/route layer rather than adding a Function-3-only raw click.
+- Preserve all earlier Step 1/Step 2 proven behavior and all Step 3 behavior before this final boundary unless new live evidence shows another regression.
+
 ## Next gate
 
-Run the authoritative build:
+Wait for the operator's Step 4 description. In that implementation batch:
 
 ```text
-KVTM_DEV_CONTROL.bat
-→ [1] Cap nhat source + build runtime DEV
+Step 4 source work
++ shared down-floor click/verification fix
+→ build [1]
+→ cumulative Function 3 live retest
 ```
 
-Only after build/static gates are clean, run the existing Function 3 DEV test once. Expected Step 3 evidence:
-
-```text
-thu/check bottom row 6
-→ gieo Tea 3/3
-→ goUp(1) floor 3
-→ Cotton 27/27
-→ Yellow Fabric 9/9
-→ repair PASS
-→ goDown(1)+XUỐNG exact MAIN
-→ goUp(1)
-→ end floor 1
-```
-
-Do not mark Step 3 runtime PASS until operator confirms live behavior/log evidence.
+Do not mark Step 3 runtime PASS until the corrected floor-3 → MAIN boundary is live-verified and the run reaches the intended Step 3 end state at floor 1.
