@@ -217,3 +217,14 @@ Quy trình cuối được operator chốt:
 6. đóng X và bắt buộc chứng minh exact-main trước khi trả `OPENED`.
 
 Commit `866a0219`; contract `c9722329`; AST PASS. Live PENDING.
+
+
+## 14. INPUT4/CAPTURE3 post-claim separation
+
+Live phản ánh claim và capture hậu kiểm bắt đầu gần như đồng thời. Fix
+`96ca33f4` thêm quiet window 4.0s ngay sau claim-once: trong khoảng này không
+gọi frame/CAPTURE/check. Hết quiet window mới bắt đầu chờ panel+rương giữa trở
+lại. Không thêm claim retry. Contract `1effe387`; AST PASS; live PENDING.
+
+Log startup cho thấy friend refresh định kỳ đang BẬT; đây là cấu hình riêng sau
+mỗi ba vòng, không phải bằng chứng chest SAFE_ABORT nếu thiếu đoạn log chest.
