@@ -32,6 +32,12 @@ FUNCTION_SPECS = {
         sale_item_ids=("tao_say", "vai_vang", "tinh_dau_hh"),
         runner_key="function_2",
     ),
+    "function_3": FunctionSpec(
+        function_id="function_3",
+        label="9 Nước hoa hồng - 9 Trà đá - 9 Vải vàng",
+        sale_item_ids=("nuoc_hoa_hong", "tra_da", "vai_vang"),
+        runner_key="function_3",
+    ),
 }
 
 
