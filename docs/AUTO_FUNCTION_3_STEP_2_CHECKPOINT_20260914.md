@@ -2,7 +2,7 @@
 
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`  
 Branch: `develop/multi-auto-dev`  
-Status: **STEP 2 SOURCE COMPLETE — BUILD/LIVE PASS PENDING**
+Status: **STEP 2 LIVE PASS**
 
 ## Boundary
 
@@ -55,20 +55,29 @@ Current shared planting geometry includes `PATH_24` in addition to the existing 
 
 Step 2 deliberately does not add raw machine clicks in the Recipe. `AppleJuiceProductionActions.produce_9_apple_juices(close_after_success=False)` owns the verified machine/panel path, including collection of ready VP before queueing the new batch, then hands the open panel to the shared repair Action.
 
-## Current Function 3 state
+## Live verification
 
-`FunctionThreeWorkflow.TOTAL_DEFINED_STEPS = 2`.
+Operator confirmed **Step 2 PASS** on 2026-09-14 after the cumulative DEV test was wired to run Step 1 → Step 2 without stopping at the Step-1 boundary.
 
-Available source boundaries:
+The live boundary now treated as authoritative is:
 
 ```text
-run_step_1()                 → Step 1 only, end floor 1
-run_step_2_from_floor_1()    → Step 2 only, assumes Step-1 boundary, end floor 2
-run_steps_1_and_2()          → exact MAIN → Step 1 → Step 2, end floor 2
+exact MAIN
+→ Step 1 LIVE PASS
+→ floor 1
+→ Step 2 LIVE PASS
+→ 24 Tea
+→ 9/9 Apple Juice
+→ repair PASS
+→ end floor 2
 ```
 
-The full `run()` remains fail-closed and Function 3 is **not** connected to AUTO Main yet because later Function 3 work has not been defined.
+Do not regress this sequence while developing later Function 3 steps unless new live evidence shows a real defect.
 
-## Verification status
+## Current Function 3 continuation
 
-Do not call Step 2 runtime PASS yet. Source is complete from the operator description, but Windows DEV build and live behavior still need operator evidence.
+Step 3 has now been defined separately and starts exactly from this proven floor-2 boundary. See:
+
+`docs/AUTO_FUNCTION_3_STEP_3_CHECKPOINT_20260914.md`
+
+Function 3 full `run()` remains fail-closed and is still not connected to AUTO Main until the operator finishes defining all remaining Function 3 work.
