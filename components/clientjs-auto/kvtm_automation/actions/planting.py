@@ -15,6 +15,7 @@ FILE_FUNCTIONS = (
     "Cung cấp path chuẩn 5/6/24/27/28/30 chậu ở logical 1000x1000",
     "Nhận diện trạng thái chậu RIPE/EMPTY theo crop template",
     "Tìm seed động theo template qua các trang picker; không dùng tọa độ tuyệt đối của seed",
+    "Chỉ chuyển trang tìm seed sau khi template mũi tên chứng minh bảng gieo đang mở",
     "Thu hoạch và gieo lại đúng count trên view hiện tại bằng một BATCH_SWIPE",
     "Crop/template tách khỏi geometry để cùng path dùng được cho nhiều loại cây",
     "Giữ wrapper 27 cũ chỉ để tương thích; code mới dùng current-view Action + Navigation Action riêng",
@@ -110,10 +111,13 @@ class PlantingActions:
     SEED_ZONE = (179, 773, 230, 166)
     EMPTY_READY_ZONE = (124, 729, 347, 236)
     HARVEST_ZONE = (222, 703, 218, 191)
+    SEED_PANEL_ARROW_TEMPLATE = "next_gieo_trai"
     # Operator-marked right-page arrow in the seed picker (logical 1000x1000).
     # Seed locations themselves are never absolute and are always template-matched.
     SEED_NEXT_PAGE_POINT = (418, 848)
     SEED_PAGE_SETTLE_SECONDS = 0.35
+    SEED_PANEL_PROOF_RECHECKS = 3
+    SEED_PANEL_PROOF_RECHECK_SECONDS = 0.15
 
     def __init__(
         self,
@@ -195,6 +199,33 @@ class PlantingActions:
     def _count_changed_pots(self, before, after) -> int:
         return self._count_changed_pots_27(before, after)
 
+    def _find_seed_panel_arrow(self, *, frame=None):
+        return self.vision.find(
+            self.SEED_PANEL_ARROW_TEMPLATE,
+            threshold=0.70,
+            zone=self.EMPTY_READY_ZONE,
+            scales=(0.80, 0.90, 1.00, 1.10, 1.20),
+            frame=frame,
+        )
+
+    def _prove_seed_picker_open_for_page_turn(self):
+        """Prove the seed picker before any page-arrow click; never click blind."""
+        for recheck in range(1, self.SEED_PANEL_PROOF_RECHECKS + 1):
+            self.context.ensure_running()
+            frame = self.vision.frame()
+            arrow = self._find_seed_panel_arrow(frame=frame)
+            if arrow is not None:
+                self.context.detail(
+                    "AUTO planting picker proof PASS | "
+                    f"template={self.SEED_PANEL_ARROW_TEMPLATE} | "
+                    f"center={arrow.center} | recheck={recheck}"
+                )
+                return arrow
+            if recheck < self.SEED_PANEL_PROOF_RECHECKS:
+                self.waiter.sleep(self.SEED_PANEL_PROOF_RECHECK_SECONDS)
+
+        return None
+
     def _find_seed_in_open_picker(
         self,
         seed_template: str,
@@ -207,7 +238,8 @@ class PlantingActions:
         Seed order/location may vary between accounts/sessions. The only fixed
         coordinate here is the operator-marked picker page arrow. Once a template
         is found, callers must drag from ``match.center`` rather than any absolute
-        seed coordinate.
+        seed coordinate. Every page turn is gated by the existing arrow template
+        that proves the seed picker is actually open.
         """
         match = first_match
         page_moves = 0
@@ -224,9 +256,20 @@ class PlantingActions:
             if match is not None:
                 break
 
+            arrow = self._prove_seed_picker_open_for_page_turn()
+            if arrow is None:
+                self.context.log(
+                    f"AUTO trồng • seed {item_label} MISS nhưng bảng gieo CHƯA VERIFIED • "
+                    "KHÔNG chuyển trang • fail-close"
+                )
+                raise ScreenTimeout(
+                    f"Không chứng minh bảng gieo đang mở trước khi chuyển trang tìm {item_label}"
+                )
+
             page_moves += 1
             self.context.log(
-                f"AUTO trồng • seed {item_label} MISS • "
+                f"AUTO trồng • bảng gieo VERIFIED bằng {self.SEED_PANEL_ARROW_TEMPLATE} "
+                f"center={arrow.center} • seed {item_label} MISS • "
                 f"chuyển trang phải lần {page_moves} • "
                 f"point={self.SEED_NEXT_PAGE_POINT}"
             )
@@ -255,10 +298,7 @@ class PlantingActions:
             "thu_hoach", threshold=0.80, zone=self.HARVEST_ZONE,
             scales=(0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30), frame=frame,
         )
-        empty = self.vision.find(
-            "next_gieo_trai", threshold=0.70, zone=self.EMPTY_READY_ZONE,
-            scales=(0.80, 0.90, 1.00, 1.10, 1.20), frame=frame,
-        )
+        empty = self._find_seed_panel_arrow(frame=frame)
         seed = self.vision.find(
             seed_template, threshold=0.87, zone=self.SEED_ZONE,
             scales=(0.80, 0.90, 1.00, 1.10, 1.20), frame=frame,
@@ -287,7 +327,7 @@ class PlantingActions:
 
         Seed position/order inside the picker is dynamic. If the requested seed is
         not on the current picker page, the shared Action advances only with the
-        fixed right-page arrow until the template appears, then drags from the
+        fixed right-page arrow after the picker is proven open, then drags from the
         detected template center.
         """
         requested = int(count)
