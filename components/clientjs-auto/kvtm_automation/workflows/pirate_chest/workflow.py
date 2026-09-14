@@ -83,6 +83,7 @@ class PirateChestWorkflow:
     REWARD_TEXT_STABLE_SECONDS = 0.60
     RETURN_STABLE_SECONDS = 0.60
     ANIMATION_SETTLE_SECONDS = 4.0
+    POST_CLAIM_QUIET_SECONDS = 4.0
     MAIN_AFTER_CLOSE_TIMEOUT_SECONDS = 4.0
 
     POLL_SECONDS = 0.12
@@ -651,6 +652,19 @@ class PirateChestWorkflow:
         # The return proof compares against this exact reward frame, not the
         # earlier panel frame whose animation/cooldown art can legitimately vary.
         self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")
+
+        # INPUT4 claim and CAPTURE3 verification must not overlap. During this
+        # operator-approved quiet window no frame is requested, so the game can
+        # finish the claim/close animation before the first return-state check.
+        self.context.stage("pirate-chest-post-claim-quiet")
+        self.context.log(
+            "AUTO rương hải tặc • đã gửi nhận quà đúng 1 lần • "
+            f"quiet={self.POST_CLAIM_QUIET_SECONDS:.1f}s • "
+            "không CAPTURE/check trong animation"
+        )
+        self.auto.wait.sleep(self.POST_CLAIM_QUIET_SECONDS)
+        self.context.ensure_running()
+
         final_state, final_frame = self._wait_for_center_chest_returned(
             reward_frame
         )
