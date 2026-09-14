@@ -386,15 +386,17 @@ def main() -> int:
 
             prepare_runtime_camera()
             log(
-                "AUTO MULTI DEV TEST • chạy liền Function 3 Step 1 → Step 2 • "
+                "AUTO MULTI DEV TEST • chạy liền Function 3 Step 1 → Step 2 → Step 3 • "
                 "bắt đầu từ exact MAIN • không vào AUTO Main"
             )
-            result = FunctionThreeWorkflow(automation).run_steps_1_and_2()
+            result = FunctionThreeWorkflow(automation).run_steps_1_2_and_3()
             result_payload = result.to_dict()
             result_payload.pop("profile_id", None)
             log(
-                "AUTO MULTI DEV TEST • Function 3 Step 1-2 DONE • "
-                f"Trà={result.planted_teas}/24 • Nước táo={result.apple_juices}/9 • "
+                "AUTO MULTI DEV TEST • Function 3 Step 1-3 DONE • "
+                f"Step2 Trà={result.planted_teas}/24 • Nước táo={result.apple_juices}/9 • "
+                f"Step3 Trà hàng dưới={result.planted_tea_bottom_row}/3 • "
+                f"Bông={result.cotton_planted}/27 • Vải vàng={result.yellow_fabrics}/9 • "
                 f"đứng tầng {result.end_floor}"
             )
             emit(
