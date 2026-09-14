@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 HOST = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_host.py"
 GAME_SESSION = ROOT / "components/clientjs-auto/kvtm_automation/workflows/game_session/workflow.py"
+PIRATE_CHEST = ROOT / "components/clientjs-auto/kvtm_automation/workflows/pirate_chest/workflow.py"
+POPUP = ROOT / "components/clientjs-auto/kvtm_automation/actions/popup.py"
+AUTOMATION = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
 MANAGER = ROOT / "components/clientjs-auto/kvtm_automation/recovery/manager.py"
 MATERIAL_RECOVERY = ROOT / "components/clientjs-auto/kvtm_automation/recovery/material_shortage.py"
 MARKER = ".fresh-client-start.json"
@@ -35,6 +38,9 @@ def main() -> int:
     worker = read(WORKER)
     host = read(HOST)
     game_session = read(GAME_SESSION)
+    pirate_chest = read(PIRATE_CHEST)
+    popup = read(POPUP)
+    automation = read(AUTOMATION)
     manager = read(MANAGER)
     material_recovery = read(MATERIAL_RECOVERY)
 
@@ -87,6 +93,44 @@ def main() -> int:
     require(game_session, "mark_startup_exact_main(", "Fresh startup MAIN invariant marker missing")
     forbid(game_session, "go_down_one_toward_main(", "Fresh popup window must not run goDown recovery")
     forbid(game_session, "farm_boundary_routes", "Fresh popup window must not own boundary navigation")
+
+    # A persisted Pirate Chest prompt is not a generic popup: it cannot be
+    # dismissed by X/backdrop and must be completed before farm readiness.
+    require(
+        pirate_chest,
+        "def resume_open_prompt_if_visible(",
+        "Pirate Chest has no lifecycle resume entry",
+    )
+    require(
+        game_session,
+        "self._resume_pirate_chest_if_visible(",
+        "Fresh startup does not prioritize persisted Pirate Chest resume",
+    )
+    require(
+        game_session,
+        "before_dismiss=lambda: self._resume_pirate_chest_if_visible(",
+        "Pirate Chest cannot preempt generic popup handling during farm entry",
+    )
+    require(
+        popup,
+        "before_dismiss: Callable[[], bool] | None = None",
+        "Popup loop has no protected-modal handoff",
+    )
+    require(
+        popup,
+        "if before_dismiss is not None and before_dismiss():",
+        "Generic popup dismissal may steal the Pirate Chest modal",
+    )
+    require(
+        automation,
+        "before_dismiss=before_dismiss",
+        "Automation facade drops the protected-modal callback",
+    )
+    require(
+        pirate_chest,
+        "Pirate chest startup resume closed | proof=own-farm-hud",
+        "Startup chest resume does not prove own-farm HUD after closing",
+    )
 
     # Fresh startup alone owns GameSession. Re-entry skips the popup window and
     # only then may use bounded global navigation recovery to prove exact MAIN.
