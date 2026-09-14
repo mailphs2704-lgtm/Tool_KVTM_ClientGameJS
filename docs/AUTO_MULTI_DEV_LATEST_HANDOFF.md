@@ -1,9 +1,9 @@
 # AUTO MULTI DEV — LATEST HANDOFF
 
-Cập nhật: 2026-09-11
+Cập nhật: 2026-09-14
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
-Trạng thái: **PRE-LIVE READY FOR LOCAL BUILD — SOURCE AUDIT COMPLETE, NOT STATIC PASS, NOT RUNTIME PASS**
+Trạng thái: **FUNCTION 3 STEP 2 SOURCE COMPLETE — BUILD/LIVE PASS PENDING**
 
 > Operator đã yêu cầu chuẩn hóa toàn bộ AUTO. Không tiếp tục refactor lớn nếu không phát hiện regression thật. Build/static PASS không thay cho live/runtime evidence.
 
@@ -122,19 +122,22 @@ FarmBoundaryRouteActions
 
 Function 1 navigation files chỉ compatibility wrappers.
 
-## 7. Planting — SHARED GEOMETRY
+## 7. Planting — SHARED GEOMETRY + DYNAMIC SEED IDENTITY
 
 `PlantingActions` giữ:
 
 ```text
 PATH_5
 PATH_6
+PATH_24
 PATH_27
 PATH_28
 PATH_30
 ```
 
 Crop identity tách khỏi geometry. Apple Supply tái sử dụng `PATH_30` + `PATH_6`; Cotton Action không tự quyết định recovery policy.
+
+Từ Function 3 Step 2, seed/cây trong bảng gieo phải được tìm bằng template động cho **mọi loại cây**, không riêng Trà. Vị trí seed thay đổi theo account/session nên cấm dùng tọa độ seed tuyệt đối. Nếu template chưa xuất hiện, click mũi tên chuyển trang phải đã được operator đánh dấu, scan lại và chỉ dừng khi template mục tiêu được tìm thấy; điểm bắt đầu kéo là `match.center`.
 
 ## 8. Production — SHARED PANEL ENGINE
 
@@ -250,7 +253,7 @@ Emergency restart giữa Function chưa bật; cần durable checkpoint + operat
 - `ProductionPanelActions._wait_for_idle_open_panel(...)` còn unbounded wait; chưa có operator max wait.
 - TDHH thiếu Hồng/Tuyết chưa có typed replenishment recovery do operator mô tả.
 - InventoryFull recovery chưa có hard max round operator-defined; hiện fail-close khi Sale recovery không tạo tiến triển.
-- Emergency mid-Function restart chưa bật.
+- Emergency restart giữa Function chưa bật.
 
 ## 14. Static verification / CI
 
@@ -382,8 +385,44 @@ MAIN → goUp(1) tầng 1
 
 Ranh giới hiện tại:
 
-- nút DEV chỉ gọi `FunctionThreeWorkflow.run_step_1()`;
-- `floor-demo` đã gỡ;
-- Function 3 có chung RecipeBook/RecoveryManager và sale policy Nước hoa hồng/Trà đá/Vải vàng;
-- Function 3 đầy đủ chưa được nối vào AUTO Main vì chưa có Step 2 trở đi;
-- NEXT: nhận mô tả Step 2 từ operator, không sửa lại Step 1 đã PASS nếu không có regression live.
+- Step 1 vẫn giữ nguyên recipe/live-PASS boundary và kết thúc ở tầng 1;
+- Function 3 dùng chung RecipeBook/RecoveryManager và sale policy Nước hoa hồng/Trà đá/Vải vàng;
+- không sửa lại Step 1 nếu không có regression live.
+
+## 19. Function 3 — STEP 2 SOURCE COMPLETE / LIVE PENDING
+
+Operator chốt **Step 2 DONE về mặt mô tả** ngày 2026-09-14. Source đã cập nhật, nhưng chưa gọi runtime PASS trước Windows live evidence.
+
+Quy trình Step 2:
+
+```text
+đầu Step 2: đứng tầng 1
+→ goUp(1) lên tầng 2
+→ dùng shared Planting Action thu hoạch 4 tầng trên màn hình
+→ mở bảng gieo tại chậu đầu tầng dưới cùng
+→ tìm cay_tra bằng template động
+→ MISS: click mũi tên chuyển trang phải, scan lại, chỉ dừng khi tìm thấy
+→ kéo từ match.center của cay_tra, không dùng tọa độ cây Trà tuyệt đối
+→ gieo 24 Trà = 4 tầng x 6
+→ đứng nguyên tầng 2
+→ thu VP/mở máy Nước táo tầng 2 bằng shared production Action
+→ sản xuất 9/9 Nước táo
+→ Sửa máy
+→ đứng nguyên tầng 2
+→ Step 2 DONE
+```
+
+Source boundary:
+
+```text
+FunctionThreeWorkflow.TOTAL_DEFINED_STEPS = 2
+run_step_1()              → end floor 1
+run_step_2_from_floor_1() → end floor 2
+run_steps_1_and_2()       → exact MAIN → Step 1 → Step 2 → end floor 2
+```
+
+`DriedTeaStepTwoRecipe` không raw-click máy. `AppleJuiceProductionActions.produce_9_apple_juices(close_after_success=False)` sở hữu thao tác thu VP/mở đúng máy, xác minh panel và xếp chính xác 9/9; sau đó bàn giao panel cho shared `MachineRepairActions`.
+
+Checkpoint chi tiết: `docs/AUTO_FUNCTION_3_STEP_2_CHECKPOINT_20260914.md`.
+
+Function 3 đầy đủ vẫn chưa nối AUTO Main. NEXT: nhận mô tả phần tiếp theo từ operator; nếu operator muốn live-gate Step 2 ngay thì wire DEV cumulative test rồi build `[1]` và lấy live evidence. Không đổi Step 1 đã PASS.
