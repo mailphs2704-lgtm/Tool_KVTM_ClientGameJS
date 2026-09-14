@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from typing import Callable
 
 from ..context import AutomationContext
 from ..errors import ScreenTimeout
@@ -237,8 +238,13 @@ class PopupActions:
         self.waiter.sleep(0.8)
         return True
 
-    def ensure_main_screen(self, timeout: float = 90.0) -> None:
-        """Ensure own farm/home UI is reachable; camera floor is not normalized."""
+    def ensure_main_screen(
+        self,
+        timeout: float = 90.0,
+        *,
+        before_dismiss: Callable[[], bool] | None = None,
+    ) -> None:
+        """Ensure farm HUD, allowing protected workflows before generic dismiss."""
         # This entry point deliberately makes no camera-floor promise. Clearing
         # any prior proof here prevents an exception on a directly-swiped stage
         # (for example planting) from carrying stale exact-main state into worker
@@ -248,6 +254,11 @@ class PopupActions:
         last_status = 0.0
         while time.monotonic() < deadline:
             self.context.ensure_running()
+
+            # Protected business modals such as a persisted Pirate Chest prompt
+            # must be completed by their owner, never clicked by generic X/backdrop.
+            if before_dismiss is not None and before_dismiss():
+                continue
 
             # A modal can leave farm HUD visible/dimmed behind it. Always give
             # modal dismissal priority so HUD templates cannot create a false
