@@ -60,10 +60,10 @@ class PirateChestWorkflow:
     ENTRY_POINT = (363, 620)
     SLOT_ZERO_POINT = (263, 632)
     OPEN_NOW_POINT = (500, 558)
-    CHEST_CENTER_POINT = (500, 580)
+    CHEST_CENTER_POINT = (486, 603)
     # Empty hitbox immediately below “Chạm để nhận quà”; the chest/reward art
     # itself does not dismiss the reward presentation.
-    REWARD_CLAIM_POINT = (500, 715)
+    REWARD_CLAIM_POINT = (500, 702)
     PANEL_CLOSE_POINT = (840, 305)
     STORAGE_MODAL_CLOSE_POINT = (718, 392)
     REWARD_BACK_POINT = (30, 28)
@@ -74,23 +74,15 @@ class PirateChestWorkflow:
     STORAGE_GREEN_ZONE = (300, 405, 400, 190)
     OPEN_PROMPT_CHEST_ZONE = (395, 500, 210, 170)
     CENTER_CHEST_ZONE = (420, 400, 165, 130)
-    REWARD_CLAIM_TEXT_ZONE = (420, 675, 160, 40)
     CENTER_CHEST_HIDDEN_CHANGE = 12.0
     CENTER_CHEST_RETURN_MIN_CHANGE = 12.0
-    REWARD_TEXT_WHITE_RATIO = 0.045
-    REWARD_TEXT_MAX_MEAN = 100.0
-    REWARD_TEXT_STABLE_MAX_CHANGE = 3.5
-    REWARD_TEXT_STABLE_SECONDS = 0.60
-    RETURN_STABLE_SECONDS = 0.60
-    ANIMATION_SETTLE_SECONDS = 4.0
-    POST_CLAIM_QUIET_SECONDS = 4.0
+    OPERATOR_ANIMATION_WAIT_SECONDS = 3.0
     MAIN_AFTER_CLOSE_TIMEOUT_SECONDS = 4.0
 
     POLL_SECONDS = 0.12
     ENTER_TIMEOUT_SECONDS = 4.0
     TRANSITION_TIMEOUT_SECONDS = 5.0
-    REWARD_TIMEOUT_SECONDS = 10.0
-    RETURN_TIMEOUT_SECONDS = 12.0
+    RETURN_TIMEOUT_SECONDS = 6.0
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
@@ -227,124 +219,23 @@ class PirateChestWorkflow:
             >= self.CENTER_CHEST_RETURN_MIN_CHANGE
         )
 
-    def _wait_open_prompt_animation(self) -> tuple[str, object | None]:
-        """Keep the proven tap-to-open modal stable for the operator-set 4s."""
-        deadline = time.monotonic() + self.ANIMATION_SETTLE_SECONDS
-        last_frame = None
-        while time.monotonic() < deadline:
-            self.context.ensure_running()
-            frame = self.vision.frame()
-            if self._storage_full(frame):
-                return "STORAGE_FULL", frame
-            if not self._open_prompt(frame):
-                self.context.detail(
-                    "Pirate chest animation interrupted | "
-                    "state=tap-to-open-before-chest-tap"
-                )
-                return "INTERRUPTED", frame
-            last_frame = frame
-            self.auto.wait.sleep(
-                min(self.POLL_SECONDS, max(0.0, deadline - time.monotonic()))
-            )
-        self.context.detail(
-            "Pirate chest animation settled | "
-            f"state=tap-to-open | waited={self.ANIMATION_SETTLE_SECONDS:.1f}s"
+    def _wait_operator_animation(self, *, state: str) -> None:
+        """Wait exactly 3s without requesting any CAPTURE frame."""
+        self.context.stage(f"pirate-chest-animation-wait-{state}")
+        self.context.log(
+            "AUTO rương hải tặc • chờ animation theo quy trình operator • "
+            f"state={state} • wait={self.OPERATOR_ANIMATION_WAIT_SECONDS:.1f}s • "
+            "không CAPTURE/check"
         )
-        return "PASS", last_frame
-
-    def _reward_claim_prompt(self, frame) -> tuple[bool, float, float]:
-        """Recognize the stable white claim text, independent of reward art."""
-        if (
-            self._panel_normal(frame)
-            or self._open_prompt(frame)
-            or self._storage_full(frame)
-        ):
-            return False, 0.0, 255.0
-        roi = self._crop(frame, self.REWARD_CLAIM_TEXT_ZONE)
-        white_ratio = self._color_ratio(
-            roi,
-            lambda r, g, b: (
-                (r >= 180)
-                & (g >= 180)
-                & (b >= 180)
-                & ((r.astype("int16") - b.astype("int16")) < 55)
-            ),
-        )
-        mean = float(roi.mean()) if getattr(roi, "size", 0) else 255.0
-        ready = (
-            white_ratio >= self.REWARD_TEXT_WHITE_RATIO
-            and mean <= self.REWARD_TEXT_MAX_MEAN
-        )
-        return ready, white_ratio, mean
-
-    def _wait_for_reward_claimable(self, open_prompt_frame) -> tuple[str, object | None]:
-        """Wait until “Chạm để nhận quà” is visible and animation-safe."""
-        started = time.monotonic()
-        deadline = started + self.REWARD_TIMEOUT_SECONDS
-        previous_text_roi = None
-        stable_since = None
-        best_prompt_change = 0.0
-        best_white_ratio = 0.0
-        while time.monotonic() < deadline:
-            self.context.ensure_running()
-            frame = self.vision.frame()
-            if self._storage_full(frame):
-                return "STORAGE_FULL", frame
-
-            prompt_change = self._frame_change_score(open_prompt_frame, frame)
-            best_prompt_change = max(best_prompt_change, prompt_change)
-            ready, white_ratio, text_mean = self._reward_claim_prompt(frame)
-            best_white_ratio = max(best_white_ratio, white_ratio)
-            text_roi = self._crop(frame, self.REWARD_CLAIM_TEXT_ZONE).copy()
-            text_change = (
-                self._frame_change_score(previous_text_roi, text_roi)
-                if previous_text_roi is not None
-                else 999.0
-            )
-
-            if (
-                ready
-                and prompt_change >= 8.0
-                and text_change <= self.REWARD_TEXT_STABLE_MAX_CHANGE
-            ):
-                if stable_since is None:
-                    stable_since = time.monotonic()
-                stable_seconds = time.monotonic() - stable_since
-                animation_seconds = time.monotonic() - started
-                if (
-                    stable_seconds >= self.REWARD_TEXT_STABLE_SECONDS
-                    and animation_seconds >= self.ANIMATION_SETTLE_SECONDS
-                ):
-                    self.context.detail(
-                        "Pirate chest reward claimable | "
-                        "proof=claim-text-stable | "
-                        f"white_ratio={white_ratio:.3f} | "
-                        f"text_mean={text_mean:.1f} | "
-                        f"text_change={text_change:.2f} | "
-                        f"stable={stable_seconds:.2f}s | "
-                        f"animation={animation_seconds:.2f}s"
-                    )
-                    return "PASS", frame.copy()
-            else:
-                stable_since = None
-
-            previous_text_roi = text_roi
-            self.auto.wait.sleep(self.POLL_SECONDS)
-
-        self.context.detail(
-            "Pirate chest wait timeout | state=reward-claimable | "
-            f"best_prompt_change={best_prompt_change:.2f} | "
-            f"best_white_ratio={best_white_ratio:.3f}"
-        )
-        return "TIMEOUT", None
+        self.auto.wait.sleep(self.OPERATOR_ANIMATION_WAIT_SECONDS)
+        self.context.ensure_running()
 
     def _wait_for_center_chest_returned(
         self,
         reward_frame,
     ) -> tuple[str, object | None]:
-        """Wait for a stable normal panel after the one authorized claim tap."""
+        """After the fixed 3s wait, prove the center chest is visible again."""
         deadline = time.monotonic() + self.RETURN_TIMEOUT_SECONDS
-        stable_since = None
         last_change = 0.0
         while time.monotonic() < deadline:
             self.context.ensure_running()
@@ -353,24 +244,17 @@ class PirateChestWorkflow:
                 return "STORAGE_FULL", frame
             if self._center_chest_returned(reward_frame, frame):
                 last_change = self._center_chest_change(reward_frame, frame)
-                if stable_since is None:
-                    stable_since = time.monotonic()
-                stable_seconds = time.monotonic() - stable_since
-                if stable_seconds >= self.RETURN_STABLE_SECONDS:
-                    self.context.detail(
-                        "Pirate chest panel returned | "
-                        "proof=center-chest-stable | "
-                        f"reward_change={last_change:.2f} | "
-                        f"stable={stable_seconds:.2f}s"
-                    )
-                    return "PASS", frame
-            else:
-                stable_since = None
+                self.context.detail(
+                    "Pirate chest panel returned | "
+                    "proof=center-chest-visible-again | "
+                    f"reward_change={last_change:.2f}"
+                )
+                return "PASS", frame
             self.auto.wait.sleep(self.POLL_SECONDS)
 
         self.context.detail(
             "Pirate chest wait timeout | "
-            "state=panel-after-reward-claim-center-chest-returned | "
+            "state=center-chest-visible-after-claim | "
             f"last_reward_change={last_change:.2f}"
         )
         return "TIMEOUT", None
@@ -528,66 +412,33 @@ class PirateChestWorkflow:
         *,
         require_exact_main_after_close: bool,
     ) -> PirateChestResult:
-        settle_state, _ = self._wait_open_prompt_animation()
-        if settle_state == "STORAGE_FULL":
-            self._exit_after_storage_full()
-            return self._result(
-                PirateChestStatus.STORAGE_FULL,
-                started,
-                "storage-full-before-chest-tap",
-            )
-        if settle_state != "PASS":
-            self._fail_close_reward_overlay(reason="open-prompt-animation-interrupted")
-            return self._result(
-                PirateChestStatus.SAFE_ABORT,
-                started,
-                "open-prompt-animation-interrupted",
-            )
-
-        open_prompt_frame = self.vision.frame().copy()
+        # Modal-open was proved once by the caller. Do not re-check its moving
+        # animation during the operator-specified three-second quiet window.
+        self._wait_operator_animation(state="modal-open-before-chest-tap")
         self._tap(self.CHEST_CENTER_POINT, "pirate-chest-tap-chest")
-        reward_state, reward_frame = self._wait_for_reward_claimable(open_prompt_frame)
-        if reward_state == "STORAGE_FULL":
+
+        # Reward art is random and animated. Wait exactly three seconds without
+        # CAPTURE, then take one reference frame immediately before claim.
+        self._wait_operator_animation(state="reward-open-before-claim")
+        reward_frame = self.vision.frame().copy()
+        if self._storage_full(reward_frame):
             self._exit_after_storage_full()
             return self._result(
                 PirateChestStatus.STORAGE_FULL,
                 started,
                 "storage-full-before-claim",
             )
-        if reward_state != "PASS":
-            self._fail_close_reward_overlay(reason="reward-timeout")
-            return self._result(
-                PirateChestStatus.SAFE_ABORT,
-                started,
-                "reward-timeout",
-            )
 
-        # Exactly one additional tap claims/closes the reward presentation.
-        # Never retry this action because the reward may already be credited.
-        # The return proof compares against this exact reward frame, not the
-        # earlier panel frame whose animation/cooldown art can legitimately vary.
+        # Exactly one claim tap at the operator-marked blank point below text.
         self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")
 
-        # INPUT4 claim and CAPTURE3 verification must not overlap. During this
-        # operator-approved quiet window no frame is requested, so the game can
-        # finish the claim/close animation before the first return-state check.
-        self.context.stage("pirate-chest-post-claim-quiet")
-        self.context.log(
-            "AUTO rương hải tặc • đã gửi nhận quà đúng 1 lần • "
-            f"quiet={self.POST_CLAIM_QUIET_SECONDS:.1f}s • "
-            "không CAPTURE/check trong animation"
-        )
-        self.auto.wait.sleep(self.POST_CLAIM_QUIET_SECONDS)
-        self.context.ensure_running()
+        # Again, do not let CAPTURE3 overlap INPUT4 or the close animation.
+        self._wait_operator_animation(state="claim-before-panel-check")
 
         final_state, final_frame = self._wait_for_center_chest_returned(
             reward_frame
         )
         if final_state == "STORAGE_FULL":
-            self.context.log(
-                "AUTO rương hải tặc • KHO QUÁ TẢI • đóng modal, thoát rương, "
-                "tiếp tục Function kế tiếp"
-            )
             self._exit_after_storage_full()
             return self._result(
                 PirateChestStatus.STORAGE_FULL,
@@ -595,22 +446,21 @@ class PirateChestWorkflow:
                 "storage-full-on-claim",
             )
         if final_state != "PASS":
-            # Back cannot dismiss the reward modal. Fail closed without
-            # another click; the next Function must not receive a false MAIN.
             self._fail_close_reward_overlay(
-                reason="center-chest-return-timeout"
+                reason="center-chest-visible-timeout"
             )
             return self._result(
                 PirateChestStatus.SAFE_ABORT,
                 started,
-                "cooldown-confirm-timeout",
+                "center-chest-visible-timeout",
             )
 
         cooldown_proven = (
             final_frame is not None and self._cooldown(final_frame)
         )
         self.context.log(
-            "AUTO rương hải tặc • nhận thưởng PASS • panel đã quay lại • "
+            "AUTO rương hải tặc • nhận thưởng PASS • "
+            "rương giữa đã xuất hiện trở lại • "
             f"cooldown={'PASS' if cooldown_proven else 'UNCLASSIFIED'} • "
             "đóng panel về MAIN"
         )
