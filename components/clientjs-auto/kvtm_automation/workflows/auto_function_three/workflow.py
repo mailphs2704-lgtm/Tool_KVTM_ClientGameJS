@@ -32,7 +32,7 @@ class FunctionThreeWorkflow:
     fail-closed before any input until the remaining steps are described.
     """
 
-    TOTAL_STEPS_PENDING = 3
+    TOTAL_DEFINED_STEPS = 1
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
@@ -55,7 +55,7 @@ class FunctionThreeWorkflow:
             apples_floor_6=int(result.replanted_floor_6),
             dried_teas=int(result.produced_count),
             progress_steps=1,
-            total_steps=self.TOTAL_STEPS_PENDING,
+            total_steps=self.TOTAL_DEFINED_STEPS,
             end_floor=1,
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
