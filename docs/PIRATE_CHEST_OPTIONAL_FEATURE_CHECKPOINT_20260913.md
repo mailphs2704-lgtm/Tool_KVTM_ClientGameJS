@@ -113,7 +113,22 @@ Source fix:
 
 Đây là SOURCE/AST READY, chưa phải runtime PASS.
 
-## 8. NEXT GATE
+## 8. Persisted modal `Chạm để mở rương`
+
+Operator xác nhận game có thể lưu rương đã chọn nhưng chưa mở. Lần check sau,
+click thân thuyền đi thẳng vào modal `Chạm để mở rương`, không qua panel slot.
+Ảnh evidence native 1000x1000 được đối chiếu với detector hiện tại:
+
+- `header_mean=15.12`;
+- `orange_ratio=0.397`;
+- `_open_prompt=True`.
+
+Entry nay chấp nhận `panel normal OR open prompt`. Khi vào thẳng open prompt,
+workflow tiếp tục đúng rương hiện tại và tuyệt đối bỏ qua chọn slot 0 cùng
+`MỞ NGAY`. Nhánh SAFE_ABORT/qua nhà bạn chỉ chạy nếu thao tác tiếp theo thật sự
+timeout hoặc gặp lỗi.
+
+## 9. NEXT GATE
 
 Theo `AGENTS.md`, operator chạy đúng Control Center:
 
