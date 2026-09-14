@@ -358,3 +358,32 @@ Function 1 full loop
 Nếu build fail, sửa đúng lỗi compile/import/contract trước. Không mở lại refactor kiến trúc rộng nếu không có bằng chứng regression.
 
 **Không gọi STATIC PASS hoặc RUNTIME PASS trước bằng chứng tương ứng.**
+
+## 18. Function 3 — STEP 1 LIVE PASS
+
+Operator xác nhận live test **PASS** ngày 2026-09-14 trên source/build mốc `ac31388c`.
+
+Quy trình đã chứng minh:
+
+```text
+MAIN → goUp(1) tầng 1
+→ chậu đầu (388,946)
+→ RIPE: thu 30 chậu / EMPTY: mở bảng gieo trực tiếp
+→ gieo 30 Táo tầng 1-5
+→ tầng 6 thu/gieo 6 Táo
+→ goDown(1) + click nút XUỐNG → exact MAIN
+→ goUp(1) tầng 1
+→ thu VP/mở máy
+→ tìm tra_say; MISS thì chuyển trang phải từng lần
+→ sản xuất 9/9 Trà sấy
+→ Sửa máy
+→ giữ nguyên tại tầng 1
+```
+
+Ranh giới hiện tại:
+
+- nút DEV chỉ gọi `FunctionThreeWorkflow.run_step_1()`;
+- `floor-demo` đã gỡ;
+- Function 3 có chung RecipeBook/RecoveryManager và sale policy Nước hoa hồng/Trà đá/Vải vàng;
+- Function 3 đầy đủ chưa được nối vào AUTO Main vì chưa có Step 2 trở đi;
+- NEXT: nhận mô tả Step 2 từ operator, không sửa lại Step 1 đã PASS nếu không có regression live.
