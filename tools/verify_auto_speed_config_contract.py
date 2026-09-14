@@ -102,43 +102,92 @@ def main() -> int:
     require(apple_supply, "self.speed_config.crop_check_interval", "Crop check interval not applied")
 
     # VP collection is centralized in ProductionPanelActions for every product.
+    # One raw burst is still exactly x5 with no stop/sleep/vision between clicks,
+    # while the canonical shared collector owns the operator-defined minimum
+    # four bursts = twenty clicks before panel recognition is allowed.
     require(panel, "class ProductionPanelActions", "Shared production panel engine missing")
     require(panel, "def _send_collect_burst(", "Raw five-click VP burst helper missing")
-    require(panel, "def _click_until_panel_open(", "Shared VP collect helper missing")
+    require(panel, "def collect_vp_before_machine_panel(", "Canonical shared VP collector missing")
+    require(panel, "def _click_until_panel_open(", "Shared panel-open helper missing")
     require(panel, "COLLECT_CLICK_BURST = 5", "Five-click VP collect burst contract missing")
+    require(panel, "COLLECT_MIN_BURSTS = 4", "Minimum four VP collect bursts contract missing")
+    require(
+        panel,
+        "COLLECT_MIN_CLICKS = COLLECT_CLICK_BURST * COLLECT_MIN_BURSTS",
+        "Minimum twenty-click VP collect contract missing",
+    )
 
     burst = method_section(
         panel,
         "    def _send_collect_burst(",
-        "    def _click_until_panel_open(",
+        "    def collect_vp_before_machine_panel(",
     )
     require(burst, "for _ in range(self.COLLECT_CLICK_BURST):", "VP burst does not send exactly COLLECT_CLICK_BURST raw clicks")
     require(burst, "self.vision.driver.click(*machine_point)", "Raw machine click missing inside VP burst")
     if burst.count("self.context.ensure_running()") != 1:
-        raise AssertionError("VP burst must have one stop checkpoint before x5, never between clicks")
+        raise AssertionError("VP raw x5 burst must have one stop checkpoint before x5, never between clicks")
     if "self.waiter.sleep(" in burst:
-        raise AssertionError("VP burst contains an inter-click sleep")
+        raise AssertionError("VP raw x5 burst contains an inter-click sleep")
     if "_panel_state(" in burst or "_find_product_match(" in burst or ".frame(" in burst:
-        raise AssertionError("VP burst contains a vision/panel check between raw clicks")
+        raise AssertionError("VP raw x5 burst contains a vision/panel check between clicks")
     if burst.index("self.context.ensure_running()") > burst.index("for _ in range"):
-        raise AssertionError("VP burst stop checkpoint must happen before the x5 loop")
+        raise AssertionError("VP raw x5 burst stop checkpoint must happen before the x5 loop")
+
+    shared_collect = method_section(
+        panel,
+        "    def collect_vp_before_machine_panel(",
+        "    def _click_until_panel_open(",
+    )
+    require(
+        shared_collect,
+        "for burst in range(1, self.COLLECT_MIN_BURSTS + 1):",
+        "Shared VP collector does not enforce the minimum burst count",
+    )
+    require(
+        shared_collect,
+        "self._send_collect_burst(machine_point=machine_point)",
+        "Shared VP collector does not call the true x5 raw burst",
+    )
+    require(
+        shared_collect,
+        "self.waiter.sleep(self.speed_config.vp_collect_delay)",
+        "Shared VP collector post-burst settle delay missing",
+    )
+    require(
+        shared_collect,
+        "return click_count",
+        "Shared VP collector does not report its click count",
+    )
+    if "_panel_state(" in shared_collect or "_find_product_match(" in shared_collect or ".frame(" in shared_collect:
+        raise AssertionError("Shared VP collector must finish >=20 clicks before any panel/vision recognition")
+    raw_call = shared_collect.index("self._send_collect_burst(machine_point=machine_point)")
+    settle = shared_collect.index("self.waiter.sleep(self.speed_config.vp_collect_delay)")
+    if raw_call > settle:
+        raise AssertionError("Each shared VP collection burst must be x5 first, settle second")
 
     collect = method_section(
         panel,
         "    def _click_until_panel_open(",
         "    def _wait_for_idle_open_panel(",
     )
-    require(collect, "self._send_collect_burst(machine_point=machine_point)", "Shared collect helper does not call true x5 burst")
-    require(collect, "self.waiter.sleep(self.speed_config.vp_collect_delay)", "VP collect post-burst settle delay missing")
-    require(collect, "frame = self.vision.frame()", "VP collect fresh-frame capture missing after settle")
+    require(
+        collect,
+        "self.collect_vp_before_machine_panel(",
+        "Panel-open helper bypasses the canonical >=20-click VP collector",
+    )
+    forbid(
+        collect,
+        "self._send_collect_burst(machine_point=machine_point)",
+        "Panel-open helper regressed to a private raw x5 burst",
+    )
+    require(collect, "frame = self.vision.frame()", "VP collect fresh-frame capture missing after shared collection")
     require(collect, "warehouse_full, empty_ready = self._panel_state(frame=frame)", "VP collect panel check must reuse fresh frame")
     require(collect, "self._find_wrong_product_match(", "VP collect wrong-machine scan missing")
-    burst_call = collect.index("self._send_collect_burst(machine_point=machine_point)")
-    settle = collect.index("self.waiter.sleep(self.speed_config.vp_collect_delay)")
+    shared_call = collect.index("self.collect_vp_before_machine_panel(")
     fresh_frame = collect.index("frame = self.vision.frame()")
     panel_check = collect.index("warehouse_full, empty_ready = self._panel_state(frame=frame)")
-    if not burst_call < settle < fresh_frame < panel_check:
-        raise AssertionError("VP collect order must be x5 -> settle once -> fresh frame -> panel check")
+    if not shared_call < fresh_frame < panel_check:
+        raise AssertionError("VP collect order must be shared >=20 clicks -> fresh frame -> panel check")
 
     # Product queue gesture timing stays product-owned while collection/panel proof
     # stays shared. Constructor formatting is intentionally irrelevant: verify the
@@ -173,7 +222,7 @@ def main() -> int:
     print("AUTO MULTI DEV SPEED CONFIG STATIC CONTRACT VERIFIED")
     print("floor_navigation=semantic-action-speed")
     print("plant_harvest=independent")
-    print("vp_collect=shared-panel-x5-no-inter-click-wait+post-burst-settle+fresh-frame-scan")
+    print("vp_collect=shared-panel-min4x5=20+raw-x5-no-inter-click-wait+post-burst-settle+fresh-frame-scan")
     print("vp_production=product-owned")
     print("panel_speed_wiring=format-insensitive")
     print("floor6_empty_planting=format-insensitive")
