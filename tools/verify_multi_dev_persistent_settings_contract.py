@@ -260,8 +260,8 @@ def main() -> int:
         "Pirate Chest flag is not preserved in active config for scheduled restart",
     )
 
-    # Pirate Chest scheduler contract: first check only after first completed
-    # sale, then 20-minute due marking consumed at a safe Function boundary.
+    # Pirate Chest scheduler: first check after sale #1. Only OPENED starts
+    # the 20-minute timer; every non-OPENED result retries after the next sale.
     require(
         auto_main_init,
         "from .pirate_chest_schedule import AutoMainResult, AutoMainWorkflow",
@@ -270,32 +270,42 @@ def main() -> int:
     require(
         pirate_chest_schedule,
         "PIRATE_CHEST_INTERVAL_SECONDS = 1200.0",
-        "Pirate Chest interval changed from 20 minutes",
+        "Pirate Chest successful-open interval changed from 20 minutes",
     )
     require(
         pirate_chest_schedule,
-        'raw.get("pirate_chest_enabled")',
-        "Pirate Chest scheduler does not read explicit run config flag",
+        '"pirate_chest_enabled"',
+        "Pirate Chest scheduler does not read the run config flag",
     )
     require(
         pirate_chest_schedule,
-        "if self.pirate_chest_enabled and not self._pirate_chest_initialized:",
-        "First Pirate Chest check is no longer gated to the first completed sale",
+        "or self._pirate_chest_retry_after_sale",
+        "Non-opened Pirate Chest results do not retry after the next sale",
     )
     require(
         pirate_chest_schedule,
-        'reason=f"first-completed-sale-{ordinal}"',
-        "First Pirate Chest check no longer records completed-sale boundary",
+        'if str(status) == "OPENED":',
+        "Pirate Chest timer is not restricted to a proven OPENED result",
+    )
+    require(
+        pirate_chest_schedule,
+        "self._pirate_chest_next_check_at = 0.0",
+        "Non-opened Pirate Chest result may retain a 20-minute deadline",
+    )
+    require(
+        pirate_chest_schedule,
+        "self._schedule_next_pirate_chest_check(status=status)",
+        "Pirate Chest result is not routed into status-aware scheduling",
+    )
+    require(
+        pirate_chest_schedule,
+        '"sau-lần-bán-VP-kế-tiếp"',
+        "Pirate Chest retry-after-sale diagnostic is missing",
     )
     require(
         pirate_chest_schedule,
         'reason="post-function-boundary"',
-        "20-minute Pirate Chest due check is not consumed post-Function",
-    )
-    require(
-        pirate_chest_schedule,
-        "self._schedule_next_pirate_chest_check()",
-        "Pirate Chest does not schedule the next 20-minute cycle",
+        "Successful-open 20-minute due check is not consumed post-Function",
     )
     require(
         pirate_chest_schedule,
@@ -310,17 +320,7 @@ def main() -> int:
     require(
         pirate_chest_schedule,
         "self._reset_scene_after_pirate_chest_abort(reason=detail or reason)",
-        "Pirate Chest SAFE_ABORT no longer forces the friend-house scene reset",
-    )
-    require(
-        pirate_chest_schedule,
-        "FriendRefreshWorkflow(",
-        "Pirate Chest SAFE_ABORT does not reuse the proven friend refresh workflow",
-    )
-    require(
-        pirate_chest_schedule,
-        "if not refreshed:",
-        "Pirate Chest SAFE_ABORT may hand off without a proven friend round trip",
+        "Pirate Chest SAFE_ABORT no longer owns its recovery",
     )
 
     # Pirate Chest click safety: coordinate/hitbox entry, slot 0 only, no image
@@ -394,135 +394,78 @@ def main() -> int:
         "Pirate Chest cooldown branch missing",
     )
 
-    # Reward presentation must be claimed exactly once, then the normal chest
-    # panel must be proven before its close button can return the client to MAIN.
+    # Exact operator sequence: three capture-free 3s waits around two single
+    # taps, then center-chest return, panel close and MAIN proof.
     require(
         pirate_chest_workflow,
-        "def _wait_for_reward_claimable(",
-        "Pirate Chest no longer waits for a claimable reward presentation",
+        "CHEST_CENTER_POINT = (486, 603)",
+        "Pirate Chest open tap no longer matches the operator-marked point",
     )
     require(
         pirate_chest_workflow,
-        "proof=claim-text-stable",
-        "Pirate Chest reward claim is not gated by stable claim text",
+        "REWARD_CLAIM_POINT = (500, 702)",
+        "Pirate Chest claim tap no longer matches the operator-marked point",
     )
     require(
         pirate_chest_workflow,
-        "independent of reward art",
-        "Pirate Chest reward detection is not reward-type agnostic",
+        "OPERATOR_ANIMATION_WAIT_SECONDS = 3.0",
+        "Pirate Chest does not use the exact operator-approved 3s waits",
     )
-    forbid(
+    for state in (
+        'state="modal-open-before-chest-tap"',
+        'state="reward-open-before-claim"',
+        'state="claim-before-panel-check"',
+    ):
+        require(
+            pirate_chest_workflow,
+            state,
+            f"Pirate Chest fixed animation wait missing: {state}",
+        )
+    require(
         pirate_chest_workflow,
-        "reward-coin-roi",
-        "Pirate Chest must not require a coin-specific reward detector",
+        '"không CAPTURE/check"',
+        "Pirate Chest animation waits no longer exclude CAPTURE/check",
+    )
+    require(
+        pirate_chest_workflow,
+        'self._tap(self.CHEST_CENTER_POINT, "pirate-chest-tap-chest")',
+        "Pirate Chest does not tap the marked chest point exactly once",
     )
     require(
         pirate_chest_workflow,
         'self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")',
-        "Pirate Chest reward is not claimed by the single authorized tap",
+        "Pirate Chest does not claim at the marked blank point",
     )
     if pirate_chest_workflow.count("pirate-chest-claim-reward-once") != 1:
         raise AssertionError("Pirate Chest reward claim may be retried or duplicated")
     require(
         pirate_chest_workflow,
-        "self._wait_for_center_chest_returned(",
-        "Pirate Chest does not stably prove the normal panel after reward claim",
-    )
-    require(
-        pirate_chest_workflow,
-        "self._close_panel_if_visible()",
-        "Pirate Chest does not close the proven panel after reward claim",
-    )
-    require(
-        pirate_chest_workflow,
-        "REWARD_CLAIM_POINT = (500, 715)",
-        "Pirate Chest claim tap is not below the claim text",
-    )
-    require(
-        pirate_chest_workflow,
-        "def _center_chest_hidden(",
-        "Pirate Chest does not prove the center chest disappeared",
-    )
-    require(
-        pirate_chest_workflow,
-        "def _center_chest_returned(",
+        "proof=center-chest-visible-again",
         "Pirate Chest does not prove the center chest returned after claim",
     )
     require(
         pirate_chest_workflow,
-        "reward_state, reward_frame = self._wait_for_reward_claimable(",
-        "Pirate Chest does not retain the actual reward frame for return proof",
-    )
-    require(
-        pirate_chest_workflow,
-        "self._center_chest_change(reward_frame, frame)",
-        "Pirate Chest return proof still compares against the pre-open panel",
-    )
-    require(
-        pirate_chest_workflow,
-        ">= self.CENTER_CHEST_RETURN_MIN_CHANGE",
-        "Pirate Chest return proof no longer requires reward art to disappear",
-    )
-    require(
-        pirate_chest_workflow,
-        "REWARD_TEXT_STABLE_SECONDS = 0.60",
-        "Pirate Chest may click claim before the reward text animation settles",
-    )
-    require(
-        pirate_chest_workflow,
-        "RETURN_STABLE_SECONDS = 0.60",
-        "Pirate Chest may close the panel before its return animation settles",
-    )
-    require(
-        pirate_chest_workflow,
-        "REWARD_TIMEOUT_SECONDS = 10.0",
-        "Pirate Chest reward animation timeout is too short",
-    )
-    require(
-        pirate_chest_workflow,
-        "RETURN_TIMEOUT_SECONDS = 12.0",
-        "Pirate Chest panel return timeout is too short",
-    )
-    require(
-        pirate_chest_workflow,
-        "ANIMATION_SETTLE_SECONDS = 4.0",
-        "Pirate Chest no longer uses the operator-approved 3-5s animation window",
-    )
-    require(
-        pirate_chest_workflow,
-        "POST_CLAIM_QUIET_SECONDS = 4.0",
-        "Pirate Chest claim input is no longer isolated from CAPTURE verification",
-    )
-    require(
-        pirate_chest_workflow,
-        "self.auto.wait.sleep(self.POST_CLAIM_QUIET_SECONDS)",
-        "Pirate Chest starts checking before the post-claim quiet window ends",
-    )
-    require(
-        pirate_chest_workflow,
-        '"không CAPTURE/check trong animation"',
-        "Pirate Chest post-claim quiet diagnostic is missing",
-    )
-    require(
-        pirate_chest_workflow,
-        "settle_state, _ = self._wait_open_prompt_animation()",
-        "Pirate Chest may tap the chest before its modal animation settles",
-    )
-    require(
-        pirate_chest_workflow,
-        "animation_seconds >= self.ANIMATION_SETTLE_SECONDS",
-        "Pirate Chest may claim reward before the reward animation settles",
-    )
-    require(
-        pirate_chest_workflow,
         "def _close_panel_and_prove_main(",
-        "Pirate Chest does not prove MAIN after closing the returned panel",
+        "Pirate Chest does not close the panel and prove MAIN",
     )
     require(
         pirate_chest_workflow,
         '"Pirate chest panel closed | proof=exact-main"',
-        "Pirate Chest panel-close MAIN proof log is missing",
+        "Pirate Chest exact-main close proof log is missing",
     )
+    for obsolete_animation_gate in (
+        "_wait_open_prompt_animation",
+        "_wait_for_reward_claimable",
+        "proof=claim-text-stable",
+        "REWARD_TEXT_STABLE_SECONDS",
+        "POST_CLAIM_QUIET_SECONDS",
+        "ANIMATION_SETTLE_SECONDS",
+    ):
+        forbid(
+            pirate_chest_workflow,
+            obsolete_animation_gate,
+            f"Obsolete moving-animation gate remains: {obsolete_animation_gate}",
+        )
     require(
         pirate_chest_workflow,
         "không dùng nút quay lại",
