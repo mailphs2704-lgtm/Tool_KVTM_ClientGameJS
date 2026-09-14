@@ -24,6 +24,13 @@ PIRATE_CHEST_SCHEDULE = (
     ROOT
     / "components/clientjs-auto/kvtm_automation/workflows/auto_main/pirate_chest_schedule.py"
 )
+AUTOMATION_CONTEXT = (
+    ROOT / "components/clientjs-auto/kvtm_automation/context.py"
+)
+GAME_SESSION_WORKFLOW = (
+    ROOT
+    / "components/clientjs-auto/kvtm_automation/workflows/game_session/workflow.py"
+)
 AUTO_MAIN_INIT = (
     ROOT
     / "components/clientjs-auto/kvtm_automation/workflows/auto_main/__init__.py"
@@ -60,6 +67,8 @@ def main() -> int:
         (OPTIONAL_FEATURES, "AUTO Main optional-features layer"),
         (PIRATE_CHEST_WORKFLOW, "Pirate Chest workflow"),
         (PIRATE_CHEST_SCHEDULE, "Pirate Chest safe-boundary scheduler"),
+        (AUTOMATION_CONTEXT, "AUTO runtime context"),
+        (GAME_SESSION_WORKFLOW, "Game Session workflow"),
         (AUTO_MAIN_INIT, "AUTO Main package entry"),
         (DAILY_SALE_UI, "daily sale counter UI integration"),
         (DAILY_SALE_COUNTER, "daily sale counter storage"),
@@ -76,6 +85,8 @@ def main() -> int:
     optional_features = OPTIONAL_FEATURES.read_text(encoding="utf-8")
     pirate_chest_workflow = PIRATE_CHEST_WORKFLOW.read_text(encoding="utf-8")
     pirate_chest_schedule = PIRATE_CHEST_SCHEDULE.read_text(encoding="utf-8")
+    automation_context = AUTOMATION_CONTEXT.read_text(encoding="utf-8")
+    game_session_workflow = GAME_SESSION_WORKFLOW.read_text(encoding="utf-8")
     auto_main_init = AUTO_MAIN_INIT.read_text(encoding="utf-8")
     daily_sale_ui = DAILY_SALE_UI.read_text(encoding="utf-8")
     daily_sale_counter = DAILY_SALE_COUNTER.read_text(encoding="utf-8")
@@ -88,6 +99,8 @@ def main() -> int:
         (OPTIONAL_FEATURES, optional_features),
         (PIRATE_CHEST_WORKFLOW, pirate_chest_workflow),
         (PIRATE_CHEST_SCHEDULE, pirate_chest_schedule),
+        (AUTOMATION_CONTEXT, automation_context),
+        (GAME_SESSION_WORKFLOW, game_session_workflow),
         (AUTO_MAIN_INIT, auto_main_init),
         (DAILY_SALE_UI, daily_sale_ui),
         (DAILY_SALE_COUNTER, daily_sale_counter),
@@ -323,6 +336,34 @@ def main() -> int:
         "Pirate Chest SAFE_ABORT no longer owns its recovery",
     )
 
+    # A startup-resumed opening must use the same final proof and carry its
+    # OPENED timestamp into the later AUTO Main scheduler.
+    require(
+        automation_context,
+        "pirate_chest_opened_at_monotonic",
+        "Proven Pirate Chest OPENED evidence is not stored in shared runtime state",
+    )
+    require(
+        pirate_chest_workflow,
+        "self.context.mark_pirate_chest_opened()",
+        "Pirate Chest does not store OPENED after the two final visual conditions",
+    )
+    require(
+        pirate_chest_schedule,
+        '"pirate_chest_opened_at_monotonic"',
+        "Startup Pirate Chest OPENED evidence is not read by the scheduler",
+    )
+    require(
+        pirate_chest_schedule,
+        "float(startup_opened_at) + self.PIRATE_CHEST_INTERVAL_SECONDS",
+        "Startup Pirate Chest OPENED does not preserve its 20-minute deadline",
+    )
+    require(
+        game_session_workflow,
+        "bộ đếm 20 phút sẽ được bàn giao cho scheduler",
+        "Game Session no longer documents the startup OPENED scheduler handoff",
+    )
+
     # Pirate Chest click safety: coordinate/hitbox entry, slot 0 only, no image
     # template dependency for the variable farm background and no paid-slot map.
     require(
@@ -440,8 +481,23 @@ def main() -> int:
         raise AssertionError("Pirate Chest reward claim may be retried or duplicated")
     require(
         pirate_chest_workflow,
-        "proof=center-chest-visible-again",
-        "Pirate Chest does not prove the center chest returned after claim",
+        "def _reward_modal_closed(",
+        "Pirate Chest does not independently prove the reward modal closed",
+    )
+    require(
+        pirate_chest_workflow,
+        "def _center_chest_visible_again(",
+        "Pirate Chest does not independently prove the center chest returned",
+    )
+    require(
+        pirate_chest_workflow,
+        "reward_modal_closed and center_chest_visible",
+        "Pirate Chest OPENED is not gated by both final visual conditions",
+    )
+    require(
+        pirate_chest_workflow,
+        "modal nhận quà đã đóng=PASS • rương giữa xuất hiện lại=PASS",
+        "Pirate Chest OPENED log does not expose both final proofs",
     )
     require(
         pirate_chest_workflow,
