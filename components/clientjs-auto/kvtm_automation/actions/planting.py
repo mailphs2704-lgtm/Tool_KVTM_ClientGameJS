@@ -261,7 +261,18 @@ class PlantingActions:
                 )
                 harvested = requested
                 self.waiter.sleep(0.55)
-                continue
+
+                # RIPE may be discovered on the last allowed attempt. Reopen the
+                # picker from the now-empty first pot immediately in this same
+                # attempt; never require an artificial attempt 7 just to plant.
+                state, match = self._scan_first_pot_state(
+                    seed_template,
+                    open_point=first_pot_point,
+                )
+                self.context.log(
+                    f"AUTO trồng • {label} • sau thu hoạch đã click chậu trống đầu "
+                    f"{first_pot_point} để mở lại bảng gieo"
+                )
 
             if state == "EMPTY" and match is not None:
                 plant_path = (match.center,) + tuple(selected_path[1:])
