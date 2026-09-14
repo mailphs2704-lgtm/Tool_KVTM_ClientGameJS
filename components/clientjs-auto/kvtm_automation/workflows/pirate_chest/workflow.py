@@ -325,77 +325,88 @@ class PirateChestWorkflow:
             )
 
         self._tap(self.ENTRY_POINT, "pirate-chest-open-entry")
-        status, _ = self._wait_for(
-            self._panel_normal,
+        status, entry_frame = self._wait_for(
+            lambda frame: self._panel_normal(frame) or self._open_prompt(frame),
             timeout=self.ENTER_TIMEOUT_SECONDS,
             label="panel-open",
         )
-        if status != "PASS":
+        if status != "PASS" or entry_frame is None:
             self.context.log(
-                "AUTO rương hải tặc • không xác nhận được panel • bỏ lượt an toàn"
+                "AUTO rương hải tặc • không xác nhận được panel/modal • "
+                "bỏ lượt an toàn"
             )
             return self._result(
                 PirateChestStatus.SAFE_ABORT,
                 started,
-                "panel-open-timeout",
+                "panel-or-open-prompt-timeout",
             )
 
-        # Slot 0 is the only authorized slot. No coordinates for slots 1..4 are
-        # defined anywhere in this workflow.
-        self._tap(self.SLOT_ZERO_POINT, "pirate-chest-select-slot-0")
-        self.auto.wait.sleep(0.18)
-        frame = self.vision.frame()
-
-        if self._storage_full(frame):
-            self._exit_after_storage_full()
-            return self._result(
-                PirateChestStatus.STORAGE_FULL,
-                started,
-                "storage-full-before-open",
-            )
-
-        if self._cooldown(frame):
-            self.context.log("AUTO rương hải tặc • slot 0 đang cooldown")
-            self._close_panel_if_visible()
-            return self._result(
-                PirateChestStatus.COOLDOWN,
-                started,
-                "slot-0-cooldown",
-            )
-
-        if not self._ready(frame):
+        # The game persists an already-selected chest. A later ship entry can
+        # therefore reopen directly at "Chạm để mở rương" without showing the
+        # normal slot panel. This is a valid resumable state: never click slot 0
+        # or MỞ NGAY again, because that could target a different/paid chest.
+        if self._open_prompt(entry_frame):
             self.context.log(
-                "AUTO rương hải tặc • slot 0 không ở READY/COOLDOWN • "
-                "không click MỞ NGAY"
+                "AUTO rương hải tặc • entry vào modal rương đang chờ mở • "
+                "tiếp tục rương hiện tại, bỏ qua chọn slot và MỞ NGAY"
             )
-            self._close_panel_if_visible()
-            return self._result(
-                PirateChestStatus.SAFE_ABORT,
-                started,
-                "slot-0-unclassified",
-            )
+        else:
+            # Slot 0 is the only authorized slot. No coordinates for slots 1..4
+            # are defined anywhere in this workflow.
+            self._tap(self.SLOT_ZERO_POINT, "pirate-chest-select-slot-0")
+            self.auto.wait.sleep(0.18)
+            frame = self.vision.frame()
 
-        self._tap(self.OPEN_NOW_POINT, "pirate-chest-open-now-slot-0")
-        transition, _ = self._wait_for(
-            self._open_prompt,
-            timeout=self.TRANSITION_TIMEOUT_SECONDS,
-            label="tap-to-open",
-            storage_interrupt=True,
-        )
-        if transition == "STORAGE_FULL":
-            self._exit_after_storage_full()
-            return self._result(
-                PirateChestStatus.STORAGE_FULL,
-                started,
-                "storage-full-after-open-now",
+            if self._storage_full(frame):
+                self._exit_after_storage_full()
+                return self._result(
+                    PirateChestStatus.STORAGE_FULL,
+                    started,
+                    "storage-full-before-open",
+                )
+
+            if self._cooldown(frame):
+                self.context.log("AUTO rương hải tặc • slot 0 đang cooldown")
+                self._close_panel_if_visible()
+                return self._result(
+                    PirateChestStatus.COOLDOWN,
+                    started,
+                    "slot-0-cooldown",
+                )
+
+            if not self._ready(frame):
+                self.context.log(
+                    "AUTO rương hải tặc • slot 0 không ở READY/COOLDOWN • "
+                    "không click MỞ NGAY"
+                )
+                self._close_panel_if_visible()
+                return self._result(
+                    PirateChestStatus.SAFE_ABORT,
+                    started,
+                    "slot-0-unclassified",
+                )
+
+            self._tap(self.OPEN_NOW_POINT, "pirate-chest-open-now-slot-0")
+            transition, _ = self._wait_for(
+                self._open_prompt,
+                timeout=self.TRANSITION_TIMEOUT_SECONDS,
+                label="tap-to-open",
+                storage_interrupt=True,
             )
-        if transition != "PASS":
-            self._close_panel_if_visible()
-            return self._result(
-                PirateChestStatus.SAFE_ABORT,
-                started,
-                "open-prompt-timeout",
-            )
+            if transition == "STORAGE_FULL":
+                self._exit_after_storage_full()
+                return self._result(
+                    PirateChestStatus.STORAGE_FULL,
+                    started,
+                    "storage-full-after-open-now",
+                )
+            if transition != "PASS":
+                self._close_panel_if_visible()
+                return self._result(
+                    PirateChestStatus.SAFE_ABORT,
+                    started,
+                    "open-prompt-timeout",
+                )
 
         self._tap(self.CHEST_CENTER_POINT, "pirate-chest-tap-chest")
         reward_state, _ = self._wait_for(
