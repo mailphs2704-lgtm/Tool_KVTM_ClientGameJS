@@ -95,7 +95,10 @@ def main() -> int:
     require(selling, "def wait_own_stall_ready(", "Own-stall stable proof helper missing")
 
     # Allowed Function items and safe insufficient-item exclusions remain intact.
-    for token in ('"tao_say"', '"vai_vang"', '"tinh_dau_hh"'):
+    for token in (
+        '"tao_say"', '"vai_vang"', '"tinh_dau_hh"',
+        '"nuoc_hoa_hong"', '"tra_da"',
+    ):
         require(recognition, token, f"Missing allowed AUTO VP: {token}")
     require(action, 'status="NO_ALLOWED_ITEM"', "No-item safe stop missing")
     require(action, 'status="NO_SAFE_EXACT_TEN_ITEMS"', "Unsafe/all-short safe stop missing")
@@ -125,6 +128,12 @@ def main() -> int:
     # post-Function boundary with a guaranteed sale before relaunch.
     require(catalog, 'sale_item_ids=("tao_say", "vai_vang")', "Function-1 sale ownership missing")
     require(catalog, 'sale_item_ids=("tao_say", "vai_vang", "tinh_dau_hh")', "Function-2 sale ownership missing")
+    require(catalog, 'sale_item_ids=("nuoc_hoa_hong", "tra_da", "vai_vang")',
+            "Function-3 sale ownership missing")
+    require(action, '"nuoc_hoa_hong": "nuoc_hoa_hong"',
+            "Function-3 Nước hoa hồng dialog proof missing")
+    require(action, '"tra_da": "tra_da"',
+            "Function-3 Trà đá dialog proof missing")
     require(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 10800.0", "Scheduler 3h restart interval changed")
     require(auto_main, "def _request_client_restart_at_safe_boundary", "Safe restart boundary helper missing")
     require(auto_main, "raise ClientRestartRequested(", "Restart signal missing")
@@ -149,6 +158,13 @@ def main() -> int:
     require(integration, '_AUTO_MAIN_FUNCTION_OPTIONS = (', "Function menu source missing")
     require(integration, 'start_button.configure(command=self._start_configured_auto_main)', "AUTO Start is not bound to configured Function")
     require(entry, 'worker_root / "auto_multi_dev_worker.py"', "Worker launch wiring missing")
+    require(entry, 'text="▶ Test Function 3 - Step 1"',
+            "Function 3 Step 1 test button missing")
+    require(entry, "command=self._start_clean_function_3_step_1",
+            "Function 3 Step 1 button wiring missing")
+    require(entry, '"function-3-step-1" if run_function_3_step_1 else "main"',
+            "Function 3 Step 1 worker mode dispatch missing")
+    forbid(entry, "Demo Auto Pro tới tầng 6", "Removed floor demo button returned")
 
     for text in (action, workflow, friend_refresh):
         forbid(text, ".pyc", "AUTO Main runtime must not load legacy pyc")
