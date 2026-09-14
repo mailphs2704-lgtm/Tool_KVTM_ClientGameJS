@@ -16,6 +16,8 @@ FUNCTION_ONE_BOUNDARY_NAV = ACTIONS / "function_one_pass_three_navigation.py"
 VP_SALE_TRANSACTION = ACTIONS / "vp_sale_transaction.py"
 FUNCTION_TWO_PLANTING = ACTIONS / "function_two_planting.py"
 SALE_WORKFLOW = CLEAN / "workflows/auto_vp_sale/workflow.py"
+AUTOMATION = CLEAN / "automation.py"
+ROSE_OIL_RECIPE = CLEAN / "recipes/rose_oil.py"
 
 
 def read(path: Path) -> str:
@@ -46,6 +48,8 @@ def main() -> int:
     vp_sale_transaction = read(VP_SALE_TRANSACTION)
     function_two_planting = read(FUNCTION_TWO_PLANTING)
     sale_workflow = read(SALE_WORKFLOW)
+    automation = read(AUTOMATION)
+    rose_oil_recipe = read(ROSE_OIL_RECIPE)
 
     # Shared planting geometry owns all currently verified reusable paths.
     for token in (
@@ -74,6 +78,28 @@ def main() -> int:
             token,
             f"Planting retry does not reopen from the first pot: {token}",
         )
+
+    # Runtime ownership/call chain must stay:
+    # RoseOilRecipe -> KVAutomation.planting -> shared PlantingActions method.
+    require(
+        automation,
+        "self.planting = PlantingActions(",
+        "KVAutomation no longer owns the shared PlantingActions instance",
+    )
+    require(
+        rose_oil_recipe,
+        "planting = self.auto.planting",
+        "RoseOilRecipe does not consume KVAutomation.planting",
+    )
+    if rose_oil_recipe.count("planting.harvest_and_replant_current_view(") != 3:
+        raise AssertionError(
+            "RoseOilRecipe must route Hồng30, Hồng5 and Tuyết28 through shared planting"
+        )
+    forbid(
+        rose_oil_recipe,
+        "PlantingActions(",
+        "RoseOilRecipe must not construct a parallel PlantingActions instance",
+    )
 
     # Apple supply keeps crop-specific wait semantics but no longer owns duplicate
     # 30-pot/6-pot geometry or floor navigation.
