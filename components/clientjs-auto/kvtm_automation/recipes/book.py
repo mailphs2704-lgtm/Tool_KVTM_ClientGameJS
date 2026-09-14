@@ -6,6 +6,7 @@ from ..recovery import RecoveryManager
 from .apple_juice import AppleJuiceRecipe
 from .dried_apple import DriedAppleRecipe
 from .dried_tea_step_one import DriedTeaStepOneRecipe
+from .dried_tea_step_two import DriedTeaStepTwoRecipe
 from .rose_oil import RoseOilRecipe
 from .yellow_fabric import YellowFabricRecipe
 
@@ -63,8 +64,13 @@ class RecipeBook:
                 recovery=self.recovery,
             )
         self.dried_tea_step_one: DriedTeaStepOneRecipe | None = None
+        self.dried_tea_step_two: DriedTeaStepTwoRecipe | None = None
         if self.function_id == "function_3":
             self.dried_tea_step_one = DriedTeaStepOneRecipe(
+                automation,
+                recovery=self.recovery,
+            )
+            self.dried_tea_step_two = DriedTeaStepTwoRecipe(
                 automation,
                 recovery=self.recovery,
             )

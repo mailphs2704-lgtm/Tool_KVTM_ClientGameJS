@@ -12,8 +12,9 @@ from ..runtime.wait import Waiter
 __all__ = ["PlantingActions", "PlantingSegmentResult"]
 FILE_FUNCTIONS = (
     "Sở hữu geometry/path trồng và thu hoạch dùng chung, không sở hữu Function choreography",
-    "Cung cấp path chuẩn 5/6/27/28/30 chậu ở logical 1000x1000",
+    "Cung cấp path chuẩn 5/6/24/27/28/30 chậu ở logical 1000x1000",
     "Nhận diện trạng thái chậu RIPE/EMPTY theo crop template",
+    "Tìm seed động theo template qua các trang picker; không dùng tọa độ tuyệt đối của seed",
     "Thu hoạch và gieo lại đúng count trên view hiện tại bằng một BATCH_SWIPE",
     "Crop/template tách khỏi geometry để cùng path dùng được cho nhiều loại cây",
     "Giữ wrapper 27 cũ chỉ để tương thích; code mới dùng current-view Action + Navigation Action riêng",
@@ -41,6 +42,7 @@ class PlantingActions:
     ROSE_TEMPLATE = "cay_hong"
     APPLE_TEMPLATE = "cay_tao"
     SNOW_TEMPLATE = "cay_tuyet"
+    TEA_TEMPLATE = "cay_tra"
 
     TREE_COUNT = 27  # legacy compatibility name
     TREES_PER_LAYER = 6
@@ -49,6 +51,13 @@ class PlantingActions:
     X_COORDS_EVEN = (335, 430, 505, 595, 665, 835)
     Y_LAYERS = (940, 725, 505, 280, 40)
 
+    PATH_24 = (
+        START_POINT,
+        (335, 940), (835, 940),
+        (835, 725), (335, 725),
+        (335, 505), (835, 505),
+        (835, 280), (335, 280),
+    )
     PATH_27 = (
         START_POINT,
         (335, 940), (835, 940),
@@ -87,6 +96,7 @@ class PlantingActions:
     VERIFIED_PATHS = {
         5: PATH_5,
         6: PATH_6,
+        24: PATH_24,
         27: PATH_27,
         28: PATH_28,
         30: PATH_30,
@@ -100,6 +110,10 @@ class PlantingActions:
     SEED_ZONE = (179, 773, 230, 166)
     EMPTY_READY_ZONE = (124, 729, 347, 236)
     HARVEST_ZONE = (222, 703, 218, 191)
+    # Operator-marked right-page arrow in the seed picker (logical 1000x1000).
+    # Seed locations themselves are never absolute and are always template-matched.
+    SEED_NEXT_PAGE_POINT = (418, 848)
+    SEED_PAGE_SETTLE_SECONDS = 0.35
 
     def __init__(
         self,
@@ -181,6 +195,51 @@ class PlantingActions:
     def _count_changed_pots(self, before, after) -> int:
         return self._count_changed_pots_27(before, after)
 
+    def _find_seed_in_open_picker(
+        self,
+        seed_template: str,
+        item_label: str,
+        *,
+        first_match: object | None = None,
+    ):
+        """Find a seed by template, paging right until the requested seed appears.
+
+        Seed order/location may vary between accounts/sessions. The only fixed
+        coordinate here is the operator-marked picker page arrow. Once a template
+        is found, callers must drag from ``match.center`` rather than any absolute
+        seed coordinate.
+        """
+        match = first_match
+        page_moves = 0
+        while match is None:
+            self.context.ensure_running()
+            frame = self.vision.frame()
+            match = self.vision.find(
+                seed_template,
+                threshold=0.87,
+                zone=self.SEED_ZONE,
+                scales=(0.80, 0.90, 1.00, 1.10, 1.20),
+                frame=frame,
+            )
+            if match is not None:
+                break
+
+            page_moves += 1
+            self.context.log(
+                f"AUTO trồng • seed {item_label} MISS • "
+                f"chuyển trang phải lần {page_moves} • "
+                f"point={self.SEED_NEXT_PAGE_POINT}"
+            )
+            self.vision.driver.click(*self.SEED_NEXT_PAGE_POINT)
+            self.waiter.sleep(self.SEED_PAGE_SETTLE_SECONDS)
+
+        self.context.detail(
+            "AUTO planting dynamic seed READY | "
+            f"seed={seed_template} | item={item_label} | "
+            f"page_moves={page_moves} | center={match.center}"
+        )
+        return match
+
     def _scan_first_pot_state(self, seed_template: str) -> tuple[str, object | None]:
         self.context.ensure_running()
         # OPEN_PLANT_POINT is the operator-verified hitbox that opens the
@@ -206,7 +265,7 @@ class PlantingActions:
         )
         if harvest is not None:
             return "RIPE", harvest
-        if empty is not None and seed is not None:
+        if empty is not None:
             return "EMPTY", seed
         return "UNKNOWN", None
 
@@ -223,8 +282,13 @@ class PlantingActions:
         """Harvest if ripe, then plant the requested crop/count on current view.
 
         The caller must position the camera first. This keeps Navigation separate
-        from planting and allows the same 5/6/27/28/30 geometry to be reused by
+        from planting and allows the same 5/6/24/27/28/30 geometry to be reused by
         any crop whose seed template is supplied.
+
+        Seed position/order inside the picker is dynamic. If the requested seed is
+        not on the current picker page, the shared Action advances only with the
+        fixed right-page arrow until the template appears, then drags from the
+        detected template center.
         """
         requested = int(count)
         selected_path = tuple(path or self.path_for_count(requested))
@@ -258,10 +322,16 @@ class PlantingActions:
                     f"tại điểm chuẩn={self.OPEN_PLANT_POINT}"
                 )
 
-            if state == "EMPTY" and match is not None:
+            if state == "EMPTY":
+                match = self._find_seed_in_open_picker(
+                    seed_template,
+                    item_label,
+                    first_match=match,
+                )
                 plant_path = (match.center,) + tuple(selected_path[1:])
                 self.context.log(
-                    f"AUTO trồng • {label} • seed {item_label} READY → gieo {requested} chậu"
+                    f"AUTO trồng • {label} • seed {item_label} READY động "
+                    f"center={match.center} → gieo {requested} chậu"
                 )
                 self.vision.driver.swipe_points(
                     plant_path,
@@ -325,8 +395,13 @@ class PlantingActions:
         for attempt in range(1, 6):
             state, match = self._scan_first_pot_state(seed_template)
             if state == "EMPTY":
+                match = self._find_seed_in_open_picker(
+                    seed_template,
+                    item_label,
+                    first_match=match,
+                )
                 self.context.log(
-                    f"AUTO trồng legacy • bảng hạt READY • lần {attempt}/5"
+                    f"AUTO trồng legacy • bảng hạt READY động • lần {attempt}/5"
                 )
                 return baseline, match
             if state == "RIPE":
