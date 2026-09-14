@@ -5,6 +5,7 @@ import time
 
 from ...automation import KVAutomation
 from ...errors import ScreenTimeout
+from ..pirate_chest.workflow import PirateChestStatus, PirateChestWorkflow
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,29 @@ class GameSessionWorkflow:
         self.auto = automation
         self.context = automation.context
 
+    def _resume_pirate_chest_if_visible(
+        self,
+        *,
+        require_exact_main_after_close: bool,
+    ) -> bool:
+        result = PirateChestWorkflow(
+            self.auto
+        ).resume_open_prompt_if_visible(
+            require_exact_main_after_close=require_exact_main_after_close,
+        )
+        if result is None:
+            return False
+        if result.status != PirateChestStatus.OPENED.value:
+            raise ScreenTimeout(
+                "Startup phát hiện modal rương tồn tại nhưng chưa hoàn tất an toàn: "
+                f"status={result.status}, detail={result.detail}"
+            )
+        self.context.log(
+            "AUTO startup • resume modal rương PASS • "
+            "đã nhận quà và đóng panel trước khi tiếp tục popup/login"
+        )
+        return True
+
     def _watch_popups(self, seconds: float) -> None:
         duration = max(0.0, float(seconds))
         deadline = time.monotonic() + duration
@@ -49,6 +73,10 @@ class GameSessionWorkflow:
 
         while time.monotonic() < deadline:
             self.context.ensure_running()
+            if self._resume_pirate_chest_if_visible(
+                require_exact_main_after_close=True
+            ):
+                continue
             if self.auto.popup.dismiss_one():
                 closed += 1
                 self.context.detail(
@@ -73,9 +101,12 @@ class GameSessionWorkflow:
             "AUTO Vào game + đóng popup • bắt đầu • startup không thực hiện goDown(1)"
         )
 
-        # PopupActions owns portal/account entry plus blocking popup dismissal
-        # until the clone farm HUD is reachable. It does not normalize vertical
-        # camera position.
+        # A persisted Pirate Chest prompt cannot be dismissed by the generic
+        # modal/backdrop handler. Finish it first, then let PopupActions own the
+        # remaining portal/account and ordinary popup recovery.
+        self._resume_pirate_chest_if_visible(
+            require_exact_main_after_close=False
+        )
         self.auto.ensure_main_screen(timeout=float(timeout))
         self.context.ensure_running()
 
