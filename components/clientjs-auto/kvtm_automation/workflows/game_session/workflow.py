@@ -51,6 +51,12 @@ class GameSessionWorkflow:
         )
         if result is None:
             return False
+        if result.status == PirateChestStatus.STORAGE_FULL.value:
+            self.context.log(
+                "AUTO startup • resume modal rương FAIL • reason=KHO_QUA_TAI • "
+                "không tính OPENED, không chạy 20 phút; đã bỏ qua lượt rương"
+            )
+            return True
         if result.status != PirateChestStatus.OPENED.value:
             raise ScreenTimeout(
                 "Startup phát hiện modal rương tồn tại nhưng chưa hoàn tất an toàn: "
