@@ -53,15 +53,19 @@ def main() -> int:
 
     # Shared planting geometry owns all currently verified reusable paths.
     for token in (
+        "PATH_3 = (",
         "PATH_5 = (",
         "PATH_6 = (",
         "PATH_24 = (",
         "PATH_27 = (",
         "PATH_28 = (",
         "PATH_30 = (",
+        "3: PATH_3",
         "6: PATH_6",
         "24: PATH_24",
         "def path_for_count(cls, count: int)",
+        "plant_count: int | None = None",
+        "replant_path = self.path_for_count(plant_requested)",
     ):
         require(planting, token, f"Shared planting contract missing: {token}")
 
@@ -71,7 +75,7 @@ def main() -> int:
     # and plant inside that same attempt.
     for token in (
         "self.vision.driver.click(*self.OPEN_PLANT_POINT)",
-        "selected_path[1] is only a drag waypoint",
+        "harvest_path[1] is only a drag waypoint",
         "never require an artificial attempt 7",
         "sau thu hoạch đã mở lại bảng gieo",
         "đã click lại điểm mở chuẩn=",
@@ -96,7 +100,7 @@ def main() -> int:
         "arrow = self._prove_seed_picker_open_for_page_turn()",
         "if arrow is None:",
         "KHÔNG chuyển trang",
-        "plant_path = (match.center,) + tuple(selected_path[1:])",
+        "plant_path = (match.center,) + tuple(replant_path[1:])",
     ):
         require(
             planting,
@@ -232,7 +236,7 @@ def main() -> int:
     )
 
     print("AUTO ACTION STANDARDIZATION CONTRACT VERIFIED")
-    print("planting=shared-paths-5-6-24-27-28-30+verified-picker-click+arrow-proof-page-gate+same-attempt-replant")
+    print("planting=shared-paths-3-5-6-24-27-28-30+split-harvest-replant+verified-picker-click+arrow-proof-page-gate+same-attempt-replant")
     print("apple-supply=shared-geometry+crop-wait-only")
     print("farm-routes=generic-canonical+function1-wrappers-only")
     print("vp-sale=neutral-transaction-action+five-view-module")
