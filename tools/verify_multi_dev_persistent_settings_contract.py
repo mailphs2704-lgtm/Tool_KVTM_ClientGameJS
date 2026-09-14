@@ -426,6 +426,41 @@ def main() -> int:
     )
     require(
         pirate_chest_workflow,
+        'STORAGE_FULL_TITLE_TEMPLATE = "full_kho"',
+        "Pirate Chest storage-full proof is not bound to the fixed title template",
+    )
+    require(
+        pirate_chest_workflow,
+        "STORAGE_ACTION_WAIT_SECONDS = 2.0",
+        "Pirate Chest storage-full actions are not separated by 2 seconds",
+    )
+    require(
+        pirate_chest_workflow,
+        "không đọc nội dung thay đổi trong popup",
+        "Pirate Chest may depend on variable storage-popup body text",
+    )
+    require(
+        pirate_chest_workflow,
+        "pirate-chest-storage-full-close-popup",
+        "Pirate Chest storage-full branch does not close the popup X",
+    )
+    require(
+        pirate_chest_workflow,
+        "pirate-chest-storage-full-back-to-panel",
+        "Pirate Chest storage-full branch does not Back to the chest panel",
+    )
+    require(
+        pirate_chest_workflow,
+        "status=STORAGE_FULL • không tính OPENED",
+        "Pirate Chest storage-full branch may be counted as OPENED",
+    )
+    require(
+        game_session_workflow,
+        "resume modal rương FAIL • reason=KHO_QUA_TAI",
+        "Startup does not propagate storage-full as a failed chest attempt",
+    )
+    require(
+        pirate_chest_workflow,
         "self._exit_after_storage_full()",
         "Storage-full modal no longer exits the Pirate Chest flow",
     )
