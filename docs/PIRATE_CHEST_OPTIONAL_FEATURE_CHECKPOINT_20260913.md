@@ -248,3 +248,28 @@ Fix:
 
 Commits `85129a59`, `5463b131`, `aa3a74e4`, `905a4f98`,
 `6b90093d`; lifecycle contract `5ea31e8d`. Toàn bộ AST PASS; live PENDING.
+
+
+## 16. FINAL OPERATOR FLOW — supersedes thử nghiệm animation trước
+
+Quy trình operator xác nhận bằng ảnh 1000x1000:
+
+1. exact-main → click thân thuyền để mở panel;
+2. panel thường: click slot0 `(263,632)`; nếu READY click MỞ NGAY `(500,558)`;
+   không template-confirm việc chọn slot;
+3. nếu không có MỞ NGAY/có timer xanh: đóng panel, status COOLDOWN;
+4. normal path sau MỞ NGAY hoặc persisted open prompt: chỉ cần chứng minh modal
+   đã mở/rương giữa bị che một lần;
+5. không CAPTURE/check 3.0s → click rương lớn `(486,603)`;
+6. không CAPTURE/check 3.0s → capture reward reference rồi claim đúng một lần
+   tại `(500,702)`;
+7. không CAPTURE/check 3.0s → chứng minh rương giữa xuất hiện trở lại;
+8. đóng X panel, prove MAIN, status OPENED.
+
+Không match reward art, không claim-text gate, không yêu cầu moving modal giữ detector
+liên tục, không retry click và không Back.
+
+Scheduler: chỉ OPENED đặt deadline +1200s. COOLDOWN hoặc non-OPENED đặt
+retry-after-sale và được gọi sau lần bán VP kế tiếp. Commit workflow
+`4737cadb`, scheduler `c0d3dccd`, verifier `064a6cfa`; AST và marker contract PASS.
+Windows live PENDING.
