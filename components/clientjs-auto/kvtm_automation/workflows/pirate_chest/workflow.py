@@ -71,7 +71,6 @@ class PirateChestWorkflow:
     COOLDOWN_ZONE = (448, 548, 104, 22)
     STORAGE_GREEN_ZONE = (300, 405, 400, 190)
     OPEN_PROMPT_CHEST_ZONE = (395, 500, 210, 170)
-    REWARD_COIN_ZONE = (460, 430, 80, 80)
 
     POLL_SECONDS = 0.12
     ENTER_TIMEOUT_SECONDS = 4.0
@@ -182,19 +181,6 @@ class PirateChestWorkflow:
         )
         return ratio >= 0.30
 
-    def _reward_ready(self, frame) -> bool:
-        if self._panel_normal(frame) or self._storage_full(frame):
-            return False
-        header = self._crop(frame, self.PANEL_HEADER_ZONE)
-        if float(header.mean()) > 70.0:
-            return False
-        roi = self._crop(frame, self.REWARD_COIN_ZONE)
-        ratio = self._color_ratio(
-            roi,
-            lambda r, g, b: (r >= 210) & (g >= 160) & (b <= 130),
-        )
-        return ratio >= 0.20
-
     @staticmethod
     def _frame_change_score(before, after) -> float:
         if (
@@ -207,7 +193,11 @@ class PirateChestWorkflow:
         return float(abs(after.astype("int16") - before.astype("int16")).mean())
 
     def _wait_for_reward_claimable(self, open_prompt_frame) -> tuple[str, object | None]:
-        """Prove the reward screen without depending only on one coin color ROI."""
+        """Prove any random reward by the completed screen transition.
+
+        Reward type is intentionally irrelevant: coins, items, materials, or any
+        later reward art must all pass through the same stable-state proof.
+        """
         deadline = time.monotonic() + self.REWARD_TIMEOUT_SECONDS
         previous = None
         stable_frames = 0
@@ -217,12 +207,6 @@ class PirateChestWorkflow:
             frame = self.vision.frame()
             if self._storage_full(frame):
                 return "STORAGE_FULL", frame
-            if self._reward_ready(frame):
-                self.context.detail(
-                    "Pirate chest reward claimable | proof=reward-coin-roi"
-                )
-                return "PASS", frame
-
             prompt_change = self._frame_change_score(open_prompt_frame, frame)
             best_prompt_change = max(best_prompt_change, prompt_change)
             known_non_reward = self._open_prompt(frame) or self._panel_normal(frame)
