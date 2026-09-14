@@ -35,6 +35,7 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self.pirate_chest_calls = 0
         self._pirate_chest_initialized = False
         self._pirate_chest_next_check_at = 0.0
+        self._pirate_chest_retry_after_sale = False
         self._pirate_chest_boundary_recovery = RecoveryManager(
             self.auto,
             function_id=self.spec.function_id,
@@ -79,11 +80,17 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             and time.monotonic() >= self._pirate_chest_next_check_at
         )
 
-    def _schedule_next_pirate_chest_check(self) -> None:
+    def _schedule_next_pirate_chest_check(self, *, status: str) -> None:
+        """Only a proven OPENED result owns the 20-minute timer."""
         self._pirate_chest_initialized = True
-        self._pirate_chest_next_check_at = (
-            time.monotonic() + self.PIRATE_CHEST_INTERVAL_SECONDS
-        )
+        if str(status) == "OPENED":
+            self._pirate_chest_retry_after_sale = False
+            self._pirate_chest_next_check_at = (
+                time.monotonic() + self.PIRATE_CHEST_INTERVAL_SECONDS
+            )
+            return
+        self._pirate_chest_retry_after_sale = True
+        self._pirate_chest_next_check_at = 0.0
 
     def _prove_exact_main_boundary(self, *, reason: str) -> None:
         """Explicitly restore the caller contract before/after optional UI work."""
@@ -176,7 +183,7 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             )
         finally:
             self.pirate_chest_calls += 1
-            self._schedule_next_pirate_chest_check()
+            self._schedule_next_pirate_chest_check(status=status)
 
         # A SAFE_ABORT means the chest UI/reward state was not classified. The
         # own-farm HUD can remain visible behind that overlay and create a false
@@ -192,10 +199,15 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self._prove_exact_main_boundary(reason=f"{reason}-after-chest")
 
         self.context.stage(f"auto-main-pirate-chest-{ordinal}-finished")
+        next_check = (
+            f"{self.PIRATE_CHEST_INTERVAL_SECONDS:.0f}s"
+            if status == "OPENED"
+            else "sau-lần-bán-VP-kế-tiếp"
+        )
         self.context.log(
             "AUTO rương hải tặc • kết thúc lượt check • "
             f"lần={ordinal} • status={status} • detail={detail} • "
-            f"exact-main=PASS • check_lại_sau={self.PIRATE_CHEST_INTERVAL_SECONDS:.0f}s"
+            f"exact-main=PASS • check_lại={next_check}"
         )
 
     def _pirate_chest_checkpoint(self, *, reason: str) -> None:
@@ -209,10 +221,18 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
     def _sale_once(self, *, ordinal: int) -> None:
         super()._sale_once(ordinal=ordinal)
 
-        # Exact user contract: first chest check starts only after the first
-        # completed sale. It also starts the 20-minute countdown.
-        if self.pirate_chest_enabled and not self._pirate_chest_initialized:
-            self._run_pirate_chest(reason=f"first-completed-sale-{ordinal}")
+        # First check runs after sale #1. A non-OPENED result (including
+        # cooldown/no MỞ NGAY) retries only after the next completed VP sale.
+        if self.pirate_chest_enabled and (
+            not self._pirate_chest_initialized
+            or self._pirate_chest_retry_after_sale
+        ):
+            reason = (
+                f"first-completed-sale-{ordinal}"
+                if not self._pirate_chest_initialized
+                else f"retry-after-completed-sale-{ordinal}"
+            )
+            self._run_pirate_chest(reason=reason)
 
     def _request_client_restart_at_safe_boundary(self) -> None:
         # If the 20-minute deadline matured during the just-finished Function,
