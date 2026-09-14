@@ -71,12 +71,15 @@ class PirateChestWorkflow:
     PANEL_HEADER_ZONE = (300, 285, 400, 45)
     OPEN_ACTION_ZONE = (438, 535, 124, 47)
     COOLDOWN_ZONE = (448, 548, 104, 22)
-    STORAGE_GREEN_ZONE = (300, 405, 400, 190)
+    STORAGE_FULL_TITLE_ZONE = (333, 363, 313, 115)
+    STORAGE_FULL_TITLE_TEMPLATE = "full_kho"
+    STORAGE_FULL_TITLE_THRESHOLD = 0.90
     OPEN_PROMPT_CHEST_ZONE = (395, 500, 210, 170)
     CENTER_CHEST_ZONE = (420, 400, 165, 130)
     CENTER_CHEST_HIDDEN_CHANGE = 12.0
     CENTER_CHEST_RETURN_MIN_CHANGE = 12.0
     OPERATOR_ANIMATION_WAIT_SECONDS = 3.0
+    STORAGE_ACTION_WAIT_SECONDS = 2.0
     MAIN_AFTER_CLOSE_TIMEOUT_SECONDS = 4.0
 
     POLL_SECONDS = 0.12
@@ -155,19 +158,16 @@ class PirateChestWorkflow:
         return ratio >= 0.22
 
     def _storage_full(self, frame) -> bool:
-        roi = self._crop(frame, self.STORAGE_GREEN_ZONE)
-        ratio = self._color_ratio(
-            roi,
-            lambda r, g, b: (
-                (r >= 70)
-                & (r <= 160)
-                & (g >= 100)
-                & (g <= 190)
-                & (b <= 70)
-                & (g >= r + 15)
-            ),
+        """Accept only the fixed “KHO QUÁ TẢI RỒI!” title as full-storage proof."""
+        title = self.vision.find(
+            self.STORAGE_FULL_TITLE_TEMPLATE,
+            threshold=self.STORAGE_FULL_TITLE_THRESHOLD,
+            zone=self.STORAGE_FULL_TITLE_ZONE,
+            scales=(0.90, 1.00, 1.10),
+            click=False,
+            frame=frame,
         )
-        return ratio >= 0.45
+        return title is not None
 
     def _open_prompt(self, frame) -> bool:
         if self._panel_normal(frame) or self._storage_full(frame):
@@ -383,36 +383,55 @@ class PirateChestWorkflow:
             f"reason={reason}"
         )
 
-    def _exit_after_storage_full(self) -> None:
-        """Close the generic overload modal and leave Pirate Chest best-effort."""
-        self.context.stage("pirate-chest-storage-full-close-modal")
+    def _exit_after_storage_full(self) -> bool:
+        """Close confirmed overload popup, Back to panel, then close to farm."""
+        self.context.stage("pirate-chest-storage-full-confirmed")
+        self.context.log(
+            "AUTO rương hải tặc • KHO QUÁ TẢI RỒI! đã xác nhận bằng tiêu đề • "
+            "không đọc nội dung thay đổi trong popup • bỏ qua mở rương"
+        )
+
+        # Operator contract: every storage-full interaction is separated by 2s.
+        self.auto.wait.sleep(self.STORAGE_ACTION_WAIT_SECONDS)
+        self.context.ensure_running()
+        self.context.stage("pirate-chest-storage-full-close-popup")
         self.driver.click(*self.STORAGE_MODAL_CLOSE_POINT)
-        self.auto.wait.sleep(0.25)
 
-        # The overload modal can be raised on the reward/claim overlay. That
-        # overlay owns a back arrow at top-left, while the normal panel owns X.
-        try:
-            frame = self.vision.frame()
-        except Exception:
-            return
-        if self._panel_normal(frame):
-            self.driver.click(*self.PANEL_CLOSE_POINT)
-            self.auto.wait.sleep(0.20)
-            return
-
+        self.auto.wait.sleep(self.STORAGE_ACTION_WAIT_SECONDS)
+        self.context.ensure_running()
+        frame = self.vision.frame()
         if self._storage_full(frame):
-            # Never spam the modal. One close attempt per cycle is enough.
-            return
+            self.context.log(
+                "AUTO rương hải tặc • popup KHO QUÁ TẢI vẫn còn sau một lần bấm X • "
+                "dừng nhánh kho đầy, không click lặp"
+            )
+            return False
 
+        self.context.stage("pirate-chest-storage-full-back-to-panel")
         self.driver.click(*self.REWARD_BACK_POINT)
+        self.auto.wait.sleep(self.STORAGE_ACTION_WAIT_SECONDS)
+        self.context.ensure_running()
+
         status, _ = self._wait_for(
             self._panel_normal,
-            timeout=2.5,
+            timeout=3.0,
             label="panel-after-storage-back",
         )
-        if status == "PASS":
-            self.driver.click(*self.PANEL_CLOSE_POINT)
-            self.auto.wait.sleep(0.20)
+        if status != "PASS":
+            self.context.log(
+                "AUTO rương hải tặc • kho đầy đã đóng popup nhưng chưa thấy lại panel rương"
+            )
+            return False
+
+        self.context.stage("pirate-chest-storage-full-close-panel")
+        self.driver.click(*self.PANEL_CLOSE_POINT)
+        self.auto.wait.sleep(self.STORAGE_ACTION_WAIT_SECONDS)
+        self.context.ensure_running()
+        self.context.log(
+            "AUTO rương hải tặc • nhánh KHO QUÁ TẢI đã X → Back → panel → đóng panel • "
+            "status=STORAGE_FULL • không tính OPENED"
+        )
+        return True
 
     def _result(self, status: PirateChestStatus, started: float, detail: str) -> PirateChestResult:
         return PirateChestResult(
