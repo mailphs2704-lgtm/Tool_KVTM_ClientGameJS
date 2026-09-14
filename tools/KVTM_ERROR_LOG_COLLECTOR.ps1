@@ -208,7 +208,7 @@ try {
                 }
 
                 $text = $state.Carry + [System.Text.Encoding]::UTF8.GetString($buffer, 0, $read)
-                $parts = $text -split "\r?\n", -1
+                $parts = [regex]::Split($text, "\r?\n")
                 $state.Carry = $parts[$parts.Count - 1]
                 $complete = @($parts[0..([Math]::Max(0, $parts.Count - 2))])
                 if ($parts.Count -le 1) {
