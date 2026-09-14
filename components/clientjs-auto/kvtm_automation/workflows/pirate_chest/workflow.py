@@ -210,13 +210,24 @@ class PirateChestWorkflow:
             >= self.CENTER_CHEST_HIDDEN_CHANGE
         )
 
-    def _center_chest_returned(self, reward_frame, frame) -> bool:
-        """Prove reward overlay gone against the immediately preceding reward."""
-        if reward_frame is None or not self._panel_normal(frame):
+    def _reward_modal_closed(self, frame) -> bool:
+        """The normal Pirate Chest panel header proves the reward modal is gone."""
+        return self._panel_normal(frame)
+
+    def _center_chest_visible_again(self, reward_frame, frame) -> bool:
+        """Prove the center chest area returned after the random reward artwork."""
+        if reward_frame is None:
             return False
         return (
             self._center_chest_change(reward_frame, frame)
             >= self.CENTER_CHEST_RETURN_MIN_CHANGE
+        )
+
+    def _opened_evidence_complete(self, reward_frame, frame) -> bool:
+        """OPENED requires both operator-approved final conditions."""
+        return bool(
+            self._reward_modal_closed(frame)
+            and self._center_chest_visible_again(reward_frame, frame)
         )
 
     def _wait_operator_animation(self, *, state: str) -> None:
@@ -242,11 +253,16 @@ class PirateChestWorkflow:
             frame = self.vision.frame()
             if self._storage_full(frame):
                 return "STORAGE_FULL", frame
-            if self._center_chest_returned(reward_frame, frame):
+            reward_modal_closed = self._reward_modal_closed(frame)
+            center_chest_visible = self._center_chest_visible_again(
+                reward_frame, frame
+            )
+            if reward_modal_closed and center_chest_visible:
                 last_change = self._center_chest_change(reward_frame, frame)
                 self.context.detail(
-                    "Pirate chest panel returned | "
-                    "proof=center-chest-visible-again | "
+                    "Pirate chest OPENED proof | "
+                    "reward_modal_closed=true | "
+                    "center_chest_visible=true | "
                     f"reward_change={last_change:.2f}"
                 )
                 return "PASS", frame
@@ -455,12 +471,16 @@ class PirateChestWorkflow:
                 "center-chest-visible-timeout",
             )
 
+        # These are the only two conditions that count one chest opening.
+        # Record the fact before best-effort panel cleanup so a later navigation
+        # problem cannot erase an already received reward or its 20-minute timer.
+        self.context.mark_pirate_chest_opened()
         cooldown_proven = (
             final_frame is not None and self._cooldown(final_frame)
         )
         self.context.log(
-            "AUTO rương hải tặc • nhận thưởng PASS • "
-            "rương giữa đã xuất hiện trở lại • "
+            "AUTO rương hải tặc • OPENED PASS • "
+            "modal nhận quà đã đóng=PASS • rương giữa xuất hiện lại=PASS • "
             f"cooldown={'PASS' if cooldown_proven else 'UNCLASSIFIED'} • "
             "đóng panel về MAIN"
         )
@@ -469,17 +489,21 @@ class PirateChestWorkflow:
             if require_exact_main_after_close
             else self._close_panel_and_prove_own_farm()
         )
+        self.context.stage("pirate-chest-finished")
         if not close_proven:
+            self.context.log(
+                "AUTO rương hải tặc • đã tính OPENED theo đủ 2 điều kiện cuối • "
+                "phần đóng panel/về MAIN sẽ do boundary recovery xử lý"
+            )
             return self._result(
-                PirateChestStatus.SAFE_ABORT,
+                PirateChestStatus.OPENED,
                 started,
                 (
-                    "panel-close-main-timeout"
+                    "slot-0-opened-panel-close-main-pending"
                     if require_exact_main_after_close
-                    else "startup-resume-panel-close-farm-timeout"
+                    else "slot-0-opened-startup-panel-close-farm-pending"
                 ),
             )
-        self.context.stage("pirate-chest-finished")
         return self._result(
             PirateChestStatus.OPENED,
             started,
