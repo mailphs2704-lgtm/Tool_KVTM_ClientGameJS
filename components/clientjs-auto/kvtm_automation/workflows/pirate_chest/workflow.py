@@ -75,7 +75,7 @@ class PirateChestWorkflow:
     OPEN_PROMPT_CHEST_ZONE = (395, 500, 210, 170)
     CENTER_CHEST_ZONE = (420, 400, 165, 130)
     CENTER_CHEST_HIDDEN_CHANGE = 12.0
-    CENTER_CHEST_RETURN_MAX_CHANGE = 42.0
+    CENTER_CHEST_RETURN_MIN_CHANGE = 12.0
 
     POLL_SECONDS = 0.12
     ENTER_TIMEOUT_SECONDS = 4.0
@@ -209,16 +209,13 @@ class PirateChestWorkflow:
             >= self.CENTER_CHEST_HIDDEN_CHANGE
         )
 
-    def _center_chest_returned(self, reference_frame, frame) -> bool:
-        if not self._panel_normal(frame):
+    def _center_chest_returned(self, reward_frame, frame) -> bool:
+        """Prove reward overlay gone against the immediately preceding reward."""
+        if reward_frame is None or not self._panel_normal(frame):
             return False
-        if reference_frame is None:
-            # Persisted tap-to-open entry has no normal-panel reference. The
-            # panel header is the only safe return proof available in this path.
-            return True
         return (
-            self._center_chest_change(reference_frame, frame)
-            <= self.CENTER_CHEST_RETURN_MAX_CHANGE
+            self._center_chest_change(reward_frame, frame)
+            >= self.CENTER_CHEST_RETURN_MIN_CHANGE
         )
 
     def _wait_for_reward_claimable(self, open_prompt_frame) -> tuple[str, object | None]:
@@ -481,7 +478,7 @@ class PirateChestWorkflow:
 
         open_prompt_frame = self.vision.frame().copy()
         self._tap(self.CHEST_CENTER_POINT, "pirate-chest-tap-chest")
-        reward_state, _ = self._wait_for_reward_claimable(open_prompt_frame)
+        reward_state, reward_frame = self._wait_for_reward_claimable(open_prompt_frame)
         if reward_state == "STORAGE_FULL":
             self._exit_after_storage_full()
             return self._result(
@@ -499,10 +496,12 @@ class PirateChestWorkflow:
 
         # Exactly one additional tap claims/closes the reward presentation.
         # Never retry this action because the reward may already be credited.
+        # The return proof compares against this exact reward frame, not the
+        # earlier panel frame whose animation/cooldown art can legitimately vary.
         self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")
         final_state, final_frame = self._wait_for(
             lambda current: self._center_chest_returned(
-                center_chest_reference, current
+                reward_frame, current
             ),
             timeout=self.RETURN_TIMEOUT_SECONDS,
             label="panel-after-reward-claim-center-chest-returned",
