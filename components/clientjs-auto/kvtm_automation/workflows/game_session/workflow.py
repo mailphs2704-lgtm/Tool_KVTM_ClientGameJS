@@ -57,8 +57,9 @@ class GameSessionWorkflow:
                 f"status={result.status}, detail={result.detail}"
             )
         self.context.log(
-            "AUTO startup • resume modal rương PASS • "
-            "đã nhận quà và đóng panel trước khi tiếp tục popup/login"
+            "AUTO startup • resume modal rương OPENED PASS • "
+            "modal nhận quà đã đóng + rương giữa đã xuất hiện lại • "
+            "bộ đếm 20 phút sẽ được bàn giao cho scheduler"
         )
         return True
 
