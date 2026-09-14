@@ -450,6 +450,30 @@ class PirateChestWorkflow:
         )
         return False
 
+    def _close_panel_and_prove_own_farm(self) -> bool:
+        """Startup resume variant: close panel before startup marks exact-main."""
+        try:
+            frame = self.vision.frame()
+        except Exception:
+            return False
+        if not self._panel_normal(frame):
+            return False
+        self.context.stage("pirate-chest-startup-resume-close-panel")
+        self.driver.click(*self.PANEL_CLOSE_POINT)
+        deadline = time.monotonic() + self.MAIN_AFTER_CLOSE_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            self.context.ensure_running()
+            if self.auto.popup.is_own_main_screen():
+                self.context.detail(
+                    "Pirate chest startup resume closed | proof=own-farm-hud"
+                )
+                return True
+            self.auto.wait.sleep(self.POLL_SECONDS)
+        self.context.detail(
+            "Pirate chest wait timeout | state=own-farm-after-startup-resume"
+        )
+        return False
+
     def _fail_close_reward_overlay(self, *, reason: str) -> None:
         """Do not click Back: only a completed claim can dismiss this modal."""
         self.context.stage("pirate-chest-safe-abort-reward-overlay")
@@ -496,6 +520,141 @@ class PirateChestWorkflow:
             status=status.value,
             elapsed_seconds=round(time.monotonic() - started, 3),
             detail=str(detail),
+        )
+
+    def _complete_visible_open_prompt(
+        self,
+        started: float,
+        *,
+        require_exact_main_after_close: bool,
+    ) -> PirateChestResult:
+        settle_state, _ = self._wait_open_prompt_animation()
+        if settle_state == "STORAGE_FULL":
+            self._exit_after_storage_full()
+            return self._result(
+                PirateChestStatus.STORAGE_FULL,
+                started,
+                "storage-full-before-chest-tap",
+            )
+        if settle_state != "PASS":
+            self._fail_close_reward_overlay(reason="open-prompt-animation-interrupted")
+            return self._result(
+                PirateChestStatus.SAFE_ABORT,
+                started,
+                "open-prompt-animation-interrupted",
+            )
+
+        open_prompt_frame = self.vision.frame().copy()
+        self._tap(self.CHEST_CENTER_POINT, "pirate-chest-tap-chest")
+        reward_state, reward_frame = self._wait_for_reward_claimable(open_prompt_frame)
+        if reward_state == "STORAGE_FULL":
+            self._exit_after_storage_full()
+            return self._result(
+                PirateChestStatus.STORAGE_FULL,
+                started,
+                "storage-full-before-claim",
+            )
+        if reward_state != "PASS":
+            self._fail_close_reward_overlay(reason="reward-timeout")
+            return self._result(
+                PirateChestStatus.SAFE_ABORT,
+                started,
+                "reward-timeout",
+            )
+
+        # Exactly one additional tap claims/closes the reward presentation.
+        # Never retry this action because the reward may already be credited.
+        # The return proof compares against this exact reward frame, not the
+        # earlier panel frame whose animation/cooldown art can legitimately vary.
+        self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")
+
+        # INPUT4 claim and CAPTURE3 verification must not overlap. During this
+        # operator-approved quiet window no frame is requested, so the game can
+        # finish the claim/close animation before the first return-state check.
+        self.context.stage("pirate-chest-post-claim-quiet")
+        self.context.log(
+            "AUTO rương hải tặc • đã gửi nhận quà đúng 1 lần • "
+            f"quiet={self.POST_CLAIM_QUIET_SECONDS:.1f}s • "
+            "không CAPTURE/check trong animation"
+        )
+        self.auto.wait.sleep(self.POST_CLAIM_QUIET_SECONDS)
+        self.context.ensure_running()
+
+        final_state, final_frame = self._wait_for_center_chest_returned(
+            reward_frame
+        )
+        if final_state == "STORAGE_FULL":
+            self.context.log(
+                "AUTO rương hải tặc • KHO QUÁ TẢI • đóng modal, thoát rương, "
+                "tiếp tục Function kế tiếp"
+            )
+            self._exit_after_storage_full()
+            return self._result(
+                PirateChestStatus.STORAGE_FULL,
+                started,
+                "storage-full-on-claim",
+            )
+        if final_state != "PASS":
+            # Back cannot dismiss the reward modal. Fail closed without
+            # another click; the next Function must not receive a false MAIN.
+            self._fail_close_reward_overlay(
+                reason="center-chest-return-timeout"
+            )
+            return self._result(
+                PirateChestStatus.SAFE_ABORT,
+                started,
+                "cooldown-confirm-timeout",
+            )
+
+        cooldown_proven = (
+            final_frame is not None and self._cooldown(final_frame)
+        )
+        self.context.log(
+            "AUTO rương hải tặc • nhận thưởng PASS • panel đã quay lại • "
+            f"cooldown={'PASS' if cooldown_proven else 'UNCLASSIFIED'} • "
+            "đóng panel về MAIN"
+        )
+        close_proven = (
+            self._close_panel_and_prove_main()
+            if require_exact_main_after_close
+            else self._close_panel_and_prove_own_farm()
+        )
+        if not close_proven:
+            return self._result(
+                PirateChestStatus.SAFE_ABORT,
+                started,
+                (
+                    "panel-close-main-timeout"
+                    if require_exact_main_after_close
+                    else "startup-resume-panel-close-farm-timeout"
+                ),
+            )
+        self.context.stage("pirate-chest-finished")
+        return self._result(
+            PirateChestStatus.OPENED,
+            started,
+            "slot-0-opened",
+        )
+
+    def resume_open_prompt_if_visible(
+        self,
+        *,
+        require_exact_main_after_close: bool = False,
+    ) -> PirateChestResult | None:
+        """Finish a persisted chest modal before generic startup popup handling."""
+        self.context.ensure_running()
+        frame = self.vision.frame()
+        if not self._open_prompt(frame):
+            return None
+        started = time.monotonic()
+        self.context.stage("pirate-chest-startup-resume-open-prompt")
+        self.context.log(
+            "AUTO startup • phát hiện modal Chạm để mở rương đang tồn tại • "
+            "bàn giao riêng cho PirateChestWorkflow, không đóng popup chung"
+        )
+        return self._complete_visible_open_prompt(
+            started,
+            require_exact_main_after_close=require_exact_main_after_close,
         )
 
     def run(self) -> PirateChestResult:
@@ -613,101 +772,7 @@ class PirateChestWorkflow:
                     "open-prompt-timeout",
                 )
 
-        settle_state, _ = self._wait_open_prompt_animation()
-        if settle_state == "STORAGE_FULL":
-            self._exit_after_storage_full()
-            return self._result(
-                PirateChestStatus.STORAGE_FULL,
-                started,
-                "storage-full-before-chest-tap",
-            )
-        if settle_state != "PASS":
-            self._fail_close_reward_overlay(reason="open-prompt-animation-interrupted")
-            return self._result(
-                PirateChestStatus.SAFE_ABORT,
-                started,
-                "open-prompt-animation-interrupted",
-            )
-
-        open_prompt_frame = self.vision.frame().copy()
-        self._tap(self.CHEST_CENTER_POINT, "pirate-chest-tap-chest")
-        reward_state, reward_frame = self._wait_for_reward_claimable(open_prompt_frame)
-        if reward_state == "STORAGE_FULL":
-            self._exit_after_storage_full()
-            return self._result(
-                PirateChestStatus.STORAGE_FULL,
-                started,
-                "storage-full-before-claim",
-            )
-        if reward_state != "PASS":
-            self._fail_close_reward_overlay(reason="reward-timeout")
-            return self._result(
-                PirateChestStatus.SAFE_ABORT,
-                started,
-                "reward-timeout",
-            )
-
-        # Exactly one additional tap claims/closes the reward presentation.
-        # Never retry this action because the reward may already be credited.
-        # The return proof compares against this exact reward frame, not the
-        # earlier panel frame whose animation/cooldown art can legitimately vary.
-        self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")
-
-        # INPUT4 claim and CAPTURE3 verification must not overlap. During this
-        # operator-approved quiet window no frame is requested, so the game can
-        # finish the claim/close animation before the first return-state check.
-        self.context.stage("pirate-chest-post-claim-quiet")
-        self.context.log(
-            "AUTO rương hải tặc • đã gửi nhận quà đúng 1 lần • "
-            f"quiet={self.POST_CLAIM_QUIET_SECONDS:.1f}s • "
-            "không CAPTURE/check trong animation"
-        )
-        self.auto.wait.sleep(self.POST_CLAIM_QUIET_SECONDS)
-        self.context.ensure_running()
-
-        final_state, final_frame = self._wait_for_center_chest_returned(
-            reward_frame
-        )
-        if final_state == "STORAGE_FULL":
-            self.context.log(
-                "AUTO rương hải tặc • KHO QUÁ TẢI • đóng modal, thoát rương, "
-                "tiếp tục Function kế tiếp"
-            )
-            self._exit_after_storage_full()
-            return self._result(
-                PirateChestStatus.STORAGE_FULL,
-                started,
-                "storage-full-on-claim",
-            )
-        if final_state != "PASS":
-            # Back cannot dismiss the reward modal. Fail closed without
-            # another click; the next Function must not receive a false MAIN.
-            self._fail_close_reward_overlay(
-                reason="center-chest-return-timeout"
-            )
-            return self._result(
-                PirateChestStatus.SAFE_ABORT,
-                started,
-                "cooldown-confirm-timeout",
-            )
-
-        cooldown_proven = (
-            final_frame is not None and self._cooldown(final_frame)
-        )
-        self.context.log(
-            "AUTO rương hải tặc • nhận thưởng PASS • panel đã quay lại • "
-            f"cooldown={'PASS' if cooldown_proven else 'UNCLASSIFIED'} • "
-            "đóng panel về MAIN"
-        )
-        if not self._close_panel_and_prove_main():
-            return self._result(
-                PirateChestStatus.SAFE_ABORT,
-                started,
-                "panel-close-main-timeout",
-            )
-        self.context.stage("pirate-chest-finished")
-        return self._result(
-            PirateChestStatus.OPENED,
+        return self._complete_visible_open_prompt(
             started,
-            "slot-0-opened",
+            require_exact_main_after_close=True,
         )
