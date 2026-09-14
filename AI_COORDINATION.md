@@ -599,3 +599,5 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - SHA blob nguồn/đích trùng tuyệt đối; không chỉnh sửa/cắt lại ảnh.
 - `vai_vang.png` và `kho_vai_vang.png` đã tồn tại nên không thay thế.
 - Chờ operator mô tả quy trình từng bước trước khi nối Function 3 vào runtime Multi DEV.
+
+- Bổ sung tiếp template nguyên liệu Function 3 từ PRO: `cay_tra.png`, `tra_say.png`. SHA blob nguồn/đích trùng; chưa nối logic.
