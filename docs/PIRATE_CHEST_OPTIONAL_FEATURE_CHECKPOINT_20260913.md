@@ -172,3 +172,17 @@ Hợp đồng mới:
 
 Commits: `613e24b`, `49e4bbd`, `b4230d92`, `1c17ca3`.
 Source AST PASS; Windows build/live vẫn PENDING.
+
+
+## 11. Live 11:08 — nhận quà PASS nhưng hậu kiểm SAFE_ABORT giả
+
+Live xác nhận cú chạm `(500,715)` đã nhận quà và reward modal đã đóng.
+Sai số nằm ở hậu kiểm: source cũ so panel sau claim với panel trước `MỞ NGAY`;
+animation/cooldown làm vùng rương khác ngưỡng nên trả `SAFE_ABORT` giả, kéo theo
+friend-house recovery và lỗi dừng AUTO.
+
+Fix `d4acf2dc` lưu frame reward thật ngay trước claim. Sau claim, return proof
+bắt buộc đồng thời có panel thường và vùng rương giữa thay đổi đủ lớn so với
+reward frame. Khi đạt, status là `OPENED`, đóng X về MAIN và tuyệt đối không
+chạy friend-house recovery. Verifier khóa tại `0ed715ff`; AST PASS. Windows
+rebuild/live retest vẫn PENDING.
