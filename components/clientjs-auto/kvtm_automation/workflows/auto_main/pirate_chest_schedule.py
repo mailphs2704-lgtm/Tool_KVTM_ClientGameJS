@@ -33,8 +33,19 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         super().__init__(*args, **kwargs)
         self.pirate_chest_enabled = self._load_pirate_chest_enabled()
         self.pirate_chest_calls = 0
-        self._pirate_chest_initialized = False
-        self._pirate_chest_next_check_at = 0.0
+        startup_opened_at = getattr(
+            self.context,
+            "pirate_chest_opened_at_monotonic",
+            None,
+        )
+        self._pirate_chest_initialized = bool(
+            self.pirate_chest_enabled and startup_opened_at is not None
+        )
+        self._pirate_chest_next_check_at = (
+            float(startup_opened_at) + self.PIRATE_CHEST_INTERVAL_SECONDS
+            if self._pirate_chest_initialized
+            else 0.0
+        )
         self._pirate_chest_retry_after_sale = False
         self._pirate_chest_boundary_recovery = RecoveryManager(
             self.auto,
@@ -43,7 +54,12 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self.context.log(
             "AUTO tùy chọn • Mở rương hải tặc="
             + ("BẬT" if self.pirate_chest_enabled else "TẮT")
-            + " • nguồn=auto-main-config.json • check đầu sau sale đầu"
+            + " • nguồn=auto-main-config.json"
+            + (
+                " • startup đã OPENED=tiếp tục chờ đủ 20 phút"
+                if self._pirate_chest_initialized
+                else " • check đầu sau sale đầu"
+            )
             + " • OPENED=20 phút • chưa mở=retry sau sale VP kế tiếp"
         )
 
@@ -86,8 +102,15 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self._pirate_chest_initialized = True
         if str(status) == "OPENED":
             self._pirate_chest_retry_after_sale = False
+            opened_at = getattr(
+                self.context,
+                "pirate_chest_opened_at_monotonic",
+                None,
+            )
+            if opened_at is None:
+                opened_at = time.monotonic()
             self._pirate_chest_next_check_at = (
-                time.monotonic() + self.PIRATE_CHEST_INTERVAL_SECONDS
+                float(opened_at) + self.PIRATE_CHEST_INTERVAL_SECONDS
             )
             return
         self._pirate_chest_retry_after_sale = True
