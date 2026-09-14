@@ -36,7 +36,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile-file", required=True)
     parser.add_argument("--work-dir", required=True)
     parser.add_argument(
-        "--mode", choices=("main", "floor-demo", "builder"), default="main"
+        "--mode", choices=("main", "function-3-step-1", "builder"), default="main"
     )
     parser.add_argument(
         "--startup-mode", choices=("auto", "fresh", "reentry"), default="auto"
@@ -379,16 +379,24 @@ def main() -> int:
             )
             return 0
 
-        if effective_mode == "floor-demo":
+        if effective_mode == "function-3-step-1":
+            from kvtm_automation.workflows.auto_function_three import (
+                FunctionThreeWorkflow,
+            )
+
             prepare_runtime_camera()
-            context.stage("floor-demo-1-to-6-start")
-            movement = automation.floors.reference_main_to_floor_6()
+            log(
+                "AUTO MULTI DEV TEST • chỉ chạy Function 3 Step 1 • "
+                "không gọi Function 3 đầy đủ và không vào AUTO Main"
+            )
+            result = FunctionThreeWorkflow(automation).run_step_1()
+            result_payload = result.to_dict()
+            result_payload.pop("profile_id", None)
             emit(
                 "worker_finished", workflow=WORKFLOW_NAME,
-                profile_id=args.profile_id, outcome="floor_demo_finished",
-                requested_steps=movement.requested_steps,
-                completed_steps=movement.completed_steps,
-                frame_change_scores=list(movement.frame_change_scores),
+                profile_id=args.profile_id,
+                outcome="function_3_step_1_finished",
+                **result_payload,
             )
             return 0
 
