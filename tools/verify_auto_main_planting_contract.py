@@ -45,11 +45,20 @@ def main() -> int:
     require(action, 'ROSE_TEMPLATE = "cay_hong"', "Rose template missing")
     require(action, 'APPLE_TEMPLATE = "cay_tao"', "Apple template missing")
     require(action, 'SNOW_TEMPLATE = "cay_tuyet"', "Snow template missing")
-    for token in ("PATH_5 = (", "PATH_6 = (", "PATH_27 = (", "PATH_28 = (", "PATH_30 = ("):
+    require(action, 'TEA_TEMPLATE = "cay_tra"', "Tea template missing")
+    for token in (
+        "PATH_5 = (",
+        "PATH_6 = (",
+        "PATH_24 = (",
+        "PATH_27 = (",
+        "PATH_28 = (",
+        "PATH_30 = (",
+    ):
         require(action, token, f"Shared planting geometry missing: {token}")
     require(action, "VERIFIED_PATHS = {", "Verified planting path table missing")
     require(action, "5: PATH_5", "PATH_5 not registered")
     require(action, "6: PATH_6", "PATH_6 not registered")
+    require(action, "24: PATH_24", "PATH_24 not registered")
     require(action, "27: PATH_27", "PATH_27 not registered")
     require(action, "28: PATH_28", "PATH_28 not registered")
     require(action, "30: PATH_30", "PATH_30 not registered")
@@ -62,7 +71,24 @@ def main() -> int:
     require(action, "seed_template: str", "Crop template parameter missing")
     require(action, "count: int", "Planting count parameter missing")
     require(action, '"thu_hoach", threshold=0.80', "Ripe-tree proof missing")
-    require(action, '"next_gieo_trai", threshold=0.70', "Empty-pot proof missing")
+    require(
+        action,
+        'SEED_PANEL_ARROW_TEMPLATE = "next_gieo_trai"',
+        "Seed-picker arrow proof template missing",
+    )
+    require(action, "def _find_seed_panel_arrow(", "Seed-picker proof helper missing")
+    require(
+        action,
+        "def _prove_seed_picker_open_for_page_turn(",
+        "Seed-picker page-turn proof helper missing",
+    )
+    require(
+        action,
+        "arrow = self._prove_seed_picker_open_for_page_turn()",
+        "Seed page turn is not gated by picker proof",
+    )
+    require(action, "if arrow is None:", "Missing picker-proof fail-close branch")
+    require(action, "KHÔNG chuyển trang", "Blind seed page turn guard missing")
     require(action, "threshold=0.87", "Seed recognition threshold changed")
     require(action, "self.vision.driver.swipe_points(", "BATCH_SWIPE planting primitive missing")
     require(action, "duration=self.speed_config.plant_harvest_duration", "Configured planting speed missing")
@@ -96,8 +122,9 @@ def main() -> int:
         forbid(workflow, token, f"Planting workflow touches forbidden stable/legacy path: {token}")
 
     print("AUTO MAIN PLANTING STATIC CONTRACT VERIFIED")
-    print("crops=rose+apple+snow")
-    print("shared_paths=5,6,27,28,30")
+    print("crops=rose+apple+snow+tea")
+    print("shared_paths=5,6,24,27,28,30")
+    print("picker_page_turn=arrow-template-proof+fail-close")
     print("action=current-view-recognize+harvest/replant")
     print("navigation=separate-semantic-action")
     print("isolated_rose=exact-main->goUp1->plant-current-view-27")
