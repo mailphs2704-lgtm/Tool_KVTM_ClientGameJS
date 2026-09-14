@@ -425,13 +425,38 @@ def main() -> int:
         raise AssertionError("Pirate Chest reward claim may be retried or duplicated")
     require(
         pirate_chest_workflow,
-        'label="panel-after-reward-claim"',
+        'label="panel-after-reward-claim-center-chest-returned"',
         "Pirate Chest does not prove the normal panel after reward claim",
     )
     require(
         pirate_chest_workflow,
         "self._close_panel_if_visible()",
         "Pirate Chest does not close the proven panel after reward claim",
+    )
+    require(
+        pirate_chest_workflow,
+        "REWARD_CLAIM_POINT = (500, 715)",
+        "Pirate Chest claim tap is not below the claim text",
+    )
+    require(
+        pirate_chest_workflow,
+        "def _center_chest_hidden(",
+        "Pirate Chest does not prove the center chest disappeared",
+    )
+    require(
+        pirate_chest_workflow,
+        "def _center_chest_returned(",
+        "Pirate Chest does not prove the center chest returned after claim",
+    )
+    require(
+        pirate_chest_workflow,
+        "không dùng nút quay lại",
+        "Pirate Chest reward timeout may incorrectly use the Back button",
+    )
+    forbid(
+        pirate_chest_workflow,
+        "pirate-chest-safe-abort-back",
+        "Pirate Chest reward overlay must not be dismissed with Back",
     )
 
     # Daily VP sale-turn counter. One successfully posted x10 listing equals one
