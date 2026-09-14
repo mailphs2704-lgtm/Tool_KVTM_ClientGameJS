@@ -195,6 +195,63 @@ class PirateChestWorkflow:
         )
         return ratio >= 0.20
 
+    @staticmethod
+    def _frame_change_score(before, after) -> float:
+        if (
+            before is None
+            or after is None
+            or getattr(before, "shape", None) != getattr(after, "shape", None)
+            or getattr(before, "size", 0) == 0
+        ):
+            return 0.0
+        return float(abs(after.astype("int16") - before.astype("int16")).mean())
+
+    def _wait_for_reward_claimable(self, open_prompt_frame) -> tuple[str, object | None]:
+        """Prove the reward screen without depending only on one coin color ROI."""
+        deadline = time.monotonic() + self.REWARD_TIMEOUT_SECONDS
+        previous = None
+        stable_frames = 0
+        best_prompt_change = 0.0
+        while time.monotonic() < deadline:
+            self.context.ensure_running()
+            frame = self.vision.frame()
+            if self._storage_full(frame):
+                return "STORAGE_FULL", frame
+            if self._reward_ready(frame):
+                self.context.detail(
+                    "Pirate chest reward claimable | proof=reward-coin-roi"
+                )
+                return "PASS", frame
+
+            prompt_change = self._frame_change_score(open_prompt_frame, frame)
+            best_prompt_change = max(best_prompt_change, prompt_change)
+            known_non_reward = self._open_prompt(frame) or self._panel_normal(frame)
+            if not known_non_reward and prompt_change >= 8.0:
+                frame_change = (
+                    self._frame_change_score(previous, frame)
+                    if previous is not None
+                    else 999.0
+                )
+                stable_frames = stable_frames + 1 if frame_change <= 6.0 else 0
+                if stable_frames >= 2:
+                    self.context.detail(
+                        "Pirate chest reward claimable | "
+                        "proof=stable-screen-transition | "
+                        f"prompt_change={prompt_change:.2f} | "
+                        f"frame_change={frame_change:.2f}"
+                    )
+                    return "PASS", frame
+            else:
+                stable_frames = 0
+            previous = frame.copy()
+            self.auto.wait.sleep(self.POLL_SECONDS)
+
+        self.context.detail(
+            "Pirate chest wait timeout | state=reward-claimable | "
+            f"best_prompt_change={best_prompt_change:.2f}"
+        )
+        return "TIMEOUT", None
+
     def _wait_for(
         self,
         predicate: Callable[[object], bool],
@@ -408,13 +465,9 @@ class PirateChestWorkflow:
                     "open-prompt-timeout",
                 )
 
+        open_prompt_frame = self.vision.frame().copy()
         self._tap(self.CHEST_CENTER_POINT, "pirate-chest-tap-chest")
-        reward_state, _ = self._wait_for(
-            self._reward_ready,
-            timeout=self.REWARD_TIMEOUT_SECONDS,
-            label="reward-ready",
-            storage_interrupt=True,
-        )
+        reward_state, _ = self._wait_for_reward_claimable(open_prompt_frame)
         if reward_state == "STORAGE_FULL":
             self._exit_after_storage_full()
             return self._result(
@@ -430,11 +483,13 @@ class PirateChestWorkflow:
                 "reward-timeout",
             )
 
-        self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward")
+        # Exactly one additional tap claims/closes the reward presentation.
+        # Never retry this action because the reward may already be credited.
+        self._tap(self.REWARD_CLAIM_POINT, "pirate-chest-claim-reward-once")
         final_state, final_frame = self._wait_for(
-            lambda frame: self._cooldown(frame),
+            self._panel_normal,
             timeout=self.RETURN_TIMEOUT_SECONDS,
-            label="cooldown-after-claim",
+            label="panel-after-reward-claim",
             storage_interrupt=True,
         )
         if final_state == "STORAGE_FULL":
@@ -461,8 +516,13 @@ class PirateChestWorkflow:
                 "cooldown-confirm-timeout",
             )
 
+        cooldown_proven = (
+            final_frame is not None and self._cooldown(final_frame)
+        )
         self.context.log(
-            "AUTO rương hải tặc • mở slot 0 PASS • cooldown mới đã xác nhận"
+            "AUTO rương hải tặc • nhận thưởng PASS • panel đã quay lại • "
+            f"cooldown={'PASS' if cooldown_proven else 'UNCLASSIFIED'} • "
+            "đóng panel về MAIN"
         )
         self._close_panel_if_visible()
         self.context.stage("pirate-chest-finished")
