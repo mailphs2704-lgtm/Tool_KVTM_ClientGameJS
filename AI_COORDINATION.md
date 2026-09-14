@@ -579,3 +579,12 @@ Mọi phiên AI sửa AUTO MULTI DEV phải giữ factory tại `components/clie
 Chức năng chính AUTO MULTI DEV phải chạy qua `components/clientjs-auto/worker/auto_multi_dev_worker.py`. Cấm đưa `KVAutomation` hoặc `AutoMainWorkflow` trở lại `_run_clean_main_thread` của GUI; hàm này chỉ được giám sát subprocess và chuyển log/Stop. Một profile có đúng một worker sở hữu Bridge V3/CAPTURE3, và preview phải nhường capture trước khi chạy. Riêng luồng này chủ động nạp image runtime trong worker; không tối ưu bằng cách chia sẻ namespace resident. Build phải qua `verify_multi_dev_bridge_v3_contract.py`.
 
 AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh của AUTO PRO trước khi dựng workflow sạch: `local_launcher`, `engine_driver`, rồi `adaptive_cv.install_adaptive_matching()`. Không đổi lại thành cold-import trực tiếp PIL/NumPy/cv2 chỉ dựa trên suy đoán thứ tự import; lần thử đó đã treo 90 giây tại NumPy. Việc loại bỏ bootstrap AUTO PRO chỉ được thực hiện sau khi runtime ảnh Multi Dev độc lập có live gate tương đương.
+
+
+## 2026-09-14 — Khôi phục hitbox chuẩn mở bảng gieo
+
+- Log live xác nhận thay đổi trước đã dùng sai `selected_path[1]=(335, 940)` làm điểm click; đây là waypoint kéo nên Táo x27 UNKNOWN đủ 6/6.
+- Đã trả `_scan_first_pot_state()` về hitbox operator-verified `OPEN_PLANT_POINT=(388, 946)` cho mọi lần thử.
+- Chỉ giữ sửa hẹp: nếu RIPE xuất hiện ở lần 6, sau thu hoạch gọi lại chính Action scan bằng hitbox chuẩn ngay trong cùng lần để còn gieo, không cần lần 7.
+- Verifier khóa không cho `open_point=first_pot_point` quay lại.
+- Static source review: PASS. Windows build/live: CHƯA PASS; cần `KVTM_DEV_CONTROL.bat -> [1]` và log có `đã click lại điểm mở chuẩn=(388, 946)`.
