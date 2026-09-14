@@ -10,7 +10,7 @@ from ..runtime.wait import Waiter
 __all__ = ["ProductionPanelActions"]
 FILE_FUNCTIONS = (
     "Sở hữu panel/slot primitives dùng chung cho mọi máy sản xuất VP",
-    "Thu VP bằng burst x5 cùng tọa độ rồi xác minh đúng panel sản phẩm",
+    "Thu VP qua một hàm shared cố định: tối thiểu 4 burst x5 = 20 click cùng tọa độ trước khi xác minh panel",
     "Đếm ô trống theo logical 1000 geometry và native frame scale",
     "Phát typed InventoryFull/WrongProductionMachine từ shared panel engine",
     "Giữ panel mở và chờ đủ số ô trống theo REQUIRED_COUNT của caller/subclass",
@@ -40,6 +40,8 @@ class ProductionPanelActions:
     MIN_DISTANCE = 34
     PANEL_RECHECK_SECONDS = 1.0
     COLLECT_CLICK_BURST = 5
+    COLLECT_MIN_BURSTS = 4
+    COLLECT_MIN_CLICKS = COLLECT_CLICK_BURST * COLLECT_MIN_BURSTS
 
     def __init__(
         self,
@@ -270,6 +272,37 @@ class ProductionPanelActions:
             self.vision.driver.click(*machine_point)
         return self.COLLECT_CLICK_BURST
 
+    def collect_vp_before_machine_panel(
+        self,
+        *,
+        machine_point: tuple[int, int],
+        label: str,
+    ) -> int:
+        """Shared hard contract for collecting ready VP on every production machine.
+
+        The operator requires at least four x5 click bursts before product-panel
+        recognition may decide that collection/opening is complete. Product
+        Actions must call this helper (directly or through _click_until_panel_open)
+        instead of owning their own collection click count.
+        """
+        click_count = 0
+        for burst in range(1, self.COLLECT_MIN_BURSTS + 1):
+            self.context.ensure_running()
+            click_count += self._send_collect_burst(machine_point=machine_point)
+            self.context.log(
+                f"AUTO {label} • shared thu VP x5 • "
+                f"burst={burst}/{self.COLLECT_MIN_BURSTS} • "
+                f"tổng click={click_count}/{self.COLLECT_MIN_CLICKS}"
+            )
+            self.waiter.sleep(self.speed_config.vp_collect_delay)
+
+        self.context.log(
+            f"AUTO {label} • shared thu VP tối thiểu PASS • "
+            f"{self.COLLECT_MIN_BURSTS} burst x{self.COLLECT_CLICK_BURST} "
+            f"= {click_count} click tại {machine_point}"
+        )
+        return click_count
+
     def _click_until_panel_open(
         self,
         *,
@@ -280,22 +313,19 @@ class ProductionPanelActions:
     ) -> int:
         """Open and prove the exact requested product panel.
 
-        This intentionally preserves the existing unbounded wait behavior. A
-        maximum time/burst limit has not been defined by the operator and must not
-        be invented during architecture-only refactoring.
+        Each recognition round first runs the shared hard minimum collection
+        contract (4 burst x5 = 20 clicks). The outer wait stays unbounded because
+        no operator-defined maximum round/time exists yet.
         """
         click_count = 0
-        burst_count = 0
+        collect_round = 0
         while True:
             self.context.ensure_running()
-            burst_count += 1
-            click_count += self._send_collect_burst(machine_point=machine_point)
-
-            self.context.log(
-                f"AUTO {label} • đã phát x5 click tức thì tại cùng tọa độ "
-                f"• burst={burst_count} • tổng click={click_count}"
+            collect_round += 1
+            click_count += self.collect_vp_before_machine_panel(
+                machine_point=machine_point,
+                label=label,
             )
-            self.waiter.sleep(self.speed_config.vp_collect_delay)
             self.context.ensure_running()
 
             frame = self.vision.frame()
@@ -310,10 +340,9 @@ class ProductionPanelActions:
             )
             if product is not None:
                 self.context.log(
-                    f"AUTO {label} • panel đã mở sau burst x5 và đã xác minh ảnh "
-                    f"{product_template} trong vùng thư viện • burst={burst_count} • "
-                    f"tổng click={click_count} • center={product.center} • "
-                    f"nghỉ sau burst={self.speed_config.vp_collect_delay:.3f}s"
+                    f"AUTO {label} • panel đã mở sau shared thu VP >=20 click và đã xác minh ảnh "
+                    f"{product_template} trong vùng thư viện • round={collect_round} • "
+                    f"tổng click={click_count} • center={product.center}"
                 )
                 return click_count
 
@@ -331,16 +360,17 @@ class ProductionPanelActions:
                     actual_center=actual_match.center,
                 )
 
-            if empty_ready and (burst_count == 1 or burst_count % 5 == 0):
+            if empty_ready:
                 self.context.log(
                     f"AUTO {label} • thấy dấu ô trống nhưng CHƯA có ảnh {product_template} "
-                    "trong vùng thư viện • KHÔNG coi panel đã mở • tiếp tục burst x5"
+                    "trong vùng thư viện • KHÔNG coi panel đã mở • "
+                    "lặp shared thu VP tối thiểu 20 click"
                 )
-            elif burst_count == 1 or burst_count % 5 == 0:
+            else:
                 self.context.log(
-                    f"AUTO {label} • panel chưa hiện sau burst x5 "
-                    "• tiếp tục một burst x5 tức thì mới • "
-                    f"burst={burst_count} • tổng click={click_count}"
+                    f"AUTO {label} • panel chưa hiện sau shared thu VP tối thiểu 20 click "
+                    f"• round={collect_round} • tổng click={click_count} • "
+                    "lặp lại shared collector"
                 )
 
     def _wait_for_idle_open_panel(
