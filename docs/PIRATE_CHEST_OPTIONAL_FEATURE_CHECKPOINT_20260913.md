@@ -228,3 +228,23 @@ lại. Không thêm claim retry. Contract `1effe387`; AST PASS; live PENDING.
 
 Log startup cho thấy friend refresh định kỳ đang BẬT; đây là cấu hình riêng sau
 mỗi ba vòng, không phải bằng chứng chest SAFE_ABORT nếu thiếu đoạn log chest.
+
+
+## 15. Startup lifecycle handoff cho persisted open modal
+
+Live 12:16 dừng tại `clean-session-enter-game`: Pirate Chest workflow chưa chạy.
+Persisted `Chạm để mở rương` xuất hiện trong startup nhưng generic modal handler
+thử click backdrop/X, trong khi modal này chỉ mất sau open+claim.
+
+Fix:
+
+- PirateChestWorkflow có public resume entry cho open prompt đã tồn tại;
+- GameSession kiểm tra/resume trước `ensure_main_screen` và trong popup watch;
+- vòng PopupActions `ensure_main_screen` nhận protected callback trước mọi generic
+  dismiss, nên modal xuất hiện trễ sau portal entry vẫn được bàn giao đúng owner;
+- startup resume đóng panel rồi chứng minh own-farm HUD; startup sau đó mới đánh
+  dấu fresh exact-main;
+- generic popup không được click backdrop/X lên Pirate Chest.
+
+Commits `85129a59`, `5463b131`, `aa3a74e4`, `905a4f98`,
+`6b90093d`; lifecycle contract `5ea31e8d`. Toàn bộ AST PASS; live PENDING.
