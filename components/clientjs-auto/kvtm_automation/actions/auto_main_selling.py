@@ -41,6 +41,8 @@ class AutoMainSellingActions:
         "tao_say": "tao_say",
         "vai_vang": "vai_vang",
         "tinh_dau_hh": "tinh_dau_hh",
+        "nuoc_hoa_hong": "nuoc_hoa_hong",
+        "tra_da": "tra_da",
     }
     SELECTED_ITEM_ZONE = (680, 240, 180, 180)
     SALE_CHANGE_ZONE = (180, 330, 640, 430)
