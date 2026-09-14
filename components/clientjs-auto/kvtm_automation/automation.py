@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import time
-from typing import Any
+from typing import Callable, Any
 
 from .actions import (
     AppleJuiceProductionActions,
@@ -286,8 +286,16 @@ class KVAutomation:
             self.inventory,
         )
 
-    def ensure_main_screen(self, timeout: float = 90.0) -> None:
-        self.popup.ensure_main_screen(timeout=timeout)
+    def ensure_main_screen(
+        self,
+        timeout: float = 90.0,
+        *,
+        before_dismiss: Callable[[], bool] | None = None,
+    ) -> None:
+        self.popup.ensure_main_screen(
+            timeout=timeout,
+            before_dismiss=before_dismiss,
+        )
 
     def screenshot(self):
         self.context.ensure_running()
