@@ -403,13 +403,13 @@ def main() -> int:
     )
     require(
         pirate_chest_workflow,
-        "proof=stable-screen-transition",
-        "Pirate Chest reward detection lost its stable-transition fallback",
+        "proof=claim-text-stable",
+        "Pirate Chest reward claim is not gated by stable claim text",
     )
     require(
         pirate_chest_workflow,
-        "Reward type is intentionally irrelevant",
-        "Pirate Chest reward detection is not explicitly reward-type agnostic",
+        "independent of reward art",
+        "Pirate Chest reward detection is not reward-type agnostic",
     )
     forbid(
         pirate_chest_workflow,
@@ -425,8 +425,8 @@ def main() -> int:
         raise AssertionError("Pirate Chest reward claim may be retried or duplicated")
     require(
         pirate_chest_workflow,
-        'label="panel-after-reward-claim-center-chest-returned"',
-        "Pirate Chest does not prove the normal panel after reward claim",
+        "self._wait_for_center_chest_returned(",
+        "Pirate Chest does not stably prove the normal panel after reward claim",
     )
     require(
         pirate_chest_workflow,
@@ -462,6 +462,26 @@ def main() -> int:
         pirate_chest_workflow,
         ">= self.CENTER_CHEST_RETURN_MIN_CHANGE",
         "Pirate Chest return proof no longer requires reward art to disappear",
+    )
+    require(
+        pirate_chest_workflow,
+        "REWARD_TEXT_STABLE_SECONDS = 0.60",
+        "Pirate Chest may click claim before the reward text animation settles",
+    )
+    require(
+        pirate_chest_workflow,
+        "RETURN_STABLE_SECONDS = 0.60",
+        "Pirate Chest may close the panel before its return animation settles",
+    )
+    require(
+        pirate_chest_workflow,
+        "REWARD_TIMEOUT_SECONDS = 10.0",
+        "Pirate Chest reward animation timeout is too short",
+    )
+    require(
+        pirate_chest_workflow,
+        "RETURN_TIMEOUT_SECONDS = 12.0",
+        "Pirate Chest panel return timeout is too short",
     )
     require(
         pirate_chest_workflow,
