@@ -450,6 +450,21 @@ def main() -> int:
     )
     require(
         pirate_chest_workflow,
+        "reward_state, reward_frame = self._wait_for_reward_claimable(",
+        "Pirate Chest does not retain the actual reward frame for return proof",
+    )
+    require(
+        pirate_chest_workflow,
+        "self._center_chest_change(reward_frame, frame)",
+        "Pirate Chest return proof still compares against the pre-open panel",
+    )
+    require(
+        pirate_chest_workflow,
+        ">= self.CENTER_CHEST_RETURN_MIN_CHANGE",
+        "Pirate Chest return proof no longer requires reward art to disappear",
+    )
+    require(
+        pirate_chest_workflow,
         "không dùng nút quay lại",
         "Pirate Chest reward timeout may incorrectly use the Back button",
     )
