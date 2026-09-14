@@ -107,6 +107,47 @@ class AppleSupplyActions(PlantingActions):
     def wait_until_floor_1_ripe(self) -> None:
         self._wait_state(allow_empty=False, label="tầng 1")
 
+    def harvest_or_replant_five_floors(self) -> int:
+        """Plant 30 apples from the current floor-1 view, harvesting only if ripe."""
+        state, match = self._wait_state(
+            allow_empty=True,
+            label="5 tầng Function 3 Step 1",
+        )
+        if state == "EMPTY":
+            self.context.log(
+                "AUTO Function 3 Step 1 • chậu đầu đang trống • mở bảng gieo trực tiếp"
+            )
+            return self._plant_open_panel(
+                match,
+                self.FIVE_FLOOR_PATH,
+                30,
+                "Function 3 Step 1 • 5 tầng x 6 Táo",
+            )
+
+        self.context.log(
+            "AUTO Function 3 Step 1 • cây Táo đã chín • thu hoạch 5 tầng / 30 chậu"
+        )
+        self.vision.driver.swipe_points(
+            self.FIVE_FLOOR_PATH,
+            duration=self.speed_config.plant_harvest_duration,
+        )
+        self.waiter.sleep(0.55)
+        state, seed = self._wait_state(
+            allow_empty=True,
+            accept_ripe=False,
+            label="Function 3 Step 1 • 5 tầng sau thu hoạch",
+        )
+        if state != "EMPTY" or seed is None:
+            raise ScreenTimeout(
+                "Function 3 Step 1: thu hoạch 5 tầng chưa chuyển thành chậu trống"
+            )
+        return self._plant_open_panel(
+            seed,
+            self.FIVE_FLOOR_PATH,
+            30,
+            "Function 3 Step 1 • 5 tầng x 6 Táo",
+        )
+
     def harvest_and_replant_five_floors(self) -> int:
         self.vision.driver.swipe_points(
             self.FIVE_FLOOR_PATH,
