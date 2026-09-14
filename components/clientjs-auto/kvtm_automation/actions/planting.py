@@ -181,18 +181,14 @@ class PlantingActions:
     def _count_changed_pots(self, before, after) -> int:
         return self._count_changed_pots_27(before, after)
 
-    def _scan_first_pot_state(
-        self,
-        seed_template: str,
-        *,
-        open_point: tuple[int, int] | None = None,
-    ) -> tuple[str, object | None]:
+    def _scan_first_pot_state(self, seed_template: str) -> tuple[str, object | None]:
         self.context.ensure_running()
-        point = tuple(open_point or self.OPEN_PLANT_POINT)
-        self.vision.driver.click(*point)
+        # OPEN_PLANT_POINT is the operator-verified hitbox that opens the
+        # seed/harvest picker. Path waypoints are drag geometry, not click hitboxes.
+        self.vision.driver.click(*self.OPEN_PLANT_POINT)
         self.context.detail(
             "AUTO planting open picker | "
-            f"seed={seed_template} | first_pot={point}"
+            f"seed={seed_template} | point={self.OPEN_PLANT_POINT}"
         )
         self.waiter.sleep(0.45)
         frame = self.vision.frame()
@@ -235,21 +231,12 @@ class PlantingActions:
         label = str(segment_label or f"{item_label} x{requested}")
         attempts_limit = max(1, int(max_attempts))
         harvested = 0
-        if len(selected_path) < 2:
-            raise ValueError(
-                f"Planting path {label} thiếu tọa độ chậu đầu tiên; fail-close"
-            )
-        first_pot_point = tuple(selected_path[1])
 
         for attempt in range(1, attempts_limit + 1):
             self.context.ensure_running()
-            # Every attempt must reopen the seed/harvest picker from the first
-            # pot. This is especially required immediately after a RIPE harvest:
-            # the previous panel is gone and merely scanning cannot expose seeds.
-            state, match = self._scan_first_pot_state(
-                seed_template,
-                open_point=first_pot_point,
-            )
+            # Every attempt reopens the picker through the verified click hitbox.
+            # selected_path[1] is only a drag waypoint and must never replace it.
+            state, match = self._scan_first_pot_state(seed_template)
 
             if state == "RIPE" and match is not None:
                 self.context.log(
@@ -265,13 +252,10 @@ class PlantingActions:
                 # RIPE may be discovered on the last allowed attempt. Reopen the
                 # picker from the now-empty first pot immediately in this same
                 # attempt; never require an artificial attempt 7 just to plant.
-                state, match = self._scan_first_pot_state(
-                    seed_template,
-                    open_point=first_pot_point,
-                )
+                state, match = self._scan_first_pot_state(seed_template)
                 self.context.log(
-                    f"AUTO trồng • {label} • sau thu hoạch đã click chậu trống đầu "
-                    f"{first_pot_point} để mở lại bảng gieo"
+                    f"AUTO trồng • {label} • sau thu hoạch đã mở lại bảng gieo "
+                    f"tại điểm chuẩn={self.OPEN_PLANT_POINT}"
                 )
 
             if state == "EMPTY" and match is not None:
@@ -301,7 +285,7 @@ class PlantingActions:
             self.context.log(
                 f"AUTO trồng • {label} • chưa chứng minh RIPE/EMPTY "
                 f"lần {attempt}/{attempts_limit} • "
-                f"đã click lại chậu đầu={first_pot_point}"
+                f"đã click lại điểm mở chuẩn={self.OPEN_PLANT_POINT}"
             )
             self.vision.driver.click(*self.CLOSE_POINT)
             self.waiter.sleep(0.30)
