@@ -17,7 +17,7 @@ FILE_FUNCTIONS = (
     "Luôn chọn đúng rương đầu tiên/slot 0 và không bao giờ thao tác các slot trả kim cương",
     "Phân loại READY/COOLDOWN bằng màu và hình học ROI, hỗ trợ native 500x500/1000x1000",
     "Dùng đúng ba khoảng chờ 3 giây không CAPTURE theo quy trình operator",
-    "Bắt modal kho quá tải theo hình học/màu chung, không phụ thuộc Kho 2/Kho 3",
+    "Chỉ bắt kho đầy bằng tiêu đề cố định KHO QUÁ TẢI RỒI!, bỏ qua nội dung thay đổi",
     "Mọi lỗi nhận diện an toàn đều đóng UI nếu có thể và trả caller, không dừng toàn AUTO",
 )
 
