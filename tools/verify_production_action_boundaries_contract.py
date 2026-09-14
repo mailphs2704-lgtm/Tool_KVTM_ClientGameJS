@@ -11,6 +11,7 @@ DRIED_APPLE = ACTIONS / "production.py"
 APPLE_JUICE = ACTIONS / "apple_juice_production.py"
 YELLOW_FABRIC = ACTIONS / "yellow_fabric_production.py"
 ROSE_OIL = ACTIONS / "rose_oil_production.py"
+DRIED_TEA = ACTIONS / "dried_tea_production.py"
 MATERIAL_AWARE = ACTIONS / "material_shortage_production.py"
 WAREHOUSE_GUARD = ACTIONS / "warehouse_full_guard.py"
 ACTIONS_INIT = ACTIONS / "__init__.py"
@@ -40,6 +41,7 @@ def main() -> int:
     apple = read(APPLE_JUICE)
     yellow = read(YELLOW_FABRIC)
     rose = read(ROSE_OIL)
+    tea = read(DRIED_TEA)
     material = read(MATERIAL_AWARE)
     guard = read(WAREHOUSE_GUARD)
     actions_init = read(ACTIONS_INIT)
@@ -56,10 +58,18 @@ def main() -> int:
         "def _raise_inventory_full(",
         "def _raise_wrong_machine(",
         "def _send_collect_burst(",
+        "def collect_vp_before_machine_panel(",
         "def _click_until_panel_open(",
         "def _wait_for_idle_open_panel(",
     ):
         require(panel, token, f"Shared production primitive missing: {token}")
+    for token in (
+        "COLLECT_CLICK_BURST = 5",
+        "COLLECT_MIN_BURSTS = 4",
+        "COLLECT_MIN_CLICKS = COLLECT_CLICK_BURST * COLLECT_MIN_BURSTS",
+        "click_count += self.collect_vp_before_machine_panel(",
+    ):
+        require(panel, token, f"Shared >=20-click VP collection contract missing: {token}")
     forbid(panel, "produce_9_dried_apples", "Shared panel engine contains Dried Apple transaction")
     forbid(panel, "produce_9_apple_juices", "Shared panel engine contains Apple Juice transaction")
     forbid(panel, "produce_9_yellow_fabrics", "Shared panel engine contains Yellow Fabric transaction")
@@ -85,11 +95,40 @@ def main() -> int:
     # Dried Apple product transaction merely to borrow slot methods.
     require(apple, "from .production_panel import ProductionPanelActions", "Apple Juice shared panel import missing")
     require(apple, "self.slots = ProductionPanelActions(", "Apple Juice still borrows a product transaction as slot helper")
+    require(
+        apple,
+        "self.slots.collect_vp_before_machine_panel(",
+        "Apple Juice direct floor probe bypasses the shared >=20-click collector",
+    )
+    forbid(apple, "self.slots._send_collect_burst(", "Apple Juice probe regressed to private x5 burst")
     forbid(apple, "self.slots = ProductionActions(", "Apple Juice regressed to Dried Apple helper")
 
     require(yellow, "from .production_panel import ProductionPanelActions", "Yellow Fabric shared panel import missing")
     require(yellow, "self.slots = ProductionPanelActions(", "Yellow Fabric still borrows a product transaction as slot helper")
     forbid(yellow, "self.slots = ProductionActions(", "Yellow Fabric regressed to Dried Apple helper")
+
+    # Trà sấy has paged product selection. Collection still belongs to the shared
+    # machine collector and the page arrow is forbidden until panel-open proof.
+    require(
+        tea,
+        "click_count += self.collect_vp_before_machine_panel(",
+        "Dried Tea bypasses the shared >=20-click collector",
+    )
+    require(
+        tea,
+        "if not empty_ready:",
+        "Dried Tea page turn is not gated by production-panel proof",
+    )
+    require(
+        tea,
+        "KHÔNG chuyển trang",
+        "Dried Tea panel-loss branch no longer fail-closes page movement",
+    )
+    forbid(
+        tea,
+        "self._send_collect_burst(machine_point=self.MACHINE_POINT)",
+        "Dried Tea regressed to a single private x5 collection burst",
+    )
 
     # TDHH directly subclasses the shared engine. Its 7-item and retry constants
     # are explicit so they are not inherited accidentally from Dried Apple.
@@ -108,6 +147,21 @@ def main() -> int:
         "MATERIAL_ERROR_TEMPLATE = \"x\"",
     ):
         require(rose, token, f"TDHH explicit production contract missing: {token}")
+
+    # No product Action may own a private collect-click count. All machine-opening
+    # paths must reach the shared collector, directly or through _click_until_panel_open.
+    for name, product_text in (
+        ("Dried Apple", dried),
+        ("Apple Juice", apple),
+        ("Yellow Fabric", yellow),
+        ("Rose Oil", rose),
+        ("Dried Tea", tea),
+    ):
+        forbid(
+            product_text,
+            "._send_collect_burst(",
+            f"{name} contains a direct private collect burst instead of shared collector",
+        )
 
     # Live warehouse-full detection must patch the shared panel engine once, so
     # every product path keeps the same visual proof and typed InventoryFull.
@@ -135,10 +189,11 @@ def main() -> int:
         raise AssertionError("Warehouse-full guard must install before product Action imports")
 
     print("AUTO PRODUCTION ACTION BOUNDARY CONTRACT VERIFIED")
-    print("panel-engine=shared+product-agnostic")
+    print("panel-engine=shared+product-agnostic+vp-collector-min-20")
     print("dried-apple=product-subclass")
-    print("apple-juice=shared-panel-helper")
+    print("apple-juice=shared-panel-helper+shared-probe-collector")
     print("yellow-fabric=shared-panel-helper")
+    print("dried-tea=shared-collector+panel-proof-before-page-turn")
     print("tdhh=shared-panel-subclass+explicit-7-count")
     print("warehouse-full=shared-panel-guard")
     print("material-shortage=resume-layer-preserved")
