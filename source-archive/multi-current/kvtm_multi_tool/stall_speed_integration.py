@@ -16,20 +16,29 @@ def install_stall_speed_integration(app_class, core) -> None:
     del app_class
 
     core.DEFAULT_AUTO_TUNING.setdefault("shop_drag_speed", 0.35)
+    core.DEFAULT_AUTO_TUNING.setdefault("clear_stall_drag_speed", 0.35)
     core.AUTO_TUNING_SPECS.setdefault(
         "shop_drag_speed",
         ("Tốc độ kéo quầy", 0.05, 3.0, False),
     )
+    core.AUTO_TUNING_SPECS.setdefault(
+        "clear_stall_drag_speed",
+        ("Kéo quầy Dọn quầy (giây/swipe)", 0.05, 3.0, False),
+    )
 
     keys = tuple(getattr(core, "MULTI_DEV_TUNING_KEYS", ()))
-    if "shop_drag_speed" not in keys:
+    for key in ("shop_drag_speed", "clear_stall_drag_speed"):
+        if key in keys:
+            continue
         try:
             index = keys.index("floor_swipe_duration") + 1
+            if key == "clear_stall_drag_speed" and "shop_drag_speed" in keys:
+                index = keys.index("shop_drag_speed") + 1
         except ValueError:
-            keys = ("shop_drag_speed",) + keys
+            keys = (key,) + keys
         else:
-            keys = keys[:index] + ("shop_drag_speed",) + keys[index:]
-        core.MULTI_DEV_TUNING_KEYS = keys
+            keys = keys[:index] + (key,) + keys[index:]
+    core.MULTI_DEV_TUNING_KEYS = keys
 
     core.AUTO_LEGACY_TUNING_KEYS = tuple(
         key
@@ -39,6 +48,6 @@ def install_stall_speed_integration(app_class, core) -> None:
 
     print(
         "[KVTM DEV] Stall speed integration READY • "
-        "shop_drag_speed=VISIBLE • clean runtime=WIRED",
+        "shop_drag_speed=VISIBLE • clear_stall_drag_speed=VISIBLE+WIRED",
         flush=True,
     )
