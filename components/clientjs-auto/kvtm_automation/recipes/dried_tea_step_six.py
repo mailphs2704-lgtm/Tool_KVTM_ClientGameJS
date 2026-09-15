@@ -26,12 +26,7 @@ class DriedTeaStepSixProgressResult:
 class DriedTeaStepSixRecipe:
     """Final Function 3 step: roses on floors 1/6, then rose water on floor 8."""
 
-    def __init__(
-        self,
-        automation: KVAutomation,
-        *,
-        recovery: RecoveryManager,
-    ) -> None:
+    def __init__(self, automation: KVAutomation, *, recovery: RecoveryManager) -> None:
         self.auto = automation
         self.context = automation.context
         self.recovery = recovery
@@ -98,6 +93,7 @@ class DriedTeaStepSixRecipe:
                 f"{roses_floor_6.planted_count}/6"
             )
         self.context.stage("auto-function-3-step-6-rose-floor6-6-pass")
+        self.context.action("Gieo thành công 36 hồng")
 
         self.auto.floors.go_up(
             2,
@@ -124,6 +120,7 @@ class DriedTeaStepSixRecipe:
                 f"{production.queued_count}/9"
             )
         self.context.stage("auto-function-3-step-6-rose-water-9-pass")
+        self.context.action("Sản xuất 9 nước hoa hồng")
 
         boundary.known_upper_floor_to_main_via_down_floor(
             "Function 3 Step 6 tầng 8 → MAIN"
@@ -134,9 +131,7 @@ class DriedTeaStepSixRecipe:
                 "Function 3 Step 6 đã goDown(1)+XUỐNG nhưng chưa chứng minh exact MAIN"
             )
 
-        harvested = int(
-            roses_floor_1.harvested_count + roses_floor_6.harvested_count
-        )
+        harvested = int(roses_floor_1.harvested_count + roses_floor_6.harvested_count)
         self.context.stage("auto-function-3-step-6-pass")
         self.context.log(
             "AUTO Function 3 • Step 6 PASS • Hồng tầng 1=30/30 • "
