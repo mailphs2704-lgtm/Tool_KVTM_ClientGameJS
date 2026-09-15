@@ -4,10 +4,12 @@ from .workflow import (
     FunctionThreeStepThreeResult,
     FunctionThreeStepFourResult,
     FunctionThreeStepFiveResult,
+    FunctionThreeStepSixResult,
     FunctionThreeStepsOneTwoResult,
     FunctionThreeStepsOneTwoThreeResult,
     FunctionThreeStepsOneTwoThreeFourResult,
     FunctionThreeStepsOneTwoThreeFourFiveResult,
+    FunctionThreeStepsOneTwoThreeFourFiveSixResult,
     FunctionThreeWorkflow,
 )
 
@@ -17,9 +19,11 @@ __all__ = [
     "FunctionThreeStepThreeResult",
     "FunctionThreeStepFourResult",
     "FunctionThreeStepFiveResult",
+    "FunctionThreeStepSixResult",
     "FunctionThreeStepsOneTwoResult",
     "FunctionThreeStepsOneTwoThreeResult",
     "FunctionThreeStepsOneTwoThreeFourResult",
     "FunctionThreeStepsOneTwoThreeFourFiveResult",
+    "FunctionThreeStepsOneTwoThreeFourFiveSixResult",
     "FunctionThreeWorkflow",
 ]
