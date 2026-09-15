@@ -433,44 +433,97 @@ def main() -> int:
             log(
                 "PASS | lifecycle camera READY • bàn giao trực tiếp cho AUTO Main"
             )
-            result = AutoMainWorkflow(
-                automation,
-                function_id=function_id,
-                sale_every_loops=sale_every,
-                function_loop_delay_seconds=loop_delay,
-                friend_refresh_enabled=friend_refresh_enabled,
-            ).run()
-            result_payload = result.to_dict()
-            result_payload.pop("profile_id", None)
-            emit(
-                "worker_finished", workflow=WORKFLOW_NAME,
-                profile_id=args.profile_id, outcome="auto_main_ready",
-                **result_payload,
-            )
-            return 0
-        except ClientRestartRequested as exc:
-            # Scheduled ClientJS restart is a lifecycle request, not an AUTO
-            # failure and not a generic AutomationStopped. Emit a dedicated
-            # lifecycle event, then a compatibility terminal event so the
-            # current Multi supervisor can hand the exact profile to its restart
-            # adapter without mistaking this for an unregistered runtime error.
-            emit(
-                "client_restart_requested", workflow=WORKFLOW_NAME,
-                profile_id=args.profile_id,
-                reason=str(exc),
-                function_id=function_id,
-            )
-            emit(
-                "worker_stopped", workflow=WORKFLOW_NAME,
-                profile_id=args.profile_id,
-                reason=str(exc),
-                lifecycle_event="client_restart_requested",
-                function_id=function_id,
-            )
-            log(
-                "AUTO MULTI DEV • scheduled ClientJS restart requested at safe boundary"
-            )
-            return 75
+            while True:
+                try:
+                    result = AutoMainWorkflow(
+                        automation,
+                        function_id=function_id,
+                        sale_every_loops=sale_every,
+                        function_loop_delay_seconds=loop_delay,
+                        friend_refresh_enabled=friend_refresh_enabled,
+                    ).run()
+                    result_payload = result.to_dict()
+                    result_payload.pop("profile_id", None)
+                    emit(
+                        "worker_finished", workflow=WORKFLOW_NAME,
+                        profile_id=args.profile_id, outcome="auto_main_ready",
+                        **result_payload,
+                    )
+                    return 0
+                except ClientRestartRequested as exc:
+                    emit(
+                        "client_restart_requested", workflow=WORKFLOW_NAME,
+                        profile_id=args.profile_id,
+                        reason=str(exc),
+                        function_id=function_id,
+                    )
+                    old_pid = int(automation.driver.pid)
+                    log(
+                        "AUTO MULTI DEV • scheduled restart SAFE • "
+                        f"đang đóng đúng ClientJS PID {old_pid}"
+                    )
+                    automation.driver.app_stop("")
+                    new_pid = int(automation.driver.app_start(""))
+                    context.pid = new_pid
+                    emit(
+                        "client_pid_changed", workflow=WORKFLOW_NAME,
+                        profile_id=args.profile_id,
+                        function_id=function_id,
+                        old_pid=old_pid,
+                        new_pid=new_pid,
+                    )
+
+                    # The sale immediately before the safe restart was already
+                    # completed by AutoMainWorkflow. Preserve every existing
+                    # option and skip only the duplicate initial sale once.
+                    config_marker = (
+                        Path(args.work_dir).resolve() / "auto-main-config.json"
+                    )
+                    resume_config = dict(auto_main_config)
+                    try:
+                        existing_config = json.loads(
+                            config_marker.read_text(encoding="utf-8")
+                        )
+                        if isinstance(existing_config, dict):
+                            resume_config.update(existing_config)
+                    except (FileNotFoundError, OSError, json.JSONDecodeError):
+                        pass
+                    resume_config["skip_initial_sale_once"] = True
+                    temporary_config = config_marker.with_suffix(".json.tmp")
+                    temporary_config.write_text(
+                        json.dumps(
+                            resume_config,
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
+                    os.replace(temporary_config, config_marker)
+
+                    log(
+                        "AUTO MULTI DEV • ClientJS PID mới "
+                        f"{new_pid} • chạy login/popup watch trước khi resume"
+                    )
+                    GameSessionWorkflow(automation).run(timeout=args.timeout)
+                    if not automation.popup.is_own_exact_main_screen():
+                        raise RuntimeError(
+                            "Restart hoàn tất nhưng chưa xác nhận exact MAIN"
+                        )
+                    emit(
+                        "client_restart_completed", workflow=WORKFLOW_NAME,
+                        profile_id=args.profile_id,
+                        function_id=function_id,
+                        old_pid=old_pid,
+                        new_pid=new_pid,
+                        message=(
+                            f"ClientJS restart PASS • PID {old_pid} → {new_pid} • "
+                            "AUTO tiếp tục"
+                        ),
+                    )
+                    log(
+                        "PASS | scheduled ClientJS restart • "
+                        f"PID {old_pid} → {new_pid} • AUTO resume"
+                    )
         except AutomationStopped as exc:
             emit(
                 "worker_stopped", workflow=WORKFLOW_NAME,
