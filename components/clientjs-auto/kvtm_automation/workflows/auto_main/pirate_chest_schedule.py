@@ -159,7 +159,7 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         if not refreshed:
             raise ScreenTimeout(
                 "Rương hải tặc SAFE_ABORT nhưng chưa chứng minh được vòng "
-                "nhà bạn #1 → nhà mình; dừng trước Function kế tiếp"
+                "nhà bạn #1 → nhà mình; bàn giao global recovery"
             )
         self.context.log(
             "AUTO rương hải tặc • scene reset PASS • "
@@ -180,6 +180,7 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
 
         status = "ERROR"
         detail = ""
+        journaled = False
         try:
             result = PirateChestWorkflow(self.auto).run()
             status = str(result.status)
@@ -194,6 +195,14 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         except Exception as exc:
             status = "SAFE_ABORT"
             detail = f"{type(exc).__name__}: {exc}"
+            record_auto_error(
+                self.context,
+                exc,
+                traceback_text=traceback.format_exc(),
+                phase="mở rương hải tặc",
+                recovery_state="SAFE_ABORT → nhà bạn #1 → nhà mình",
+            )
+            journaled = True
             self.context.detail(
                 "AUTO rương hải tặc | non-blocking error | " + detail
             )
@@ -202,6 +211,17 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             self._schedule_next_pirate_chest_check(status=status)
 
         if status == "SAFE_ABORT":
+            if not journaled:
+                chest_error = ScreenTimeout(
+                    detail or "Mở rương trả SAFE_ABORT không có chi tiết"
+                )
+                record_auto_error(
+                    self.context,
+                    chest_error,
+                    phase="mở rương hải tặc",
+                    recovery_state="SAFE_ABORT → nhà bạn #1 → nhà mình",
+                )
+            self.context.action("Lỗi mở rương, chuyển trạng thái xử lí")
             self._reset_scene_after_pirate_chest_abort(reason=detail or reason)
         self._prove_exact_main_boundary(reason=f"{reason}-after-chest")
         self.context.stage(f"auto-main-pirate-chest-{ordinal}-finished")
