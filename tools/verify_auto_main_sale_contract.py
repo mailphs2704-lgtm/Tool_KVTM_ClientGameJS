@@ -69,6 +69,11 @@ def main() -> int:
     require(action, "item_order: tuple[str, ...] | None = None", "Function-specific sale policy input missing")
     require(action, "self.ITEM_ORDER = requested", "Function sale order not installed")
     require(action, "SELECTED_ITEM_TEMPLATES", "Selected-item proof map missing")
+    require(action, '"tra_da": ("kho_tra_da",)', "Trà đá dialog fallback proof missing")
+    require(action, "SELECTED_ITEM_THRESHOLD = 0.78", "Selected-item safety threshold changed")
+    require(action, "SELECTED_ITEM_REQUIRED_PASSES = 2", "Selected-item stable proof missing")
+    require(action, "SELECTED_ITEM_SCAN_ATTEMPTS = 3", "Selected-item bounded retry missing")
+    require(action, "selected-item STABLE READY", "Selected-item stable PASS marker missing")
 
     # Parent-state -> click-once -> destination-state transaction.
     require(action, "self.selling.wait_own_stall_ready(", "OWN_STALL pre-click proof missing")
@@ -133,7 +138,9 @@ def main() -> int:
     require(action, '"nuoc_hoa_hong": "nuoc_hoa_hong"',
             "Function-3 Nước hoa hồng dialog proof missing")
     require(action, '"tra_da": "tra_da"',
-            "Function-3 Trà đá dialog proof missing")
+            "Function-3 Trà đá primary dialog proof missing")
+    require(action, 'self.SELECTED_ITEM_FALLBACK_TEMPLATES.get(item.item_id, ())',
+            "Function-3 Trà đá fallback is not wired into dialog proof")
     require(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 10800.0", "Scheduler 3h restart interval changed")
     require(auto_main, "def _request_client_restart_at_safe_boundary", "Safe restart boundary helper missing")
     require(auto_main, "raise ClientRestartRequested(", "Restart signal missing")
