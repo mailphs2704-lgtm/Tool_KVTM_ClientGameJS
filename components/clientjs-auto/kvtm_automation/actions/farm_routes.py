@@ -134,6 +134,7 @@ class FarmBoundaryRouteActions(FarmRouteActions):
 
     DOWN_FLOOR_POINT = (497, 978)
     DOWN_FLOOR_BUTTON_THRESHOLD = 0.78
+    DOWN_FLOOR_ANIMATION_SETTLE_SECONDS = 1.0
     MAIN_BOUNDARY_MAX_CHANGE = 6.0
     MAIN_BOUNDARY_STABLE_REQUIRED = 2
     RECOVERY_DOWN_CHAIN_LIMIT = 10
@@ -234,6 +235,11 @@ class FarmBoundaryRouteActions(FarmRouteActions):
     def known_upper_floor_to_main_via_down_floor(self, label: str) -> NavigationEvidence:
         swipe_label = f"{label}-goDown(1)"
         swipe_change = self._settle_down_one(swipe_label)
+        self.context.ensure_running()
+        self.context.log(
+            "AUTO route • goDown(1) xong • chờ 1.0s ổn định animation nút XUỐNG trước click"
+        )
+        self.waiter.sleep(self.DOWN_FLOOR_ANIMATION_SETTLE_SECONDS)
         click_change = self._click_down_floor_if_visible(swipe_label)
 
         if click_change is None:
@@ -272,7 +278,7 @@ class FarmBoundaryRouteActions(FarmRouteActions):
             source="navigation-route",
         )
         self.context.log(
-            f"AUTO điều hướng • {label} → goDown(1) → click XUỐNG → exact-main PASS"
+            f"AUTO điều hướng • {label} → goDown(1) → chờ 1s → click XUỐNG → exact-main PASS"
         )
         return NavigationEvidence(
             f"{label}-via-down-floor",
