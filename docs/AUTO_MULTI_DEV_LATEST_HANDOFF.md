@@ -3,7 +3,7 @@
 Cập nhật: 2026-09-15
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
-Trạng thái: **FUNCTION 3 SIX-STEP SOURCE WIRED + OPERATIONS LOG/RECOVERY SOURCE COMPLETE — BUILD/LIVE PENDING**
+Trạng thái: **FUNCTION 3 MAIN-LOOP COMPLETION GATE FIXED IN SOURCE — BUILD/LIVE PENDING**
 
 > Build/static PASS không thay cho live/runtime evidence. Không gọi runtime PASS khi chưa có operator evidence.
 
@@ -120,7 +120,42 @@ Hồng 30 tầng1
 → Function 3 DONE
 ```
 
-## 6. Shared upper-floor → MAIN route
+## 6. Live defect 2026-09-15 15:27/15:31 — completion gate exact MAIN
+
+Operator đưa error journal lặp lại:
+
+```text
+RuntimeError: Function 3 trả kết quả không đạt hợp đồng PASS 6/6 về exact MAIN
+```
+
+Đây **không phải** Function 3 còn bị giữ ở test-only runner. Source hiện tại đã nối Function 3 hoàn chỉnh vào `FunctionModule` và AUTO Main; `FunctionThreeWorkflow.run()` chạy đủ 6 Step.
+
+Root cause nằm tại scheduler completion gate:
+
+```python
+int(payload.get("end_floor", -1) or -1) != 0
+```
+
+`end_floor=0` là sentinel hợp lệ cho exact MAIN nhưng Python coi `0` là falsy, nên biểu thức `0 or -1` biến PASS thành `-1` và AUTO Main luôn báo FAIL sau một vòng Function 3 hoàn chỉnh.
+
+Đã sửa source thành:
+
+```python
+int(payload.get("end_floor", -1)) != 0
+```
+
+và bổ sung static verifier cấm pattern falsy fallback quay lại.
+
+Commits:
+
+```text
+6f8a9c10  fix(auto): accept Function 3 exact-main floor sentinel
+909c1b5c  test(auto): lock Function 3 exact-main sentinel handling
+```
+
+Test button compatibility name/method cũ vẫn tồn tại để không phá UI DEV, nhưng không phải đường chạy AUTO Main chuẩn.
+
+## 7. Shared upper-floor → MAIN route
 
 `FarmBoundaryRouteActions.known_upper_floor_to_main_via_down_floor(...)` là canonical route.
 
@@ -137,7 +172,7 @@ goDown(1)
 
 Dùng chung cho floor3/floor5/floor6 và generic known upper floor như floor8.
 
-## 7. Planting
+## 8. Planting
 
 Seed identity luôn dynamic bằng template. Không dùng tọa độ tuyệt đối seed.
 
@@ -149,7 +184,7 @@ Verified path hiện có:
 
 Picker page chỉ được chuyển khi chứng minh bảng gieo đang mở bằng `next_gieo_trai`; điểm kéo bắt đầu tại `match.center`.
 
-## 8. Production / VP
+## 9. Production / VP
 
 Shared `ProductionPanelActions` sở hữu panel proof, collect VP, empty-slot count, wrong-machine/full-kho signals và page safety.
 
@@ -161,7 +196,7 @@ Shared VP collection minimum:
 
 Các product Action đang dùng shared engine gồm Táo sấy, Nước táo, Vải vàng, TDHH, Trà sấy, Trà đá, Nước hoa hồng.
 
-## 9. Log hành động vs Log chi tiết
+## 10. Log hành động vs Log chi tiết
 
 Operator contract mới:
 
@@ -183,7 +218,7 @@ Worker/bootstrap chatter cũng đã chuyển sang detail; context logger chỉ d
 ### Log chi tiết
 Giữ toàn bộ runtime diagnostics: stage, template match, navigation proof, timing, recovery internals, production checks, stack/error diagnostics.
 
-## 10. Daily counters trên account info
+## 11. Daily counters trên account info
 
 Persistent per-profile:
 
@@ -193,7 +228,7 @@ Persistent per-profile:
 Hai counter sống qua restart tool/ClientJS.
 Daily-counter UI integration đã được nối vào resident DEV host và refresh selected-account details mỗi 1 giây.
 
-## 11. Error journal
+## 12. Error journal
 
 Persistent per-profile error journal:
 
@@ -212,7 +247,7 @@ UI đã nối:
 
 Typed production errors (đầy kho/sai máy), material shortage, pirate SAFE_ABORT và global unhandled runtime errors đều được journaled.
 
-## 12. Error recovery policy
+## 13. Error recovery policy
 
 Known typed recovery vẫn xử lý gần module nhất.
 
@@ -233,12 +268,12 @@ Global recovery tự retry nếu chính recovery gặp lỗi.
 `AutomationStopped` và `ClientRestartRequested` là control/lifecycle signal, không phải lỗi và không được biến thành auto-retry.
 Bootstrap/Bridge failure xảy ra trước khi business recovery graph tồn tại vẫn là lifecycle fatal; không được giả lập in-game recovery khi chưa có runtime hợp lệ.
 
-## 13. Scheduled restart
+## 14. Scheduled restart
 
 ClientJS restart mặc định 3 giờ và chỉ tại safe Function boundary.
 Không cắt ngang Function đang chạy.
 
-## 14. Source milestone gần nhất
+## 15. Source milestone gần nhất
 
 Các commit feature mới nhất gồm:
 
@@ -248,24 +283,27 @@ Các commit feature mới nhất gồm:
 fc4dacba  refactor(auto): keep worker chatter in detail log
 1fa37995  feat(auto): journal material shortage recovery
 67b17a2f  feat(auto): journal pirate chest aborts
+6f8a9c10  fix(auto): accept Function 3 exact-main floor sentinel
+909c1b5c  test(auto): lock Function 3 exact-main sentinel handling
 ```
 
 Checkpoint:
 
 `docs/AUTO_OPERATIONS_LOG_RECOVERY_CHECKPOINT_20260915.md`
 
-## 15. NEXT GATE
+## 16. NEXT GATE
 
 Chạy `[1]` bằng `KVTM_DEV_CONTROL.bat`.
 
 Chỉ khi build sạch mới test live. Live test cần xác minh:
 
-1. Log hành động chỉ còn milestone/error ngắn và có tên acc.
-2. Log chi tiết vẫn đầy đủ.
-3. Rương hải tặc hiển thị daily count đúng account và reset local midnight.
-4. Log lỗi mở/xuất TXT được.
-5. Typed error ghi journal nhưng resume đúng checkpoint.
-6. Unhandled AUTO Main error không dừng AUTO: exact MAIN → bạn #1 → nhà mình → restart AUTO.
-7. Function 3 cumulative sau TDHH correction chạy 6/6 và kết thúc exact MAIN.
+1. Function 3 sau Step 6 được AUTO Main chấp nhận PASS 6/6 thay vì tạo RuntimeError giả do `end_floor=0`.
+2. Sau PASS, scheduler thực hiện sale/maintenance theo cấu hình rồi bắt đầu vòng Function 3 kế tiếp như một Function chuẩn.
+3. Log hành động chỉ còn milestone/error ngắn và có tên acc.
+4. Log chi tiết vẫn đầy đủ.
+5. Rương hải tặc hiển thị daily count đúng account và reset local midnight.
+6. Log lỗi mở/xuất TXT được.
+7. Typed error ghi journal nhưng resume đúng checkpoint.
+8. Unhandled AUTO Main error không dừng AUTO: exact MAIN → bạn #1 → nhà mình → restart AUTO.
 
 **Chưa gọi BUILD/STATIC PASS hoặc RUNTIME PASS trước evidence tương ứng.**
