@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 
+from ...daily_pirate_chest_counter import record_pirate_chest_opened
 from ...errors import AutomationStopped, ScreenTimeout
 from ...recovery import RecoveryManager
 from ..pirate_chest import PirateChestWorkflow
@@ -194,6 +195,11 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             result = PirateChestWorkflow(self.auto).run()
             status = str(result.status)
             detail = str(result.detail)
+            if status == "OPENED":
+                opened_today = record_pirate_chest_opened(self.context)
+                self.context.action(
+                    f"Mở rương thành công {opened_today} lần hôm nay"
+                )
         except AutomationStopped:
             raise
         except Exception as exc:
