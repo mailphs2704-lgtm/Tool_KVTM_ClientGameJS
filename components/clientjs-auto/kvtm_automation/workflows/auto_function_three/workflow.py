@@ -75,6 +75,8 @@ class FunctionThreeStepFourResult:
     roses_floor_1_planted: int
     roses_floor_6_planted: int
     roses_harvested: int
+    tdhh_snow_floor_1_planted: int
+    tdhh_snow_floor_6_planted: int
     rose_oils: int
     progress_steps: int
     total_steps: int
@@ -173,6 +175,8 @@ class FunctionThreeStepsOneTwoThreeFourResult:
     roses_floor_1_planted: int
     roses_floor_6_planted: int
     roses_harvested: int
+    tdhh_snow_floor_1_planted: int
+    tdhh_snow_floor_6_planted: int
     rose_oils: int
     progress_steps: int
     total_steps: int
@@ -199,6 +203,8 @@ class FunctionThreeStepsOneTwoThreeFourFiveResult:
     roses_floor_1_planted: int
     roses_floor_6_planted: int
     roses_harvested: int
+    tdhh_snow_floor_1_planted: int
+    tdhh_snow_floor_6_planted: int
     rose_oils: int
     snow_floor_1_planted: int
     snow_floor_6_planted: int
@@ -229,6 +235,8 @@ class FunctionThreeStepsOneTwoThreeFourFiveSixResult:
     roses_floor_1_planted: int
     roses_floor_6_planted: int
     roses_harvested: int
+    tdhh_snow_floor_1_planted: int
+    tdhh_snow_floor_6_planted: int
     rose_oils: int
     snow_floor_1_planted: int
     snow_floor_6_planted: int
@@ -248,7 +256,7 @@ class FunctionThreeStepsOneTwoThreeFourFiveSixResult:
 
 
 class FunctionThreeWorkflow:
-    """Function 3 owner with one shared RecipeBook and RecoveryManager."""
+    """Complete six-step Function 3 with one shared RecipeBook/RecoveryManager."""
 
     TOTAL_DEFINED_STEPS = 6
 
@@ -330,6 +338,8 @@ class FunctionThreeWorkflow:
             roses_floor_1_planted=int(result.roses_floor_1_planted),
             roses_floor_6_planted=int(result.roses_floor_6_planted),
             roses_harvested=int(result.roses_harvested),
+            tdhh_snow_floor_1_planted=int(result.tdhh_snow_floor_1_planted),
+            tdhh_snow_floor_6_planted=int(result.tdhh_snow_floor_6_planted),
             rose_oils=int(result.rose_oils),
             progress_steps=4,
             total_steps=self.TOTAL_DEFINED_STEPS,
@@ -408,6 +418,8 @@ class FunctionThreeWorkflow:
             roses_floor_1_planted=int(step_four.roses_floor_1_planted),
             roses_floor_6_planted=int(step_four.roses_floor_6_planted),
             roses_harvested=int(step_four.roses_harvested),
+            tdhh_snow_floor_1_planted=int(step_four.tdhh_snow_floor_1_planted),
+            tdhh_snow_floor_6_planted=int(step_four.tdhh_snow_floor_6_planted),
             rose_oils=int(step_four.rose_oils),
             snow_floor_1_planted=int(step_five.snow_floor_1_planted),
             snow_floor_6_planted=int(step_five.snow_floor_6_planted),
@@ -435,8 +447,6 @@ class FunctionThreeWorkflow:
         """Compatibility DEV gate: historical name now runs Step 1→2→3→4→5→6."""
         return self.run_steps_1_2_3_4_5_and_6()
 
-    def run(self):
-        raise RuntimeError(
-            "Function 3 đã định nghĩa đủ Step 1-6 nhưng Step 6 chưa có live PASS; "
-            "chưa nối vào AUTO chính trước operator runtime gate"
-        )
+    def run(self) -> FunctionThreeStepsOneTwoThreeFourFiveSixResult:
+        """Run one complete Function 3 business cycle from exact MAIN to exact MAIN."""
+        return self.run_steps_1_2_3_4_5_and_6()
