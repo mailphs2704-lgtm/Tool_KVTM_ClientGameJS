@@ -345,3 +345,12 @@ Build/live pending. NEXT: Control Center publish Stable, require automatic `0.1.
 - AST source/verifier: PASS. Windows build và LIVE Cry: PENDING.
 - Retest: chạy `KVTM_DEV_CONTROL.bat -> [1]`, sau đó `Kvtm_tool_Cry_RELEASE.bat`; đóng/mở lại Cry và xác nhận hộp Cấu hình có đủ 6 trường, gồm `Tốc độ kéo quầy`.
 
+## 19. 2026-09-15 — Hoàn tác ownership và thêm auto-upload log an toàn
+
+- Theo yêu cầu operator, toàn bộ thử nghiệm sửa kẹt OFF sau commit `7c4ec8b` đã được hoàn tác bằng commit mới; không reset/force-push. Bản sửa Dọn quầy trước mốc này vẫn giữ nguyên.
+- Ownership source/verifier trở lại đúng blob tại `7c4ec8b`.
+- Collector lỗi hiện có được nối vào `KVTM_DEV_CONTROL.bat -> [2]`: tự chạy nền khi mở Multi DEV.
+- Khi bắt được lỗi, collector đợi 5 giây lấy đủ context, giới hạn tối đa một upload/phút và gọi uploader độc lập.
+- Uploader chỉ gửi text đã che profile/tên tài khoản/PID/đường dẫn user/credential lên branch `diagnostics/runtime-errors`; không gửi ảnh, `profiles.json`, `settings.json`, `.kvtm` hoặc secret.
+- Windows PowerShell syntax và Git push LIVE: PENDING.
+
