@@ -106,15 +106,14 @@ if (-not (Test-Path -LiteralPath $channelPath -PathType Leaf)) {
     Copy-Item -LiteralPath $ChannelDefaultPath -Destination $channelPath -Force
 }
 
-# First install only: seed profiles/settings from Multi DEV, then Stable owns its
-# copies forever. No running_clients.json, PID map, diagnostics or runtime state
-# is migrated across products.
+# Every install/upgrade snapshots the current DEV operator configuration into
+# Stable. The products keep independent data roots; volatile process/PID/runtime
+# state is never copied.
 $DevDataRoot = Join-Path $env:APPDATA "KVTM Multi DEV"
 foreach ($name in @("profiles.json", "settings.json", "clear-stall-history.jsonl")) {
     $stableFile = Join-Path $DataRoot $name
     $devFile = Join-Path $DevDataRoot $name
-    if (-not (Test-Path -LiteralPath $stableFile -PathType Leaf) -and
-        (Test-Path -LiteralPath $devFile -PathType Leaf)) {
+    if (Test-Path -LiteralPath $devFile -PathType Leaf) {
         Copy-Item -LiteralPath $devFile -Destination $stableFile -Force
     }
 }
