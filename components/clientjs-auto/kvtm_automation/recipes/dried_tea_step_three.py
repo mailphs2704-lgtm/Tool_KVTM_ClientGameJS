@@ -37,7 +37,6 @@ class DriedTeaStepThreeRecipe:
         self.recovery = recovery
 
     def run_from_floor_2(self) -> DriedTeaStepThreeProgressResult:
-        """Run the complete operator-defined Step 3 from the Step 2 end state."""
         self.context.stage("auto-function-3-step-3-start")
         self.context.log(
             "AUTO Function 3 • Step 3 START • giữ tầng 2 → thu 6 chậu hàng dưới "
@@ -58,6 +57,7 @@ class DriedTeaStepThreeRecipe:
                 f"{tea_row.planted_count}/3"
             )
         self.context.stage("auto-function-3-step-3-tea-bottom-3-pass")
+        self.context.action("Gieo thành công 3 trà")
 
         self.auto.floors.go_up(
             1,
@@ -69,6 +69,7 @@ class DriedTeaStepThreeRecipe:
                 f"Function 3 Step 3 chưa gieo đủ Bông: {cotton}/27"
             )
         self.context.stage("auto-function-3-step-3-cotton-27-pass")
+        self.context.action("Gieo thành công 27 bông")
 
         production = self.recovery.run_production(
             floor=3,
@@ -86,6 +87,7 @@ class DriedTeaStepThreeRecipe:
                 f"{production.queued_count}/9"
             )
         self.context.stage("auto-function-3-step-3-yellow-fabric-9-pass")
+        self.context.action("Sản xuất 9 vải vàng")
 
         self.auto.farm_boundary_routes.floor_3_to_main_via_down_floor()
         self.context.ensure_running()
