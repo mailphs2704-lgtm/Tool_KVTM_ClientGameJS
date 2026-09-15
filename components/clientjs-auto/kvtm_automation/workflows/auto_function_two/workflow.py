@@ -74,7 +74,6 @@ class FunctionTwoWorkflow:
             )
 
     def _base_handoff_to_main(self) -> None:
-        """Function-1 base intentionally hands Function 2 the known floor-3 state."""
         self.context.stage("auto-function-2-base-handoff-main")
         self.context.ensure_running()
         self.recovery.to_main_from_floor(
@@ -120,6 +119,9 @@ class FunctionTwoWorkflow:
                 f"Hồng={extra.rose_planted}/35, "
                 f"Tuyết={extra.snow_planted}/28, TDHH={extra.queued_count}/7"
             )
+        self.context.action("Gieo thành công 35 hồng")
+        self.context.action("Gieo thành công 28 tuyết")
+        self.context.action("Sản xuất 7 tinh dầu hoa hồng")
         self.context.ensure_running()
         if not self.auto.popup.is_own_exact_main_screen():
             raise ScreenTimeout(
