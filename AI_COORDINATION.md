@@ -623,3 +623,11 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - `StallActions.next_view/previous_view` nay gửi đủ 2 swipe liên tiếp, giữ `0.35s/swipe`, rồi settle đúng một lần `0.55s`.
 - Verifier khóa settle sau swipe cuối; AST/static order PASS. Windows build/LIVE PENDING.
 
+## 2026-09-15 — ClientJS ONL/OFF: exited PID phải được prune
+
+- Lỗi live: Dừng ClientJS xong tài khoản vẫn ONL giả và launch lại bị ownership chặn.
+- Root cause Windows: process đã terminate vẫn có thể trả `GetProcessTimes` khi handle còn tồn tại; creation-token-only không chứng minh process còn chạy.
+- Ownership registry nay chỉ chấp nhận PID khi `WaitForSingleObject(..., 0) == WAIT_TIMEOUT`; PID signalled/exited bị prune ở refresh.
+- Foreign-owner protection giữ nguyên. Verifier khóa exit check trước creation token.
+- AST/static order PASS; Windows build/LIVE PENDING.
+
