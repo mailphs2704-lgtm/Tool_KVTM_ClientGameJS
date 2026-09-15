@@ -623,3 +623,11 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - `StallActions.next_view/previous_view` nay gửi đủ 2 swipe liên tiếp, giữ `0.35s/swipe`, rồi settle đúng một lần `0.55s`.
 - Verifier khóa settle sau swipe cuối; AST/static order PASS. Windows build/LIVE PENDING.
 
+## 2026-09-15 — Rollback ownership về 7c4ec8b; diagnostics tự upload
+
+- Không tiếp tục sửa ownership theo suy đoán. Source/verifier ownership và tài liệu liên quan đã restore đúng mốc trước chuỗi sửa kẹt OFF; Dọn quầy consecutive-swipe fix được giữ.
+- Mở Multi DEV bằng Control Center [2] tự khởi động error collector read-only.
+- Error context được sanitize và push tối đa 1 lần/phút lên `diagnostics/runtime-errors`; whitelist chỉ `runtime-errors.log`, `metadata.txt`, `LATEST.txt`.
+- Cấm upload profile/settings/.kvtm/ảnh/secret; uploader dùng worktree riêng.
+- Cần operator chạy [1], sau đó [2], tái hiện lỗi và báo “đã gửi log” để AI đọc branch diagnostics.
+
