@@ -15,6 +15,11 @@ UPDATE = BOOTSTRAP / "Kvtm_tool_Cry_Update.ps1"
 RUNTIME = BOOTSTRAP / "Kvtm_tool_Cry_Runtime.ps1"
 INSTALL = BOOTSTRAP / "Install-KvtmToolCry.ps1"
 DEV_START = ROOT / "packaging" / "suite-v0.15" / "START_MULTI_DEV_SILENT.ps1"
+MULTI = ROOT / "source-archive" / "multi-current" / "kvtm_multi_tool"
+OWNED_HOST = MULTI / "kvtm_multi_owned_host.py"
+DEV_HOST = MULTI / "kvtm_multi_dev_host.py"
+FPS_HARDCAP = MULTI / "fps_hardcap_integration.py"
+WINDOW_POSITION = MULTI / "clear_stall_window_position.py"
 
 
 def text(path: Path) -> str:
@@ -56,6 +61,10 @@ def main() -> int:
     install = text(INSTALL)
     install_code = without_full_line_comments(install)
     dev_start = text(DEV_START)
+    owned_host = text(OWNED_HOST)
+    dev_host = text(DEV_HOST)
+    fps_hardcap = text(FPS_HARDCAP)
+    window_position = text(WINDOW_POSITION)
 
     # Product identity is stable/final; DEV remains a separate product/data root.
     for body, label in ((runtime, "runtime"), (update, "updater"), (install, "installer")):
@@ -83,6 +92,10 @@ def main() -> int:
     require(build, 'rev-parse --abbrev-ref HEAD', "Stable release branch probe is not canonical")
     require(build, '[System.StringComparison]::OrdinalIgnoreCase', "Stable release branch comparison is not normalized")
     forbid(build, '$branchExit', "Stable release branch gate must not depend on unreliable LASTEXITCODE")
+    require(build, '$VersionWasExplicit', "Stable release automatic-version intent missing")
+    require(build, '$requestedVersion -le $previousVersion', "Stable release does not compare published version")
+    require(build, '$previousVersion.Build + 1', "Stable release does not auto-increment patch")
+    require(build, 'Stable source HEAD changed; auto version bump', "Stable auto-version operator log missing")
 
     # Runtime uses current.json -> versions/<version>, so an update never replaces
     # the files currently executing. Stable singleton is tracked in APPDATA.
@@ -130,12 +143,38 @@ def main() -> int:
     forbid(update.lower(), "github_pat_", "Updater must not contain a GitHub PAT")
     forbid(update.lower(), "ghp_", "Updater must not contain a legacy GitHub PAT")
 
-    # Installer seeds only the exact safe DEV data allowlist. Descriptive comments
-    # may explicitly say that running_clients.json is NOT migrated; inspect only
-    # executable lines for a forbidden process-map migration token.
-    require(install, '$DevDataRoot = Join-Path $env:APPDATA "KVTM Multi DEV"', "First-install DEV settings seed missing")
-    require(install, '@("profiles.json", "settings.json", "clear-stall-history.jsonl")', "Stable seed allowlist changed")
+    # Setup and every successful Stable version switch snapshot the exact safe
+    # DEV configuration allowlist. Process/PID/runtime state stays isolated.
+    require(install, '$DevDataRoot = Join-Path $env:APPDATA "KVTM Multi DEV"', "Setup DEV configuration source missing")
+    require(install, '@("profiles.json", "settings.json", "clear-stall-history.jsonl")', "Stable setup sync allowlist changed")
+    require(install, 'Copy-Item -LiteralPath $devFile -Destination $stableFile -Force', "Setup does not refresh DEV configuration")
+    require(update, 'function Sync-DevPersistentConfiguration', "Updater DEV configuration sync missing")
+    require(update, '@("profiles.json", "settings.json", "clear-stall-history.jsonl")', "Stable updater sync allowlist changed")
+    require(update, 'Sync-DevPersistentConfiguration', "Updater does not sync configuration after switch")
     forbid(install_code, '"running_clients.json"', "Installer executable code must not migrate DEV running process map")
+    forbid(without_full_line_comments(update), '"running_clients.json"', "Updater must not migrate DEV running process map")
+
+    # Stable must launch the same current DEV host capabilities while retaining
+    # its own product/data identity.
+    require(owned_host, "from kvtm_multi_dev_host import main", "Stable does not launch current DEV host")
+    require(owned_host, "install_clear_stall_window_position", "Stable fixed ClientJS position integration missing")
+    require(owned_host, "install_fps_hardcap_integration", "Stable FPS hard-cap integration missing")
+    require(dev_host, "DWM Live View=OFF", "Stable/DEV host does not disable DWM Live View")
+    require(dev_host, "install_auto_main_profile_settings", "Stable/DEV speed/profile settings integration missing")
+    require(fps_hardcap, "OpenGL present governor", "Bridge V3 FPS governor missing")
+    require(window_position, "top-right work area", "Fixed ClientJS position contract missing")
+    for required in (
+        'AUTO_PRO\\bin\\kvtm_loader_v3.exe',
+        'AUTO_PRO\\bin\\kvtm_bridge_v3.dll',
+        'Multi\\kvtm_multi_owned_host.py',
+        'Multi\\kvtm_multi_dev_host.py',
+        'Multi\\fps_hardcap_integration.py',
+        'Multi\\clear_stall_window_position.py',
+        'Multi\\auto_main_profile_settings.py',
+        'Multi\\auto_multi_dev_ui_integration.py',
+        'Multi\\auto_multi_dev_ui_refinement.py',
+    ):
+        require(build, required, f"Stable release required runtime file missing: {required}")
     require(install, 'Kvtm_tool_Cry.lnk', "Stable desktop/start-menu shortcut missing")
 
     # User-facing executables are thin wrappers around auditable bootstrap scripts.
@@ -152,7 +191,9 @@ def main() -> int:
     print("runtime-io=utf8+unbuffered+redirect-safe")
     print("update=file-or-https+sha256+staging+atomic-switch+rollback")
     print("bootstrap=child-process-exit-isolation+stderr-persistence+visible-failure")
-    print("seed=exact-safe-allowlist+no-runtime-process-map-migration")
+    print("version=automatic-patch-bump-per-new-source-head")
+    print("seed=setup+update-current-dev-config+no-runtime-process-map-migration")
+    print("parity=dev-host+dwm-off+fps-hardcap+fixed-position+speed-profile-ui+bridge-v3")
     print("dev-isolation=stable-running-not-stopped-by-release-build")
     print("security=no-embedded-github-token")
     return 0
