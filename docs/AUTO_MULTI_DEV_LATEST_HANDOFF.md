@@ -280,3 +280,29 @@ e45a91ed  build(stable): bump Kvtm_tool_Cry to 0.1.5
 4. Function 3 completion exact MAIN, daily counter và recovery không regression.
 
 **Chưa gọi Stable BUILD/PUBLISH PASS hoặc RUNTIME PASS trước evidence tương ứng.**
+
+## 16. Trà đá sale-dialog false-negative fix
+
+Operator evidence:
+
+```text
+kho_tra_da=0.9937 PASS
+click Trà đá
+sale dialog dat_ban=1.000 PASS
+tra_da=0.7514 < 0.78 FAIL
+CANCEL recovery
+```
+
+The storage selection was correct; the one-frame dialog proof was a false negative. The supplied 1000x1000 screenshot matches the existing storage presentation, so no asset was overwritten.
+
+Source now preserves the primary `tra_da.png` proof and adds existing `kho_tra_da.png` as a dialog fallback. Safety remains fail-close:
+
+- threshold remains `0.78`;
+- scan is bounded to 3 fresh frames;
+- 2 stable PASS frames are required;
+- x10 proof and post-sale own-stall proof remain unchanged;
+- only after all dialog proof attempts fail is the item marked unsafe and cancelled.
+
+Commits: `978d103e`, `e7b6133d`. Build/live pending.
+
+NEXT: Control Center `[1]`, then retest Function 3 sale and require `selected-item STABLE READY` → x10 PASS → POST_SALE OWN_STALL READY.
