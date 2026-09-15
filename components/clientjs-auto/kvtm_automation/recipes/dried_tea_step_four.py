@@ -18,6 +18,8 @@ class DriedTeaStepFourProgressResult:
     roses_floor_1_planted: int
     roses_floor_6_planted: int
     roses_harvested: int
+    tdhh_snow_floor_1_planted: int
+    tdhh_snow_floor_6_planted: int
     rose_oils: int
     start_floor: int
     end_floor: int
@@ -156,6 +158,8 @@ class DriedTeaStepFourRecipe:
             roses_floor_1_planted=int(roses_floor_1.planted_count),
             roses_floor_6_planted=int(roses_floor_6.planted_count),
             roses_harvested=harvested,
+            tdhh_snow_floor_1_planted=int(snow_floor_1.planted_count),
+            tdhh_snow_floor_6_planted=int(snow_floor_6.planted_count),
             rose_oils=int(production.queued_count),
             start_floor=1,
             end_floor=1,
