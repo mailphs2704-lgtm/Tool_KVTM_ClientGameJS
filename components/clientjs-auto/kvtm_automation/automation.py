@@ -12,6 +12,7 @@ from .actions import (
     BuyingActions,
     CottonPlantingActions,
     DriedTeaProductionActions,
+    IcedTeaProductionActions,
     FarmBoundaryRouteActions,
     FarmRouteActions,
     FloorNavigationActions,
@@ -229,10 +230,6 @@ class KVAutomation:
             context, self.vision, self.wait, self.speed_config
         )
 
-        # Generic shared farm routes are the canonical facade for all Functions,
-        # Recipes and Global Recovery. Historical Function-specific attributes are
-        # aliases to the same objects so old callers keep working without owning
-        # a second route implementation/state.
         self.farm_routes = FarmRouteActions(
             context, self.vision, self.wait, self.speed_config
         )
@@ -251,6 +248,9 @@ class KVAutomation:
         self.dried_tea_production = DriedTeaProductionActions(
             context, self.vision, self.wait, self.speed_config
         )
+        self.iced_tea_production = IcedTeaProductionActions(
+            context, self.vision, self.wait, self.speed_config
+        )
         self.rose_oil_production = RoseOilProductionActions(
             context, self.vision, self.wait, self.speed_config
         )
@@ -261,9 +261,6 @@ class KVAutomation:
             self.popup,
         )
         self.stall = StallActions(context, self.vision, self.wait)
-        # Stall geometry/pulse count are independent from timing. Only override
-        # the duration selected in the Multi DEV speed dialog, preserving the
-        # proven two-swipe route and render settle policy.
         self.stall.swipe_duration = float(self.speed_config.shop_drag_speed)
         context.detail(
             "AUTO MULTI DEV stall speed • "
