@@ -42,7 +42,7 @@ echo  Branch : %CUR_BRANCH%
 echo  HEAD   : %CUR_HEAD%
 echo -------------------------------------------------------------------------------
 echo  [1] Cap nhat source + build runtime DEV
-echo  [2] Mo Multi DEV nen           ^(tu dong sync, khong hien CMD^)
+echo  [2] Mo Multi DEV nen           ^(tu dong sync + thu/gui log loi an toan^)
 echo  [3] Don quay - BUOC HIEN TAI   ^(STEP 1 - capture bang AUTO chinh^)
 echo      Sau test se TU GUI log + anh len GitHub cho ChatGPT doc.
 echo  [4] Gui log GATE Don quay len GitHub ^(SAFE whitelist^)
@@ -165,6 +165,13 @@ if errorlevel 1 (
   goto menu
 )
 echo.
+echo [DEV] Bat collector loi nen; log da loc se tu gui diagnostics/runtime-errors...
+if exist "tools\KVTM_ERROR_LOG_COLLECTOR.ps1" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\KVTM_ERROR_LOG_COLLECTOR.ps1" -Mode Start
+  if errorlevel 1 echo [WARN] Collector khong khoi dong; Multi DEV van duoc mo.
+) else (
+  echo [WARN] Thieu tools\KVTM_ERROR_LOG_COLLECTOR.ps1
+)
 echo [DEV] Dang mo Multi DEV nen, khong hien CMD...
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\%DIST%\START_MULTI_DEV_SILENT.ps1"
 if errorlevel 1 (
