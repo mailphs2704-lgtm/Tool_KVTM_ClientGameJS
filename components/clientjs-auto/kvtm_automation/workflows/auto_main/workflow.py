@@ -200,7 +200,7 @@ class AutoMainWorkflow:
             if (
                 int(payload.get("progress_steps", 0) or 0) != 6
                 or int(payload.get("total_steps", 0) or 0) != 6
-                or int(payload.get("end_floor", -1) or -1) != 0
+                or int(payload.get("end_floor", -1)) != 0
             ):
                 raise RuntimeError(
                     "Function 3 trả kết quả không đạt hợp đồng PASS 6/6 về exact MAIN"
