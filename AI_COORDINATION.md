@@ -631,3 +631,10 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Cấm upload profile/settings/.kvtm/ảnh/secret; uploader dùng worktree riêng.
 - Cần operator chạy [1], sau đó [2], tái hiện lỗi và báo “đã gửi log” để AI đọc branch diagnostics.
 
+## 2026-09-15 — Dọn quầy có tốc độ kéo riêng trong cấu hình Multi DEV
+
+- Thêm key hiển thị `clear_stall_drag_speed` / `Kéo quầy Dọn quầy (giây/swipe)`, mặc định `0.35`, min/max `0.05..3.0`.
+- Giá trị được lấy từ snapshot cấu hình theo profile khi khởi động Dọn quầy và truyền vào resident `ProbeConfig`.
+- Runtime override duy nhất `ClearStallRuntimePolicy.swipe_duration`; giữ invariant hai swipe liên tiếp và settle `0.55s`.
+- Hai verifier speed/clear-stall khóa UI, profile handoff và runtime binding.
+- Source/static verification PASS; Windows build/LIVE PENDING.
