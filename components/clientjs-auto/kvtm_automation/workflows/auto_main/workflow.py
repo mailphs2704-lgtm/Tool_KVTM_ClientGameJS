@@ -196,6 +196,59 @@ class AutoMainWorkflow:
             )
             return
 
+        if self.spec.runner_key == "function_3":
+            if (
+                int(payload.get("progress_steps", 0) or 0) != 6
+                or int(payload.get("total_steps", 0) or 0) != 6
+                or int(payload.get("end_floor", -1) or -1) != 0
+            ):
+                raise RuntimeError(
+                    "Function 3 trả kết quả không đạt hợp đồng PASS 6/6 về exact MAIN"
+                )
+
+            required_counts = {
+                "apples_floor_1_to_5": 30,
+                "apples_floor_6": 6,
+                "dried_teas": 9,
+                "planted_teas": 24,
+                "apple_juices": 9,
+                "planted_tea_bottom_row": 3,
+                "cotton_planted": 27,
+                "yellow_fabrics": 9,
+                "roses_floor_1_planted": 30,
+                "roses_floor_6_planted": 15,
+                "tdhh_snow_floor_1_planted": 30,
+                "tdhh_snow_floor_6_planted": 6,
+                "rose_oils": 9,
+                "snow_floor_1_planted": 30,
+                "snow_floor_6_planted": 6,
+                "iced_teas": 9,
+                "final_roses_floor_1_planted": 30,
+                "final_roses_floor_6_planted": 6,
+                "rose_waters": 9,
+            }
+            mismatches = [
+                f"{name}={int(payload.get(name, 0) or 0)}/{expected}"
+                for name, expected in required_counts.items()
+                if int(payload.get(name, 0) or 0) != expected
+            ]
+            if mismatches:
+                raise RuntimeError(
+                    "Function 3 completion gate FAIL: " + ", ".join(mismatches)
+                )
+            if not self.auto.popup.is_own_exact_main_screen():
+                raise RuntimeError(
+                    "Function 3 completion gate FAIL: Step 6 trả end_floor=0 "
+                    "nhưng runtime chưa chứng minh exact MAIN"
+                )
+            self.context.log(
+                "AUTO Main • Function 3 completion gate PASS • Step=6/6 • "
+                "Trà sấy=9 • Nước táo=9 • Vải vàng=9 • "
+                "Hồng TDHH=45 • Tuyết TDHH=36 • TDHH=9 • "
+                "Trà đá=9 • Nước hoa hồng=9 • exact MAIN"
+            )
+            return
+
         raise RuntimeError(
             f"Function chưa có completion gate AUTO Main: {self.spec.function_id}"
         )
