@@ -16,6 +16,7 @@ APPLE_JUICE = RECIPES / "apple_juice.py"
 YELLOW_FABRIC = RECIPES / "yellow_fabric.py"
 ROSE_OIL = RECIPES / "rose_oil.py"
 DRIED_TEA_STEP_THREE = RECIPES / "dried_tea_step_three.py"
+DRIED_TEA_STEP_FOUR = RECIPES / "dried_tea_step_four.py"
 RECIPE_BOOK = RECIPES / "book.py"
 ROSE_OIL_ACTION = ACTIONS / "rose_oil_production.py"
 FUNCTION_ONE = WORKFLOWS / "auto_function_one/workflow.py"
@@ -57,6 +58,7 @@ def main() -> int:
     yellow_fabric = read(YELLOW_FABRIC)
     rose_oil = read(ROSE_OIL)
     dried_tea_step_three = read(DRIED_TEA_STEP_THREE)
+    dried_tea_step_four = read(DRIED_TEA_STEP_FOUR)
     recipe_book = read(RECIPE_BOOK)
     rose_oil_action = read(ROSE_OIL_ACTION)
     function_one = read(FUNCTION_ONE)
@@ -106,6 +108,7 @@ def main() -> int:
         (yellow_fabric, "YellowFabricRecipe"),
         (rose_oil, "RoseOilRecipe"),
         (dried_tea_step_three, "DriedTeaStepThreeRecipe"),
+        (dried_tea_step_four, "DriedTeaStepFourRecipe"),
         (function_one, "FunctionOneWorkflow"),
         (function_two, "FunctionTwoWorkflow"),
         (function_three, "FunctionThreeWorkflow"),
@@ -149,6 +152,7 @@ def main() -> int:
         (yellow_fabric, "YellowFabricRecipe"),
         (rose_oil, "RoseOilRecipe"),
         (dried_tea_step_three, "DriedTeaStepThreeRecipe"),
+        (dried_tea_step_four, "DriedTeaStepFourRecipe"),
     ):
         require(text, "self.recovery", f"{label} does not consume shared recovery")
         forbid(text, "except InventoryFull", f"{label} duplicates InventoryFull recovery")
@@ -198,6 +202,56 @@ def main() -> int:
     ):
         require(dried_tea_step_three, token, f"Function 3 Step 3 shared Action contract missing: {token}")
 
+    # Function 3 Step 4 TDHH material correction: complete 45 Hồng, normalize
+    # back to floor 1, plant 36 Tuyết, then descend directly floor 6 -> floor 5.
+    require(
+        dried_tea_step_four,
+        "Function 3 Step 4 • Hồng tầng 6 • 2 hàng đủ + 3 chậu đầu hàng 3",
+        "Function 3 Step 4 no longer plants the complete 45-Hồng material pass",
+    )
+    if dried_tea_step_four.count("seed_template=planting.SNOW_TEMPLATE") != 2:
+        raise AssertionError("Function 3 Step 4 must plant exactly two Tuyết segments: 30 + 6")
+    require(
+        dried_tea_step_four,
+        "Function 3 Step 4 • TDHH material • Tuyết 5 hàng tầng 1",
+        "Function 3 Step 4 is missing the 30-Tuyết floor-1 segment",
+    )
+    require(
+        dried_tea_step_four,
+        "Function 3 Step 4 • TDHH material • Tuyết hàng cuối tầng 6",
+        "Function 3 Step 4 is missing the 6-Tuyết floor-6 segment",
+    )
+    require(
+        dried_tea_step_four,
+        "boundary.floor_6_to_main_via_down_floor()",
+        "Function 3 Step 4 must return from the 45-Hồng pass before planting Tuyết",
+    )
+    require(
+        dried_tea_step_four,
+        'label="Function 3 Step 4 • tầng 6 → tầng 5 sau Tuyết 36"',
+        "Function 3 Step 4 must use one direct goDown(1) from floor 6 to floor 5",
+    )
+    forbid(
+        dried_tea_step_four,
+        "nav.floor_1_to_floor_5()",
+        "Function 3 Step 4 must not return MAIN then climb floor 1 -> floor 5 before TDHH",
+    )
+    require(
+        dried_tea_step_four,
+        "self.auto.rose_oil_production.produce_9_rose_oils(",
+        "Function 3 Step 4 TDHH 9/9 production call missing",
+    )
+    rose_done = dried_tea_step_four.find("auto-function-3-step-4-rose-floor6-15-pass")
+    normalize = dried_tea_step_four.find("boundary.floor_6_to_main_via_down_floor()")
+    snow_30 = dried_tea_step_four.find("TDHH material • Tuyết 5 hàng tầng 1")
+    snow_6 = dried_tea_step_four.find("TDHH material • Tuyết hàng cuối tầng 6")
+    down_to_5 = dried_tea_step_four.find("tầng 6 → tầng 5 sau Tuyết 36")
+    production_9 = dried_tea_step_four.find("produce_9_rose_oils(")
+    if not (rose_done < normalize < snow_30 < snow_6 < down_to_5 < production_9):
+        raise AssertionError(
+            "Function 3 Step 4 order must be Hồng45 -> MAIN/floor1 -> Tuyết30+6 -> goDown(1) floor5 -> TDHH9"
+        )
+
     # TDHH semantics stay explicit: materials are crops, TDHH is the finished VP.
     require(rose_oil, "Hồng and Tuyết are crop/material inputs", "TDHH material classification missing")
     require(rose_oil, "TDHH (Tinh dầu hoa hồng) is a finished VP product", "TDHH finished-VP classification missing")
@@ -207,7 +261,7 @@ def main() -> int:
     print("actions=shared-through-KVAutomation")
     print("recovery=one-shared-manager-per-function")
     print("functions=compose-recipes+no-parallel-recovery")
-    print("function3=step1-step2-step3+shared-actions+floor1-end")
+    print("function3=step4-tdhh-materials-rose45+snow36+direct-floor6-to-floor5")
     print("tdhh=rose-snow-materials+finished-vp-production")
     return 0
 
