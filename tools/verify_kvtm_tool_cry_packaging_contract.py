@@ -159,6 +159,26 @@ def main() -> int:
     require(owned_host, "from kvtm_multi_dev_host import main", "Stable does not launch current DEV host")
     require(owned_host, "install_clear_stall_window_position", "Stable fixed ClientJS position integration missing")
     require(owned_host, "install_fps_hardcap_integration", "Stable FPS hard-cap integration missing")
+    require(owned_host, "import auto_builder_integration", "Stable pre-UI integration hook missing")
+    require(owned_host, "_ORIGINAL_BUILDER_INSTALL", "Stable original builder install handle missing")
+    require(
+        owned_host,
+        "auto_builder_integration.install_auto_builder_integration = (",
+        "Stable builder install is not wrapped before DEV UI setup",
+    )
+    pre_ui_start = owned_host.index("def _install_pre_ui_runtime_integrations")
+    pre_ui_end = owned_host.index("def _install_runtime_integrations", pre_ui_start)
+    pre_ui_body = owned_host[pre_ui_start:pre_ui_end]
+    if pre_ui_body.index("install_stall_speed_integration") > pre_ui_body.index(
+        "_ORIGINAL_BUILDER_INSTALL"
+    ):
+        raise AssertionError("Stable shop-drag speed schema is installed after UI builder")
+    hook_pos = owned_host.index(
+        "auto_builder_integration.install_auto_builder_integration = ("
+    )
+    host_import_pos = owned_host.index("from kvtm_multi_dev_host import main")
+    if hook_pos > host_import_pos:
+        raise AssertionError("Stable pre-UI hook is installed after DEV host import")
     require(dev_host, "DWM Live View=OFF", "Stable/DEV host does not disable DWM Live View")
     require(dev_host, "install_auto_main_profile_settings", "Stable/DEV speed/profile settings integration missing")
     require(fps_hardcap, "OpenGL present governor", "Bridge V3 FPS governor missing")
@@ -193,7 +213,7 @@ def main() -> int:
     print("bootstrap=child-process-exit-isolation+stderr-persistence+visible-failure")
     print("version=automatic-patch-bump-per-new-source-head")
     print("seed=setup+update-current-dev-config+no-runtime-process-map-migration")
-    print("parity=dev-host+dwm-off+fps-hardcap+fixed-position+speed-profile-ui+bridge-v3")
+    print("parity=dev-host+dwm-off+fps-hardcap+fixed-position+pre-ui-shop-drag-speed+bridge-v3")
     print("dev-isolation=stable-running-not-stopped-by-release-build")
     print("security=no-embedded-github-token")
     return 0
