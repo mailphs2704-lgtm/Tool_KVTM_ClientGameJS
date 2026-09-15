@@ -268,30 +268,32 @@ class StallActions:
         return collected
 
     def next_view(self) -> None:
-        """One logical stall step is exactly two swipes, then the caller scans."""
+        """Send two consecutive swipes, then allow ClientJS to render once."""
         for swipe_index in range(1, self.swipe_pulses + 1):
             self.context.ensure_running()
             self.vision.driver.swipe(
                 *self.swipe_start, *self.swipe_end, duration=self.swipe_duration
             )
             self.context.log(
-                f"Kéo quầy • swipe {swipe_index}/{self.swipe_pulses} trong một nhịp • "
+                f"Kéo quầy • swipe {swipe_index}/{self.swipe_pulses} liên tiếp • "
                 f"duration={self.swipe_duration:.2f}s"
             )
-            self.waiter.sleep(self.swipe_settle)
+        # Do not let the stall snap between the two short pulses. The pair is
+        # one logical movement; only the completed movement gets a render wait.
+        self.waiter.sleep(self.swipe_settle)
 
     def previous_view(self) -> None:
-        """Return one logical stall step using exactly two reverse swipes."""
-        for swipe_index in range(1, 3):
+        """Send two consecutive reverse swipes, then allow one render wait."""
+        for swipe_index in range(1, self.swipe_pulses + 1):
             self.context.ensure_running()
             self.vision.driver.swipe(
                 *self.swipe_end, *self.swipe_start, duration=self.swipe_duration
             )
             self.context.log(
-                f"Kéo quầy về • swipe {swipe_index}/{self.swipe_pulses} trong một nhịp • "
+                f"Kéo quầy về • swipe {swipe_index}/{self.swipe_pulses} liên tiếp • "
                 f"duration={self.swipe_duration:.2f}s"
             )
-            self.waiter.sleep(STALL_RENDER_SETTLE)
+        self.waiter.sleep(self.swipe_settle)
 
     def rewind_to_first(self, current_view: int) -> None:
         for _ in range(max(0, int(current_view) - 1)):
