@@ -275,7 +275,7 @@ def main() -> int:
         )
         channel.start()
 
-        def log(message: str) -> None:
+        def action(message: str) -> None:
             emit(
                 "progress", workflow=WORKFLOW_NAME,
                 profile_id=args.profile_id, message=str(message),
@@ -286,6 +286,10 @@ def main() -> int:
                 "detail", workflow=WORKFLOW_NAME,
                 profile_id=args.profile_id, message=str(message),
             )
+
+        def log(message: str) -> None:
+            """Worker/bootstrap chatter belongs to Log chi tiết, not action milestones."""
+            detail(message)
 
         def stage(name: str) -> None:
             emit(
@@ -300,7 +304,7 @@ def main() -> int:
             auto_root=Path(args.auto_root),
             work_dir=Path(args.work_dir),
             stop_event=channel.event,
-            logger=log,
+            logger=action,
             stage_reporter=stage,
             detail_logger=detail,
             profile_file=Path(args.profile_file),
@@ -420,8 +424,8 @@ def main() -> int:
             f"qua nhà bạn #1 sau mỗi 3 vòng="
             f"{'BẬT' if friend_refresh_enabled else 'TẮT'} • "
             f"startup_mode={startup_mode} • "
-            "runtime_error_policy=typed-recovery-only • "
-            "unregistered_error=fail-close"
+            "runtime_error_policy=typed-recovery+global-unhandled-recovery • "
+            "unregistered_error=exact-main->friend1->own-home->restart-auto"
         )
 
         try:
@@ -474,20 +478,19 @@ def main() -> int:
             )
             return 0
         except Exception as exc:
-            # RecoveryManager owns all registered typed recovery. Anything that
-            # escapes it is intentionally fail-close; restarting the Function or
-            # blindly normalizing to MAIN here would lose the interrupted module
-            # checkpoint and violate the global recovery contract.
+            # Normal AUTO Main runtime exceptions are recovered inside
+            # AutoMainWorkflow. This last-resort lifecycle catch remains only for
+            # failures outside/around that recovery graph.
             emit(
                 "detail", workflow=WORKFLOW_NAME,
                 profile_id=args.profile_id,
                 message=(
                     "AUTO unregistered runtime exception • fail-close • "
-                    "không restart Function/pipeline\n" + traceback.format_exc()
+                    "outside global AUTO Main recovery graph\n" + traceback.format_exc()
                 ),
             )
             log(
-                "AUTO MULTI DEV • lỗi chưa có recovery policy • fail-close • "
+                "AUTO MULTI DEV • lỗi nằm ngoài global AUTO Main recovery graph • "
                 f"{type(exc).__name__}: {exc}"
             )
             emit(
