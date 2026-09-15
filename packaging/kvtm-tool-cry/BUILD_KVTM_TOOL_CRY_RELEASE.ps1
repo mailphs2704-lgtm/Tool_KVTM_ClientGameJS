@@ -14,6 +14,7 @@ $ChannelRoot = Join-Path $DistRoot "Kvtm_tool_Cry-channel"
 $ManifestPath = Join-Path $ChannelRoot "stable-manifest.json"
 $BuildOutputName = "Kvtm_tool_Cry-Runtime-BUILD"
 $BuiltRoot = Join-Path $DistRoot $BuildOutputName
+$VersionWasExplicit = -not [string]::IsNullOrWhiteSpace($Version)
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
     if (-not (Test-Path -LiteralPath $VersionFile -PathType Leaf)) {
@@ -21,7 +22,7 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     }
     $Version = (Get-Content -LiteralPath $VersionFile -Raw -Encoding UTF8).Trim()
 }
-[void][version]$Version
+$requestedVersion = [version]$Version
 if (-not (Test-Path -LiteralPath $SuiteBuilder -PathType Leaf)) {
     throw "Missing suite builder: $SuiteBuilder"
 }
@@ -72,16 +73,31 @@ if ($dirty.Count -gt 0) {
 
 New-Item -ItemType Directory -Path $DistRoot, $ChannelRoot -Force | Out-Null
 if (Test-Path -LiteralPath $ManifestPath -PathType Leaf) {
-    try {
-        $previous = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ([string]$previous.version -eq $Version -and [string]$previous.source_head -ne $sourceHead) {
-            throw "Stable version $Version already points to another source HEAD. Bump packaging/kvtm-tool-cry/VERSION before publishing."
-        }
+    $previous = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $previousVersion = [version]([string]$previous.version)
+    $previousSourceHead = [string]$previous.source_head
+    if ($previousSourceHead -eq $sourceHead) {
+        # Idempotent rebuild of the same source must keep its published version.
+        $Version = [string]$previous.version
+        Write-Host "Stable source HEAD already published; reuse version $Version." -ForegroundColor DarkCyan
     }
-    catch {
-        if ($_.Exception.Message -like "Stable version*") { throw }
+    elseif ($requestedVersion -le $previousVersion) {
+        if ($VersionWasExplicit) {
+            throw "Explicit Stable version $Version must be newer than published $previousVersion for source HEAD $sourceHead."
+        }
+        $nextPatch = [version]::new(
+            $previousVersion.Major,
+            $previousVersion.Minor,
+            ($previousVersion.Build + 1)
+        )
+        $Version = $nextPatch.ToString()
+        Write-Host (
+            "Stable source HEAD changed; auto version bump " +
+            "$previousVersion -> $Version."
+        ) -ForegroundColor Yellow
     }
 }
+[void][version]$Version
 
 Write-Host "Kvtm_tool_Cry RELEASE" -ForegroundColor Cyan
 Write-Host "Version: $Version"
@@ -102,7 +118,16 @@ if ($LASTEXITCODE -ne 0) {
 
 foreach ($required in @(
     (Join-Path $BuiltRoot "AUTO_PRO"),
+    (Join-Path $BuiltRoot "AUTO_PRO\bin\kvtm_loader_v3.exe"),
+    (Join-Path $BuiltRoot "AUTO_PRO\bin\kvtm_bridge_v3.dll"),
     (Join-Path $BuiltRoot "Multi"),
+    (Join-Path $BuiltRoot "Multi\kvtm_multi_owned_host.py"),
+    (Join-Path $BuiltRoot "Multi\kvtm_multi_dev_host.py"),
+    (Join-Path $BuiltRoot "Multi\fps_hardcap_integration.py"),
+    (Join-Path $BuiltRoot "Multi\clear_stall_window_position.py"),
+    (Join-Path $BuiltRoot "Multi\auto_main_profile_settings.py"),
+    (Join-Path $BuiltRoot "Multi\auto_multi_dev_ui_integration.py"),
+    (Join-Path $BuiltRoot "Multi\auto_multi_dev_ui_refinement.py"),
     (Join-Path $BuiltRoot "components\clientjs-auto"),
     (Join-Path $BuiltRoot ".source-head.txt")
 )) {
