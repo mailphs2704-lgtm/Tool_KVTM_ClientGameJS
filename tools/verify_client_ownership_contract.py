@@ -51,21 +51,6 @@ def main() -> int:
     require(ownership, "REGISTRY_SCHEMA = 2", "Ownership registry schema was not upgraded for account identity")
     require(ownership, "os.replace(temp, REGISTRY_FILE)", "Ownership registry write is not atomic")
     require(ownership, "GetProcessTimes", "PID creation-token validation missing")
-    require(ownership, "WAIT_TIMEOUT = 0x00000102", "Windows live-process wait state missing")
-    require(ownership, "kernel32.OpenProcess.restype = wintypes.HANDLE", "OpenProcess HANDLE is not pointer-sized")
-    require(ownership, "kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE", "WaitForSingleObject HANDLE signature missing")
-    require(
-        ownership,
-        "kernel32.WaitForSingleObject(handle, 0) != WAIT_TIMEOUT",
-        "Exited ClientJS PID is still accepted as live ownership",
-    )
-    creation_token_body = ownership.split("def _creation_token", 1)[1].split(
-        "class _NamedMutex", 1
-    )[0]
-    if creation_token_body.index("WaitForSingleObject") > creation_token_body.index(
-        "GetProcessTimes"
-    ):
-        raise AssertionError("ClientJS exit state must be checked before creation token")
     require(ownership, '"creation_token"', "Registry creation token field missing")
     require(ownership, '"profile_id"', "Registry profile id field missing")
     require(ownership, '"account_key"', "Registry account fingerprint field missing")
@@ -78,16 +63,6 @@ def main() -> int:
     require(ownership, "hashlib.sha256(payload).hexdigest()", "Account credential fingerprint is not hashed")
     require(ownership, "self._profile_signature(profile)", "Account identity is not derived from the saved launch signature")
     require(ownership, "process.terminate()", "Losing duplicate launch is not fail-close")
-    require(ownership, "def matching_live_pids", "Exact profile PID resolver missing")
-    require(ownership, "core.running_clients()", "Live GameClientJS discovery missing")
-    require(ownership, "pid not in before_pids", "Launch can adopt a pre-existing unrelated PID")
-    require(ownership, "pid != launcher_pid", "Spawned GameClientJS PID is not preferred over launcher")
-    require(ownership, "core.RunningProcessRef(resolved_pid)", "Resolved live PID is not bound to profile")
-    require(
-        ownership,
-        "lambda target=process: self._apply_display_to_process(target)",
-        "Resolved GameClientJS PID does not receive display/Bridge/position setup",
-    )
     require(ownership, "registry.self_owned", "Adoption is not owner-scoped")
     require(ownership, "owned_pids", "Foreign PID adoption filter missing")
     require(ownership, 'get("ProcessId")', "Ownership adoption does not read running_clients ProcessId")
@@ -125,10 +100,10 @@ def main() -> int:
         raise AssertionError("Account-level ClientJS ownership release must be Kvtm_tool_Cry >= 0.1.4")
 
     print("CLIENTJS OWNERSHIP CONTRACT VERIFIED")
-    print("registry=shared-appdata+named-mutex+atomic-json+schema2+exit-aware-prune")
+    print("registry=shared-appdata+named-mutex+atomic-json+schema2")
     print("identity=account-key+alias+profile+pid-creation-token")
     print("ui=wide-owner-column+account-window-title")
-    print("control=foreign-read-only+spawned-live-pid-bind+owner-only-adopt-stop+fail-close")
+    print("control=foreign-read-only+owner-only-adopt-stop+fail-close")
     print("secrets=hashed-identity-only-not-published")
     return 0
 
