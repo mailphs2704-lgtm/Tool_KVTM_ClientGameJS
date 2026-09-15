@@ -606,3 +606,12 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Chờ operator mô tả quy trình từng bước trước khi nối Function 3 vào runtime Multi DEV.
 
 - Bổ sung tiếp template nguyên liệu Function 3 từ PRO: `cay_tra.png`, `tra_say.png`. SHA blob nguồn/đích trùng; chưa nối logic.
+
+## 2026-09-15 — Cry thiếu “Tốc độ kéo quầy”: SOURCE FIXED
+
+- Ảnh đối chiếu xác nhận DEV đủ 6 trường tốc độ, Cry thiếu `shop_drag_speed / Tốc độ kéo quầy`.
+- Root cause là Stable cài `stall_speed_integration` tại recorder hook quá muộn, sau khi UI/profile integration đã dựng schema.
+- `kvtm_multi_owned_host.py` nay bọc builder install để cài stall-speed trước UI; các integration FPS/Bridge và runtime còn lại giữ nguyên thứ tự an toàn.
+- `verify_kvtm_tool_cry_packaging_contract.py` khóa thứ tự pre-UI này.
+- AST PASS; Windows build/LIVE PENDING. Next: `KVTM_DEV_CONTROL.bat -> [1]`, chạy `Kvtm_tool_Cry_RELEASE.bat`, mở lại Stable và xác nhận đủ 6 trường.
+
