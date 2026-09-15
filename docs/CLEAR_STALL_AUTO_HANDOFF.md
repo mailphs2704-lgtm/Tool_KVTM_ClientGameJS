@@ -251,3 +251,11 @@ DO_NOT_TOUCH: components/workspace/**, KVTM_WORKSPACE_CONTROL.bat
 - Verifier khóa một settle duy nhất sau swipe cuối cho cả tiến và lùi.
 - AST và static order check: PASS. Windows build/LIVE: PENDING.
 
+## 2026-09-15 — Tốc độ kéo Dọn quầy theo từng profile
+
+- Thêm trường `Kéo quầy Dọn quầy (giây/swipe)` vào cấu hình AUTO MULTI DEV; mặc định `0.35`, phạm vi `0.05..3.0`.
+- Đây là khóa riêng `clear_stall_drag_speed`, không thay đổi `shop_drag_speed` của AUTO Function.
+- Khi bắt đầu Dọn quầy, GUI chụp snapshot cấu hình hiện hành của profile và truyền vào resident `ProbeConfig`.
+- Runtime chỉ thay `swipe_duration`; vẫn bắt buộc hai swipe liên tiếp và settle `0.55s` một lần sau swipe cuối.
+- Log runtime ghi rõ tốc độ thực nhận để đối chiếu cấu hình.
+- Static contract: cập nhật. Windows build/LIVE: PENDING.
