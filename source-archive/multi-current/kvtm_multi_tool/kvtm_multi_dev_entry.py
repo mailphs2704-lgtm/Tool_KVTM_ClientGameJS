@@ -1256,6 +1256,95 @@ class MultiDevApp(production.MultiApp):
             self._append_probe_event(profile_id, exit_payload)
             self.after(0, lambda data=exit_payload: self._finish_inprocess_probe(data))
 
+    def _close_clear_stall_client(self, profile_id: str, reason: str) -> None:
+        """Close only this profile's ClientJS and publish OFF after exit."""
+        profile_id = str(profile_id or "")
+        proc = self.processes.get(profile_id)
+        if not proc:
+            self.refresh()
+            return
+        try:
+            expected_pid = int(proc.pid)
+        except (AttributeError, TypeError, ValueError):
+            expected_pid = 0
+        try:
+            alive = proc.poll() is None
+        except Exception as exc:
+            self._append_probe_log(
+                profile_id, f"ClientJS OFF check failed: {exc}"
+            )
+            alive = False
+        if alive:
+            self._append_probe_log(
+                profile_id,
+                f"ClientJS OFF requested pid={expected_pid} reason={reason}",
+            )
+            try:
+                proc.terminate()
+            except OSError as exc:
+                self._append_probe_log(
+                    profile_id, f"ClientJS OFF terminate failed: {exc}"
+                )
+        self.after(
+            250,
+            lambda pid=profile_id, target=proc, target_pid=expected_pid,
+            why=str(reason), deadline=time.monotonic() + 8.0:
+            self._confirm_clear_stall_client_off(
+                pid, target, target_pid, why, deadline
+            ),
+        )
+
+    def _confirm_clear_stall_client_off(
+        self,
+        profile_id: str,
+        target_proc,
+        expected_pid: int,
+        reason: str,
+        deadline: float,
+    ) -> None:
+        """Never remove or terminate a replacement PID created after cleanup."""
+        current = self.processes.get(profile_id)
+        if current is not target_proc:
+            self._append_probe_log(
+                profile_id,
+                f"ClientJS OFF skipped replacement pid; old={expected_pid}",
+            )
+            self.refresh()
+            return
+        try:
+            alive = target_proc.poll() is None
+        except Exception:
+            alive = False
+        if alive and time.monotonic() < deadline:
+            self.after(
+                250,
+                lambda: self._confirm_clear_stall_client_off(
+                    profile_id, target_proc, expected_pid, reason, deadline
+                ),
+            )
+            return
+        if alive:
+            self._append_probe_log(
+                profile_id,
+                f"ClientJS OFF timeout pid={expected_pid} reason={reason}",
+            )
+            self.auto_clear_stall_status.set(
+                f"Dọn quầy đã dừng nhưng ClientJS PID {expected_pid} chưa OFF"
+            )
+            self.refresh()
+            return
+        self.processes.pop(profile_id, None)
+        self._append_probe_log(
+            profile_id,
+            f"ClientJS OFF confirmed pid={expected_pid} reason={reason}",
+        )
+        if profile_id == self._active_profile_id:
+            self.auto_clear_stall_status.set(
+                "Dọn quầy đã kết thúc • tài khoản đã về OFF"
+            )
+        self.refresh()
+        self._refresh_clear_stall_panel()
+
     def _handle_clear_stall_probe_event(self, payload: dict) -> None:
         profile_id = str(payload.get("profile_id") or "")
         event = str(payload.get("event") or "")
@@ -1340,6 +1429,9 @@ class MultiDevApp(production.MultiApp):
                             "sold_quantity": sold,
                         },
                     )
+                    self._close_clear_stall_client(
+                        profile_id, "incomplete-purchase-or-resale"
+                    )
                     return
                 job = self._clear_stall_job(profile_id)
                 interval = max(5, int(job.get("interval_minutes", 65) or 65))
@@ -1415,6 +1507,7 @@ class MultiDevApp(production.MultiApp):
             self._set_clear_stall_checkpoint(
                 profile_id, f"{gate_name} đã dừng an toàn"
             )
+            self._close_clear_stall_client(profile_id, "probe-stopped")
         elif event == "probe_error":
             error = str(payload.get("error") or "Lỗi probe không xác định")
             scheduled_run = profile_id in self._clear_stall_scheduled_profiles
@@ -1450,22 +1543,19 @@ class MultiDevApp(production.MultiApp):
                 )
                 self.settings.setdefault("clear_stall_jobs", {})[profile_id] = job
                 core.save_settings(self.settings)
-                proc = self.processes.get(profile_id)
-                if proc and proc.poll() is None:
-                    try:
-                        proc.terminate()
-                    except OSError as exc:
-                        self._append_probe_log(
-                            profile_id, f"Scheduled close ClientJS failed: {exc}"
-                        )
             elif profile_id == self._active_profile_id:
                 core.messagebox.showerror(core.APP_NAME, f"{gate_name} lỗi:\n{error}")
+            self._close_clear_stall_client(profile_id, "probe-error")
         elif event == "probe_exit":
             if profile_id not in self._clear_stall_probe_terminal:
                 code = int(payload.get("returncode") or 0)
                 self._clear_stall_probe_terminal[profile_id] = (
                     "PASS" if code == 0 else "FAIL"
                 )
+                if code != 0:
+                    self._close_clear_stall_client(
+                        profile_id, f"probe-exit-{code}"
+                    )
 
     def _touch_clear_stall_watchdog(
         self, profile_id: str, payload: dict
