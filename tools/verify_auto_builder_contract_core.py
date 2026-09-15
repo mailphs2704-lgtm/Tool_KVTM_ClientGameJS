@@ -120,6 +120,10 @@ def main() -> int:
             "AUTO Main does not enforce Function-3 TDHH Snow6")
     require(auto_main, '"rose_waters": 9',
             "AUTO Main does not enforce Function-3 Rose Water 9/9")
+    require(auto_main, 'int(payload.get("end_floor", -1)) != 0',
+            "AUTO Main Function-3 completion gate must accept exact-MAIN end_floor=0")
+    forbid(auto_main, 'int(payload.get("end_floor", -1) or -1)',
+           "Function-3 exact-MAIN sentinel 0 must not be replaced by a falsy fallback")
     require(auto_main, "self.auto.popup.is_own_exact_main_screen()",
             "AUTO Main Function-3 completion gate lacks exact-MAIN proof")
 
