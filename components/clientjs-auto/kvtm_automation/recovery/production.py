@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
+from ..error_journal import record_auto_error
 from ..errors import InventoryFull, ScreenTimeout, WrongProductionMachine
 from ..workflows.auto_builder.catalog import get_function_spec
 from ..workflows.auto_vp_sale import AutoVpSaleWorkflow
@@ -18,14 +19,7 @@ _T = TypeVar("_T")
 
 
 class ProductionRecovery:
-    """Central policy for recoverable production events.
-
-    Production is executed as one checkpointed module. InventoryFull and
-    WrongProductionMachine may temporarily move away from the production floor,
-    but the executor does not return to the Function/scheduler until this same
-    module succeeds. Generic ScreenTimeout is intentionally not registered as a
-    recoverable signal because production gestures can have side effects.
-    """
+    """Central policy for recoverable production events."""
 
     WRONG_MACHINE_RECOVERY_LIMIT = 3
 
@@ -70,6 +64,14 @@ class ProductionRecovery:
                 raise TypeError("wrong-machine handler received unexpected error")
 
             wrong_machine_recovery_round += 1
+            record_auto_error(
+                self.context,
+                exc,
+                phase=f"production:{label}:wrong-machine",
+                recovery_state=(
+                    f"policy sai máy đang xử lý lần {wrong_machine_recovery_round}"
+                ),
+            )
             self.emit(
                 RecoveryEvent(
                     RecoveryEventKind.WRONG_PRODUCTION_MACHINE,
@@ -127,6 +129,14 @@ class ProductionRecovery:
                 raise TypeError("inventory-full handler received unexpected error")
 
             warehouse_recovery_round += 1
+            record_auto_error(
+                self.context,
+                exc,
+                phase=f"production:{label}:inventory-full",
+                recovery_state=(
+                    f"policy đầy kho đang xử lý lần {warehouse_recovery_round}"
+                ),
+            )
             self.emit(
                 RecoveryEvent(
                     RecoveryEventKind.INVENTORY_FULL,
@@ -150,13 +160,6 @@ class ProductionRecovery:
 
             self.navigation.to_main_from_floor(work_floor, label)
 
-            # Operator-approved warehouse-full policy: there is intentionally no
-            # no-progress round limit here. Advertising can cause a listing to be
-            # purchased later, which opens a stall slot; the next sale scan can
-            # then move one x10 batch out of the warehouse and make real space.
-            # Keep this checkpoint suspended at MAIN and repeat Sale + QC until a
-            # new listing is actually posted. context.ensure_running() keeps the
-            # wait interruptible by Stop AUTO without inventing a timeout.
             sale_wait_round = 0
             while True:
                 self.context.ensure_running()
