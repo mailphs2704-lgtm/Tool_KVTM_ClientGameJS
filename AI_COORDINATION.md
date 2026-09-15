@@ -638,3 +638,11 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Runtime override duy nhất `ClearStallRuntimePolicy.swipe_duration`; giữ invariant hai swipe liên tiếp và settle `0.55s`.
 - Hai verifier speed/clear-stall khóa UI, profile handoff và runtime binding.
 - Source/static verification PASS; Windows build/LIVE PENDING.
+
+## 2026-09-15 — Dọn quầy OFF cleanup + Auto Multi DEV restart resume
+
+- Dọn quầy: STOP, FAIL, exit lỗi và mua/bán thiếu đều đóng đúng ClientJS của profile; chỉ publish OFF sau khi `poll()` xác nhận PID đã chết. Guard object identity ngăn cleanup đụng PID thay thế.
+- Auto Multi DEV root cause: worker phát `client_restart_requested` rồi tự kết thúc; GUI không nhận PID thay thế.
+- Worker nay restart cùng profile tại safe boundary bằng EngineDriver `app_stop/app_start`, phát `client_pid_changed`, chạy login/popup watch, đặt `skip_initial_sale_once` và tiếp tục AUTO.
+- GUI chỉ nhận PID mới khi mapping hiện hành vẫn là PID cũ/PID mới hợp lệ; sau đó dùng `RunningProcessRef` và refresh ON/OFF.
+- Không đổi launcher/display/title/1000x1000. AST và static needle contract PASS; Windows LIVE PENDING.
