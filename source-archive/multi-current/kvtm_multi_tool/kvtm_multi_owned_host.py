@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import auto_error_log_integration
 import clear_stall_window_position
 import client_ownership_integration
 import client_video_recorder
@@ -21,12 +22,14 @@ def _install_runtime_integrations(app_cls, core) -> None:
     # Install after auto_main_profile_settings so this layer owns the final
     # FPS transport/menu methods and routes them to Bridge V3 hard-cap.
     fps_hardcap_integration.install_fps_hardcap_integration(app_cls, core)
-    # Observational only: show the persistent per-profile daily sale-turn count
-    # in the existing LƯỢT BÁN AUTO account-detail field. It does not alter
-    # Function, recovery, Bridge, capture, or scheduler behavior.
+    # Observational only: show persistent per-profile daily sale + pirate chest
+    # counters in the account-detail panel. It does not alter Function/runtime.
     daily_sale_counter_integration.install_daily_sale_counter_integration(
         app_cls, core
     )
+    # Persistent error diagnostics live beside action/detail logs and can be
+    # exported as a plain UTF-8 TXT for later fix work.
+    auto_error_log_integration.install_auto_error_log_integration(app_cls, core)
     # Optional features live beside the preserved Function selector in AUTO
     # MULTI DEV and freeze per-profile state into each worker run.
     optional_features_integration.install_optional_features_integration(
