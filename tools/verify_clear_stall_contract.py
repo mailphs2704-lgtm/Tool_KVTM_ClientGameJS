@@ -304,6 +304,26 @@ def main() -> int:
         "range(1, self.swipe_pulses + 1)",
         "Stall logical step must execute both swipes",
     )
+    next_view_method = stall.split("def next_view", 1)[1].split(
+        "def previous_view", 1
+    )[0]
+    previous_view_method = stall.split("def previous_view", 1)[1].split(
+        "def rewind_to_first", 1
+    )[0]
+    for method_body, direction in (
+        (next_view_method, "forward"),
+        (previous_view_method, "reverse"),
+    ):
+        if method_body.count("self.waiter.sleep(self.swipe_settle)") != 1:
+            raise AssertionError(
+                f"Stall {direction} step must settle exactly once after both swipes"
+            )
+        if method_body.rindex("self.vision.driver.swipe(") > method_body.index(
+            "self.waiter.sleep(self.swipe_settle)"
+        ):
+            raise AssertionError(
+                f"Stall {direction} step waits before both swipes are complete"
+            )
     require(
         probe,
         '"stall-step-finished-scan-required"',
@@ -897,7 +917,7 @@ def main() -> int:
     print("gate3_limit=configured_x10_target")
     print("gate3_reload=one_scan_per_house_then_next_round")
     print("gate3_friend_order=1..N")
-    print("gate3_view_order=five_scan_buy_positions_with_two_swipes_between")
+    print("gate3_view_order=five_scan_buy_positions+two-consecutive-swipes+one-settle")
     print("gate3_same_friend_reload=disabled")
     print("gate3_unbuyable=skip_without_accounting")
     print("gate3_resale=disabled")
