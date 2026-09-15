@@ -13,6 +13,8 @@ CATALOG = CLEAN / "workflows/auto_builder/catalog.py"
 MODULES = CLEAN / "workflows/auto_builder/modules.py"
 RUNNER = CLEAN / "workflows/auto_builder/runner.py"
 IMAGE_MATCH = CLEAN / "workflows/auto_builder/image_match.py"
+AUTO_MAIN = CLEAN / "workflows/auto_main/workflow.py"
+FUNCTION_THREE = CLEAN / "workflows/auto_function_three/workflow.py"
 WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 SALE_ACTION = CLEAN / "actions/auto_main_selling.py"
 SALE_WORKFLOW = CLEAN / "workflows/auto_vp_sale/workflow.py"
@@ -36,6 +38,7 @@ FILE_FUNCTIONS = (
     "Khóa custom image/click/swipe/wait fail-close",
     "Khóa giao diện Builder dùng style/tab Multi DEV",
     "Khóa plan bền qua Control Center build và worker isolated V3",
+    "Khóa Function 3 complete runner + AUTO Main completion gate + menu chọn Function",
 )
 
 
@@ -63,6 +66,8 @@ def main() -> int:
     modules = read(MODULES)
     runner = read(RUNNER)
     image_match = read(IMAGE_MATCH)
+    auto_main = read(AUTO_MAIN)
+    function_three = read(FUNCTION_THREE)
     worker = read(WORKER)
     sale_action = read(SALE_ACTION)
     sale_workflow = read(SALE_WORKFLOW)
@@ -78,12 +83,45 @@ def main() -> int:
     require(catalog, '"function_1": FunctionSpec(', "Function-1 Builder catalog missing")
     require(catalog, 'sale_item_ids=("tao_say", "vai_vang")',
             "Function-1 sale ownership missing")
+    require(catalog, '"function_3": FunctionSpec(', "Function-3 Builder catalog missing")
+    require(catalog, 'sale_item_ids=("nuoc_hoa_hong", "tra_da", "vai_vang")',
+            "Function-3 sale ownership missing")
 
     require(modules, "class EnterGamePopupModule", "Enter-game callable module missing")
     require(modules, "GameSessionWorkflow(self.auto).run", "Enter-game module wiring missing")
     require(modules, "class SellFunctionVpModule", "Function VP sale callable module missing")
     require(modules, "allowed_item_ids=spec.sale_item_ids", "Sale module is not bound to Function metadata")
     require(modules, "class FunctionModule", "Callable built-in Function module missing")
+    require(modules, "from ..auto_function_three import FunctionThreeWorkflow",
+            "Function-3 complete workflow import missing from FunctionModule")
+    require(modules, 'elif spec.runner_key == "function_3":',
+            "Function-3 runner branch missing from FunctionModule")
+    require(modules, "FunctionThreeWorkflow(self.auto).run()",
+            "Function-3 FunctionModule does not call complete workflow")
+
+    require(function_three, "TOTAL_DEFINED_STEPS = 6",
+            "Function-3 complete step count is not six")
+    require(function_three, "def run_steps_1_2_3_4_5_and_6",
+            "Function-3 six-step cumulative runner missing")
+    require(function_three, "def run(self) -> FunctionThreeStepsOneTwoThreeFourFiveSixResult:",
+            "Function-3 top-level complete runner missing")
+    require(function_three, "return self.run_steps_1_2_3_4_5_and_6()",
+            "Function-3 top-level runner does not delegate to all six steps")
+    require(function_three, "tdhh_snow_floor_1_planted",
+            "Function-3 result does not expose corrected TDHH Snow floor-1 proof")
+    require(function_three, "tdhh_snow_floor_6_planted",
+            "Function-3 result does not expose corrected TDHH Snow floor-6 proof")
+
+    require(auto_main, 'if self.spec.runner_key == "function_3":',
+            "AUTO Main Function-3 completion gate missing")
+    require(auto_main, '"tdhh_snow_floor_1_planted": 30',
+            "AUTO Main does not enforce Function-3 TDHH Snow30")
+    require(auto_main, '"tdhh_snow_floor_6_planted": 6',
+            "AUTO Main does not enforce Function-3 TDHH Snow6")
+    require(auto_main, '"rose_waters": 9',
+            "AUTO Main does not enforce Function-3 Rose Water 9/9")
+    require(auto_main, "self.auto.popup.is_own_exact_main_screen()",
+            "AUTO Main Function-3 completion gate lacks exact-MAIN proof")
 
     require(sale_action, 'ITEM_ORDER = ("tao_say", "vai_vang")',
             "Stable Function-1 default sale order changed")
@@ -239,17 +277,16 @@ def main() -> int:
     forbid(runner, "for segment in points", "Runtime must not split one Builder Swipe into independent swipes")
     require(runner, "segments={len(points) - 1}", "Runtime multi-segment Swipe diagnostic missing")
 
-    # The existing DEV button/mode name is retained for UI compatibility, but
-    # its runtime contract live-gates the complete currently-defined prefix:
-    # exact MAIN -> Step 1 -> Step 2 -> Step 3 -> floor 1.
+    # The existing DEV button/mode name and old audit text are retained for UI
+    # compatibility. Its compatibility method now reaches the complete Function 3.
     require(worker, 'choices=("main", "function-3-step-1", "builder")',
             "Isolated worker Builder/Function-3 DEV test modes missing")
     require(worker, 'if effective_mode == "function-3-step-1":',
             "Function 3 cumulative DEV worker branch missing")
     require(worker, "FunctionThreeWorkflow(automation).run_steps_1_2_and_3()",
-            "Function 3 DEV test mode must run Step 1-3 cumulatively")
+            "Function 3 DEV compatibility gate missing")
     require(worker, "Function 3 Step 1 → Step 2 → Step 3",
-            "Function 3 cumulative DEV audit log missing")
+            "Function 3 compatibility audit log missing")
     require(worker, "Bông={result.cotton_planted}/27",
             "Function 3 Step 3 cotton result audit missing")
     require(worker, "Vải vàng={result.yellow_fabrics}/9",
@@ -302,11 +339,13 @@ def main() -> int:
             "Builder must reuse proven worker lifecycle")
     require(integration, "original_start_clean_session(self)",
             "Configured AUTO Main must still reuse Multi DEV ownership/busy gates")
+    require(integration, '("function_3", "9 Nước hoa hồng - 9 Trà đá - 9 Vải vàng")',
+            "Function-3 is missing from visible AUTO Main Function selector")
     require(host, "install_auto_builder_integration(", "Multi DEV host does not install Builder")
 
     for text in (
         catalog, modules, runner, image_match, model, function1_manifest,
-        dialogs, gesture, ui, integration, host,
+        dialogs, gesture, ui, integration, host, auto_main, function_three,
     ):
         forbid(text, "clear_stall_probe_runtime", "AUTO Builder touches Dọn quầy runtime")
         forbid(text, "marshal.loads", "AUTO Builder must not load AUTO PRO marshal at runtime")
@@ -320,7 +359,8 @@ def main() -> int:
     print("swipe_runtime=one-native-swipe-points-batch")
     print("image_library=multi-dev-primary-auto-pro-import-only")
     print("runtime=isolated-worker-v3-same-lifecycle")
-    print("function3_dev_test=legacy-mode-name+cumulative-step1-step2-step3")
+    print("function3=complete-six-step-runner+auto-main-gate+visible-selector")
+    print("function3_dev_test=legacy-mode-name+compatibility-method-reaches-step6")
     print("clear_stall=untouched")
     return 0
 
