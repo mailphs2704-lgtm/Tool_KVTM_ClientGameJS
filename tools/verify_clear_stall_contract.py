@@ -40,6 +40,7 @@ MAIN_LOG = ROOT / "components/clientjs-auto/kvtm_automation/runtime/main_log.py"
 MAIN_LOG_VIEWER = ROOT / "source-archive/multi-current/kvtm_multi_tool/main_log_viewer.py"
 VP_RECOGNITION = ROOT / "components/clientjs-auto/kvtm_automation/actions/item_recognition.py"
 VP_WORKFLOW = ROOT / "components/clientjs-auto/kvtm_automation/workflows/vp_recognition/workflow.py"
+STALL_SPEED_INTEGRATION = ROOT / "source-archive/multi-current/kvtm_multi_tool/stall_speed_integration.py"
 
 
 def require(source: str, needle: str, message: str) -> None:
@@ -91,6 +92,7 @@ def main() -> int:
     main_log_viewer = MAIN_LOG_VIEWER.read_text(encoding="utf-8")
     vp_recognition = VP_RECOGNITION.read_text(encoding="utf-8")
     vp_workflow = VP_WORKFLOW.read_text(encoding="utf-8")
+    stall_speed_integration = STALL_SPEED_INTEGRATION.read_text(encoding="utf-8")
     for path, source in (
         (CLEAN_AUTO_WORKER, clean_auto_worker),
         (AUTO_MULTI_WORKER, auto_multi_worker),
@@ -104,6 +106,7 @@ def main() -> int:
         (MAIN_LOG_VIEWER, main_log_viewer),
         (VP_RECOGNITION, vp_recognition),
         (VP_WORKFLOW, vp_workflow),
+        (STALL_SPEED_INTEGRATION, stall_speed_integration),
     ):
         ast.parse(source, filename=str(path))
     ast.parse(engine_driver, filename=str(ENGINE_DRIVER))
@@ -844,6 +847,12 @@ def main() -> int:
     require(probe, "if flushed_quantity != required_flush_quantity:", "Inventory-full flush must block return until every purchased VP is resold")
     require(probe, "pending_batches=0", "Inventory-full flush completion must prove no pending purchase remains")
     require(probe, "load_runtime_policy", "Resident runtime must load designer policy")
+    require(probe, "clear_stall_drag_speed: float = 0.35", "Dọn quầy drag-speed runtime field missing")
+    require(probe, "swipe_duration=clear_stall_drag_speed", "Dọn quầy drag speed policy override missing")
+    require(probe, "2 swipe liên tiếp", "Dọn quầy two-swipe speed audit missing")
+    require(dev_entry, 'self._collect_auto_tuning().get("clear_stall_drag_speed", 0.35)', "Dọn quầy per-profile drag-speed snapshot missing")
+    require(dev_entry, "clear_stall_drag_speed=float(clear_stall_drag_speed)", "Dọn quầy resident drag-speed handoff missing")
+    require(stall_speed_integration, '"Kéo quầy Dọn quầy (giây/swipe)"', "Dọn quầy speed GUI control missing")
     require(probe, "designer_config_path(config.work_dir.parents[2])", "Runtime must load policy from active data-dev")
     require(probe, '"clear-stall-designer-policy-applied"', "Runtime policy trace missing")
     require(stall, "def apply_runtime_policy", "Stall action policy hook missing")
@@ -918,6 +927,7 @@ def main() -> int:
     print("gate3_reload=one_scan_per_house_then_next_round")
     print("gate3_friend_order=1..N")
     print("gate3_view_order=five_scan_buy_positions+two-consecutive-swipes+one-settle")
+    print("gate3_drag_speed=per-profile-configurable-0.05..3.0")
     print("gate3_same_friend_reload=disabled")
     print("gate3_unbuyable=skip_without_accounting")
     print("gate3_resale=disabled")
