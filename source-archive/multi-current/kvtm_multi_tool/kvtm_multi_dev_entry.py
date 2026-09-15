@@ -1098,6 +1098,14 @@ class MultiDevApp(production.MultiApp):
             self._mark_probe_console_done(profile_id, "ERROR chưa chọn VP Dọn quầy")
             self.auto_clear_stall_status.set("Dọn quầy lỗi: phải chọn ít nhất một VP")
             return
+        try:
+            clear_stall_drag_speed = float(
+                self._collect_auto_tuning().get("clear_stall_drag_speed", 0.35)
+            )
+        except (TypeError, ValueError):
+            clear_stall_drag_speed = 0.35
+        clear_stall_drag_speed = max(0.05, min(3.0, clear_stall_drag_speed))
+
         run_id = time.strftime("%Y%m%d-%H%M%S")
         work_dir = core.APP_DIR / "clear-stall-probe" / profile_id / run_id
         stop_event = threading.Event()
@@ -1116,6 +1124,7 @@ class MultiDevApp(production.MultiApp):
                     else (1 if profile_id in self._clear_stall_gate2_profiles else 0)
                 ),
                 allowed_item_ids,
+                clear_stall_drag_speed,
             ),
             name=f"kvtm-dev-clear-stall-probe-{profile_id[:8]}",
             daemon=True,
@@ -1161,6 +1170,7 @@ class MultiDevApp(production.MultiApp):
         stop_event: threading.Event,
         purchase_limit: int,
         allowed_item_ids: tuple[str, ...],
+        clear_stall_drag_speed: float,
     ) -> None:
         returncode = 1
         try:
@@ -1179,6 +1189,7 @@ class MultiDevApp(production.MultiApp):
                 purchase_limit=int(purchase_limit),
                 max_stall_passes=int(max_stall_passes),
                 allowed_item_ids=allowed_item_ids,
+                clear_stall_drag_speed=float(clear_stall_drag_speed),
                 resale_batch_limit=(
                     purchase_limit
                     if profile_id in self._clear_stall_gate5_profiles
