@@ -27,6 +27,7 @@ from .planting import PlantingActions, PlantingSegmentResult
 from .production import ProductionResult
 from .production_panel import ProductionPanelActions
 from .rose_oil_production import RoseOilProductionActions
+from .rose_water_production import RoseWaterProductionActions
 from .selling import SellingActions
 from .stall import StallActions
 from .vp_sale_transaction import AutoSaleAttempt, VpSaleTransactionActions
@@ -61,6 +62,7 @@ __all__ = [
     "ProductionPanelActions",
     "ProductionResult",
     "RoseOilProductionActions",
+    "RoseWaterProductionActions",
     "SellingActions",
     "StallActions",
     "VpSaleTransactionActions",
