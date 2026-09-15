@@ -96,6 +96,7 @@ class FunctionOneWorkflow:
         dried_recipe = self.recipes.dried_apple.run_from_session(count=9)
         self.context.ensure_running()
         self.context.stage("auto-function-1-progress-1-of-3")
+        self.context.action("Sản xuất 9 táo sấy")
         self.context.log(
             "AUTO chức năng 1 • tiến độ 1/3 • DriedAppleRecipe PASS"
         )
@@ -107,12 +108,14 @@ class FunctionOneWorkflow:
         self.auto.farm_routes.floor_1_to_floor_6()
         floor_6 = self.auto.apple_supply.harvest_and_replant_floor_6_row()
         self.context.stage("auto-apple-floor-6-replanted")
+        self.context.action("Gieo thành công 36 táo")
 
         self.auto.farm_routes.floor_6_to_floor_2()
         juice_recipe = self.recipes.apple_juice.run_from_candidate_floor_2(count=9)
         juice = juice_recipe.production
         self.context.ensure_running()
         self.context.stage("auto-function-1-progress-2-of-3")
+        self.context.action("Sản xuất 9 nước táo")
         if juice_recipe.candidate_verified:
             route_note = "direct candidate nuoc_tao PASS"
         elif juice_recipe.fallback_used:
@@ -129,6 +132,8 @@ class FunctionOneWorkflow:
         fabric = fabric_recipe.production
         self.context.ensure_running()
         self.context.stage("auto-function-1-progress-3-of-3")
+        self.context.action("Gieo thành công 27 bông")
+        self.context.action("Sản xuất 9 vải vàng")
         self.context.log(
             "AUTO chức năng 1 • PASS 3/3 • Recipe chain hoàn tất: "
             "Táo sấy + Nước táo + 27 Bông + Vải vàng"
