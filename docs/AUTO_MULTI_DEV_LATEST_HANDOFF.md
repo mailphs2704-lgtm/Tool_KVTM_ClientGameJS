@@ -335,3 +335,13 @@ Source changes:
 Commits: `0b5af84c`, `9f590505`, `7c9f8c89`, `3953e185`.
 
 Build/live pending. NEXT: Control Center publish Stable, require automatic `0.1.5 -> 0.1.6`, packaging verifier PASS, then close/reopen Cry and verify DWM Live View OFF, FPS hard-cap APPLIED, fixed top-right ClientJS position, complete speed configuration and current DEV profiles/settings.
+
+## 18. 2026-09-15 — Cry khôi phục đủ trường “Tốc độ kéo quầy”
+
+- Bằng chứng ảnh operator: hộp Cấu hình DEV có đủ 6 tốc độ, còn Cry chỉ có 5 và thiếu riêng `Tốc độ kéo quầy`.
+- Nguyên nhân: `kvtm_multi_owned_host.py` chỉ cài `stall_speed_integration` ở hook recorder cuối quá trình khởi tạo; lúc đó wrapper UI/profile của DEV đã được dựng nên schema `shop_drag_speed` không đi vào hộp cấu hình Cry.
+- Stable nay hook `auto_builder_integration` và cài ownership + vị trí ClientJS + `stall_speed_integration` trước builder/UI. FPS hard-cap, thống kê, error log, optional features và recorder vẫn giữ ở pha sau.
+- Packaging verifier khóa hai điều kiện: stall-speed phải đứng trước original builder và hook phải được gắn trước khi import `kvtm_multi_dev_host`.
+- AST source/verifier: PASS. Windows build và LIVE Cry: PENDING.
+- Retest: chạy `KVTM_DEV_CONTROL.bat -> [1]`, sau đó `Kvtm_tool_Cry_RELEASE.bat`; đóng/mở lại Cry và xác nhận hộp Cấu hình có đủ 6 trường, gồm `Tốc độ kéo quầy`.
+
