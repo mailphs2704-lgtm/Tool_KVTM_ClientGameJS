@@ -23,6 +23,7 @@ from .actions import (
     PlantingActions,
     ProductionActions,
     RoseOilProductionActions,
+    RoseWaterProductionActions,
     SellingActions,
     StallActions,
     YellowFabricProductionActions,
@@ -252,6 +253,9 @@ class KVAutomation:
             context, self.vision, self.wait, self.speed_config
         )
         self.rose_oil_production = RoseOilProductionActions(
+            context, self.vision, self.wait, self.speed_config
+        )
+        self.rose_water_production = RoseWaterProductionActions(
             context, self.vision, self.wait, self.speed_config
         )
         self.navigation = NavigationActions(
