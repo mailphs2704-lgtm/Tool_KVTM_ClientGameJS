@@ -74,15 +74,22 @@ def main() -> int:
     require(farm_routes, "def floor_1_to_floor_6", "floor1->floor6 route missing")
     require(farm_routes, "def known_upper_floor_to_main_via_down_floor", "Upper-floor->MAIN boundary route missing")
 
-    # TDHH is a finished VP transaction, not a crop Action.
+    # TDHH is a finished VP transaction, not a crop Action. Function 3 Step 4
+    # legitimately reuses the same queue engine for 9 items, but Function 2 must
+    # stay hard-bound to the explicit produce_7 wrapper.
     require(rose_action, "class RoseOilProductionActions(ProductionPanelActions):", "TDHH production does not use shared panel engine")
     require(rose_action, "ROSE_OIL_FLOOR = 5", "TDHH floor changed")
     require(rose_action, 'ROSE_OIL_TEMPLATE = "tinh_dau_hh"', "TDHH product template missing")
-    require(rose_action, "TARGET_COUNT = 7", "TDHH target count changed")
+    require(rose_action, "TARGET_COUNT = 7", "TDHH Function-2 target count changed")
+    require(rose_action, "STEP4_TARGET_COUNT = 9", "TDHH Step-4 shared target missing")
     require(rose_action, "DRAG_ATTEMPTS = 3", "TDHH drag retry changed")
     require(rose_action, "VERIFY_RECHECKS = 4", "TDHH verify retry changed")
-    require(rose_action, "for ordinal in range(1, self.TARGET_COUNT + 1):", "Exact-seven TDHH loop missing")
-    require(rose_action, "consumed != self.TARGET_COUNT", "TDHH exact-seven postcheck missing")
+    require(rose_action, "def _produce_rose_oils(", "Shared exact-count TDHH queue engine missing")
+    require(rose_action, "if requested not in (self.TARGET_COUNT, self.STEP4_TARGET_COUNT):", "TDHH exact-count allowlist missing")
+    require(rose_action, "for ordinal in range(1, requested + 1):", "TDHH exact-count queue loop missing")
+    require(rose_action, "if queued != requested or consumed != requested:", "TDHH exact-count postcheck missing")
+    require(rose_action, "def produce_7_rose_oils(", "Function-2 exact-seven TDHH wrapper missing")
+    require(rose_action, "target_count=self.TARGET_COUNT", "Function-2 wrapper no longer binds exact seven")
     require(rose_action, "Thiếu Hồng/Tuyết", "TDHH material fail-close missing")
 
     # RoseOilRecipe owns business order; raw input stays in Actions.
@@ -102,9 +109,11 @@ def main() -> int:
     require(rose_recipe, "upper_nav.known_upper_floor_to_main_via_down_floor(", "Rose material return-to-MAIN route missing")
     require(rose_recipe, "nav.floor_1_to_floor_5()", "Snow handoff to floor5 missing")
     require(rose_recipe, "self.recovery.run_production(", "TDHH production bypasses RecoveryManager")
+    require(rose_recipe, "self.production.produce_7_rose_oils(", "Function 2 no longer calls exact-seven TDHH wrapper")
     require(rose_recipe, "close_after_success=False", "TDHH panel handoff to repair missing")
     require(rose_recipe, "self.auto.machine_repair.repair_after_production(produced)", "TDHH repair handoff missing")
     require(rose_recipe, 'self.recovery.to_main_from_floor(5, "TDHH recipe: cuối production")', "TDHH does not return floor5->MAIN")
+    forbid(rose_recipe, "produce_9_rose_oils(", "Function 2 must never call Step-4 exact-nine TDHH wrapper")
     forbid(rose_recipe, "driver.click(", "TDHH Recipe contains raw click")
     forbid(rose_recipe, "driver.swipe(", "TDHH Recipe contains raw swipe")
     forbid(rose_recipe, "FunctionTwoPlantingActions", "TDHH Recipe uses retired Function-specific planting Action")
@@ -155,7 +164,7 @@ def main() -> int:
     print("AUTO MULTI DEV FUNCTION TWO STATIC CONTRACT VERIFIED")
     print("function2=shared-function1-core+known-floor3-handoff+rose-oil-recipe")
     print("materials=rose35+snow28-via-shared-planting-actions")
-    print("tdhh=finished-VP-x7-on-floor5+repair+main")
+    print("tdhh=function2-exact7-wrapper+shared-exact-count-engine+step4-exact9-compatible")
     print("recovery=one-shared-manager-per-function2")
     print("legacy_function2_planting=compatibility-only")
     print("resolution=function2-materials-and-sale-native1000")
