@@ -15,9 +15,9 @@ StageFn = Callable[[str], None]
 __all__ = ["AutomationContext", "LogFn", "StageFn"]
 FILE_FUNCTIONS = (
     "Giữ identity và đường dẫn của một tác vụ AUTO",
-    "Ghi log hành động",
-    "Ghi log kỹ thuật chi tiết",
-    "Báo stage nghiệp vụ",
+    "Ghi log hành động tối giản theo tài khoản qua action()",
+    "Đưa log nghiệp vụ/kỹ thuật đầy đủ sang Log chi tiết qua log()/detail()",
+    "Báo stage nghiệp vụ mà không làm nhiễu Log hành động",
     "Giữ bằng chứng camera exact-main theo nguồn chứng minh rõ ràng",
     "Đánh dấu MAIN mặc định sau login/restart mà không gửi goDown",
     "Dừng tác vụ theo stop-event",
@@ -30,6 +30,11 @@ class AutomationContext:
 
     No AUTO PRO object is stored here. The context owns only the selected
     ClientJS process/profile, paths, cancellation signal and reporting hooks.
+
+    ``action()`` is deliberately reserved for operator-facing milestones. The
+    historical ``log()`` API remains available to every existing Action/Recipe,
+    but now routes to the detailed stream so hundreds of recognition/navigation
+    lines cannot flood the concise action log.
 
     ``camera_exact_main_proven`` is runtime state evidence instead of an
     account-background classification. Most of the run proves MAIN through a
@@ -68,17 +73,28 @@ class AutomationContext:
             self.profile_file = Path(self.profile_file).resolve()
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
+    def action(self, message: str) -> None:
+        """Write one concise operator-facing milestone with account identity."""
+        name = self.profile_name.strip() or self.profile_id
+        self.logger(f". {name} . {str(message).strip()}")
+
     def log(self, message: str) -> None:
+        """Compatibility log API: keep full runtime chatter in Log chi tiết."""
+        if self.detail_logger is not None:
+            self.detail_logger(str(message))
+            return
         self.logger(str(message))
 
     def detail(self, message: str) -> None:
         if self.detail_logger is not None:
             self.detail_logger(str(message))
+            return
+        self.logger(str(message))
 
     def stage(self, name: str) -> None:
         if self.stage_reporter is not None:
             self.stage_reporter(str(name))
-        self.log(str(name))
+        self.detail(str(name))
 
     def invalidate_camera_main(self, reason: str = "") -> None:
         """Forget exact-main proof before/after any camera state uncertainty."""
