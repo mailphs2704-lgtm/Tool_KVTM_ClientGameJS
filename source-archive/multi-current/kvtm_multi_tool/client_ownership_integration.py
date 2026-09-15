@@ -20,7 +20,6 @@ MUTEX_NAME = r"Local\KVTM_Client_Ownership_v1"
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 WAIT_OBJECT_0 = 0x00000000
 WAIT_ABANDONED = 0x00000080
-WAIT_TIMEOUT = 0x00000102
 
 
 class OwnershipError(RuntimeError):
@@ -54,32 +53,10 @@ def _creation_token(pid: int) -> str | None:
     if os.name != "nt" or int(pid) <= 0:
         return None
     kernel32 = ctypes.windll.kernel32
-    # ctypes defaults to a 32-bit integer return type. Declare pointer-sized
-    # WinAPI handles explicitly or 64-bit Windows can truncate a valid handle
-    # and falsely reject every newly launched ClientJS process.
-    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-    kernel32.WaitForSingleObject.restype = wintypes.DWORD
-    kernel32.GetProcessTimes.argtypes = [
-        wintypes.HANDLE,
-        ctypes.POINTER(_FILETIME),
-        ctypes.POINTER(_FILETIME),
-        ctypes.POINTER(_FILETIME),
-        ctypes.POINTER(_FILETIME),
-    ]
-    kernel32.GetProcessTimes.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
     handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
     if not handle:
         return None
     try:
-        # A terminated Windows process can still expose GetProcessTimes while
-        # another handle remains open. Treat only a non-signalled process as
-        # alive; otherwise stale ownership keeps the account falsely ONL.
-        if kernel32.WaitForSingleObject(handle, 0) != WAIT_TIMEOUT:
-            return None
         created = _FILETIME()
         exited = _FILETIME()
         kernel = _FILETIME()
@@ -538,30 +515,6 @@ def install_client_ownership_integration(app_cls, core) -> None:
                 continue
         return result
 
-    def matching_live_pids(self, profile: dict | None) -> list[int]:
-        """Resolve only live GameClientJS processes with this exact profile signature."""
-        try:
-            signature = self._profile_signature(profile or {})
-        except Exception:
-            signature = None
-        if not signature:
-            return []
-        matches: list[int] = []
-        for row in core.running_clients():
-            try:
-                pid = int((row or {}).get("ProcessId") or (row or {}).get("pid") or 0)
-                args = core.split_windows_command_line(
-                    (row or {}).get("CommandLine") or ""
-                )
-                if pid <= 0 or len(args) < 2:
-                    continue
-                running_game = os.path.normcase(os.path.abspath(args[1]))
-                if signature == (running_game, args[2:]) and _creation_token(pid):
-                    matches.append(pid)
-            except Exception:
-                continue
-        return matches
-
     def ownership_launch(self, profile, *args, **kwargs):
         profile = profile or {}
         profile_id, account_key, account_name = identity_for_profile(self, profile)
@@ -590,42 +543,13 @@ def install_client_ownership_integration(app_cls, core) -> None:
             schedule_title(self, profile_id, int(existing["pid"]))
             return None
 
-        before_pids = set(matching_live_pids(self, profile))
         result = original_launch(self, profile, *args, **kwargs)
-        launcher = self.processes.get(profile_id)
-        launcher_pid = int(launcher.pid) if launcher else 0
-
-        # GameClientJS may use a short-lived bootstrap PID. Wait for the exact
-        # profile command line to appear and prefer its spawned live PID; never
-        # claim the exited launcher or a pre-existing/unrelated client.
-        resolved_pid = 0
-        fallback_pid = 0
-        deadline = time.monotonic() + 5.0
-        while time.monotonic() < deadline:
-            candidates = [
-                pid for pid in matching_live_pids(self, profile)
-                if pid not in before_pids
-            ]
-            spawned = [pid for pid in candidates if pid != launcher_pid]
-            if spawned:
-                resolved_pid = spawned[0]
-                break
-            if launcher_pid in candidates:
-                fallback_pid = launcher_pid
-            time.sleep(0.10)
-        if not resolved_pid and fallback_pid and _creation_token(fallback_pid):
-            resolved_pid = fallback_pid
-        if resolved_pid <= 0:
-            self.processes.pop(profile_id, None)
-            raise OwnershipError(
-                f"Không tìm thấy PID GameClientJS đang sống cho {account_name}"
-            )
-
-        process = core.RunningProcessRef(resolved_pid)
-        self.processes[profile_id] = process
+        process = self.processes.get(profile_id)
+        if not process or process.poll() is not None:
+            return result
         try:
             registry.claim(
-                resolved_pid, profile_id, account_key, account_name
+                int(process.pid), profile_id, account_key, account_name
             )
         except Exception:
             try:
@@ -634,14 +558,7 @@ def install_client_ownership_integration(app_cls, core) -> None:
                 pass
             self.processes.pop(profile_id, None)
             raise
-        schedule_title(self, profile_id, resolved_pid)
-        # Core scheduled resize/Bridge setup for the short-lived launcher.
-        # Re-run the same existing post-launch pipeline on the resolved game PID;
-        # the position integration wraps this method and re-pins afterwards.
-        self.after(
-            0,
-            lambda target=process: self._apply_display_to_process(target),
-        )
+        schedule_title(self, profile_id, int(process.pid))
         return result
 
     def ownership_stop_selected(self, *args, **kwargs):
