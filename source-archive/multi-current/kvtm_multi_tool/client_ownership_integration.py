@@ -20,6 +20,7 @@ MUTEX_NAME = r"Local\KVTM_Client_Ownership_v1"
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 WAIT_OBJECT_0 = 0x00000000
 WAIT_ABANDONED = 0x00000080
+WAIT_TIMEOUT = 0x00000102
 
 
 class OwnershipError(RuntimeError):
@@ -57,6 +58,11 @@ def _creation_token(pid: int) -> str | None:
     if not handle:
         return None
     try:
+        # A terminated Windows process can still expose GetProcessTimes while
+        # another handle remains open. Treat only a non-signalled process as
+        # alive; otherwise stale ownership keeps the account falsely ONL.
+        if kernel32.WaitForSingleObject(handle, 0) != WAIT_TIMEOUT:
+            return None
         created = _FILETIME()
         exited = _FILETIME()
         kernel = _FILETIME()
