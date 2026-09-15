@@ -16,6 +16,8 @@ $CaptureRoot = Join-Path $DataRoot "error-captures"
 $PidPath = Join-Path $CaptureRoot "collector.pid"
 $LatestPath = Join-Path $CaptureRoot "LATEST.txt"
 $ScriptPath = $MyInvocation.MyCommand.Path
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$UploadScript = Join-Path $PSScriptRoot "KVTM_ERROR_LOG_UPLOAD.ps1"
 
 function Get-CollectorPid {
     if (-not (Test-Path -LiteralPath $PidPath -PathType Leaf)) {
@@ -144,6 +146,9 @@ $OutputPath = Join-Path $SessionRoot "errors.log"
 $StatusPath = Join-Path $SessionRoot "collector-status.log"
 $ErrorPattern = "(?i)(ERROR|FAIL|SAFE_ABORT|ScreenTimeout|Timeout|Exception|Traceback|worker_stopped|unregistered_runtime_error|STORAGE_FULL|KHO_QUA_TAI|fatal|exited early)"
 $states = @{}
+$UploadPending = $false
+$UploadDueAt = [DateTime]::MinValue
+$LastUploadAt = [DateTime]::MinValue
 
 [System.IO.File]::WriteAllText($PidPath, [string]$PID, (New-Object System.Text.UTF8Encoding($false)))
 [System.IO.File]::WriteAllText(
@@ -154,6 +159,7 @@ $states = @{}
 Add-OutputLine -Path $StatusPath -Text ("START {0:yyyy-MM-dd HH:mm:ss} pid={1}" -f (Get-Date), $PID)
 Add-OutputLine -Path $StatusPath -Text "READ-ONLY sources: action.log, detail.log, auto JSONL, host stdout/stderr"
 Add-OutputLine -Path $StatusPath -Text "NO process control: Multi/Auto/ClientJS are untouched"
+Add-OutputLine -Path $StatusPath -Text "AUTO UPLOAD: sanitized text only -> diagnostics/runtime-errors"
 
 try {
     while ($true) {
@@ -239,6 +245,12 @@ try {
                         }
                         Add-OutputLine -Path $OutputPath -Text $line
                         $state.After = $AfterLines
+                        # Allow the configured after-lines to arrive before a
+                        # separate process sanitizes and uploads this session.
+                        if ((Get-Date) -ge $LastUploadAt.AddSeconds(60)) {
+                            $UploadPending = $true
+                            $UploadDueAt = (Get-Date).AddSeconds(5)
+                        }
                     }
                     else {
                         $state.Before.Enqueue($line)
@@ -254,6 +266,34 @@ try {
                     (Get-Date), $state.Path, $_.Exception.Message
                 )
             }
+        }
+        if (
+            $UploadPending -and
+            (Get-Date) -ge $UploadDueAt -and
+            (Test-Path -LiteralPath $UploadScript -PathType Leaf)
+        ) {
+            try {
+                $uploadArgs = @(
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", ('"' + $UploadScript + '"'),
+                    "-RepoRoot", ('"' + $RepoRoot + '"'),
+                    "-SessionRoot", ('"' + $SessionRoot + '"')
+                )
+                [void](Start-Process -FilePath "powershell.exe" -ArgumentList $uploadArgs -WindowStyle Hidden -PassThru)
+                $LastUploadAt = Get-Date
+                Add-OutputLine -Path $StatusPath -Text (
+                    "AUTO UPLOAD QUEUED {0:yyyy-MM-dd HH:mm:ss} branch=diagnostics/runtime-errors" -f
+                    $LastUploadAt
+                )
+            }
+            catch {
+                Add-OutputLine -Path $StatusPath -Text (
+                    "AUTO UPLOAD WARNING {0:yyyy-MM-dd HH:mm:ss} error={1}" -f
+                    (Get-Date), $_.Exception.Message
+                )
+            }
+            $UploadPending = $false
         }
         Start-Sleep -Milliseconds ([Math]::Max(500, $PollMilliseconds))
     }
