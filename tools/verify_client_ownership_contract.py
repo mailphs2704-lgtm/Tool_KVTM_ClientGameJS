@@ -78,6 +78,11 @@ def main() -> int:
     require(ownership, "hashlib.sha256(payload).hexdigest()", "Account credential fingerprint is not hashed")
     require(ownership, "self._profile_signature(profile)", "Account identity is not derived from the saved launch signature")
     require(ownership, "process.terminate()", "Losing duplicate launch is not fail-close")
+    require(ownership, "def matching_live_pids", "Exact profile PID resolver missing")
+    require(ownership, "core.running_clients()", "Live GameClientJS discovery missing")
+    require(ownership, "pid not in before_pids", "Launch can adopt a pre-existing unrelated PID")
+    require(ownership, "pid != launcher_pid", "Spawned GameClientJS PID is not preferred over launcher")
+    require(ownership, "core.RunningProcessRef(resolved_pid)", "Resolved live PID is not bound to profile")
     require(ownership, "registry.self_owned", "Adoption is not owner-scoped")
     require(ownership, "owned_pids", "Foreign PID adoption filter missing")
     require(ownership, 'get("ProcessId")', "Ownership adoption does not read running_clients ProcessId")
@@ -118,7 +123,7 @@ def main() -> int:
     print("registry=shared-appdata+named-mutex+atomic-json+schema2+exit-aware-prune")
     print("identity=account-key+alias+profile+pid-creation-token")
     print("ui=wide-owner-column+account-window-title")
-    print("control=foreign-read-only+owner-only-adopt-stop+fail-close")
+    print("control=foreign-read-only+spawned-live-pid-bind+owner-only-adopt-stop+fail-close")
     print("secrets=hashed-identity-only-not-published")
     return 0
 
