@@ -83,6 +83,11 @@ def main() -> int:
     require(ownership, "pid not in before_pids", "Launch can adopt a pre-existing unrelated PID")
     require(ownership, "pid != launcher_pid", "Spawned GameClientJS PID is not preferred over launcher")
     require(ownership, "core.RunningProcessRef(resolved_pid)", "Resolved live PID is not bound to profile")
+    require(
+        ownership,
+        "lambda target=process: self._apply_display_to_process(target)",
+        "Resolved GameClientJS PID does not receive display/Bridge/position setup",
+    )
     require(ownership, "registry.self_owned", "Adoption is not owner-scoped")
     require(ownership, "owned_pids", "Foreign PID adoption filter missing")
     require(ownership, 'get("ProcessId")', "Ownership adoption does not read running_clients ProcessId")
