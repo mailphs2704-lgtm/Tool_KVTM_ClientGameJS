@@ -646,3 +646,10 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Worker nay restart cùng profile tại safe boundary bằng EngineDriver `app_stop/app_start`, phát `client_pid_changed`, chạy login/popup watch, đặt `skip_initial_sale_once` và tiếp tục AUTO.
 - GUI chỉ nhận PID mới khi mapping hiện hành vẫn là PID cũ/PID mới hợp lệ; sau đó dùng `RunningProcessRef` và refresh ON/OFF.
 - Không đổi launcher/display/title/1000x1000. AST và static needle contract PASS; Windows LIVE PENDING.
+
+## 2026-09-15 — Sửa production gate còn giữ restart contract cũ
+
+- Build [1] dừng tại `verify_recovery_architecture_contract.py` vì vẫn yêu cầu worker phát `worker_stopped/lifecycle_event=client_restart_requested`.
+- Đây là hợp đồng cũ làm AUTO kết thúc khi đến lịch restart; runtime mới cố ý không còn marker này.
+- Verifier nay khóa hợp đồng mới: exact old-PID stop, same-profile relaunch, `client_pid_changed`, login/popup watch, one-shot sale skip và `client_restart_completed`.
+- Đồng thời cấm marker terminal cũ quay lại. Verifier AST PASS; Windows full build cần chạy lại.
