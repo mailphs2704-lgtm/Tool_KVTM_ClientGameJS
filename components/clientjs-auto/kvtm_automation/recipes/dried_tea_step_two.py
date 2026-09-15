@@ -65,10 +65,8 @@ class DriedTeaStepTwoRecipe:
                 f"{segment.planted_count}/24"
             )
         self.context.stage("auto-function-3-step-2-tea-24-pass")
+        self.context.action("Gieo thành công 24 trà")
 
-        # AppleJuiceProductionActions owns the floor-2 machine interaction. Its
-        # verified panel-open path collects ready VP before it queues a new batch,
-        # so Step 2 must not add a duplicate/raw machine click here.
         production = self.recovery.run_production(
             floor=2,
             label="Nước táo",
@@ -85,6 +83,7 @@ class DriedTeaStepTwoRecipe:
                 "Function 3 Step 2 chưa sản xuất đủ Nước táo: "
                 f"{production.queued_count}/9"
             )
+        self.context.action("Sản xuất 9 nước táo")
 
         self.context.stage("auto-function-3-step-2-pass")
         self.context.log(
