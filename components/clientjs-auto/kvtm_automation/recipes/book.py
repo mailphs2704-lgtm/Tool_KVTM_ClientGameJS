@@ -9,6 +9,7 @@ from .dried_tea_step_one import DriedTeaStepOneRecipe
 from .dried_tea_step_two import DriedTeaStepTwoRecipe
 from .dried_tea_step_three import DriedTeaStepThreeRecipe
 from .dried_tea_step_four import DriedTeaStepFourRecipe
+from .dried_tea_step_five import DriedTeaStepFiveRecipe
 from .rose_oil import RoseOilRecipe
 from .yellow_fabric import YellowFabricRecipe
 
@@ -69,6 +70,7 @@ class RecipeBook:
         self.dried_tea_step_two: DriedTeaStepTwoRecipe | None = None
         self.dried_tea_step_three: DriedTeaStepThreeRecipe | None = None
         self.dried_tea_step_four: DriedTeaStepFourRecipe | None = None
+        self.dried_tea_step_five: DriedTeaStepFiveRecipe | None = None
         if self.function_id == "function_3":
             self.dried_tea_step_one = DriedTeaStepOneRecipe(
                 automation,
@@ -83,6 +85,10 @@ class RecipeBook:
                 recovery=self.recovery,
             )
             self.dried_tea_step_four = DriedTeaStepFourRecipe(
+                automation,
+                recovery=self.recovery,
+            )
+            self.dried_tea_step_five = DriedTeaStepFiveRecipe(
                 automation,
                 recovery=self.recovery,
             )
