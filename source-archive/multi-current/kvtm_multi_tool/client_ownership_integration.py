@@ -635,6 +635,13 @@ def install_client_ownership_integration(app_cls, core) -> None:
             self.processes.pop(profile_id, None)
             raise
         schedule_title(self, profile_id, resolved_pid)
+        # Core scheduled resize/Bridge setup for the short-lived launcher.
+        # Re-run the same existing post-launch pipeline on the resolved game PID;
+        # the position integration wraps this method and re-pins afterwards.
+        self.after(
+            0,
+            lambda target=process: self._apply_display_to_process(target),
+        )
         return result
 
     def ownership_stop_selected(self, *args, **kwargs):
