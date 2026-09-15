@@ -52,6 +52,8 @@ def main() -> int:
     require(ownership, "os.replace(temp, REGISTRY_FILE)", "Ownership registry write is not atomic")
     require(ownership, "GetProcessTimes", "PID creation-token validation missing")
     require(ownership, "WAIT_TIMEOUT = 0x00000102", "Windows live-process wait state missing")
+    require(ownership, "kernel32.OpenProcess.restype = wintypes.HANDLE", "OpenProcess HANDLE is not pointer-sized")
+    require(ownership, "kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE", "WaitForSingleObject HANDLE signature missing")
     require(
         ownership,
         "kernel32.WaitForSingleObject(handle, 0) != WAIT_TIMEOUT",
