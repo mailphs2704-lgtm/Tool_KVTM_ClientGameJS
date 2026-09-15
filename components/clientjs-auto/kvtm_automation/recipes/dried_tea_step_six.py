@@ -35,6 +35,29 @@ class DriedTeaStepSixRecipe:
         self.auto = automation
         self.context = automation.context
         self.recovery = recovery
+        self.recovery.register_navigation_routes(
+            to_main_routes={8: self._floor_8_to_main},
+            from_main_routes={8: self._main_to_floor_8},
+        )
+
+    def _main_to_floor_8(self, label: str) -> None:
+        self.context.log(
+            f"AUTO Step 6 recovery • {label} • MAIN → tầng 1 → tầng 6 → goUp(2) tầng 8"
+        )
+        self.auto.farm_routes.main_to_floor_1()
+        self.auto.farm_routes.floor_1_to_floor_6()
+        self.auto.floors.go_up(
+            2,
+            label="Function 3 Step 6 recovery • tầng 6 → tầng 8 • click chậu đầu hàng 4",
+        )
+
+    def _floor_8_to_main(self, label: str) -> None:
+        self.context.log(
+            f"AUTO Step 6 recovery • {label} • tầng 8 → goDown(1) → chờ 1s → XUỐNG MAIN"
+        )
+        self.auto.farm_boundary_routes.known_upper_floor_to_main_via_down_floor(
+            "Function 3 Step 6 recovery tầng 8 → MAIN"
+        )
 
     def run_from_floor_1(self) -> DriedTeaStepSixProgressResult:
         self.context.stage("auto-function-3-step-6-start")
