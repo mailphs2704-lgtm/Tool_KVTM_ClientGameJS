@@ -39,7 +39,6 @@ class DriedTeaStepFourRecipe:
         self.recovery = recovery
 
     def run_from_floor_1(self) -> DriedTeaStepFourProgressResult:
-        """Run the corrected TDHH material sequence from the Step 3 end state."""
         self.context.stage("auto-function-3-step-4-start")
         self.context.log(
             "AUTO Function 3 • Step 4 START • tầng 1 Hồng 30 → "
@@ -81,9 +80,8 @@ class DriedTeaStepFourRecipe:
                 f"{roses_floor_6.planted_count}/15"
             )
         self.context.stage("auto-function-3-step-4-rose-floor6-15-pass")
+        self.context.action("Gieo thành công 45 hồng")
 
-        # TDHH needs both Hồng and Tuyết. After the full 45-Hồng pass, return to
-        # floor 1 and prepare the missing 36 Tuyết before entering the machine.
         boundary.floor_6_to_main_via_down_floor()
         self.context.ensure_running()
         nav.main_to_floor_1()
@@ -115,9 +113,8 @@ class DriedTeaStepFourRecipe:
                 f"{snow_floor_6.planted_count}/6"
             )
         self.context.stage("auto-function-3-step-4-snow-floor6-6-pass")
+        self.context.action("Gieo thành công 36 tuyết")
 
-        # Once the sixth-floor Tuyết row is done, the TDHH machine is directly
-        # one floor below. Do not go MAIN and climb back up; use one goDown(1).
         nav.go_down(
             1,
             label="Function 3 Step 4 • tầng 6 → tầng 5 sau Tuyết 36",
@@ -140,6 +137,7 @@ class DriedTeaStepFourRecipe:
                 f"{production.queued_count}/9"
             )
         self.context.stage("auto-function-3-step-4-rose-oil-9-pass")
+        self.context.action("Sản xuất 9 tinh dầu hoa hồng")
 
         boundary.floor_5_to_main_via_down_floor()
         self.context.ensure_running()
