@@ -4,19 +4,19 @@ from datetime import datetime
 from pathlib import Path
 
 from main_log_viewer import open_log_window
+from optional_features_integration import install_optional_features_integration
+from auto_multi_dev_ui_integration import install_auto_multi_dev_ui_integration
 
 
 __all__ = ["install_auto_error_log_integration"]
 
 
 def install_auto_error_log_integration(app_class, core) -> None:
-    """Add one persistent per-account error log with a TXT export action."""
+    """Expose per-account error-log helpers, then install the final DEV UI layer."""
     if getattr(app_class, "_kvtm_auto_error_log_installed", False):
         return
 
     from kvtm_automation.error_journal import error_log_file_for_profile
-
-    original_build_auto_panel = app_class._build_auto_panel
 
     def _error_log_profile(self) -> tuple[str | None, dict | None]:
         profile_id = str(getattr(self, "_active_profile_id", "") or "")
@@ -39,6 +39,7 @@ def install_auto_error_log_integration(app_class, core) -> None:
         return error_log_file_for_profile(core.APP_DIR, str(profile_id))
 
     def _open_auto_error_log(self) -> None:
+        """Compatibility entry; the main UI now opens this inside the Log window."""
         profile_id, profile = self._error_log_profile()
         if not profile_id or profile is None:
             core.messagebox.showinfo(
@@ -82,7 +83,7 @@ def install_auto_error_log_integration(app_class, core) -> None:
         try:
             raw = source.read_text(encoding="utf-8", errors="replace")
             header = (
-                f"KVTM AUTO ERROR LOG\n"
+                "KVTM AUTO ERROR LOG\n"
                 f"Tài khoản: {name}\n"
                 f"Profile ID: {profile_id}\n"
                 f"Xuất lúc: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"
@@ -98,40 +99,20 @@ def install_auto_error_log_integration(app_class, core) -> None:
             return
         self.note.set(f"Đã xuất Log lỗi AUTO của {name}: {destination}")
 
-    def build_auto_panel_with_error_log(self) -> None:
-        original_build_auto_panel(self)
-        if hasattr(self, "auto_multi_dev_error_log_button"):
-            return
-        detail_button = getattr(self, "auto_multi_dev_detail_log_button", None)
-        if detail_button is None:
-            return
-        row = detail_button.master
-        self.auto_multi_dev_error_log_button = core.ttk.Button(
-            row,
-            text="⚠ Log lỗi",
-            width=16,
-            style="Action.TButton",
-            command=self._open_auto_error_log,
-        )
-        self.auto_multi_dev_error_log_button.pack(side="left", padx=(8, 0))
-        self.auto_multi_dev_export_error_button = core.ttk.Button(
-            row,
-            text="⇩ Xuất lỗi TXT",
-            width=18,
-            style="Action.TButton",
-            command=self._export_auto_error_log_txt,
-        )
-        self.auto_multi_dev_export_error_button.pack(side="left", padx=(8, 0))
-
-    app_class._build_auto_panel = build_auto_panel_with_error_log
     app_class._error_log_profile = _error_log_profile
     app_class._persistent_error_log_path = _persistent_error_log_path
     app_class._open_auto_error_log = _open_auto_error_log
     app_class._export_auto_error_log_txt = _export_auto_error_log_txt
     app_class._kvtm_auto_error_log_installed = True
 
+    # Optional features were historically a separate source module. Install it
+    # here so the final operator UI always has a real per-profile Mở rương toggle
+    # before the compact layout reuses the same BooleanVar/callback.
+    install_optional_features_integration(app_class, core)
+    install_auto_multi_dev_ui_integration(app_class, core)
+
     print(
         "[KVTM DEV] AUTO error journal UI READY • persistent per-profile TXT • "
-        "live viewer + export button",
+        "export lives inside combined Log lỗi tab",
         flush=True,
     )
