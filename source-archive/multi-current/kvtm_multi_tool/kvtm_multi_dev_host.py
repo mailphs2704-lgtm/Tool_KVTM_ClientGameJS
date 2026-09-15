@@ -518,8 +518,10 @@ def main() -> int:
         print("[KVTM DEV] Resident host: importing Multi UI AFTER runtime READY...", flush=True)
         import kvtm_multi_dev_entry
         from auto_builder_integration import install_auto_builder_integration
+        from auto_error_log_integration import install_auto_error_log_integration
         from auto_main_profile_settings import install_auto_main_profile_settings
         from client_video_recorder import install_client_video_recorder
+        from daily_sale_counter_integration import install_daily_sale_counter_integration
 
         # Multi DEV is unattended-capable: error dialogs must never block all
         # running clones. Callers still update note/status and every worker error
@@ -539,6 +541,17 @@ def main() -> int:
         # Scheduler persistence is also DEV-only. Install it after Builder so it
         # can wrap the final AUTO Main controls without touching the core UI.
         install_auto_main_profile_settings(
+            kvtm_multi_dev_entry.MultiDevApp,
+            kvtm_multi_dev_entry.core,
+        )
+        # Daily counters and error journal wrap the final AUTO panel/detail area.
+        # They are installed after Builder/Profile so their fields/buttons survive
+        # normal UI reconstruction and remain scoped to the selected account.
+        install_daily_sale_counter_integration(
+            kvtm_multi_dev_entry.MultiDevApp,
+            kvtm_multi_dev_entry.core,
+        )
+        install_auto_error_log_integration(
             kvtm_multi_dev_entry.MultiDevApp,
             kvtm_multi_dev_entry.core,
         )
