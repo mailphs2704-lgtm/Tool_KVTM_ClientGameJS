@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import threading
@@ -41,6 +41,7 @@ class ProbeConfig:
     max_stall_passes: int = 10
     resale_batch_limit: int = 0
     allowed_item_ids: tuple[str, ...] = DEFAULT_ALLOWED_ITEM_IDS
+    clear_stall_drag_speed: float = 0.35
 
 
 EventSink = Callable[[dict], None]
@@ -278,7 +279,20 @@ def run_probe(
             image_runtime_ready=bool(image_runtime_ready),
         )
         designer_policy = load_runtime_policy(designer_config_path(config.work_dir.parents[2]))
+        clear_stall_drag_speed = max(
+            0.05, min(3.0, float(config.clear_stall_drag_speed))
+        )
+        designer_policy = replace(
+            designer_policy,
+            swipe_duration=clear_stall_drag_speed,
+        )
+        designer_policy.validate()
         automation.stall.apply_runtime_policy(designer_policy)
+        context.log(
+            "Dọn quầy tốc độ kéo • "
+            f"{clear_stall_drag_speed:.3f}s/swipe • "
+            f"2 swipe liên tiếp • settle={designer_policy.swipe_settle:.3f}s"
+        )
         automation.inventory.storage_open_wait = designer_policy.storage_open_wait
         checkpoint(
             "clear-stall-designer-policy-applied",
