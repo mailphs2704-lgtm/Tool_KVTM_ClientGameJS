@@ -631,3 +631,11 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Foreign-owner protection giữ nguyên. Verifier khóa exit check trước creation token.
 - AST/static order PASS; Windows build/LIVE PENDING.
 
+## 2026-09-15 — Ownership bind PID GameClientJS thật, không bind launcher
+
+- Ảnh live báo `ClientJS PID 3232 is not alive`: PID do `Popen` trả về là bootstrap ngắn hạn, không phải process game tiếp tục chạy.
+- Đây đồng thời là root cause lỗi Dừng trước đó: tool theo PID launcher đã chết nên không đóng được PID game thật.
+- Launch nay chụp tập PID khớp profile trước khi mở, chờ tối đa 5s, resolve lại bằng exact game path + secret args, loại PID cũ và ưu tiên PID con khác launcher.
+- `self.processes` và ownership registry chỉ bind `RunningProcessRef(resolved_pid)` còn sống. DEV/Cry isolation và foreign read-only giữ nguyên.
+- AST PASS; Windows LIVE PENDING.
+
