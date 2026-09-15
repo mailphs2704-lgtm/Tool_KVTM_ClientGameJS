@@ -26,12 +26,7 @@ class DriedTeaStepFiveProgressResult:
 class DriedTeaStepFiveRecipe:
     """Function 3 Step 5 from the Step 4 floor-1 boundary back to floor 1."""
 
-    def __init__(
-        self,
-        automation: KVAutomation,
-        *,
-        recovery: RecoveryManager,
-    ) -> None:
+    def __init__(self, automation: KVAutomation, *, recovery: RecoveryManager) -> None:
         self.auto = automation
         self.context = automation.context
         self.recovery = recovery
@@ -43,15 +38,12 @@ class DriedTeaStepFiveRecipe:
             "goUp(4)+goUp(1) tầng 6 → Tuyết 6 → Trà đá 9/9 → "
             "Sửa máy → goDown(1) → chờ 1s → XUỐNG MAIN → goUp(1) tầng 1"
         )
-
         planting = self.auto.planting
         nav = self.auto.farm_routes
         boundary = self.auto.farm_boundary_routes
 
         snow_floor_1 = planting.harvest_and_replant_current_view(
-            seed_template=planting.SNOW_TEMPLATE,
-            item_label="Cây tuyết",
-            count=30,
+            seed_template=planting.SNOW_TEMPLATE, item_label="Cây tuyết", count=30,
             segment_label="Function 3 Step 5 • Tuyết 5 hàng tầng 1",
         )
         if int(snow_floor_1.planted_count) != 30:
@@ -63,9 +55,7 @@ class DriedTeaStepFiveRecipe:
 
         nav.floor_1_to_floor_6()
         snow_floor_6 = planting.harvest_and_replant_current_view(
-            seed_template=planting.SNOW_TEMPLATE,
-            item_label="Cây tuyết",
-            count=6,
+            seed_template=planting.SNOW_TEMPLATE, item_label="Cây tuyết", count=6,
             segment_label="Function 3 Step 5 • Tuyết hàng cuối tầng 6",
         )
         if int(snow_floor_6.planted_count) != 6:
@@ -74,10 +64,10 @@ class DriedTeaStepFiveRecipe:
                 f"{snow_floor_6.planted_count}/6"
             )
         self.context.stage("auto-function-3-step-5-snow-floor6-6-pass")
+        self.context.action("Gieo thành công 36 tuyết")
 
         production = self.recovery.run_production(
-            floor=6,
-            label="Trà đá",
+            floor=6, label="Trà đá",
             producer=lambda: self.auto.iced_tea_production.produce_9_iced_teas(
                 close_after_success=False
             ),
@@ -91,15 +81,14 @@ class DriedTeaStepFiveRecipe:
                 f"{production.queued_count}/9"
             )
         self.context.stage("auto-function-3-step-5-iced-tea-9-pass")
+        self.context.action("Sản xuất 9 trà đá")
 
         boundary.floor_6_to_main_via_down_floor()
         self.context.ensure_running()
         nav.main_to_floor_1()
         self.context.ensure_running()
 
-        harvested = int(
-            snow_floor_1.harvested_count + snow_floor_6.harvested_count
-        )
+        harvested = int(snow_floor_1.harvested_count + snow_floor_6.harvested_count)
         self.context.stage("auto-function-3-step-5-pass")
         self.context.log(
             "AUTO Function 3 • Step 5 PASS • Tuyết tầng 1=30/30 • "
