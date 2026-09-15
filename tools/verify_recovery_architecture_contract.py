@@ -250,11 +250,18 @@ def main() -> int:
     require(auto_main, "skip_initial_sale_once", "Post-restart one-shot sale skip missing")
     forbid(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 7200.0", "Old 2h AUTO Main restart remains")
 
-    # Worker is a lifecycle host, not a second recovery engine. Registered errors
-    # are handled below it; anything escaping RecoveryManager fails closed.
+    # Worker owns the scheduled same-profile ClientJS lifecycle so the isolated
+    # AUTO runtime and GUI stay alive across the replacement PID. Registered
+    # business errors remain below it; anything escaping RecoveryManager fails closed.
     require(worker, "except ClientRestartRequested as exc:", "Worker restart lifecycle branch missing")
     require(worker, '"client_restart_requested"', "Worker explicit restart lifecycle event missing")
-    require(worker, 'lifecycle_event="client_restart_requested"', "Worker restart supervisor bridge missing")
+    require(worker, 'automation.driver.app_stop("")', "Worker exact old-PID stop missing")
+    require(worker, 'automation.driver.app_start("")', "Worker same-profile relaunch missing")
+    require(worker, '"client_pid_changed"', "Worker replacement PID publication missing")
+    require(worker, 'resume_config["skip_initial_sale_once"] = True', "Worker restart sale handoff missing")
+    require(worker, "GameSessionWorkflow(automation).run", "Worker restart login/popup watch missing")
+    require(worker, '"client_restart_completed"', "Worker restart completion event missing")
+    forbid(worker, 'lifecycle_event="client_restart_requested"', "Obsolete stop-after-restart supervisor bridge remains")
     require(worker, "unregistered_runtime_error; recovery=fail-close", "Worker fail-close contract missing")
     forbid(worker, "_AUTO_MAIN_SAME_ERROR_LIMIT", "Old catch-all same-error restart loop remains")
     forbid(worker, "_recover_auto_main_to_main_screen", "Worker still owns generic camera recovery")
@@ -283,6 +290,7 @@ def main() -> int:
 
     print("AUTO MULTI DEV RECOVERY ARCHITECTURE CONTRACT VERIFIED")
     print("errors=signals-only")
+    print("scheduled_restart=worker-same-profile-relaunch+pid-publish+login-watch+resume")
     print("events=typed-observer-hooks+module-lifecycle")
     print("module_executor=checkpointed+typed-handler-only+no-scheduler-return-on-recovery")
     print("navigation=canonical-primitives+generic-farm-routes+injectable-recovery-routes")
