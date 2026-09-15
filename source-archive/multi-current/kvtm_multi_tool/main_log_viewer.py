@@ -13,6 +13,8 @@ FILE_FUNCTIONS = (
     "Log hành động hiển thị dạng bảng Thời gian/Tài khoản/Hành động",
     "Log chi tiết và Log lỗi tự cập nhật mỗi giây",
     "Nút xuất TXT lỗi nằm bên trong tab Log lỗi",
+    "Cửa sổ Log mở gọn bên trong Multi và vẫn cho phép kéo tự do",
+    "Tăng khoảng cách dòng để từng log không bị dính vào nhau",
 )
 
 _ACTION_RE = re.compile(
@@ -25,6 +27,38 @@ def _safe_read(path: Path) -> str:
         return Path(path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
+
+
+def _place_inside_parent(
+    parent,
+    window,
+    *,
+    preferred_width: int,
+    preferred_height: int,
+    min_width: int,
+    min_height: int,
+) -> None:
+    """Initial child placement stays inside Multi; later dragging is unrestricted."""
+    try:
+        parent.update_idletasks()
+        window.update_idletasks()
+        parent_x = int(parent.winfo_rootx())
+        parent_y = int(parent.winfo_rooty())
+        parent_w = max(1, int(parent.winfo_width()))
+        parent_h = max(1, int(parent.winfo_height()))
+        margin = 22
+        available_w = max(320, parent_w - margin * 2)
+        available_h = max(260, parent_h - margin * 2)
+        effective_min_w = min(int(min_width), available_w)
+        effective_min_h = min(int(min_height), available_h)
+        width = max(effective_min_w, min(int(preferred_width), available_w))
+        height = max(effective_min_h, min(int(preferred_height), available_h))
+        x = parent_x + max(margin, (parent_w - width) // 2)
+        y = parent_y + max(margin, (parent_h - height) // 2)
+        window.minsize(effective_min_w, effective_min_h)
+        window.geometry(f"{width}x{height}+{x}+{y}")
+    except Exception:
+        pass
 
 
 def _build_live_text(parent, *, font=("Consolas", 10)):
@@ -45,6 +79,9 @@ def _build_live_text(parent, *, font=("Consolas", 10)):
         highlightbackground="#c7d3e3",
         padx=10,
         pady=8,
+        spacing1=2,
+        spacing2=1,
+        spacing3=5,
     )
     scroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
     text.configure(yscrollcommand=scroll.set)
@@ -73,8 +110,10 @@ def open_log_window(parent, path: Path, title: str) -> None:
     log_path = Path(path)
     window = tk.Toplevel(parent)
     window.title(str(title))
-    window.geometry("1050x620")
-    window.minsize(720, 360)
+    try:
+        window.transient(parent)
+    except Exception:
+        pass
 
     header = ttk.Frame(window, padding=(12, 10, 12, 6), style="Detail.TFrame")
     header.pack(fill="x")
@@ -87,6 +126,15 @@ def open_log_window(parent, path: Path, title: str) -> None:
     body.pack(fill="both", expand=True)
     text = _build_live_text(body, font=("Consolas", 10))
     state = {"raw": None}
+
+    _place_inside_parent(
+        parent,
+        window,
+        preferred_width=760,
+        preferred_height=560,
+        min_width=600,
+        min_height=400,
+    )
 
     def refresh() -> None:
         if not window.winfo_exists():
@@ -128,8 +176,10 @@ def open_auto_log_window(
 
     window = tk.Toplevel(parent)
     window.title(str(title))
-    window.geometry("980x620")
-    window.minsize(760, 430)
+    try:
+        window.transient(parent)
+    except Exception:
+        pass
 
     style = ttk.Style(window)
     style.configure(
@@ -137,7 +187,7 @@ def open_auto_log_window(
         background="#ffffff",
         fieldbackground="#ffffff",
         foreground="#263653",
-        rowheight=27,
+        rowheight=32,
         borderwidth=0,
     )
     style.configure(
@@ -188,9 +238,9 @@ def open_auto_log_window(
     action_tree.heading("time", text="THỜI GIAN")
     action_tree.heading("account", text="TÀI KHOẢN")
     action_tree.heading("action", text="HÀNH ĐỘNG")
-    action_tree.column("time", width=110, minwidth=90, stretch=False, anchor="center")
-    action_tree.column("account", width=160, minwidth=110, stretch=False, anchor="w")
-    action_tree.column("action", width=620, minwidth=300, stretch=True, anchor="w")
+    action_tree.column("time", width=105, minwidth=90, stretch=False, anchor="center")
+    action_tree.column("account", width=140, minwidth=105, stretch=False, anchor="w")
+    action_tree.column("action", width=480, minwidth=260, stretch=True, anchor="w")
     action_scroll = ttk.Scrollbar(
         action_tab, orient="vertical", command=action_tree.yview
     )
@@ -219,6 +269,15 @@ def open_auto_log_window(
     error_text = _build_live_text(error_body)
 
     state = {"action": None, "detail": None, "error": None}
+
+    _place_inside_parent(
+        parent,
+        window,
+        preferred_width=760,
+        preferred_height=560,
+        min_width=620,
+        min_height=430,
+    )
 
     def refresh_actions(raw: str) -> None:
         if raw == state["action"]:
