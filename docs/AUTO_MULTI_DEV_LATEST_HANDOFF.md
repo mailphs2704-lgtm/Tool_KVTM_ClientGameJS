@@ -345,3 +345,12 @@ Build/live pending. NEXT: Control Center publish Stable, require automatic `0.1.
 - AST source/verifier: PASS. Windows build và LIVE Cry: PENDING.
 - Retest: chạy `KVTM_DEV_CONTROL.bat -> [1]`, sau đó `Kvtm_tool_Cry_RELEASE.bat`; đóng/mở lại Cry và xác nhận hộp Cấu hình có đủ 6 trường, gồm `Tốc độ kéo quầy`.
 
+## 19. 2026-09-15 — Sửa tài khoản ONL giả sau khi Dừng ClientJS
+
+- Live report: bấm Dừng tài khoản ONL nhưng tài khoản không trở về OFF và không thể mở lại ClientJS đó.
+- Root cause: ownership registry xác minh PID bằng `OpenProcess + GetProcessTimes`; Windows vẫn có thể trả creation time của process đã exit khi còn handle mở, nên stale entry tiếp tục kéo hàng OFF trở lại ONL và chặn launch mới.
+- `_creation_token()` nay yêu cầu `WaitForSingleObject(handle, 0) == WAIT_TIMEOUT` trước khi chấp nhận creation token. PID đã signalled/exited được prune khỏi registry trong lần refresh kế tiếp.
+- Không nới ownership: ClientJS đang sống của DEV/Cry khác vẫn read-only và không bị dừng/claim.
+- Ownership verifier khóa live-state check phải chạy trước `GetProcessTimes`.
+- AST/static order: PASS. Windows build/LIVE: PENDING.
+
