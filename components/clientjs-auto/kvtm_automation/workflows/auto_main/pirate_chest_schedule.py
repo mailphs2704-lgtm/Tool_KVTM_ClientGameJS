@@ -4,8 +4,10 @@ import json
 import time
 
 from ...daily_pirate_chest_counter import record_pirate_chest_opened
+from ...daily_sale_counter import record_successful_listings
 from ...errors import AutomationStopped, ScreenTimeout
 from ...recovery import RecoveryManager
+from ..auto_vp_sale import AutoVpSaleWorkflow
 from ..pirate_chest import PirateChestWorkflow
 from .boundary_delay import AutoMainResult, AutoMainWorkflow as _BoundaryAutoMainWorkflow
 from .friend_refresh import FriendRefreshWorkflow
@@ -29,6 +31,13 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
     """
 
     PIRATE_CHEST_INTERVAL_SECONDS = 1200.0
+    _SALE_LABELS = {
+        "tao_say": "táo sấy",
+        "vai_vang": "vải vàng",
+        "tinh_dau_hh": "tinh dầu hoa hồng",
+        "nuoc_hoa_hong": "nước hoa hồng",
+        "tra_da": "trà đá",
+    }
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -133,9 +142,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             f"recovery công khai trước Function • reason={reason}"
         )
 
-        # First remove/recover any overlay or visited-home state and reach the
-        # clone farm HUD. PopupActions intentionally invalidates camera proof;
-        # NavigationRecovery then re-proves the bottom/main boundary by behavior.
         self.auto.ensure_main_screen(timeout=12.0)
         if not self.auto.popup.is_own_exact_main_screen():
             self._pirate_chest_boundary_recovery.recover_unknown_to_main(
@@ -185,8 +191,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             f"lần={ordinal} • reason={reason}"
         )
 
-        # The optional flow must never inherit an unproved camera from sale or
-        # another maintenance action. Prove exact-main before touching the ship.
         self._prove_exact_main_boundary(reason=f"{reason}-before-chest")
 
         status = "ERROR"
@@ -203,9 +207,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         except AutomationStopped:
             raise
         except Exception as exc:
-            # Pirate Chest business/capture errors remain non-blocking. The
-            # boundary recovery below is separate: if exact-main cannot be
-            # restored, the main pipeline still fail-closes before a Recipe.
             status = "SAFE_ABORT"
             detail = f"{type(exc).__name__}: {exc}"
             self.context.detail(
@@ -215,17 +216,9 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             self.pirate_chest_calls += 1
             self._schedule_next_pirate_chest_check(status=status)
 
-        # A SAFE_ABORT means the chest UI/reward state was not classified. The
-        # own-farm HUD can remain visible behind that overlay and create a false
-        # exact-main positive, so never trust the shortcut proof in this branch.
-        # Force the proven friend#1 -> own-home world transition to rebuild the
-        # scene before any Recipe is allowed to start.
         if status == "SAFE_ABORT":
             self._reset_scene_after_pirate_chest_abort(reason=detail or reason)
 
-        # Critical handoff: closing a panel/overlay is not itself proof that the
-        # farm camera is at exact-main. Re-establish the caller contract before
-        # AUTO Main is allowed to start Táo sấy or any other Function recipe.
         self._prove_exact_main_boundary(reason=f"{reason}-after-chest")
 
         self.context.stage(f"auto-main-pirate-chest-{ordinal}-finished")
@@ -240,19 +233,51 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             f"exact-main=PASS • check_lại={next_check}"
         )
 
-    def _pirate_chest_checkpoint(self, *, reason: str) -> None:
-        if not self._pirate_chest_due():
-            return
-        # This is called only from scheduler boundaries. Mark the activity so
-        # boundary_delay counts chest time toward the configured loop delay.
-        self._mark_boundary_activity_started()
-        self._run_pirate_chest(reason=reason)
-
     def _sale_once(self, *, ordinal: int) -> None:
-        super()._sale_once(ordinal=ordinal)
+        """Run one sale and emit exactly one concise per-account action summary."""
+        self._mark_boundary_activity_started()
+        self.context.ensure_running()
+        self.context.stage(
+            f"auto-main-{self.spec.function_id}-sale-{ordinal}-start"
+        )
+        sale = AutoVpSaleWorkflow(
+            self.auto,
+            function_id=self.spec.function_id,
+            allowed_item_ids=self.spec.sale_item_ids,
+        ).run(timeout=120.0)
+        self.sale_calls += 1
+        self.sold_listings += int(sale.sold_listings)
+        self.collected_gold_slots += int(sale.collected_gold_slots)
+        daily_turns = record_successful_listings(
+            self.context,
+            sold_listings=int(sale.sold_listings),
+        )
+        self.context.stage(
+            f"auto-main-{self.spec.function_id}-sale-{ordinal}-finished"
+        )
 
-        # First check runs after sale #1. A non-OPENED result (including
-        # cooldown/no MỞ NGAY) retries only after the next completed VP sale.
+        parts = []
+        for item_id in self.spec.sale_item_ids:
+            listings = int(sale.sold_by_item.get(item_id, 0) or 0)
+            if listings <= 0:
+                continue
+            label = self._SALE_LABELS.get(item_id, item_id)
+            parts.append(f"{listings * 10} {label}")
+        daily_units = int(daily_turns) * 10
+        if parts:
+            self.context.action(
+                f"Đã bán {', '.join(parts)}, tổng số VP bán trong ngày {daily_units}"
+            )
+        else:
+            self.context.action(
+                f"Không có VP đủ x10 để bán, tổng số VP bán trong ngày {daily_units}"
+            )
+        self.context.log(
+            f"AUTO MULTI DEV • bán VP lần {ordinal} hoàn tất • "
+            f"Function={self.spec.label} • treo={sale.sold_listings} ô • "
+            f"thu_vàng={sale.collected_gold_slots} • daily_turns={daily_turns}"
+        )
+
         if self.pirate_chest_enabled and (
             not self._pirate_chest_initialized
             or self._pirate_chest_retry_after_sale
@@ -264,16 +289,16 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             )
             self._run_pirate_chest(reason=reason)
 
+    def _pirate_chest_checkpoint(self, *, reason: str) -> None:
+        if not self._pirate_chest_due():
+            return
+        self._mark_boundary_activity_started()
+        self._run_pirate_chest(reason=reason)
+
     def _request_client_restart_at_safe_boundary(self) -> None:
-        # If the 20-minute deadline matured during the just-finished Function,
-        # consume it before the scheduled 3h restart while we are still at a
-        # proven safe boundary.
         self._pirate_chest_checkpoint(reason="pre-client-restart-boundary")
         super()._request_client_restart_at_safe_boundary()
 
     def _wait_before_next_function_loop(self) -> None:
-        # Base run calls this only after the current Function, optional sale and
-        # friend maintenance have completed. Therefore a due timer can never
-        # inject UI input into an in-progress Function.
         self._pirate_chest_checkpoint(reason="post-function-boundary")
         super()._wait_before_next_function_loop()
