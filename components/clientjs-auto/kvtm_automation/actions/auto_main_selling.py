@@ -44,6 +44,9 @@ class AutoMainSellingActions:
         "nuoc_hoa_hong": "nuoc_hoa_hong",
         "tra_da": "tra_da",
     }
+    SELECTED_ITEM_FALLBACK_TEMPLATES = {
+        "tra_da": ("kho_tra_da",),
+    }
     SELECTED_ITEM_ZONE = (680, 240, 180, 180)
     SALE_CHANGE_ZONE = (180, 330, 640, 430)
 
@@ -52,6 +55,9 @@ class AutoMainSellingActions:
     N1000_EXACT_TEN_THRESHOLD = 0.95
     N1000_EXACT_TEN_SCALES = (1.00,)
     N1000_FAST_CONFIDENCE_THRESHOLD = 0.99
+    SELECTED_ITEM_THRESHOLD = 0.78
+    SELECTED_ITEM_REQUIRED_PASSES = 2
+    SELECTED_ITEM_SCAN_ATTEMPTS = 3
     EXACT_TEN_REQUIRED_PASSES = 2
     FINISHED_GOODS_SCAN_ATTEMPTS = 3
     SALE_PICKER_READY_TIMEOUT = 3.0
@@ -319,20 +325,78 @@ class AutoMainSellingActions:
                 f"{item.label} không mở được màn hình đặt bán"
             ) from exc
 
-        selected_template = self.SELECTED_ITEM_TEMPLATES[item.item_id]
-        selected_match = self.selling.vision.find(
-            selected_template,
-            threshold=0.78,
-            zone=self.SELECTED_ITEM_ZONE,
-            scales=(0.85, 1.0, 1.15, 1.30, 1.45),
+        selected_templates = (
+            self.SELECTED_ITEM_TEMPLATES[item.item_id],
+            *self.SELECTED_ITEM_FALLBACK_TEMPLATES.get(item.item_id, ()),
         )
-        if selected_match is None:
+        selected_match = None
+        selected_passes = 0
+        best_selected_score = 0.0
+        for selected_attempt in range(1, self.SELECTED_ITEM_SCAN_ATTEMPTS + 1):
+            self.context.ensure_running()
+            frame = self.selling.vision.frame()
+            frame_best = None
+            frame_template = ""
+            for selected_template in selected_templates:
+                candidate = self.selling.vision.find(
+                    selected_template,
+                    threshold=self.SELECTED_ITEM_THRESHOLD,
+                    zone=self.SELECTED_ITEM_ZONE,
+                    scales=(0.85, 1.0, 1.15, 1.30, 1.45),
+                    click=False,
+                    frame=frame,
+                )
+                if candidate is not None and (
+                    frame_best is None or candidate.score > frame_best.score
+                ):
+                    frame_best = candidate
+                    frame_template = selected_template
+            if frame_best is None:
+                selected_passes = 0
+                self.context.detail(
+                    "AUTO sale selected-item proof | "
+                    f"item={item.item_id} | attempt={selected_attempt}/"
+                    f"{self.SELECTED_ITEM_SCAN_ATTEMPTS} | passes reset=0 | "
+                    f"templates={','.join(selected_templates)}"
+                )
+            else:
+                selected_match = frame_best
+                selected_passes += 1
+                best_selected_score = max(
+                    best_selected_score, float(frame_best.score)
+                )
+                self.context.detail(
+                    "AUTO sale selected-item proof | "
+                    f"item={item.item_id} | attempt={selected_attempt}/"
+                    f"{self.SELECTED_ITEM_SCAN_ATTEMPTS} | "
+                    f"passes={selected_passes}/"
+                    f"{self.SELECTED_ITEM_REQUIRED_PASSES} | "
+                    f"template={frame_template} | score={frame_best.score:.3f} | "
+                    f"threshold={self.SELECTED_ITEM_THRESHOLD:.2f}"
+                )
+            if selected_passes >= self.SELECTED_ITEM_REQUIRED_PASSES:
+                break
+            if selected_attempt < self.SELECTED_ITEM_SCAN_ATTEMPTS:
+                self.selling.waiter.sleep(0.20)
+
+        if (
+            selected_match is None
+            or selected_passes < self.SELECTED_ITEM_REQUIRED_PASSES
+        ):
             self.context.log(
-                f"AUTO bán VP • CHẶN SAI VP: dialog không đúng {item.label} • "
+                f"AUTO bán VP • CHẶN SAI VP: dialog chưa chứng minh ổn định "
+                f"{item.label} • best_score={best_selected_score:.3f} • "
+                f"threshold={self.SELECTED_ITEM_THRESHOLD:.2f} • "
                 "hủy và chuyển VP kế tiếp"
             )
             self._cancel_selected_item()
             return "WRONG_ITEM"
+
+        self.context.log(
+            f"AUTO bán VP • selected-item STABLE READY • item={item.label} • "
+            f"passes={selected_passes}/{self.SELECTED_ITEM_REQUIRED_PASSES} • "
+            f"best_score={best_selected_score:.3f}"
+        )
 
         exact_threshold, exact_scales, table_name = self._exact_ten_profile()
         native = self._native_size()
