@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TypeVar
 
+from ..error_journal import record_auto_error
 from ..errors import ScreenTimeout
 from ..material_shortage import MaterialShortage
 from .events import RecoveryEvent, RecoveryEventKind
@@ -19,6 +20,7 @@ __all__ = [
 
 FILE_FUNCTIONS = (
     "Bắt MaterialShortage ở lớp recovery thay vì để ScreenTimeout dừng Function",
+    "Ghi mọi lần thiếu nguyên liệu vào error journal theo profile và báo ngắn ở Log hành động",
     "Về exact-main rồi bổ sung đúng loại cây theo material_template",
     "Táo: main→tầng1, chờ chín, cào+gieo lại 5 tầng theo routine hiện có, lặp policy hiện hữu",
     "Bông: main→tầng1 rồi gọi crop Action trung tính để chờ/thu/gieo lại một batch 27",
@@ -156,7 +158,7 @@ class MaterialAwareProductionRecovery(BaseProductionRecovery):
             )
         raise ScreenTimeout(
             f"{label}: đã bắt lỗi thiếu cây nhưng chưa có replenisher cho "
-            f"material_template={exc.material_template!r}; dừng fail-close"
+            f"material_template={exc.material_template!r}; bàn giao global recovery"
         )
 
     def run_production(
@@ -179,6 +181,17 @@ class MaterialAwareProductionRecovery(BaseProductionRecovery):
 
             except MaterialShortage as exc:
                 material_recovery_round += 1
+                record_auto_error(
+                    self.context,
+                    exc,
+                    phase=f"production:{label}:material-shortage",
+                    recovery_state=(
+                        f"policy thiếu nguyên liệu đang xử lý lần {material_recovery_round}"
+                    ),
+                )
+                self.context.action(
+                    f"Lỗi thiếu {exc.material_label}, chuyển trạng thái xử lí"
+                )
                 self._emit_material_event(
                     label=label,
                     floor=int(floor),
@@ -201,7 +214,7 @@ class MaterialAwareProductionRecovery(BaseProductionRecovery):
                     )
                     raise ScreenTimeout(
                         f"{label}: thiếu {exc.material_label} lặp quá "
-                        f"{self.MATERIAL_RECOVERY_LIMIT} lần; dừng tránh vòng lặp"
+                        f"{self.MATERIAL_RECOVERY_LIMIT} lần; bàn giao global recovery"
                     ) from exc
 
                 self.context.stage("auto-production-material-shortage-recovery")
