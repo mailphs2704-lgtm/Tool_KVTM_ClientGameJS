@@ -60,6 +60,31 @@ function Write-AtomicJson {
     Move-Item -LiteralPath $temp -Destination $Path -Force
 }
 
+function Sync-DevPersistentConfiguration {
+    # Stable remains a separate runtime/data root, but every successful version
+    # switch receives the current DEV operator configuration. Runtime/process
+    # state is deliberately excluded.
+    $devDataRoot = Join-Path $env:APPDATA "KVTM Multi DEV"
+    if (-not (Test-Path -LiteralPath $devDataRoot -PathType Container)) {
+        Write-CryUpdateLog "CONFIG SYNC skip; DEV data root not found"
+        return
+    }
+
+    $copied = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @("profiles.json", "settings.json", "clear-stall-history.jsonl")) {
+        $source = Join-Path $devDataRoot $name
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            continue
+        }
+        Copy-Item -LiteralPath $source -Destination (Join-Path $DataRoot $name) -Force
+        $copied.Add($name)
+    }
+    Write-CryUpdateLog (
+        "CONFIG SYNC PASS from=KVTM Multi DEV files=" +
+        (($copied.ToArray()) -join ",")
+    )
+}
+
 function Read-Manifest {
     param($Channel)
     $provider = ([string]$Channel.provider).Trim().ToLowerInvariant()
@@ -229,6 +254,7 @@ try {
             switched_at = (Get-Date).ToUniversalTime().ToString("o")
         }
         Write-AtomicJson -Path $CurrentPath -Value $newCurrent
+        Sync-DevPersistentConfiguration
         Write-CryUpdateLog "SWITCH PASS version=$nextVersionText sha256=$expectedSha"
 
         $keep = @($nextVersionText, [string]$current.version)
