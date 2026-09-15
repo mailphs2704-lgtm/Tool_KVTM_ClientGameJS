@@ -5,11 +5,11 @@ from __future__ import annotations
 The clear-stall verifier owns many safety checks that must remain active. A few
 legacy assertions inside it describe older AUTO MULTI DEV integration details:
 legacy ``local_launcher`` image bootstrap, the old zero-argument
-``AutoMainWorkflow(automation).run`` call, and a prose-only Gate 4 assertion
-that disappeared when ``SellingActions`` gained the dual-resolution sale state
-machine. Those details changed without changing Dọn quầy runtime. This adapter
-replaces only those migration assertions and leaves every other clear-stall
-contract check untouched.
+``AutoMainWorkflow(automation).run`` call, the old dark console-only log viewer,
+and a prose-only Gate 4 assertion that disappeared when ``SellingActions``
+gained the dual-resolution sale state machine. Those details changed without
+changing Dọn quầy runtime. This adapter replaces only those migration assertions
+and leaves every other clear-stall contract check untouched.
 """
 
 import importlib.util
@@ -51,6 +51,25 @@ def _verify_gate4_inventory_order(source: str) -> None:
         )
 
 
+def _verify_operator_log_viewer(source: str) -> None:
+    """Lock the new unified light log UI without weakening legacy compatibility."""
+    required = (
+        "def open_log_window(",
+        "def open_auto_log_window(",
+        'notebook.add(action_tab, text="Log hành động")',
+        'notebook.add(detail_tab, text="Log chi tiết")',
+        'notebook.add(error_tab, text="Log lỗi")',
+        'text="⇩ Xuất lỗi TXT"',
+        'bg="#ffffff"',
+        'text="Tự cập nhật mỗi giây"',
+    )
+    missing = [token for token in required if token not in source]
+    if missing:
+        raise AssertionError(
+            "Unified AUTO log viewer contract missing: " + ", ".join(missing)
+        )
+
+
 def main() -> int:
     spec = importlib.util.spec_from_file_location(
         "kvtm_verify_clear_stall_contract_legacy",
@@ -66,6 +85,9 @@ def main() -> int:
     def migration_aware_require(source: str, needle: str, message: str) -> None:
         if message == "Gate 4 inventory must be scanned only after opening a stall slot":
             _verify_gate4_inventory_order(source)
+            return
+        if message == "Console-style log viewer missing":
+            _verify_operator_log_viewer(source)
             return
         if message == "Isolated AUTO Main wiring missing":
             required = (
@@ -100,6 +122,7 @@ def main() -> int:
     print("gate4_inventory_order=empty-slot->storage->fingerprint-scan")
     print("auto_multi_image_runtime=shared-clean local_launcher=false")
     print("auto_main_wiring=selectable-function recurring-sale-schedule")
+    print("auto_log_viewer=light-three-tabs+error-export+legacy-open-log")
     return result
 
 
