@@ -458,6 +458,49 @@ class MultiDevApp(production.MultiApp):
                                 "Worker V3 độc lập đã khởi động • một chủ CAPTURE3"
                             )
                         continue
+                    if kind == "client_restart_requested":
+                        reason = str(event.get("reason") or "")
+                        log_writer.action(
+                            "AUTO MULTI DEV restart SAFE đã đến hạn"
+                        )
+                        if reason:
+                            log_writer.detail(reason)
+                        self.after(
+                            0, lambda: self.auto_multi_dev_status.set(
+                                "AUTO MULTI DEV • đang restart đúng ClientJS"
+                            )
+                        )
+                        continue
+                    if kind == "client_pid_changed":
+                        old_pid = int(event.get("old_pid") or 0)
+                        new_pid = int(event.get("new_pid") or 0)
+                        if new_pid <= 0:
+                            raise RuntimeError(
+                                "Worker báo client_pid_changed nhưng thiếu PID mới"
+                            )
+                        log_writer.action(
+                            f"ClientJS PID changed {old_pid} -> {new_pid}"
+                        )
+                        self.after(
+                            0,
+                            lambda old=old_pid, new=new_pid:
+                            self._adopt_restarted_auto_client(
+                                profile_id, old, new
+                            ),
+                        )
+                        continue
+                    if kind == "client_restart_completed":
+                        restart_message = message or (
+                            "ClientJS restart PASS • AUTO tiếp tục"
+                        )
+                        log_writer.action(restart_message)
+                        self.after(
+                            0, lambda text=restart_message: (
+                                self.auto_multi_dev_status.set(text),
+                                self.note.set(text),
+                            )
+                        )
+                        continue
                     if kind == "worker_finished":
                         terminal = True
                         outcome = str(event.pop("outcome", "auto_main_ready"))
@@ -518,6 +561,29 @@ class MultiDevApp(production.MultiApp):
                     worker.terminate()
                 except OSError:
                     pass
+
+    def _adopt_restarted_auto_client(
+        self, profile_id: str, old_pid: int, new_pid: int
+    ) -> None:
+        """Bind GUI state to the exact replacement PID reported by its worker."""
+        if int(new_pid) <= 0:
+            return
+        current = self.processes.get(profile_id)
+        current_pid = int(getattr(current, "pid", 0) or 0)
+        if current_pid not in {0, int(old_pid), int(new_pid)}:
+            self.note.set(
+                "Bỏ qua PID restart không còn khớp profile • "
+                f"đang giữ PID {current_pid}"
+            )
+            return
+        self.processes[profile_id] = core.RunningProcessRef(int(new_pid))
+        self.auto_multi_dev_status.set(
+            f"AUTO MULTI DEV • ClientJS {old_pid} → {new_pid} • đang tiếp tục"
+        )
+        self.note.set(
+            f"ClientJS đã restart: PID {old_pid} → {new_pid}; AUTO tiếp tục"
+        )
+        self.refresh()
 
     def _finish_clean_main(
         self, profile_id: str, outcome: str, payload: dict
