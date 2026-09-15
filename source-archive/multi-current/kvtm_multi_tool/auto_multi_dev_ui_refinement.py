@@ -8,6 +8,7 @@ FILE_FUNCTIONS = (
     "Khóa trạng thái operator chỉ còn Đang chạy hoặc Đã dừng",
     "Mở Cấu hình gọn bên trong cửa sổ Multi rồi vẫn cho phép kéo tự do",
     "Giữ Vòng lặp/Thời gian chờ trong Cấu hình bằng Entry nhập trực tiếp",
+    "Không hủy widget scheduler ẩn đang giữ persistence theo tài khoản",
 )
 
 
@@ -93,14 +94,28 @@ def install_auto_multi_dev_ui_refinement(app_class, core) -> None:
         function_box = function_button.master
         controls = function_box.master
 
-        # Remove only currently visible operator boxes created by the compact UI.
-        # Hidden scheduler widgets remain alive for profile persistence.
+        # Preserve hidden scheduler controls because profile persistence still
+        # reads/writes those widget variables even though they are not operator UI.
+        protected_parents = set()
+        for attribute in (
+            "auto_multi_dev_sale_every_spin",
+            "auto_multi_dev_function_loop_delay_spin",
+            "auto_multi_dev_friend_refresh_button",
+            "auto_multi_dev_pirate_chest_button",
+        ):
+            widget = getattr(self, attribute, None)
+            parent = getattr(widget, "master", None)
+            if parent is not None:
+                protected_parents.add(parent)
+
+        # Remove only the visible Tài khoản/Trạng thái boxes from the previous
+        # compact layer. Hidden scheduler frames remain alive.
         try:
             visible = list(controls.grid_slaves())
         except Exception:
             visible = []
         for child in visible:
-            if child is function_box:
+            if child is function_box or child in protected_parents:
                 continue
             try:
                 info = child.grid_info()
