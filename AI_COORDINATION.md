@@ -615,3 +615,11 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - `verify_kvtm_tool_cry_packaging_contract.py` khóa thứ tự pre-UI này.
 - AST PASS; Windows build/LIVE PENDING. Next: `KVTM_DEV_CONTROL.bat -> [1]`, chạy `Kvtm_tool_Cry_RELEASE.bat`, mở lại Stable và xác nhận đủ 6 trường.
 
+## 2026-09-15 — Dọn quầy: hai swipe liên tiếp rồi mới settle
+
+- Phạm vi là chức năng Dọn quầy độc lập, không phải thăm bạn trong AUTO MULTI DEV.
+- Live regression: mua đủ 8 ô đầu nhưng view sau bỏ mua/chập chờn.
+- Root cause: runtime chờ `0.55s` giữa hai swipe ngắn, khiến ClientJS có thể snap trước pulse thứ hai và view dừng lệch tâm scan/click.
+- `StallActions.next_view/previous_view` nay gửi đủ 2 swipe liên tiếp, giữ `0.35s/swipe`, rồi settle đúng một lần `0.55s`.
+- Verifier khóa settle sau swipe cuối; AST/static order PASS. Windows build/LIVE PENDING.
+
