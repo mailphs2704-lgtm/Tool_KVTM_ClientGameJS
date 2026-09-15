@@ -37,13 +37,14 @@ class DriedTeaStepFourRecipe:
         self.recovery = recovery
 
     def run_from_floor_1(self) -> DriedTeaStepFourProgressResult:
-        """Run the operator-defined Step 4 from the Step 3 end state."""
+        """Run the corrected TDHH material sequence from the Step 3 end state."""
         self.context.stage("auto-function-3-step-4-start")
         self.context.log(
-            "AUTO Function 3 • Step 4 START • giữ tầng 1 → thu/gieo Hồng 30 → "
-            "goUp(4)+goUp(1) tầng 6 → thu/gieo Hồng 15 → "
-            "goDown(1)+XUỐNG MAIN → goUp(1) tầng 1 → goUp(4) tầng 5 → "
-            "TDHH 9/9 → Sửa máy → goDown(1)+XUỐNG MAIN → goUp(1) tầng 1"
+            "AUTO Function 3 • Step 4 START • tầng 1 Hồng 30 → "
+            "goUp(4)+goUp(1) tầng 6 Hồng 15 → về MAIN → goUp(1) tầng 1 → "
+            "Tuyết 30 → goUp(4)+goUp(1) tầng 6 Tuyết 6 → "
+            "goDown(1) tầng 5 → TDHH 9/9 → Sửa máy → "
+            "goDown(1)+chờ 1s+XUỐNG MAIN → goUp(1) tầng 1"
         )
 
         planting = self.auto.planting
@@ -79,10 +80,46 @@ class DriedTeaStepFourRecipe:
             )
         self.context.stage("auto-function-3-step-4-rose-floor6-15-pass")
 
+        # TDHH needs both Hồng and Tuyết. After the full 45-Hồng pass, return to
+        # floor 1 and prepare the missing 36 Tuyết before entering the machine.
         boundary.floor_6_to_main_via_down_floor()
         self.context.ensure_running()
         nav.main_to_floor_1()
-        nav.floor_1_to_floor_5()
+        self.context.ensure_running()
+
+        snow_floor_1 = planting.harvest_and_replant_current_view(
+            seed_template=planting.SNOW_TEMPLATE,
+            item_label="Cây tuyết",
+            count=30,
+            segment_label="Function 3 Step 4 • TDHH material • Tuyết 5 hàng tầng 1",
+        )
+        if int(snow_floor_1.planted_count) != 30:
+            raise ScreenTimeout(
+                "Function 3 Step 4 chưa gieo đủ Tuyết tầng 1 trước TDHH: "
+                f"{snow_floor_1.planted_count}/30"
+            )
+        self.context.stage("auto-function-3-step-4-snow-floor1-30-pass")
+
+        nav.floor_1_to_floor_6()
+        snow_floor_6 = planting.harvest_and_replant_current_view(
+            seed_template=planting.SNOW_TEMPLATE,
+            item_label="Cây tuyết",
+            count=6,
+            segment_label="Function 3 Step 4 • TDHH material • Tuyết hàng cuối tầng 6",
+        )
+        if int(snow_floor_6.planted_count) != 6:
+            raise ScreenTimeout(
+                "Function 3 Step 4 chưa gieo đủ Tuyết tầng 6 trước TDHH: "
+                f"{snow_floor_6.planted_count}/6"
+            )
+        self.context.stage("auto-function-3-step-4-snow-floor6-6-pass")
+
+        # Once the sixth-floor Tuyết row is done, the TDHH machine is directly
+        # one floor below. Do not go MAIN and climb back up; use one goDown(1).
+        nav.go_down(
+            1,
+            label="Function 3 Step 4 • tầng 6 → tầng 5 sau Tuyết 36",
+        )
         self.context.stage("auto-function-3-step-4-floor5-production")
 
         production = self.recovery.run_production(
@@ -112,8 +149,8 @@ class DriedTeaStepFourRecipe:
         )
         self.context.stage("auto-function-3-step-4-pass")
         self.context.log(
-            "AUTO Function 3 • Step 4 PASS • Hồng tầng 1=30/30 • "
-            "Hồng tầng 6=15/15 • TDHH=9/9 • Sửa máy PASS • kết thúc tầng 1"
+            "AUTO Function 3 • Step 4 PASS • Hồng=45/45 • Tuyết=36/36 • "
+            "TDHH=9/9 • Sửa máy PASS • kết thúc tầng 1"
         )
         return DriedTeaStepFourProgressResult(
             roses_floor_1_planted=int(roses_floor_1.planted_count),
