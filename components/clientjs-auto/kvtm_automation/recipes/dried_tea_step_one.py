@@ -65,6 +65,7 @@ class DriedTeaStepOneRecipe:
                 f"Function 3 Step 1 chưa gieo đủ Táo tầng 6: {floor_6}/6"
             )
         self.context.stage("auto-function-3-step-1-apple-floor-6-pass")
+        self.context.action("Gieo thành công 36 táo")
 
         self.auto.farm_boundary_routes.known_upper_floor_to_main_via_down_floor(
             "Function 3 Step 1 • tầng 6 về MAIN"
@@ -91,6 +92,7 @@ class DriedTeaStepOneRecipe:
                 f"Function 3 Step 1 chưa sản xuất đủ Trà sấy: "
                 f"{production.queued_count}/9"
             )
+        self.context.action("Sản xuất 9 trà sấy")
         self.context.stage("auto-function-3-step-1-pass")
         self.context.log(
             "AUTO Function 3 • Step 1 PASS • Táo=30+6 • Trà sấy=9/9 • "
