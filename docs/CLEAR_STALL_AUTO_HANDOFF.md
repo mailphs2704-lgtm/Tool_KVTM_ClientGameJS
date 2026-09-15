@@ -259,3 +259,11 @@ DO_NOT_TOUCH: components/workspace/**, KVTM_WORKSPACE_CONTROL.bat
 - Runtime chỉ thay `swipe_duration`; vẫn bắt buộc hai swipe liên tiếp và settle `0.55s` một lần sau swipe cuối.
 - Log runtime ghi rõ tốc độ thực nhận để đối chiếu cấu hình.
 - Static contract: cập nhật. Windows build/LIVE: PENDING.
+
+## 2026-09-15 — Terminal Dọn quầy phải trả profile về OFF
+
+- Root cause: `probe_stopped`, lỗi chạy thủ công và nhánh mua/bán thiếu chỉ ghi terminal state; ClientJS của profile vẫn sống nên bảng tiếp tục báo ON và chặn AUTO khác.
+- Mọi nhánh STOP/FAIL/thiếu số lượng nay yêu cầu đóng đúng process object/PID của profile, chờ xác nhận process đã thoát rồi mới xóa mapping và refresh bảng.
+- Cleanup từ chối tác động nếu mapping đã được thay bằng process khác, tránh đóng nhầm ClientJS vừa được mở lại.
+- PASS vẫn dùng `close_client_after_run` hiện hành. Không thay launcher, tên cửa sổ, vị trí hay kích thước 1000x1000.
+- Source/static contract: PASS. Windows LIVE: PENDING.
