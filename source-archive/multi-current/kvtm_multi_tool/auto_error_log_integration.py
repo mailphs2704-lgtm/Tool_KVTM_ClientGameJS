@@ -6,6 +6,7 @@ from pathlib import Path
 from main_log_viewer import open_log_window
 from optional_features_integration import install_optional_features_integration
 from auto_multi_dev_ui_integration import install_auto_multi_dev_ui_integration
+from auto_multi_dev_ui_refinement import install_auto_multi_dev_ui_refinement
 
 
 __all__ = ["install_auto_error_log_integration"]
@@ -110,6 +111,7 @@ def install_auto_error_log_integration(app_class, core) -> None:
     # before the compact layout reuses the same BooleanVar/callback.
     install_optional_features_integration(app_class, core)
     install_auto_multi_dev_ui_integration(app_class, core)
+    install_auto_multi_dev_ui_refinement(app_class, core)
 
     print(
         "[KVTM DEV] AUTO error journal UI READY • persistent per-profile TXT • "
