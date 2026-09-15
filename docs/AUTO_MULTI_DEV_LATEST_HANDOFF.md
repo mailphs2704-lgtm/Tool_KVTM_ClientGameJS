@@ -306,3 +306,32 @@ Source now preserves the primary `tra_da.png` proof and adds existing `kho_tra_d
 Commits: `978d103e`, `e7b6133d`. Build/live pending.
 
 NEXT: Control Center `[1]`, then retest Function 3 sale and require `selected-item STABLE READY` → x10 PASS → POST_SALE OWN_STALL READY.
+
+## 17. Stable parity, automatic versioning and DWM/GPU recovery
+
+Operator confirmed the Trà đá sale fix LIVE PASS, then reported:
+
+- Stable publish remained pinned to `0.1.5` and rejected a new source HEAD;
+- installed Cry lacked current DEV fixed ClientJS position and speed/profile UI;
+- Cry showed heavy DWM/GPU use.
+
+Diagnosis:
+
+- the old Stable manifest still pointed to source `4e4a9f2...`, while current source was newer;
+- release code only rejected version reuse and had no automatic version selection;
+- therefore Cry could not receive the current DEV host where DWM Live View is removed and Bridge V3 OpenGL-present FPS hard-cap is installed;
+- setup copied DEV profiles/settings only on first install, so later DEV configuration did not refresh Stable.
+
+Source changes:
+
+- release version is now idempotent for the same source HEAD and automatically increments the published patch version for a new HEAD (the reported `0.1.5` channel will publish the next new HEAD as `0.1.6`);
+- no tracked VERSION edit is required, avoiding a dirty worktree and future pull conflict;
+- Stable release fails closed unless it contains current DEV host, DWM-off policy, FPS hard-cap, fixed-position integration, speed/profile/UI integrations, and Bridge V3 loader/DLL;
+- every successful Stable version switch snapshots current DEV `profiles.json`, `settings.json`, and `clear-stall-history.jsonl`;
+- setup refreshes the same safe allowlist;
+- `running_clients.json`, PID/runtime state and logs remain isolated and are never copied;
+- Builder functions/image library already use the persistent `%APPDATA%\KVTM Multi DEV\auto-builder` location, so Stable continues to see the same Builder data.
+
+Commits: `0b5af84c`, `9f590505`, `7c9f8c89`, `3953e185`.
+
+Build/live pending. NEXT: Control Center publish Stable, require automatic `0.1.5 -> 0.1.6`, packaging verifier PASS, then close/reopen Cry and verify DWM Live View OFF, FPS hard-cap APPLIED, fixed top-right ClientJS position, complete speed configuration and current DEV profiles/settings.
