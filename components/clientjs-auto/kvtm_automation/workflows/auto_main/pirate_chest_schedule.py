@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import time
+import traceback
 
 from ...daily_pirate_chest_counter import record_pirate_chest_opened
 from ...daily_sale_counter import record_successful_listings
-from ...errors import AutomationStopped, ScreenTimeout
+from ...error_journal import explain_error_vi, record_auto_error
+from ...errors import AutomationStopped, ClientRestartRequested, ScreenTimeout
 from ...recovery import RecoveryManager
 from ..auto_vp_sale import AutoVpSaleWorkflow
 from ..pirate_chest import PirateChestWorkflow
@@ -17,17 +19,12 @@ __all__ = ["AutoMainResult", "AutoMainWorkflow"]
 
 
 class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
-    """AUTO Main with optional Pirate Chest maintenance at safe boundaries.
+    """AUTO Main with safe optional maintenance and global runtime recovery.
 
-    The first Pirate Chest check is attached to the first completed sale. Only
-    OPENED starts a 20-minute deadline. COOLDOWN or any other non-OPENED result
-    retries after the next completed VP sale. Timed work still runs only from a
-    safe Function boundary and never interrupts a Function in progress.
-
-    Pirate Chest is an overlay maintenance flow, while every production Function
-    starts only from exact-main. The scheduler therefore owns an explicit public
-    boundary recovery before and after chest maintenance. Recipes keep their
-    strict fail-close contract and never hide recovery/navigation internally.
+    Registered typed recovery remains closest to the failing module. Any runtime
+    exception that escapes those policies is treated as an unhandled AUTO error:
+    persist diagnostics, recover exact MAIN, force friend #1 -> own home, then
+    restart the selected AUTO Function instead of terminating the worker.
     """
 
     PIRATE_CHEST_INTERVAL_SECONDS = 1200.0
@@ -74,7 +71,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         )
 
     def _load_pirate_chest_enabled(self) -> bool:
-        """Read option #1 from the frozen per-run AUTO Main config."""
         marker = self.context.work_dir / "auto-main-config.json"
         try:
             raw = json.loads(marker.read_text(encoding="utf-8"))
@@ -82,12 +78,8 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             return False
         if not isinstance(raw, dict):
             return False
-
         if "pirate_chest_enabled" in raw:
             return bool(raw.get("pirate_chest_enabled"))
-
-        # Compatibility only for older DEV run markers. New runs write the
-        # explicit pirate_chest_enabled field from Optional Features.
         for key in ("option_flags", "options", "auto_options"):
             flags = raw.get(key)
             if isinstance(flags, (list, tuple)) and flags:
@@ -108,7 +100,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         )
 
     def _schedule_next_pirate_chest_check(self, *, status: str) -> None:
-        """Only a proven OPENED result owns the 20-minute timer."""
         self._pirate_chest_initialized = True
         if str(status) == "OPENED":
             self._pirate_chest_retry_after_sale = False
@@ -127,7 +118,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self._pirate_chest_next_check_at = 0.0
 
     def _prove_exact_main_boundary(self, *, reason: str) -> None:
-        """Explicitly restore the caller contract before/after optional UI work."""
         self.context.ensure_running()
         if self.auto.popup.is_own_exact_main_screen():
             self.context.detail(
@@ -135,13 +125,11 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
                 f"reason={reason}"
             )
             return
-
         self.context.stage("auto-main-pirate-chest-exact-main-recovery")
         self.context.log(
             "AUTO rương hải tặc • boundary chưa có exact-main • "
             f"recovery công khai trước Function • reason={reason}"
         )
-
         self.auto.ensure_main_screen(timeout=12.0)
         if not self.auto.popup.is_own_exact_main_screen():
             self._pirate_chest_boundary_recovery.recover_unknown_to_main(
@@ -158,7 +146,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         )
 
     def _reset_scene_after_pirate_chest_abort(self, *, reason: str) -> None:
-        """Force a friend-house round trip before handing control to a Function."""
         self.context.stage("auto-main-pirate-chest-safe-abort-scene-reset")
         self.context.log(
             "AUTO rương hải tặc • SAFE_ABORT • bắt buộc qua nhà bạn #1 "
@@ -182,7 +169,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
     def _run_pirate_chest(self, *, reason: str) -> None:
         if not self.pirate_chest_enabled:
             return
-
         self.context.ensure_running()
         ordinal = self.pirate_chest_calls + 1
         self.context.stage(f"auto-main-pirate-chest-{ordinal}-start")
@@ -190,7 +176,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             "AUTO rương hải tặc • bắt đầu check hậu Function • "
             f"lần={ordinal} • reason={reason}"
         )
-
         self._prove_exact_main_boundary(reason=f"{reason}-before-chest")
 
         status = "ERROR"
@@ -218,9 +203,7 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
 
         if status == "SAFE_ABORT":
             self._reset_scene_after_pirate_chest_abort(reason=detail or reason)
-
         self._prove_exact_main_boundary(reason=f"{reason}-after-chest")
-
         self.context.stage(f"auto-main-pirate-chest-{ordinal}-finished")
         next_check = (
             f"{self.PIRATE_CHEST_INTERVAL_SECONDS:.0f}s"
@@ -234,7 +217,6 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         )
 
     def _sale_once(self, *, ordinal: int) -> None:
-        """Run one sale and emit exactly one concise per-account action summary."""
         self._mark_boundary_activity_started()
         self.context.ensure_running()
         self.context.stage(
@@ -302,3 +284,91 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
     def _wait_before_next_function_loop(self) -> None:
         self._pirate_chest_checkpoint(reason="post-function-boundary")
         super()._wait_before_next_function_loop()
+
+    def _recover_unhandled_runtime_error(
+        self,
+        error: BaseException,
+        *,
+        traceback_text: str,
+    ) -> None:
+        """Never stop AUTO for an unregistered runtime error; normalize and retry."""
+        explanation = explain_error_vi(error)
+        record_auto_error(
+            self.context,
+            error,
+            traceback_text=traceback_text,
+            phase="AUTO Main runtime",
+            recovery_state="bắt đầu exact MAIN → nhà bạn #1 → nhà mình",
+        )
+        self.context.action(
+            f"Lỗi {type(error).__name__}: {explanation} Chuyển trạng thái xử lí"
+        )
+        self.context.detail(
+            "AUTO global recovery | escaped_exception | "
+            f"type={type(error).__name__} | message={error} | policy="
+            "exact-main->friend1->own-home->restart-auto"
+        )
+
+        recovery_round = 0
+        while True:
+            self.context.ensure_running()
+            recovery_round += 1
+            try:
+                self._pirate_chest_boundary_recovery.recover_unknown_to_main(
+                    "lỗi chưa có policy",
+                    reason=f"unhandled-runtime-error-round-{recovery_round}",
+                )
+                refreshed = FriendRefreshWorkflow(
+                    self.auto,
+                    function_id=self.spec.function_id,
+                ).run(completed_loops=0)
+                if not refreshed:
+                    raise ScreenTimeout(
+                        "Global recovery chưa hoàn tất vòng nhà bạn #1 → nhà mình"
+                    )
+                if not self.auto.popup.is_own_exact_main_screen():
+                    raise ScreenTimeout(
+                        "Global recovery quay về nhà nhưng chưa chứng minh exact MAIN"
+                    )
+                self.context.action(
+                    "Đã xử lí lỗi • exact MAIN → nhà bạn #1 → nhà mình • bắt đầu lại AUTO"
+                )
+                self.context.detail(
+                    "AUTO global recovery PASS | "
+                    f"round={recovery_round} | exact_main=true | restart_auto=true"
+                )
+                return
+            except (ClientRestartRequested, AutomationStopped):
+                raise
+            except Exception as recovery_error:
+                record_auto_error(
+                    self.context,
+                    recovery_error,
+                    traceback_text=traceback.format_exc(),
+                    phase="global recovery",
+                    recovery_state=f"thử lại recovery round={recovery_round + 1}",
+                )
+                self.context.detail(
+                    "AUTO global recovery RETRY | "
+                    f"round={recovery_round} | {type(recovery_error).__name__}: "
+                    f"{recovery_error}"
+                )
+                self.auto.wait.sleep(1.0)
+
+    def run(self) -> AutoMainResult:
+        """Run forever across recoverable unhandled errors until operator/lifecycle stop."""
+        while True:
+            try:
+                return super().run()
+            except ClientRestartRequested:
+                raise
+            except AutomationStopped:
+                raise
+            except Exception as exc:
+                self._recover_unhandled_runtime_error(
+                    exc,
+                    traceback_text=traceback.format_exc(),
+                )
+                self.context.detail(
+                    "AUTO global recovery handoff • restarting selected AUTO Main workflow"
+                )
