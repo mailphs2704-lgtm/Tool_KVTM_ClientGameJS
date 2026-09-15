@@ -3,7 +3,7 @@
 Cập nhật: 2026-09-15
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
-Trạng thái: **SECOND-PASS OPERATOR UI REFINEMENT SOURCE COMPLETE — BUILD/LIVE PENDING**
+Trạng thái: **SECOND-PASS OPERATOR UI REFINEMENT SOURCE COMPLETE — STABLE CRY VERSION 0.1.5 BUMPED — BUILD/LIVE PENDING**
 
 > Build/static PASS không thay cho live/runtime evidence. Không gọi runtime PASS khi chưa có operator evidence.
 
@@ -181,7 +181,7 @@ Bắt đầu / Dừng / Cấu hình / Log
 - `Cấu hình` chứa tốc độ + Vòng lặp + Thời gian chờ bằng Entry;
 - scheduler widget cũ bị ẩn chứ không hủy để giữ persistence.
 
-## 11. NEW — second-pass UI refinement
+## 11. Second-pass UI refinement
 
 Checkpoint: `docs/AUTO_MULTI_DEV_UI_REFINEMENT_CHECKPOINT_20260915.md`.
 
@@ -233,7 +233,27 @@ Log hành động | Log chi tiết | Log lỗi
 
 Cửa sổ `Cấu hình` cũng initial-place bên trong Multi và vẫn kéo tự do sau đó.
 
-## 13. Source milestones gần nhất
+## 13. Stable Kvtm_tool_Cry publish gate
+
+Operator build/publish Stable báo:
+
+```text
+Stable version 0.1.4 already points to another source HEAD.
+Bump packaging/kvtm-tool-cry/VERSION before publishing.
+```
+
+Đây là guard đúng của Stable channel: cùng một version không được trỏ sang source HEAD khác. Fallback Setup cũng từ chối package cũ vì manifest source HEAD không trùng HEAD hiện tại.
+
+Đã bump:
+
+```text
+packaging/kvtm-tool-cry/VERSION
+0.1.4 → 0.1.5
+```
+
+Không hạ guard và không cho phép publish đè version cũ. Lần publish kế tiếp phải tạo Stable 0.1.5 từ HEAD mới; Stable đang chạy vẫn độc lập và chỉ nhận version mới ở lần mở tiếp theo theo contract của packager.
+
+## 14. Source milestones gần nhất
 
 ```text
 295e0961  test(auto): migrate clear-stall log viewer contract
@@ -242,23 +262,21 @@ cf59b128  refactor(ui): refine multi dev operator layout
 2002b0dc  refactor(ui): fit log windows and improve row spacing
 cf8ffada  fix(ui): preserve hidden scheduler widgets
 b44efd23  docs(auto): checkpoint second-pass UI refinement
+e45a91ed  build(stable): bump Kvtm_tool_Cry to 0.1.5
 ```
 
-## 14. NEXT GATE
+## 15. NEXT GATE
 
-Chạy `[1]` bằng `KVTM_DEV_CONTROL.bat`.
+1. Pull/build lại source bằng Control Center phù hợp với Stable/local publish flow đang dùng.
+2. Stable publish phải đọc version `0.1.5`, không còn lỗi reuse `0.1.4`.
+3. Sau build sạch, live-check UI refinement:
+   - Function 3 tên dài hiển thị đủ/không còn bị che bất hợp lý;
+   - không còn cột Tài khoản áp dụng;
+   - status chỉ `Đang chạy` / `Đã dừng`;
+   - Mở rương + Thăm bạn vẫn đúng per-profile;
+   - Cấu hình lưu đúng tốc độ/Vòng lặp/Thời gian chờ;
+   - Log/Cấu hình mở lần đầu nằm gọn trong Multi và vẫn kéo ra ngoài được;
+   - khoảng cách dòng Log rõ ràng hơn.
+4. Function 3 completion exact MAIN, daily counter và recovery không regression.
 
-Sau build sạch, live-check:
-
-1. Function 3 tên dài hiển thị đủ/không còn bị che bất hợp lý.
-2. Không còn cột Tài khoản áp dụng.
-3. Status ban đầu/đã dừng chỉ là `Đã dừng`.
-4. Khi AUTO đang chạy status chỉ là `Đang chạy`.
-5. Khi worker đã dừng status trở lại `Đã dừng`.
-6. Mở rương + Thăm bạn vẫn toggle đúng per-profile.
-7. Cấu hình vẫn lưu đúng tốc độ/Vòng lặp/Thời gian chờ.
-8. Log/Cấu hình mở lần đầu nằm gọn trong Multi và vẫn kéo ra ngoài được.
-9. Khoảng cách dòng Log rõ ràng hơn.
-10. Function 3 completion exact MAIN, daily counter và recovery không regression.
-
-**Chưa gọi BUILD/STATIC PASS hoặc RUNTIME PASS trước evidence tương ứng.**
+**Chưa gọi Stable BUILD/PUBLISH PASS hoặc RUNTIME PASS trước evidence tương ứng.**
