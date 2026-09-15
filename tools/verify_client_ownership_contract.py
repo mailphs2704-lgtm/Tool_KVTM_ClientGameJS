@@ -51,6 +51,19 @@ def main() -> int:
     require(ownership, "REGISTRY_SCHEMA = 2", "Ownership registry schema was not upgraded for account identity")
     require(ownership, "os.replace(temp, REGISTRY_FILE)", "Ownership registry write is not atomic")
     require(ownership, "GetProcessTimes", "PID creation-token validation missing")
+    require(ownership, "WAIT_TIMEOUT = 0x00000102", "Windows live-process wait state missing")
+    require(
+        ownership,
+        "kernel32.WaitForSingleObject(handle, 0) != WAIT_TIMEOUT",
+        "Exited ClientJS PID is still accepted as live ownership",
+    )
+    creation_token_body = ownership.split("def _creation_token", 1)[1].split(
+        "class _NamedMutex", 1
+    )[0]
+    if creation_token_body.index("WaitForSingleObject") > creation_token_body.index(
+        "GetProcessTimes"
+    ):
+        raise AssertionError("ClientJS exit state must be checked before creation token")
     require(ownership, '"creation_token"', "Registry creation token field missing")
     require(ownership, '"profile_id"', "Registry profile id field missing")
     require(ownership, '"account_key"', "Registry account fingerprint field missing")
@@ -100,7 +113,7 @@ def main() -> int:
         raise AssertionError("Account-level ClientJS ownership release must be Kvtm_tool_Cry >= 0.1.4")
 
     print("CLIENTJS OWNERSHIP CONTRACT VERIFIED")
-    print("registry=shared-appdata+named-mutex+atomic-json+schema2")
+    print("registry=shared-appdata+named-mutex+atomic-json+schema2+exit-aware-prune")
     print("identity=account-key+alias+profile+pid-creation-token")
     print("ui=wide-owner-column+account-window-title")
     print("control=foreign-read-only+owner-only-adopt-stop+fail-close")
