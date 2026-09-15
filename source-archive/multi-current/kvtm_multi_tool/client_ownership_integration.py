@@ -538,6 +538,30 @@ def install_client_ownership_integration(app_cls, core) -> None:
                 continue
         return result
 
+    def matching_live_pids(self, profile: dict | None) -> list[int]:
+        """Resolve only live GameClientJS processes with this exact profile signature."""
+        try:
+            signature = self._profile_signature(profile or {})
+        except Exception:
+            signature = None
+        if not signature:
+            return []
+        matches: list[int] = []
+        for row in core.running_clients():
+            try:
+                pid = int((row or {}).get("ProcessId") or (row or {}).get("pid") or 0)
+                args = core.split_windows_command_line(
+                    (row or {}).get("CommandLine") or ""
+                )
+                if pid <= 0 or len(args) < 2:
+                    continue
+                running_game = os.path.normcase(os.path.abspath(args[1]))
+                if signature == (running_game, args[2:]) and _creation_token(pid):
+                    matches.append(pid)
+            except Exception:
+                continue
+        return matches
+
     def ownership_launch(self, profile, *args, **kwargs):
         profile = profile or {}
         profile_id, account_key, account_name = identity_for_profile(self, profile)
@@ -566,13 +590,42 @@ def install_client_ownership_integration(app_cls, core) -> None:
             schedule_title(self, profile_id, int(existing["pid"]))
             return None
 
+        before_pids = set(matching_live_pids(self, profile))
         result = original_launch(self, profile, *args, **kwargs)
-        process = self.processes.get(profile_id)
-        if not process or process.poll() is not None:
-            return result
+        launcher = self.processes.get(profile_id)
+        launcher_pid = int(launcher.pid) if launcher else 0
+
+        # GameClientJS may use a short-lived bootstrap PID. Wait for the exact
+        # profile command line to appear and prefer its spawned live PID; never
+        # claim the exited launcher or a pre-existing/unrelated client.
+        resolved_pid = 0
+        fallback_pid = 0
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            candidates = [
+                pid for pid in matching_live_pids(self, profile)
+                if pid not in before_pids
+            ]
+            spawned = [pid for pid in candidates if pid != launcher_pid]
+            if spawned:
+                resolved_pid = spawned[0]
+                break
+            if launcher_pid in candidates:
+                fallback_pid = launcher_pid
+            time.sleep(0.10)
+        if not resolved_pid and fallback_pid and _creation_token(fallback_pid):
+            resolved_pid = fallback_pid
+        if resolved_pid <= 0:
+            self.processes.pop(profile_id, None)
+            raise OwnershipError(
+                f"Không tìm thấy PID GameClientJS đang sống cho {account_name}"
+            )
+
+        process = core.RunningProcessRef(resolved_pid)
+        self.processes[profile_id] = process
         try:
             registry.claim(
-                int(process.pid), profile_id, account_key, account_name
+                resolved_pid, profile_id, account_key, account_name
             )
         except Exception:
             try:
@@ -581,7 +634,7 @@ def install_client_ownership_integration(app_cls, core) -> None:
                 pass
             self.processes.pop(profile_id, None)
             raise
-        schedule_title(self, profile_id, int(process.pid))
+        schedule_title(self, profile_id, resolved_pid)
         return result
 
     def ownership_stop_selected(self, *args, **kwargs):
