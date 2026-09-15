@@ -241,3 +241,13 @@ DO_NOT_TOUCH: components/workspace/**, KVTM_WORKSPACE_CONTROL.bat
 - Treo bán: không còn chặn giao dịch chỉ vì template `sl10` không xuất hiện. VP vẫn phải khớp fingerprint của giao dịch mua đã xác minh, không đổi giá và phải có thay đổi màn hình sau click đặt bán.
 - Scheduler: tối đa hai profile Dọn quầy độc lập cùng lúc. Cùng một profile vẫn độc quyền với AUTO chính/Dọn quầy; tài khoản thứ ba tiếp tục giữ hạn và chờ slot.
 - Trạng thái: năm file Python liên quan đã `py_compile` PASS. Chưa gọi LIVE PASS cho bốn hành vi trên; cần build Windows và chạy thực tế.
+
+## 2026-09-15 — Sửa nhịp kéo view bỏ sót mua sau 8 ô đầu
+
+- Live report: nhà bạn đầu mua đúng 8 ô view đầu nhưng không mua các view sau; nhà thứ hai mua view sau không ổn định.
+- Root cause trong Dọn quầy độc lập: `next_view()` chờ render đủ `0.55s` ngay giữa hai swipe ngắn, cho phép ClientJS snap/căn lại trước pulse thứ hai. View sau vì vậy có thể dừng lệch các tâm quét/click cố định.
+- Sửa hẹp: giữ đúng 2 swipe, `0.35s/swipe`, cùng tọa độ/hướng hiện hành; gửi cả hai swipe liên tiếp và chỉ settle `0.55s` một lần sau pulse thứ hai. `previous_view()` dùng cùng contract để rewind đối xứng.
+- Không đổi danh sách VP, fingerprint, xác minh listing biến mất, batch x10, AUTO MULTI DEV hoặc recovery.
+- Verifier khóa một settle duy nhất sau swipe cuối cho cả tiến và lùi.
+- AST và static order check: PASS. Windows build/LIVE: PENDING.
+
