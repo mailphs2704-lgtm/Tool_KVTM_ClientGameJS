@@ -13,10 +13,12 @@ __all__ = [
     "FunctionThreeStepThreeResult",
     "FunctionThreeStepFourResult",
     "FunctionThreeStepFiveResult",
+    "FunctionThreeStepSixResult",
     "FunctionThreeStepsOneTwoResult",
     "FunctionThreeStepsOneTwoThreeResult",
     "FunctionThreeStepsOneTwoThreeFourResult",
     "FunctionThreeStepsOneTwoThreeFourFiveResult",
+    "FunctionThreeStepsOneTwoThreeFourFiveSixResult",
     "FunctionThreeWorkflow",
 ]
 
@@ -90,6 +92,22 @@ class FunctionThreeStepFiveResult:
     snow_floor_6_planted: int
     snow_harvested: int
     iced_teas: int
+    progress_steps: int
+    total_steps: int
+    end_floor: int
+    elapsed_seconds: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class FunctionThreeStepSixResult:
+    profile_id: str
+    roses_floor_1_planted: int
+    roses_floor_6_planted: int
+    roses_harvested: int
+    rose_waters: int
     progress_steps: int
     total_steps: int
     end_floor: int
@@ -195,10 +213,44 @@ class FunctionThreeStepsOneTwoThreeFourFiveResult:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class FunctionThreeStepsOneTwoThreeFourFiveSixResult:
+    profile_id: str
+    apples_floor_1_to_5: int
+    apples_floor_6: int
+    dried_teas: int
+    harvested_teas: int
+    planted_teas: int
+    apple_juices: int
+    harvested_tea_bottom_row: int
+    planted_tea_bottom_row: int
+    cotton_planted: int
+    yellow_fabrics: int
+    roses_floor_1_planted: int
+    roses_floor_6_planted: int
+    roses_harvested: int
+    rose_oils: int
+    snow_floor_1_planted: int
+    snow_floor_6_planted: int
+    snow_harvested: int
+    iced_teas: int
+    final_roses_floor_1_planted: int
+    final_roses_floor_6_planted: int
+    final_roses_harvested: int
+    rose_waters: int
+    progress_steps: int
+    total_steps: int
+    end_floor: int
+    elapsed_seconds: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 class FunctionThreeWorkflow:
     """Function 3 owner with one shared RecipeBook and RecoveryManager."""
 
-    TOTAL_DEFINED_STEPS = 5
+    TOTAL_DEFINED_STEPS = 6
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
@@ -213,6 +265,7 @@ class FunctionThreeWorkflow:
         self.step_three = self.recipes.dried_tea_step_three
         self.step_four = self.recipes.dried_tea_step_four
         self.step_five = self.recipes.dried_tea_step_five
+        self.step_six = self.recipes.dried_tea_step_six
         if self.step_one is None:
             raise RuntimeError("Function 3 RecipeBook thiếu DriedTeaStepOneRecipe")
         if self.step_two is None:
@@ -223,6 +276,8 @@ class FunctionThreeWorkflow:
             raise RuntimeError("Function 3 RecipeBook thiếu DriedTeaStepFourRecipe")
         if self.step_five is None:
             raise RuntimeError("Function 3 RecipeBook thiếu DriedTeaStepFiveRecipe")
+        if self.step_six is None:
+            raise RuntimeError("Function 3 RecipeBook thiếu DriedTeaStepSixRecipe")
 
     def run_step_1(self) -> FunctionThreeStepOneResult:
         started = time.monotonic()
@@ -297,6 +352,21 @@ class FunctionThreeWorkflow:
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
 
+    def run_step_6_from_floor_1(self) -> FunctionThreeStepSixResult:
+        started = time.monotonic()
+        result = self.step_six.run_from_floor_1()
+        return FunctionThreeStepSixResult(
+            profile_id=self.context.profile_id,
+            roses_floor_1_planted=int(result.roses_floor_1_planted),
+            roses_floor_6_planted=int(result.roses_floor_6_planted),
+            roses_harvested=int(result.roses_harvested),
+            rose_waters=int(result.rose_waters),
+            progress_steps=6,
+            total_steps=self.TOTAL_DEFINED_STEPS,
+            end_floor=0,
+            elapsed_seconds=round(time.monotonic() - started, 3),
+        )
+
     def run_steps_1_and_2(self) -> FunctionThreeStepsOneTwoResult:
         started = time.monotonic()
         step_one = self.step_one.run_from_main()
@@ -315,14 +385,15 @@ class FunctionThreeWorkflow:
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
 
-    def run_steps_1_2_3_4_and_5(self) -> FunctionThreeStepsOneTwoThreeFourFiveResult:
+    def run_steps_1_2_3_4_5_and_6(self) -> FunctionThreeStepsOneTwoThreeFourFiveSixResult:
         started = time.monotonic()
         step_one = self.step_one.run_from_main()
         step_two = self.step_two.run_from_floor_1()
         step_three = self.step_three.run_from_floor_2()
         step_four = self.step_four.run_from_floor_1()
         step_five = self.step_five.run_from_floor_1()
-        return FunctionThreeStepsOneTwoThreeFourFiveResult(
+        step_six = self.step_six.run_from_floor_1()
+        return FunctionThreeStepsOneTwoThreeFourFiveSixResult(
             profile_id=self.context.profile_id,
             apples_floor_1_to_5=int(step_one.replanted_five_floors),
             apples_floor_6=int(step_one.replanted_floor_6),
@@ -342,22 +413,30 @@ class FunctionThreeWorkflow:
             snow_floor_6_planted=int(step_five.snow_floor_6_planted),
             snow_harvested=int(step_five.snow_harvested),
             iced_teas=int(step_five.iced_teas),
-            progress_steps=5,
+            final_roses_floor_1_planted=int(step_six.roses_floor_1_planted),
+            final_roses_floor_6_planted=int(step_six.roses_floor_6_planted),
+            final_roses_harvested=int(step_six.roses_harvested),
+            rose_waters=int(step_six.rose_waters),
+            progress_steps=6,
             total_steps=self.TOTAL_DEFINED_STEPS,
-            end_floor=1,
+            end_floor=0,
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
 
-    def run_steps_1_2_3_and_4(self) -> FunctionThreeStepsOneTwoThreeFourFiveResult:
-        """Compatibility DEV gate: historical name now runs Step 1→2→3→4→5."""
-        return self.run_steps_1_2_3_4_and_5()
+    def run_steps_1_2_3_4_and_5(self) -> FunctionThreeStepsOneTwoThreeFourFiveSixResult:
+        """Compatibility DEV gate: historical name now runs Step 1→2→3→4→5→6."""
+        return self.run_steps_1_2_3_4_5_and_6()
 
-    def run_steps_1_2_and_3(self) -> FunctionThreeStepsOneTwoThreeFourFiveResult:
-        """Compatibility DEV gate: historical name now runs Step 1→2→3→4→5."""
-        return self.run_steps_1_2_3_4_and_5()
+    def run_steps_1_2_3_and_4(self) -> FunctionThreeStepsOneTwoThreeFourFiveSixResult:
+        """Compatibility DEV gate: historical name now runs Step 1→2→3→4→5→6."""
+        return self.run_steps_1_2_3_4_5_and_6()
+
+    def run_steps_1_2_and_3(self) -> FunctionThreeStepsOneTwoThreeFourFiveSixResult:
+        """Compatibility DEV gate: historical name now runs Step 1→2→3→4→5→6."""
+        return self.run_steps_1_2_3_4_5_and_6()
 
     def run(self):
         raise RuntimeError(
-            "Function 3 chưa được nối vào AUTO chính: Step 1-5 đã được định nghĩa; "
-            "chờ operator mô tả phần tiếp theo"
+            "Function 3 đã định nghĩa đủ Step 1-6 nhưng Step 6 chưa có live PASS; "
+            "chưa nối vào AUTO chính trước operator runtime gate"
         )
