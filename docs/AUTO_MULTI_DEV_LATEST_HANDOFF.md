@@ -3,7 +3,7 @@
 Cập nhật: 2026-09-15
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
-Trạng thái: **COMPACT OPERATOR UI + 3-TAB LOG SOURCE COMPLETE — BUILD/LIVE PENDING**
+Trạng thái: **SECOND-PASS OPERATOR UI REFINEMENT SOURCE COMPLETE — BUILD/LIVE PENDING**
 
 > Build/static PASS không thay cho live/runtime evidence. Không gọi runtime PASS khi chưa có operator evidence.
 
@@ -15,6 +15,7 @@ Trạng thái: **COMPACT OPERATOR UI + 3-TAB LOG SOURCE COMPLETE — BUILD/LIVE 
 4. `docs/AUTO_FUNCTION_3_STEP_4_CHECKPOINT_20260915.md`
 5. `docs/AUTO_OPERATIONS_LOG_RECOVERY_CHECKPOINT_20260915.md`
 6. `docs/AUTO_MULTI_DEV_UI_LOG_CHECKPOINT_20260915.md`
+7. `docs/AUTO_MULTI_DEV_UI_REFINEMENT_CHECKPOINT_20260915.md`
 
 Tài liệu cũ mâu thuẫn với source/checkpoint mới nhất chỉ là lịch sử.
 
@@ -28,6 +29,8 @@ D:\Tool_KVTM_Multi_DEV\KVTM_DEV_CONTROL.bat
 ```
 
 Không thay bằng manual pull/build trừ recovery chẩn đoán được operator yêu cầu. `dist/KVTM-ClientJS-Suite-Multi-DEV` là output generated, không phải source.
+
+Build gần nhất tại HEAD `a52a415...` đã chạy tới clear-stall verifier rồi dừng vì verifier cũ còn khóa `main_log_viewer.py` phải có nền console `#202020`. Source Log mới là light 3-tab nên assertion đó đã được migrate sang contract mới tại `tools/verify_clear_stall_contract_build.py`; chưa có build evidence sau fix/refinement mới.
 
 ## 3. Kiến trúc chuẩn
 
@@ -162,32 +165,58 @@ ghi error journal
 
 Global recovery tự retry nếu chính recovery gặp lỗi. `AutomationStopped` và `ClientRestartRequested` là control/lifecycle signal, không phải lỗi.
 
-## 10. NEW — compact AUTO MULTI DEV UI
+## 10. Compact AUTO MULTI DEV UI
 
-Source checkpoint: `docs/AUTO_MULTI_DEV_UI_LOG_CHECKPOINT_20260915.md`.
-
-UI mới giữ logic cũ nhưng đổi mặt vận hành:
+Base compact UI vẫn giữ logic:
 
 ```text
-CHỨC NĂNG | TÀI KHOẢN ÁP DỤNG | TRẠNG THÁI
-
-+ Mở rương   + Thăm bạn
-
-▶ Bắt đầu   ■ Dừng   Cấu hình   ≡ Log
+CHỨC NĂNG
+Mở rương / Thăm bạn
+Bắt đầu / Dừng / Cấu hình / Log
 ```
 
-- bỏ nút `Test Function 3 - Step 1` khỏi UI;
-- `Mở rương hải tặc` đổi nhãn operator thành `Mở rương`;
-- friend refresh đổi nhãn operator thành `Thăm bạn`;
-- `Cấu hình tốc độ` đổi thành `Cấu hình`;
-- `Vòng lặp` + `Thời gian chờ` chuyển vào dialog Cấu hình;
-- dialog dùng Entry nhập trực tiếp, không dùng spinner arrows;
-- scheduler widget cũ chỉ ẩn, không hủy, để giữ profile persistence contract;
-- optional feature Mở rương được install thật và snapshot per-profile vào worker config.
+- nút test Function 3 đã bị ẩn khỏi UI;
+- `Mở rương` giữ optional feature per-profile;
+- `Thăm bạn` giữ friend-refresh per-profile;
+- `Cấu hình` chứa tốc độ + Vòng lặp + Thời gian chờ bằng Entry;
+- scheduler widget cũ bị ẩn chứ không hủy để giữ persistence.
 
-## 11. NEW — một cửa sổ Log, ba tab
+## 11. NEW — second-pass UI refinement
 
-Một nút `≡ Log` mở cửa sổ theo phong cách Log Dọn quầy:
+Checkpoint: `docs/AUTO_MULTI_DEV_UI_REFINEMENT_CHECKPOINT_20260915.md`.
+
+Operator live review yêu cầu:
+
+```text
+CHỨC NĂNG (rộng hơn) | TRẠNG THÁI
+```
+
+Thay đổi source:
+
+- bỏ cột `TÀI KHOẢN ÁP DỤNG` khỏi mặt AUTO MULTI DEV;
+- nới rộng Menubutton Function để tên dài như `9 Nước hoa hồng - 9 Trà đá - 9 Vải vàng` không bị che bất hợp lý;
+- tạo status operator riêng chỉ có `Đang chạy` / `Đã dừng`;
+- diagnostics dài của `auto_multi_dev_status` vẫn tồn tại nội bộ nhưng không còn là text hiển thị ở ô trạng thái operator;
+- lifecycle start/stop/finish sync status từ worker/thread thực tế;
+- giữ nguyên hidden scheduler parents để không phá profile persistence.
+
+Source mới:
+
+```text
+source-archive/multi-current/kvtm_multi_tool/auto_multi_dev_ui_refinement.py
+```
+
+Install order:
+
+```text
+optional features
+→ compact UI
+→ UI refinement
+```
+
+## 12. Log window hiện hành
+
+Một nút `Log` mở đúng ba tab:
 
 ```text
 Log hành động | Log chi tiết | Log lỗi
@@ -196,39 +225,40 @@ Log hành động | Log chi tiết | Log lỗi
 - Log hành động = bảng `THỜI GIAN / TÀI KHOẢN / HÀNH ĐỘNG`;
 - Log chi tiết = live text;
 - Log lỗi = live text persistent;
-- `⇩ Xuất lỗi TXT` nằm trong tab Log lỗi;
-- refresh mỗi 1 giây.
+- `Xuất lỗi TXT` nằm trong tab Log lỗi;
+- refresh mỗi 1 giây;
+- initial geometry được center/clamp bên trong cửa sổ Multi;
+- sau khi mở operator vẫn kéo cửa sổ ra ngoài được;
+- Treeview tăng rowheight và text viewer có vertical spacing để từng dòng dễ phân biệt.
 
-Source:
+Cửa sổ `Cấu hình` cũng initial-place bên trong Multi và vẫn kéo tự do sau đó.
 
-```text
-source-archive/multi-current/kvtm_multi_tool/main_log_viewer.py
-source-archive/multi-current/kvtm_multi_tool/auto_multi_dev_ui_integration.py
-source-archive/multi-current/kvtm_multi_tool/auto_error_log_integration.py
-```
-
-## 12. Source milestone gần nhất
+## 13. Source milestones gần nhất
 
 ```text
-3a4b623d  feat(ui): add combined three-tab auto log viewer
-cc5479c2  feat(ui): compact auto multi dev controls and logs
-16646674  refactor(ui): fold error export into combined auto log
-18949a4c  docs(auto): checkpoint compact multi dev UI and log tabs
+295e0961  test(auto): migrate clear-stall log viewer contract
+cf59b128  refactor(ui): refine multi dev operator layout
+6632157f  refactor(ui): install final multi dev refinement
+2002b0dc  refactor(ui): fit log windows and improve row spacing
+cf8ffada  fix(ui): preserve hidden scheduler widgets
+b44efd23  docs(auto): checkpoint second-pass UI refinement
 ```
 
-## 13. NEXT GATE
+## 14. NEXT GATE
 
 Chạy `[1]` bằng `KVTM_DEV_CONTROL.bat`.
 
 Sau build sạch, live-check:
 
-1. Không còn nút test Function 3.
-2. Header Chức năng/Tài khoản áp dụng/Trạng thái hiển thị đúng.
-3. Mở rương + Thăm bạn nằm cạnh nhau và toggle đúng per-profile.
-4. Cấu hình có tốc độ + Vòng lặp + Thời gian chờ; nhập trực tiếp không spinner.
-5. Một nút Log mở đúng ba tab; export TXT nằm trong Log lỗi.
-6. Function 3 completion exact MAIN và scheduler tiếp tục vòng mới.
-7. Log hành động chỉ còn milestone ngắn; Log chi tiết đầy đủ.
-8. Daily counters/error recovery vẫn hoạt động.
+1. Function 3 tên dài hiển thị đủ/không còn bị che bất hợp lý.
+2. Không còn cột Tài khoản áp dụng.
+3. Status ban đầu/đã dừng chỉ là `Đã dừng`.
+4. Khi AUTO đang chạy status chỉ là `Đang chạy`.
+5. Khi worker đã dừng status trở lại `Đã dừng`.
+6. Mở rương + Thăm bạn vẫn toggle đúng per-profile.
+7. Cấu hình vẫn lưu đúng tốc độ/Vòng lặp/Thời gian chờ.
+8. Log/Cấu hình mở lần đầu nằm gọn trong Multi và vẫn kéo ra ngoài được.
+9. Khoảng cách dòng Log rõ ràng hơn.
+10. Function 3 completion exact MAIN, daily counter và recovery không regression.
 
 **Chưa gọi BUILD/STATIC PASS hoặc RUNTIME PASS trước evidence tương ứng.**
