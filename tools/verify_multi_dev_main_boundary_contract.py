@@ -110,7 +110,20 @@ def main() -> int:
     require(farm_routes, "self.context.observe_camera_down_boundary(", "goDown boundary observer is not wired")
     require(farm_routes, "if exact and not was_exact:", "Boundary PASS transition guard missing")
     require(farm_routes, 'mark_camera_exact_main(\n            "floor2-to-main 1+3 deterministic route"', "Floor2→main deterministic proof missing")
-    require(farm_routes, '"floor3-to-main-via-down-floor deterministic route"', "Floor3→main deterministic proof missing")
+
+    # Known upper floors now share one deterministic goDown(1)+XUỐNG route.
+    # The live Step-3 regression showed that template-only proof could miss the
+    # bottom button, so the shared route must retain the operator-point fallback
+    # and require visible frame response before marking exact MAIN.
+    require(farm_routes, "def known_upper_floor_to_main_via_down_floor", "Shared upper-floor→MAIN route missing")
+    require(farm_routes, "DOWN_FLOOR_POINT = (497, 978)", "Operator down-floor fallback point changed")
+    require(farm_routes, 'f"{label} via goDown(1)+down-floor deterministic route"', "Shared upper-floor deterministic proof missing")
+    require(farm_routes, "fallback operator point=", "Down-floor template-miss fallback audit missing")
+    require(farm_routes, "self.vision.driver.click(*self.DOWN_FLOOR_POINT)", "Down-floor fixed fallback click missing")
+    require(farm_routes, "if click_change < self.MIN_CHANGE:", "Down-floor fallback response guard missing")
+    require(farm_routes, 'known_upper_floor_to_main_via_down_floor(\n            "tầng 3 → MAIN"', "Floor3→MAIN does not use shared down-floor route")
+    require(farm_routes, 'known_upper_floor_to_main_via_down_floor(\n            "tầng 5 → MAIN"', "Floor5→MAIN does not use shared down-floor route")
+    require(farm_routes, 'known_upper_floor_to_main_via_down_floor(\n            "tầng 6 → MAIN"', "Floor6→MAIN does not use shared down-floor route")
 
     # Sale consumes an exact-main handoff from Startup/Function boundary. It must
     # not manufacture exact-main by sending hidden goDown gestures. Own-stall entry
@@ -220,6 +233,7 @@ def main() -> int:
     print("navigation_owner=floor_navigation+farm_routes")
     print("function_navigation=compatibility-wrappers-only")
     print("unknown_camera=bounded_godown_until_two_low_change_frames")
+    print("known_upper_floor=shared-godown1+down-button-template-or-operator-point+frame-response")
     print("sale_entry=caller-exact-main->fixed-own-stall-point->quay_hang_on")
     print("sale_hidden_navigation=forbidden")
     print("sale_dialog=native500:dat_ban|orange;native1000:dat_ban-strict")
