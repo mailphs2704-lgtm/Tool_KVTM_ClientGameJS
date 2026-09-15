@@ -6,6 +6,7 @@ from typing import Any
 from ...automation import KVAutomation
 from ..auto_function_one import FunctionOneWorkflow
 from ..auto_function_two import FunctionTwoWorkflow
+from ..auto_function_three import FunctionThreeWorkflow
 from ..auto_vp_sale import AutoVpSaleWorkflow
 from ..game_session import GameSessionWorkflow
 from .catalog import get_function_spec
@@ -88,6 +89,8 @@ class FunctionModule:
             result = FunctionOneWorkflow(self.auto).run()
         elif spec.runner_key == "function_2":
             result = FunctionTwoWorkflow(self.auto).run()
+        elif spec.runner_key == "function_3":
+            result = FunctionThreeWorkflow(self.auto).run()
         else:
             raise ValueError(f"Thiếu runner cho {spec.function_id}")
         self.auto.context.stage(f"builder-function-{spec.function_id}-finished")
