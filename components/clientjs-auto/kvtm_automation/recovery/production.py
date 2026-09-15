@@ -103,6 +103,7 @@ class ProductionRecovery:
                     "dừng để tránh lặp điều hướng vô hạn"
                 ) from exc
 
+            self.context.action("Lỗi sai máy/sai tầng, chuyển trạng thái xử lí")
             self.context.stage("auto-production-wrong-machine-recovery")
             self.context.log(
                 f"AUTO {label} • sai máy/sai tầng • recovery="
@@ -139,6 +140,7 @@ class ProductionRecovery:
                     },
                 )
             )
+            self.context.action("Lỗi đầy kho, chuyển trạng thái xử lí")
             self.context.stage("auto-production-warehouse-full-recovery")
             self.context.log(
                 f"AUTO kho đầy • {label} • recovery={warehouse_recovery_round} • "
@@ -189,6 +191,7 @@ class ProductionRecovery:
 
             self.navigation.ensure_main(f"{label}: sau bán VP recovery")
             self.navigation.from_main_to_floor(work_floor, label)
+            self.context.action("Đã xử lí đầy kho, quay lại bước sản xuất")
 
         return self.executor.run(
             module_id=f"production:{work_floor}:{label}",
