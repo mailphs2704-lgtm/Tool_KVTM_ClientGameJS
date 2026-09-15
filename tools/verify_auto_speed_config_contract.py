@@ -18,6 +18,8 @@ DEV_ENTRY_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi
 AUTO_MULTI_WORKER_PATH = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 GUI_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 INTEGRATION_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py"
+STALL_SPEED_INTEGRATION_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/stall_speed_integration.py"
+CLEAR_STALL_PROBE_PATH = ROOT / "components/clientjs-auto/worker/clear_stall_probe_runtime.py"
 
 
 def require(text: str, needle: str, message: str) -> None:
@@ -70,6 +72,8 @@ def main() -> int:
     worker = check_python(AUTO_MULTI_WORKER_PATH)
     gui = check_python(GUI_PATH)
     integration = check_python(INTEGRATION_PATH)
+    stall_speed_integration = check_python(STALL_SPEED_INTEGRATION_PATH)
+    clear_stall_probe = check_python(CLEAR_STALL_PROBE_PATH)
 
     keys = (
         "floor_swipe_duration",
@@ -97,6 +101,41 @@ def main() -> int:
     require(worker, "Tốc độ MULTI DEV |", "Worker speed audit log missing")
     require(worker, "thu VP={speed.vp_collect_delay:.3f}s", "Worker VP collect speed audit missing")
     require(dev, '"--speed-json"', "GUI speed JSON handoff missing")
+    require(
+        stall_speed_integration,
+        '"clear_stall_drag_speed", 0.35',
+        "Clear-stall drag speed default missing",
+    )
+    require(
+        stall_speed_integration,
+        '"Kéo quầy Dọn quầy (giây/swipe)"',
+        "Clear-stall drag speed GUI label missing",
+    )
+    require(
+        dev,
+        'self._collect_auto_tuning().get("clear_stall_drag_speed", 0.35)',
+        "Per-profile clear-stall drag speed snapshot missing",
+    )
+    require(
+        dev,
+        "clear_stall_drag_speed=float(clear_stall_drag_speed)",
+        "Resident clear-stall drag speed handoff missing",
+    )
+    require(
+        clear_stall_probe,
+        "clear_stall_drag_speed: float = 0.35",
+        "Clear-stall runtime speed field missing",
+    )
+    require(
+        clear_stall_probe,
+        "swipe_duration=clear_stall_drag_speed",
+        "Clear-stall drag speed is not applied to the runtime policy",
+    )
+    require(
+        clear_stall_probe,
+        "2 swipe liên tiếp",
+        "Clear-stall two-swipe audit log missing",
+    )
     require(floor, "duration=self.speed_config.plant_harvest_duration", "Navigation primitive speed binding missing")
     require(planting, "duration=self.speed_config.plant_harvest_duration", "Plant/harvest speed not applied")
     require(apple_supply, "self.speed_config.crop_check_interval", "Crop check interval not applied")
@@ -227,6 +266,7 @@ def main() -> int:
     print("panel_speed_wiring=format-insensitive")
     print("floor6_empty_planting=format-insensitive")
     print("crop_check_interval=independent")
+    print("clear_stall_drag_speed=per-profile+resident-runtime+two-swipes")
     return 0
 
 
