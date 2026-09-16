@@ -522,6 +522,7 @@ def main() -> int:
         from auto_main_profile_settings import install_auto_main_profile_settings
         from client_video_recorder import install_client_video_recorder
         from daily_sale_counter_integration import install_daily_sale_counter_integration
+        from runtime_diagnostic_logger import start_runtime_diagnostic
 
         # Multi DEV is unattended-capable: error dialogs must never block all
         # running clones. Callers still update note/status and every worker error
@@ -564,6 +565,16 @@ def main() -> int:
 
         _configure_dpi()
         app = kvtm_multi_dev_entry.MultiDevApp()
+        diagnostic_process = start_runtime_diagnostic(
+            kvtm_multi_dev_entry.core.APP_DIR,
+            str(kvtm_multi_dev_entry.core.APP_NAME),
+        )
+        print(
+            "[KVTM DEV] Runtime diagnostic READY • "
+            f"pid={getattr(diagnostic_process, 'pid', 0)} • "
+            "diagnostics/runtime-diagnostic-current.jsonl",
+            flush=True,
+        )
         app.mainloop()
         return 0
     except Exception as exc:
