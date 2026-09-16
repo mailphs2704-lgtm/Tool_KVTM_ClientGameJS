@@ -638,3 +638,12 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Runtime override duy nhất `ClearStallRuntimePolicy.swipe_duration`; giữ invariant hai swipe liên tiếp và settle `0.55s`.
 - Hai verifier speed/clear-stall khóa UI, profile handoff và runtime binding.
 - Source/static verification PASS; Windows build/LIVE PENDING.
+
+
+## 2026-09-16 — Logger chẩn đoán chạy kèm Multi DEV/Cry
+
+- Thêm sidecar `runtime_diagnostic_logger.py`, tự khởi động từ resident host cho cả DEV và Stable Cry, tự thoát khi Multi kết thúc.
+- Một log hiện hành: `%APPDATA%\\<product>\\diagnostics\\runtime-diagnostic-current.jsonl`; `LATEST.txt` chỉ tới log. Giới hạn 8 MB và xoay một bản `-previous`.
+- Cứ 2 giây kiểm tra độc lập; ghi heartbeat 10 giây/lần hoặc ngay khi đổi trạng thái. Thu thập Multi responding/hung, CPU delta, working/private memory, handles, số ClientJS alive/not-responding, tổng RAM ClientJS, dung lượng đĩa và độ trễ sampler.
+- Sidecar chạy `BELOW_NORMAL_PRIORITY_CLASS`; dùng WinAPI pointer-safe. Không đọc command line, nội dung profile/settings, token, cookie hay secret; không điều khiển Multi/ClientJS.
+- Build PS5.1 chạy `verify_runtime_diagnostic_contract.py`. Source/static review PASS; Windows LIVE PENDING.
