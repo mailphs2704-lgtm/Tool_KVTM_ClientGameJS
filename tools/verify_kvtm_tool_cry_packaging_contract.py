@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CRY = ROOT / "packaging" / "kvtm-tool-cry"
 BUILD = CRY / "BUILD_KVTM_TOOL_CRY_RELEASE.ps1"
+SUITE_BUILD = ROOT / "packaging" / "suite-v0.15" / "BUILD_FULL_PACKAGE.ps1"
 VERSION = CRY / "VERSION"
 LAUNCHER_CS = CRY / "Kvtm_tool_Cry_Launcher.cs"
 UPDATER_CS = CRY / "Kvtm_tool_Cry_Updater.cs"
@@ -57,6 +58,7 @@ def main() -> int:
         raise AssertionError(f"Stable VERSION must be numeric dotted version: {version!r}")
 
     build = text(BUILD)
+    suite_build = text(SUITE_BUILD)
     launcher_cs = text(LAUNCHER_CS)
     updater_cs = text(UPDATER_CS)
     launch = text(LAUNCH)
@@ -212,10 +214,10 @@ def main() -> int:
     forbid(uploaded_launcher, "clientjs_auto_patch", "Uploaded AUTO PRO imports old behavior patch")
     forbid(uploaded_offline_api, "requests", "Offline API contains HTTP client")
     forbid(uploaded_offline_api, "sqlite", "Offline API records local tracking data")
-    require(build, '$OriginalAutoOut = Join-Path $OutputRoot "AUTO_PRO_ORIGINAL"', "Clean original runtime is not packaged")
-    require(build, '@("runtime", "_internal", "assets")', "Clean original payload allowlist changed")
-    require(build, '"clientjs_auto_patch.py"', "Clean original forbidden-sidecar gate missing")
-    require(build, '"platform-tools"', "Clean original ADB exclusion gate missing")
+    require(suite_build, '$OriginalAutoOut = Join-Path $OutputRoot "AUTO_PRO_ORIGINAL"', "Clean original runtime is not packaged")
+    require(suite_build, '@("runtime", "_internal", "assets")', "Clean original payload allowlist changed")
+    require(suite_build, '"clientjs_auto_patch.py"', "Clean original forbidden-sidecar gate missing")
+    require(suite_build, '"platform-tools"', "Clean original ADB exclusion gate missing")
     require(build, '"AUTO_PRO_ORIGINAL\\cry_original_launcher.py"', "Stable release does not require clean launcher")
     require(build, '@("AUTO_PRO", "AUTO_PRO_ORIGINAL", "Multi", "components")', "Stable release omits clean original runtime")
     for required in (
