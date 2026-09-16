@@ -495,6 +495,21 @@ def main() -> int:
     if not isinstance(requested_tuning, dict):
         emit("worker_error", error="Tuning JSON phải là object")
         return 2
+    # The shared Multi settings object also carries speed keys owned by the
+    # clean AUTO MULTI DEV and standalone Dọn quầy runtimes.  They are valid
+    # settings, but recovered AUTO PRO has no matching attributes.  Ignore only
+    # this explicit compatibility set; every genuinely unknown key still fails
+    # closed below.
+    foreign_tuning_keys = {
+        "floor_swipe_duration",
+        "plant_harvest_duration",
+        "vp_collect_delay",
+        "vp_production_delay",
+        "crop_check_interval",
+        "clear_stall_drag_speed",
+    }
+    for key in foreign_tuning_keys:
+        requested_tuning.pop(key, None)
     unknown_tuning = set(requested_tuning) - set(tuning_defaults)
     if unknown_tuning:
         emit("worker_error", error=f"Thông số tốc độ không hỗ trợ: {sorted(unknown_tuning)}")
@@ -725,6 +740,9 @@ def main() -> int:
             if not isinstance(requested_update, dict):
                 emit("tuning_error", error="Tuning cập nhật phải là object")
                 continue
+            requested_update = dict(requested_update)
+            for key in foreign_tuning_keys:
+                requested_update.pop(key, None)
             unknown_update = set(requested_update) - set(tuning_defaults)
             if unknown_update:
                 emit(
