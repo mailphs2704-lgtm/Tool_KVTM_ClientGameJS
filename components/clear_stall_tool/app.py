@@ -30,7 +30,7 @@ class AccountRecord:
 
 class ClearStallToolApp:
     PAGE_SIZE = 8
-    COLS = ((38, 0), (38, 0), (170, 2), (125, 1), (135, 1), (138, 1), (95, 0), (92, 0), (118, 0))
+    COLS = ((38, 0), (38, 0), (170, 2), (125, 1), (135, 1), (138, 1), (95, 0), (92, 0), (158, 0))
 
     def __init__(self, root: tk.Tk, accounts: Iterable[AccountRecord] = ()) -> None:
         self.root = root; self.accounts = list(accounts); self.page = 0; self.default_cycle = 30
@@ -39,7 +39,7 @@ class ClearStallToolApp:
         self._setup(); self._build(); self.refresh()
 
     def _setup(self) -> None:
-        self.root.title("KVTM - Dọn Quầy"); self.root.geometry("1240x720"); self.root.minsize(1080, 650); self.root.configure(bg=BG)
+        self.root.title("KVTM - Dọn Quầy"); self.root.geometry("1280x720"); self.root.minsize(1120, 650); self.root.configure(bg=BG)
         try: self.root.option_add("*Font", "{Segoe UI} 9")
         except tk.TclError: pass
         style = ttk.Style(self.root)
@@ -129,6 +129,7 @@ class ClearStallToolApp:
             self._mini(log_cell, "Log", BLUE, lambda i=a.account_id: self.show_log(i), 6).pack()
             acts = tk.Frame(row, bg=SURFACE); acts.grid(row=0, column=8, padx=6)
             self._mini(acts, "▶", BLUE, lambda i=a.account_id: self.set_status(i, "running")).pack(side="left", padx=2)
+            self._mini(acts, "＋", GREEN, lambda i=a.account_id: self.enqueue_account(i)).pack(side="left", padx=2)
             self._mini(acts, "■", RED, lambda i=a.account_id: self.set_status(i, "stopped")).pack(side="left", padx=2)
             self._mini(acts, "•••", MUTED, lambda i=a.account_id: self.details(i), 4).pack(side="left", padx=2)
             tk.Frame(row, bg=BORDER, height=1).grid(row=1, column=0, columnspan=9, sticky="ew")
@@ -157,6 +158,9 @@ class ClearStallToolApp:
 
     def set_status(self, account_id: str, status: str) -> None:
         self.accounts = [replace(a, status=status) if a.account_id == account_id else a for a in self.accounts]; self.refresh()
+
+    def enqueue_account(self, account_id: str) -> None:
+        self.set_status(account_id, "running")
 
     def start_all(self) -> None: self.accounts = [replace(a, status="running") for a in self.accounts]; self.refresh()
     def stop_all(self) -> None: self.accounts = [replace(a, status="stopped") for a in self.accounts]; self.refresh()
