@@ -295,6 +295,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "AUTO MULTI DEV main-boundary contract: VERIFIED" -ForegroundColor Green
 
+$RuntimeDiagnosticVerifier = Join-Path $RepoRoot "tools\verify_runtime_diagnostic_contract.py"
+if (-not (Test-Path -LiteralPath $RuntimeDiagnosticVerifier -PathType Leaf)) {
+    throw "Missing runtime diagnostic verifier: $RuntimeDiagnosticVerifier"
+}
+& py.exe -3.11 $RuntimeDiagnosticVerifier
+if ($LASTEXITCODE -ne 0) {
+    throw "Runtime diagnostic contract failed; exit=$LASTEXITCODE"
+}
+Write-Host "KVTM runtime diagnostic contract: VERIFIED" -ForegroundColor Green
+
 $VpAdvertisingVerifier = Join-Path $RepoRoot "tools\verify_auto_vp_advertising_contract.py"
 if (-not (Test-Path -LiteralPath $VpAdvertisingVerifier -PathType Leaf)) {
     throw "Missing VP advertising verifier: $VpAdvertisingVerifier"
