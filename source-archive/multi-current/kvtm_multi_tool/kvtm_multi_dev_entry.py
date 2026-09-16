@@ -577,6 +577,14 @@ class MultiDevApp(production.MultiApp):
             )
             return
         self.processes[profile_id] = core.RunningProcessRef(int(new_pid))
+        with self._bridge_lock:
+            # EngineDriver emits the PID only after its V3 bridge is READY.
+            self._bridged_pids.discard(int(old_pid))
+            self._bridge_inflight_pids.discard(int(old_pid))
+            self._bridge_ready_after.pop(int(old_pid), None)
+            self._bridged_pids.add(int(new_pid))
+            self._bridge_inflight_pids.discard(int(new_pid))
+            self._bridge_ready_after.pop(int(new_pid), None)
         self.auto_multi_dev_status.set(
             f"AUTO MULTI DEV • ClientJS {old_pid} → {new_pid} • đang tiếp tục"
         )
