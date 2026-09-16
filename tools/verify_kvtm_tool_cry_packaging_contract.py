@@ -208,9 +208,16 @@ def main() -> int:
         "Uploaded AUTO PRO source identity is missing",
     )
     require(uploaded_launcher, "EngineDriver", "Uploaded AUTO PRO does not use Bridge V3 driver")
-    require(uploaded_launcher, 'DEVICE_PREFIX = "KVTMPROFILE:"', "Uploaded AUTO PRO device identity is not owner+profile based")
+    require(uploaded_launcher, 'DEVICE_PREFIX = "KVTMPROFILE__"', "Uploaded AUTO PRO device identity is not filename-safe")
+    require(uploaded_launcher, 'DEVICE_SEPARATOR = "__"', "Uploaded AUTO PRO owner/profile separator is not filename-safe")
     require(uploaded_launcher, 'owner not in {"CRY", "DEV"}', "Uploaded AUTO PRO does not discover both Cry and DEV")
-    require(uploaded_launcher, 'identity.split(":", 1)', "Uploaded AUTO PRO device identity omits owner/profile split")
+    require(uploaded_launcher, "identity.split(DEVICE_SEPARATOR, 1)", "Uploaded AUTO PRO device identity omits owner/profile split")
+    forbid(uploaded_launcher, 'DEVICE_PREFIX = "KVTMPROFILE:"', "Uploaded AUTO PRO device id contains Windows-invalid colon prefix")
+    require(
+        uploaded_launcher,
+        'device_id = f"{DEVICE_PREFIX}{owner}{DEVICE_SEPARATOR}{profile_id}"',
+        "Uploaded AUTO PRO device id is not built from safe owner/profile identity",
+    )
     require(uploaded_launcher, "DEV_PROFILE_FILE", "Uploaded AUTO PRO cannot resolve DEV profiles")
     require(
         uploaded_launcher,
