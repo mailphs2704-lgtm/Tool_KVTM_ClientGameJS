@@ -233,6 +233,71 @@ def _install_transient_capture_retry(auto_root: Path, emit) -> None:
     )
 
 
+def _install_stall_per_swipe_settle(runtime_root: Path, emit) -> None:
+    """Restore the proven stall cadence for standalone horizontal view changes.
+
+    A later shared-runtime change moved the render wait after both short swipe
+    pulses. Live standalone evidence then reached view 2+ with zero available
+    physical slots because ClientJS was captured before the slot grid had
+    snapped back onto the fixed 1000x1000 geometry. Keep shared business logic
+    untouched and restore the earlier cadence here: swipe -> settle -> swipe ->
+    settle -> scan. Reverse rewinds use the same cadence.
+    """
+    stall_module = importlib.import_module("kvtm_automation.actions.stall")
+    source = _module_path(stall_module)
+    component_root = (
+        Path(runtime_root).resolve() / "components" / "clientjs-auto"
+    )
+    if not _inside(source, component_root):
+        raise RuntimeError(
+            f"stall actions không được nạp từ runtime Multi DEV: {source}"
+        )
+
+    StallActions = getattr(stall_module, "StallActions")
+    current_next = StallActions.next_view
+    if getattr(current_next, "_kvtm_standalone_per_swipe_settle", False):
+        return
+
+    def next_view_with_per_swipe_settle(self) -> None:
+        for swipe_index in range(1, self.swipe_pulses + 1):
+            self.context.ensure_running()
+            self.vision.driver.swipe(
+                *self.swipe_start,
+                *self.swipe_end,
+                duration=self.swipe_duration,
+            )
+            self.context.log(
+                f"Kéo quầy • swipe {swipe_index}/{self.swipe_pulses} • "
+                f"settle từng swipe • duration={self.swipe_duration:.2f}s"
+            )
+            self.waiter.sleep(self.swipe_settle)
+
+    def previous_view_with_per_swipe_settle(self) -> None:
+        for swipe_index in range(1, self.swipe_pulses + 1):
+            self.context.ensure_running()
+            self.vision.driver.swipe(
+                *self.swipe_end,
+                *self.swipe_start,
+                duration=self.swipe_duration,
+            )
+            self.context.log(
+                f"Kéo quầy về • swipe {swipe_index}/{self.swipe_pulses} • "
+                f"settle từng swipe • duration={self.swipe_duration:.2f}s"
+            )
+            self.waiter.sleep(self.swipe_settle)
+
+    next_view_with_per_swipe_settle._kvtm_standalone_per_swipe_settle = True
+    previous_view_with_per_swipe_settle._kvtm_standalone_per_swipe_settle = True
+    StallActions.next_view = next_view_with_per_swipe_settle
+    StallActions.previous_view = previous_view_with_per_swipe_settle
+    emit(
+        "probe_boot",
+        stage="standalone-stall-per-swipe-settle-ready",
+        cadence="SWIPE_SETTLE_SWIPE_SETTLE_SCAN",
+        shared_business_logic_unchanged=True,
+    )
+
+
 def _bootstrap_standalone_image_runtime(auto_root: Path, emit) -> None:
     """Preload the packaged image stack without the unverified cv2-first route.
 
@@ -373,6 +438,7 @@ def main() -> int:
         _bootstrap_standalone_image_runtime(auto_root, emit)
         _install_capture3_same_request(auto_root, emit)
         _install_transient_capture_retry(auto_root, emit)
+        _install_stall_per_swipe_settle(runtime_root, emit)
     except Exception as exc:
         emit("probe_error", error=f"Standalone runtime bootstrap lỗi: {exc}")
         return 3
