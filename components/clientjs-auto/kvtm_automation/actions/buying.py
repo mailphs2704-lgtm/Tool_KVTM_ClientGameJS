@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import os
 from pathlib import Path
 
 from ..context import AutomationContext
@@ -48,14 +49,7 @@ class BuyingActions:
         self,
         observation: StallSlotObservation,
     ) -> tuple[tuple[int, int], float] | None:
-        """Relocate the exact VP image captured by scan and return its live center.
-
-        Purchase clicks must follow the image that was actually scanned, not a
-        hard-coded slot coordinate.  The scan template already contains the
-        listing's current visual fingerprint, so match that template again in
-        the friend-stall body immediately before the click.  If it cannot be
-        proven, do not fall back to the legacy fixed purchase point.
-        """
+        """Relocate the exact VP image captured by scan and return its live center."""
         import cv2
 
         template_path = Path(str(observation.fingerprint.template_file or ""))
@@ -106,37 +100,40 @@ class BuyingActions:
         on_unit: Callable[[int], None] | None = None,
         skip_unbuyable: bool = False,
     ) -> int:
-        """Click the same source listing until target is met or it disappears.
-
-        `on_unit` is called immediately after every verified click so the
-        workflow can atomically persist manifest/carryover state. A stop request
-        received after the click is honored only after that unit is accounted.
-        """
+        """Click the same source listing until target is met or it disappears."""
         target = max(0, int(maximum))
         bought = 0
+        image_center_mode = os.environ.get("KVTM_CLEAR_STALL_IMAGE_CENTER_BUY") == "1"
         while bought < target:
             self.context.ensure_running()
             if not self.listing_matches(observation):
                 break
 
-            relocated = self._scanned_image_center(observation)
-            if relocated is None:
-                if skip_unbuyable:
-                    self.context.log(
-                        "Bỏ qua VP ô vật lý "
-                        f"{observation.physical_slot}: không định vị lại được tâm ảnh scan; "
-                        "không click tọa độ cố định"
+            if image_center_mode:
+                relocated = self._scanned_image_center(observation)
+                if relocated is None:
+                    if skip_unbuyable:
+                        self.context.log(
+                            "Bỏ qua VP ô vật lý "
+                            f"{observation.physical_slot}: không định vị lại được tâm ảnh scan; "
+                            "không click tọa độ cố định"
+                        )
+                        return bought
+                    raise TransactionError(
+                        "Không định vị lại được tâm ảnh VP đã scan; không dùng tọa độ mua cố định"
                     )
-                    return bought
-                raise TransactionError(
-                    "Không định vị lại được tâm ảnh VP đã scan; không dùng tọa độ mua cố định"
+                click_center, scan_score = relocated
+                self.context.log(
+                    "Mua VP theo tâm ảnh scan • "
+                    f"ô vật lý {observation.physical_slot} • "
+                    f"center={click_center} • score={scan_score:.3f}"
                 )
-            click_center, scan_score = relocated
-            self.context.log(
-                "Mua VP theo tâm ảnh scan • "
-                f"ô vật lý {observation.physical_slot} • "
-                f"center={click_center} • score={scan_score:.3f}"
-            )
+            else:
+                # Preserve the proven Multi DEV contract unless standalone
+                # explicitly enables image-center purchase mode.
+                click_center = observation.click_center
+                scan_score = None
+
             self.vision.driver.click(*click_center)
             self.waiter.settle(0.50)
             if self.vision.find(
@@ -146,9 +143,6 @@ class BuyingActions:
             ) is not None:
                 raise InventoryFull("Kho clone đã đầy trong lúc mua VP")
 
-            # Never account a click as a purchase by timing alone. The source
-            # listing must disappear/change first; otherwise stop before the
-            # manifest counter is incremented.
             changed = False
             for _ in range(10):
                 if not self.listing_matches(observation):
@@ -157,20 +151,22 @@ class BuyingActions:
                 self.waiter.settle(0.20)
             if not changed:
                 if skip_unbuyable:
+                    mode_text = "tâm ảnh" if image_center_mode else "ô vật lý"
                     self.context.log(
                         "Bỏ qua VP ô vật lý "
-                        f"{observation.physical_slot}: click tâm ảnh không đổi "
+                        f"{observation.physical_slot}: click {mode_text} không đổi "
                         "(có thể chưa đủ level); không cộng 10 VP"
                     )
                     return bought
                 raise TransactionError(
-                    "Đã click tâm ảnh VP nhưng ô quầy không đổi; không cộng 10 VP"
+                    "Đã click VP nhưng ô quầy không đổi; không cộng 10 VP"
                 )
             bought += 1
             if on_unit is not None:
                 on_unit(bought)
+            suffix = "click tâm ảnh đã xác nhận" if image_center_mode else "click đã xác nhận"
             self.context.log(
                 f"Mua VP ô vật lý {observation.physical_slot}: "
-                f"{bought}/{target} click tâm ảnh đã xác nhận"
+                f"{bought}/{target} {suffix}"
             )
         return bought
