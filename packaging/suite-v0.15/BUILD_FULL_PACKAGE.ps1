@@ -8,6 +8,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $AutoSource = Join-Path $RepoRoot "source-archive\auto-pro-reference"
 $MultiSource = Join-Path $RepoRoot "source-archive\multi-current\kvtm_multi_tool"
 $PatchSource = Join-Path $RepoRoot "test-candidates\auto-pro-clientjs-temp"
+$UploadedAutoCleanSource = Join-Path $RepoRoot "source-archive\auto-pro-uploaded-clean"
 $BridgeV3Source = Join-Path $RepoRoot "bridge-v3"
 $ClientJsAutoSource = Join-Path $RepoRoot "components\clientjs-auto"
 $CleanAutoSource = Join-Path $ClientJsAutoSource "kvtm_automation"
@@ -752,6 +753,49 @@ foreach ($name in $PatchFiles) {
         throw "Missing ClientJS adapter file: $source"
     }
     Copy-Item -LiteralPath $source -Destination (Join-Path $AutoOut $name) -Force
+}
+
+# Build an isolated runtime for the operator-uploaded autoproreal.zip.  Never
+# copy the accumulated AUTO_PRO sidecar Python files into this directory.
+$OriginalAutoOut = Join-Path $OutputRoot "AUTO_PRO_ORIGINAL"
+New-Item -ItemType Directory -Path $OriginalAutoOut -Force | Out-Null
+foreach ($name in @("runtime", "_internal", "assets")) {
+    $source = Join-Path $AutoSource $name
+    if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+        throw "Missing uploaded AUTO PRO original payload directory: $source"
+    }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $OriginalAutoOut $name) -Recurse -Force
+}
+foreach ($name in @("cry_original_launcher.py", "offline_api.py", "README.md")) {
+    $source = Join-Path $UploadedAutoCleanSource $name
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        throw "Missing uploaded AUTO PRO clean boundary file: $source"
+    }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $OriginalAutoOut $name) -Force
+}
+foreach ($name in @("adaptive_cv.py", "engine_driver.py", "pc_driver.py")) {
+    Copy-Item -LiteralPath (Join-Path $PatchSource $name) -Destination (Join-Path $OriginalAutoOut $name) -Force
+}
+$OriginalAutoBin = Join-Path $OriginalAutoOut "bin"
+New-Item -ItemType Directory -Path $OriginalAutoBin -Force | Out-Null
+foreach ($name in @("kvtm_loader_v3.exe", "kvtm_bridge_v3.dll")) {
+    Copy-Item -LiteralPath (Join-Path $BridgeV3Source ("bin\" + $name)) -Destination (Join-Path $OriginalAutoBin $name) -Force
+}
+foreach ($forbidden in @(
+    "clientjs_auto_patch.py",
+    "local_bridge.py",
+    "local_launcher.py",
+    "pc_auto_launcher.py",
+    "platform-tools",
+    "web_control"
+)) {
+    if (Test-Path -LiteralPath (Join-Path $OriginalAutoOut $forbidden)) {
+        throw "Clean uploaded AUTO PRO unexpectedly contains forbidden old sidecar: $forbidden"
+    }
+}
+$originalPointers = @(Get-GitLfsPointers -Root $OriginalAutoOut)
+if ($originalPointers.Count -gt 0) {
+    throw "AUTO_PRO_ORIGINAL contains unresolved Git LFS pointers"
 }
 
 $ComponentsOut = Join-Path $OutputRoot "components"
