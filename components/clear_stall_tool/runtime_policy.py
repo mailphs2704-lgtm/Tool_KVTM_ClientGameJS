@@ -22,6 +22,7 @@ class OrderedSafeClearStallController(ClearStallController):
     owns standalone lifecycle policy:
 
     * first runs are admitted in the exact order ``start()`` is requested;
+    * Add uses that same ordered queue and never creates a parallel game run;
     * a hard failure pauses that account instead of silently waiting a full
       cycle and trying again;
     * every terminal path closes the account's ClientJS so failed accounts do
@@ -146,6 +147,17 @@ class OrderedSafeClearStallController(ClearStallController):
         self._threads[pid] = thread
         thread.start()
 
+    def enqueue(self, profile_id: str) -> None:
+        """Manual Add button: admit the account into the ordered run queue."""
+        pid = str(profile_id or "")
+        if not pid:
+            return
+        if pid in self._enabled:
+            self._log(pid, "manual_add_ignored", "Tài khoản đã có trong tiến trình Dọn quầy")
+            return
+        self._log(pid, "manual_add_requested", "Đã thêm tài khoản vào tiến trình Dọn quầy")
+        self.start(pid)
+
     def stop(self, profile_id: str) -> None:
         pid = str(profile_id or "")
         self._enabled.discard(pid)
@@ -168,8 +180,6 @@ class OrderedSafeClearStallController(ClearStallController):
             except OSError as exc:
                 self._log(pid, "worker_stop_error", str(exc))
         else:
-            # If no worker is alive, Stop closes any remaining tracked ClientJS
-            # immediately. Active workers close it from _run_once finally.
             self._close_client(pid, "explicit_stop")
 
         self._wake_start_queue()
@@ -248,10 +258,6 @@ class OrderedSafeClearStallController(ClearStallController):
                         str(exc),
                         traceback=traceback.format_exc(),
                     )
-                    # Fail closed for automation and for the online game session.
-                    # _run_once always closes the tracked ClientJS before this
-                    # exception reaches the scheduler, so one failed account can
-                    # never be left online while later accounts start.
                     self._enabled.discard(profile_id)
                     self._log(
                         profile_id,
@@ -328,11 +334,12 @@ class OrderedSafeClearStallController(ClearStallController):
                 "--quantity", str(quantity),
                 "--max-stall-passes", str(int(job.get("max_scan_pages", 10))),
                 "--allowed-items-json", json.dumps(allowed, ensure_ascii=True),
-                "--drag-speed", str(float(job.get("clear_stall_drag_speed", 0.35))),
+                "--drag-speed", "0.20",
                 "--work-dir", str(work_dir),
             ]
             env = os.environ.copy()
             env["KVTM_MULTI_PROFILE_FILE"] = str(self.store.profile_file)
+            env["KVTM_CLEAR_STALL_SINGLE_SWIPE"] = "1"
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             worker = subprocess.Popen(
                 args,
