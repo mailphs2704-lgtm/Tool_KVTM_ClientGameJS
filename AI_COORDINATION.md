@@ -647,3 +647,11 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Cứ 2 giây kiểm tra độc lập; ghi heartbeat 10 giây/lần hoặc ngay khi đổi trạng thái. Thu thập Multi responding/hung, CPU delta, working/private memory, handles, số ClientJS alive/not-responding, tổng RAM ClientJS, dung lượng đĩa và độ trễ sampler.
 - Sidecar chạy `BELOW_NORMAL_PRIORITY_CLASS`; dùng WinAPI pointer-safe. Không đọc command line, nội dung profile/settings, token, cookie hay secret; không điều khiển Multi/ClientJS.
 - Build PS5.1 chạy `verify_runtime_diagnostic_contract.py`. Source/static review PASS; Windows LIVE PENDING.
+
+
+## 2026-09-16 — AUTO Main restart block + checkpoint recovery
+
+- ClientJS restart after 3 hours and restart-on-error are blocked in scheduler, worker, and Multi supervisor integration.
+- Registered errors keep their typed handler at the exact module checkpoint. InventoryFull stops the VP collector on a fresh-frame probe before each click, descends to the stall sale workflow, returns to the production floor, and retries the same producer.
+- Only unregistered Function errors use the bounded global fallback: ESC exactly 3 times, click the operator-supplied green “Ở lại” point at logical (573,605), prove exact-main, visit friend #1 and return, then retry the same Function loop without incrementing counters.
+- Verification: tools/verify_recovery_architecture_contract.py statically enforces these ownership and lifecycle invariants. Static verification is not a live runtime PASS.
