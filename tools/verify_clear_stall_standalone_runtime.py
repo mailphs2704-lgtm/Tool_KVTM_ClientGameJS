@@ -30,13 +30,20 @@ def main() -> int:
         ast.parse(source, filename=name)
 
     require(store_src, 'APPDATA", Path.home())) / "KVTM Dọn Quầy"', "separate app data")
-    require(store_src, 'MULTI_PROFILE_FILE = MULTI_APP_DIR / "profiles.json"', "Multi profile source")
+    require(store_src, 'APPDATA", Path.home())) / "KVTM Multi DEV"', "authoritative Multi DEV appdata")
+    require(store_src, 'MULTI_PROFILE_FILE = MULTI_APP_DIR / "profiles.json"', "Multi DEV profile source")
+    require(store_src, "multi_profile_file", "visible profile source path")
     require(store_src, 'status="stopped"', "startup state")
     require(store_src, "selected_profile_ids", "selected accounts persistence")
     require(store_src, "clear_stall_jobs", "standalone clear-stall settings")
 
+    require(main_src, 'authoritative = appdata / "KVTM Multi DEV"', "deterministic Multi DEV binding")
+    require(main_src, "legacy_candidates", "DEV-only migration fallback")
+    require(main_src, "Never silently fall back", "no legacy/production profile ambiguity")
+
     require(integration_src, "available_profiles()", "profile-only add account")
     require(integration_src, 'selectmode="extended"', "profile chooser")
+    require(integration_src, "Nguồn:", "profile source visible in GUI")
     if 'Tên tài khoản", name' in integration_src or "ttk.Entry(row, textvariable=profile" in integration_src:
         raise AssertionError("Add Account must not restore free-text account/profile fields")
 
@@ -59,6 +66,7 @@ def main() -> int:
     require(main_src, "bind_runtime", "GUI runtime binding")
 
     print("CLEAR STALL STANDALONE RUNTIME CONTRACT PASS")
+    print("profile_source=%APPDATA%\\KVTM Multi DEV\\profiles.json")
     return 0
 
 
