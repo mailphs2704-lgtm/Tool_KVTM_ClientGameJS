@@ -70,6 +70,39 @@ def _install_dll_dirs(*directories: Path) -> None:
             pass
 
 
+def _install_unicode_safe_imread(cv2, numpy, emit) -> None:
+    """Make OpenCV image reads safe for Vietnamese Windows paths.
+
+    ``cv2.imread`` may return ``None`` for a valid file when its Windows path
+    contains Unicode characters. Read bytes with Python and decode in memory so
+    the shared Dọn quầy runtime can keep its existing ``cv2.imread`` contract.
+    """
+    current = cv2.imread
+    if getattr(current, "_kvtm_unicode_safe", False):
+        return
+
+    def unicode_safe_imread(filename, flags=cv2.IMREAD_COLOR):
+        try:
+            source = Path(os.fspath(filename))
+            payload = source.read_bytes()
+            if not payload:
+                return None
+            encoded = numpy.frombuffer(payload, dtype=numpy.uint8)
+            if encoded.size == 0:
+                return None
+            return cv2.imdecode(encoded, int(flags))
+        except Exception:
+            return None
+
+    unicode_safe_imread._kvtm_unicode_safe = True
+    cv2.imread = unicode_safe_imread
+    emit(
+        "probe_boot",
+        stage="standalone-unicode-imread-ready",
+        reader="Path.read_bytes+numpy.frombuffer+cv2.imdecode",
+    )
+
+
 def _install_unicode_safe_imwrite(cv2, emit) -> None:
     """Make OpenCV image writes safe for Vietnamese Windows paths.
 
@@ -299,6 +332,7 @@ def _bootstrap_standalone_image_runtime(auto_root: Path, emit) -> None:
                 f"{getattr(cv2, '__version__', '?')} source={_module_path(cv2)}"
             ),
         )
+        _install_unicode_safe_imread(cv2, numpy, emit)
         _install_unicode_safe_imwrite(cv2, emit)
 
         for name, module in (("PIL", PIL), ("numpy", numpy), ("cv2", cv2)):
