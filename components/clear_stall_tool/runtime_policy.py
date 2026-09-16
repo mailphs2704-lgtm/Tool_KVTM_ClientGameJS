@@ -22,10 +22,11 @@ class OrderedSafeClearStallController(ClearStallController):
     owns standalone lifecycle policy:
 
     * first runs are admitted in the exact order ``start()`` is requested;
-    * a hard failure before ``probe_ok`` keeps ClientJS open for inspection;
     * a hard failure pauses that account instead of silently waiting a full
       cycle and trying again;
-    * successful runs and explicit Stop still close the ClientJS process.
+    * every terminal path closes the account's ClientJS so failed accounts do
+      not accumulate as simultaneous online sessions;
+    * successful runs and explicit Stop also close the ClientJS process.
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -167,8 +168,8 @@ class OrderedSafeClearStallController(ClearStallController):
             except OSError as exc:
                 self._log(pid, "worker_stop_error", str(exc))
         else:
-            # A failed pre-clean cycle deliberately leaves ClientJS open.  An
-            # explicit Stop is the operator's instruction to close it.
+            # If no worker is alive, Stop closes any remaining tracked ClientJS
+            # immediately. Active workers close it from _run_once finally.
             self._close_client(pid, "explicit_stop")
 
         self._wake_start_queue()
@@ -247,14 +248,15 @@ class OrderedSafeClearStallController(ClearStallController):
                         str(exc),
                         traceback=traceback.format_exc(),
                     )
-                    # Fail closed for automation, but do not destroy the game
-                    # window.  The operator can inspect it and the Log, then
-                    # press Play to retry or Stop to close it.
+                    # Fail closed for automation and for the online game session.
+                    # _run_once always closes the tracked ClientJS before this
+                    # exception reaches the scheduler, so one failed account can
+                    # never be left online while later accounts start.
                     self._enabled.discard(profile_id)
                     self._log(
                         profile_id,
                         "cycle_paused_after_error",
-                        "Đã tạm dừng tài khoản sau lỗi; giữ ClientJS mở để kiểm tra",
+                        "Đã tạm dừng tài khoản sau lỗi; ClientJS đã được đóng để giải phóng phiên online",
                     )
                     self._emit(profile_id, "cycle_error", message=str(exc))
                 finally:
@@ -293,8 +295,8 @@ class OrderedSafeClearStallController(ClearStallController):
             else:
                 self._log(
                     profile_id,
-                    "client_reused_after_error",
-                    "Dùng lại ClientJS đang mở từ lượt lỗi trước",
+                    "client_reused",
+                    "Dùng lại ClientJS đang được controller theo dõi",
                     client_pid=proc.pid,
                 )
 
@@ -421,18 +423,10 @@ class OrderedSafeClearStallController(ClearStallController):
             )
         finally:
             self._workers.pop(profile_id, None)
-            # Never close a newly launched game merely because the worker failed
-            # before Dọn quầy completed.  Preserve it for live diagnosis/retry.
             if terminal_ok:
-                self._close_client(profile_id, "cycle_completed")
+                close_reason = "cycle_completed"
             elif stop_event.is_set() or self._closed:
-                self._close_client(profile_id, "operator_stop")
+                close_reason = "operator_stop"
             else:
-                client = self._live_client(profile_id)
-                if client is not None:
-                    self._log(
-                        profile_id,
-                        "client_preserved_after_error",
-                        "Worker chưa hoàn tất; giữ ClientJS mở để kiểm tra/retry",
-                        client_pid=client.pid,
-                    )
+                close_reason = "cycle_failed"
+            self._close_client(profile_id, close_reason)
