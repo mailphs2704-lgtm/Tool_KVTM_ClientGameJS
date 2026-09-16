@@ -219,7 +219,7 @@ def main() -> int:
     require(suite_build, '"clientjs_auto_patch.py"', "Clean original forbidden-sidecar gate missing")
     require(suite_build, '"platform-tools"', "Clean original ADB exclusion gate missing")
     require(build, '"AUTO_PRO_ORIGINAL\\cry_original_launcher.py"', "Stable release does not require clean launcher")
-    require(runtime, '"AUTO_PRO_ORIGINAL\\\\cry_original_launcher.py"', "Stable runtime accepts missing clean launcher")
+    require(runtime, '"AUTO_PRO_ORIGINAL\\cry_original_launcher.py"', "Stable runtime accepts missing clean launcher")
     require(build, '@("AUTO_PRO", "AUTO_PRO_ORIGINAL", "Multi", "components")', "Stable release omits clean original runtime")
     for required in (
         'AUTO_PRO\\bin\\kvtm_loader_v3.exe',
