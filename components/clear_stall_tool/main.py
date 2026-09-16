@@ -9,35 +9,44 @@ from pathlib import Path
 
 
 def _bind_multi_dev_profile_source() -> None:
-    """Point the standalone store at the active AUTO MULTI DEV data directory.
+    """Bind standalone Dọn quầy to the authoritative AUTO MULTI DEV data root.
 
-    The operator keeps this tool in a separate worktree, while the authoritative
-    Multi DEV runtime normally lives in D:\\Tool_KVTM_Multi_DEV.  Resolve that
-    runtime before importing profile_store so its profile/settings constants use
-    the same authoritative source.  An explicit KVTM_MULTI_APP_DIR always wins.
+    START_MULTI_DEV_SILENT.ps1 makes ``%APPDATA%\\KVTM Multi DEV`` authoritative.
+    The standalone process is launched separately, so it does not inherit the
+    ``KVTM_MULTI_APP_DIR`` environment variable from the already-running Multi
+    DEV process. Resolve the same persistent directory explicitly before
+    importing profile_store. Never silently fall back to ``%APPDATA%\\KVTM Multi``
+    because that belongs to the non-DEV/legacy Multi profile set.
     """
     if os.environ.get("KVTM_MULTI_APP_DIR", "").strip():
         return
 
+    appdata = Path(os.environ.get("APPDATA", Path.home()))
+    authoritative = appdata / "KVTM Multi DEV"
+    if (authoritative / "profiles.json").is_file() or authoritative.is_dir():
+        os.environ["KVTM_MULTI_APP_DIR"] = str(authoritative)
+        return
+
+    # Migration-only fallback for a machine where Multi DEV has not yet copied
+    # package-local data-dev into %APPDATA%. Keep this deterministic and DEV-only.
     source_root = Path(__file__).resolve().parents[2]
-    candidates = [
+    legacy_candidates = (
+        source_root.parent
+        / "Tool_KVTM_Multi_DEV"
+        / "dist"
+        / "KVTM-ClientJS-Suite-Multi-DEV"
+        / "data-dev",
         source_root / "dist" / "KVTM-ClientJS-Suite-Multi-DEV" / "data-dev",
-        source_root.parent / "Tool_KVTM_Multi_DEV" / "dist" / "KVTM-ClientJS-Suite-Multi-DEV" / "data-dev",
-        Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi",
-    ]
-    valid = []
-    for directory in candidates:
-        profile_file = directory / "profiles.json"
-        if not profile_file.is_file():
-            continue
-        try:
-            stamp = profile_file.stat().st_mtime
-        except OSError:
-            stamp = 0.0
-        valid.append((stamp, directory))
-    if valid:
-        valid.sort(key=lambda item: item[0], reverse=True)
-        os.environ["KVTM_MULTI_APP_DIR"] = str(valid[0][1])
+    )
+    for directory in legacy_candidates:
+        if (directory / "profiles.json").is_file():
+            os.environ["KVTM_MULTI_APP_DIR"] = str(directory)
+            return
+
+    # Even when the file does not exist yet, point at the authoritative DEV
+    # location so the error message names the correct source instead of reading
+    # an unrelated profile set.
+    os.environ["KVTM_MULTI_APP_DIR"] = str(authoritative)
 
 
 _bind_multi_dev_profile_source()
