@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import threading
 import time
 
 
@@ -153,6 +154,31 @@ import gui_device  # noqa: E402
 import uiautomator2 as u2  # noqa: E402
 import engine_driver as engine_driver_module  # noqa: E402
 from engine_driver import EngineDriver  # noqa: E402
+
+# The recovered AUTO PRO can request Bridge screenshots in tight image-search
+# loops that were harmless with slow ADB, but saturate CPU/GPU over Bridge V3
+# and starve Multi's Tk message loop.  Keep every capture fresh while applying
+# a small per-client hard cap (20 FPS).
+_original_engine_screenshot = EngineDriver.screenshot
+_capture_governor_lock = threading.Lock()
+_capture_governor_next: dict[int, float] = {}
+_CAPTURE_MIN_INTERVAL_SECONDS = 0.05
+
+
+def governed_engine_screenshot(self, *args, **kwargs):
+    key = id(self)
+    with _capture_governor_lock:
+        now = time.monotonic()
+        delay = max(0.0, _capture_governor_next.get(key, now) - now)
+        _capture_governor_next[key] = max(
+            now, _capture_governor_next.get(key, now)
+        ) + _CAPTURE_MIN_INTERVAL_SECONDS
+    if delay:
+        time.sleep(delay)
+    return _original_engine_screenshot(self, *args, **kwargs)
+
+
+EngineDriver.screenshot = governed_engine_screenshot
 
 gui.LoginPopup = OfflineLoginPopup
 AutomationGUI = gui.AutomationGUI
