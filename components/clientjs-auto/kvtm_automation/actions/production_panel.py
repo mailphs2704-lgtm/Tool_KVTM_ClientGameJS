@@ -288,13 +288,35 @@ class ProductionPanelActions:
         click_count = 0
         for burst in range(1, self.COLLECT_MIN_BURSTS + 1):
             self.context.ensure_running()
-            click_count += self._send_collect_burst(machine_point=machine_point)
+            # Full-kho can blink between clicks. Probe a fresh frame before every
+            # click so the machine point cannot dismiss the popup and hide the
+            # typed InventoryFull signal until the next 20-click round.
+            for click_ordinal in range(1, self.COLLECT_CLICK_BURST + 1):
+                self.context.ensure_running()
+                warehouse_full, _empty_ready = self._panel_state(
+                    frame=self.vision.frame()
+                )
+                if warehouse_full:
+                    self.context.log(
+                        f"AUTO {label} • full kho bắt tại "
+                        f"burst={burst}, click={click_ordinal}/"
+                        f"{self.COLLECT_CLICK_BURST} • dừng collector ngay"
+                    )
+                    self._raise_inventory_full(label)
+                self.vision.driver.click(*machine_point)
+                click_count += 1
+
             self.context.log(
                 f"AUTO {label} • shared thu VP x5 • "
                 f"burst={burst}/{self.COLLECT_MIN_BURSTS} • "
                 f"tổng click={click_count}/{self.COLLECT_MIN_CLICKS}"
             )
             self.waiter.sleep(self.speed_config.vp_collect_delay)
+            warehouse_full, _empty_ready = self._panel_state(
+                frame=self.vision.frame()
+            )
+            if warehouse_full:
+                self._raise_inventory_full(label)
 
         self.context.log(
             f"AUTO {label} • shared thu VP tối thiểu PASS • "
