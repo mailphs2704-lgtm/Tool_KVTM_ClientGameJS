@@ -54,6 +54,27 @@ def _append(path: Path, payload: dict) -> None:
 def _process_snapshot(pid: int) -> dict:
     kernel32 = ctypes.windll.kernel32
     psapi = ctypes.windll.psapi
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.GetExitCodeProcess.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)
+    ]
+    kernel32.GetProcessHandleCount.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)
+    ]
+    kernel32.GetProcessTimes.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+    ]
+    psapi.GetProcessMemoryInfo.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(PROCESS_MEMORY_COUNTERS),
+        wintypes.DWORD,
+    ]
     handle = kernel32.OpenProcess(
         PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, False, int(pid)
     )
