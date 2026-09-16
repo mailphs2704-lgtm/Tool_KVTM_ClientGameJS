@@ -354,3 +354,14 @@ Build/live pending. NEXT: Control Center publish Stable, require automatic `0.1.
 - Uploader chỉ gửi text đã che profile/tên tài khoản/PID/đường dẫn user/credential lên branch `diagnostics/runtime-errors`; không gửi ảnh, `profiles.json`, `settings.json`, `.kvtm` hoặc secret.
 - Windows PowerShell syntax và Git push LIVE: PENDING.
 
+
+## 20. 2026-09-16 — Cry: AUTO PRO upload gốc chạy cửa sổ riêng
+
+- Operator chọn phương án 2 và yêu cầu tuyệt đối không dùng các sidecar/patch đã tích lũy trong AUTO_PRO cũ.
+- Upload chuẩn: `autoproreal.zip`, SHA256 `d3366f3e687fc3a3e2ecbc848ac160ed2452c39187e8009eb8b1d3d09de78328`.
+- Stable đóng gói runtime mới `AUTO_PRO_ORIGINAL` theo allowlist: `runtime/pyc`, `_internal`, `assets`, offline API stateless và Bridge V3 adapter.
+- Cấm trong runtime mới: `local_launcher.py`, `local_bridge.py`, `clientjs_auto_patch.py`, Web Control, `platform-tools`/ADB và workflow Multi DEV.
+- Menu Cry có `AUTO PRO gốc`; mở process/Tk GUI riêng, chỉ đọc metadata ownership CRY và chỉ kết nối ClientJS qua EngineDriver/Bridge V3.
+- Không thay/xóa backend AUTO MULTI DEV hiện tại. Python AST PASS; packaging/Windows LIVE PENDING.
+
+NEXT: operator chạy Control Center `[1]`, publish Stable bằng `Kvtm_tool_Cry_RELEASE.bat`, đóng/mở Cry, chọn `AUTO PRO gốc`, xác nhận GUI gốc thấy đúng các client thuộc Cry và thao tác không gọi ADB.
