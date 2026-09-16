@@ -30,7 +30,7 @@ class AccountRecord:
 
 class ClearStallToolApp:
     PAGE_SIZE = 8
-    COLS = ((38, 0), (38, 0), (170, 2), (125, 1), (135, 1), (138, 1), (95, 0), (165, 2), (118, 0))
+    COLS = ((38, 0), (38, 0), (170, 2), (125, 1), (135, 1), (138, 1), (95, 0), (92, 0), (118, 0))
 
     def __init__(self, root: tk.Tk, accounts: Iterable[AccountRecord] = ()) -> None:
         self.root = root; self.accounts = list(accounts); self.page = 0; self.default_cycle = 30
@@ -96,8 +96,8 @@ class ClearStallToolApp:
         self.table_meta = tk.Label(title, bg=SURFACE, fg=MUTED, font=("Segoe UI", 8)); self.table_meta.grid(row=0, column=1, sticky="e")
         head = tk.Frame(card, bg=ALT, highlightthickness=1, highlightbackground=BORDER); head.grid(row=1, column=0, sticky="ew", padx=14); self._columns(head)
         tk.Checkbutton(head, variable=self.header_select, command=self.select_page, bg=ALT, activebackground=ALT, selectcolor="white", bd=0, highlightthickness=0).grid(row=0, column=0, padx=7, pady=8)
-        for c, text in enumerate(("#", "TÊN TÀI KHOẢN", "PROFILE", "TRẠNG THÁI", "LẦN DỌN CUỐI", "CHU KỲ", "GHI CHÚ", "THAO TÁC"), 1):
-            tk.Label(head, text=text, bg=ALT, fg=MUTED, font=("Segoe UI", 8, "bold"), anchor="center" if c in (1, 8) else "w").grid(row=0, column=c, padx=8, pady=9, sticky="ew")
+        for c, text in enumerate(("#", "TÊN TÀI KHOẢN", "PROFILE", "TRẠNG THÁI", "LẦN DỌN CUỐI", "CHU KỲ", "LOG", "THAO TÁC"), 1):
+            tk.Label(head, text=text, bg=ALT, fg=MUTED, font=("Segoe UI", 8, "bold"), anchor="center" if c in (1, 7, 8) else "w").grid(row=0, column=c, padx=8, pady=9, sticky="ew")
         self.rows = tk.Frame(card, bg=SURFACE); self.rows.grid(row=2, column=0, sticky="nsew", padx=14); self.rows.grid_columnconfigure(0, weight=1)
         foot = tk.Frame(card, bg=SURFACE); foot.grid(row=3, column=0, sticky="ew", padx=14, pady=(10, 12)); foot.grid_columnconfigure(1, weight=1)
         self.selected_label = tk.Label(foot, bg=SURFACE, fg=MUTED, font=("Segoe UI", 8)); self.selected_label.grid(row=0, column=0)
@@ -120,11 +120,13 @@ class ClearStallToolApp:
         for r, a in enumerate(page):
             row = tk.Frame(self.rows, bg=SURFACE); row.grid(row=r, column=0, sticky="ew"); self._columns(row)
             tk.Checkbutton(row, variable=self.selected.setdefault(a.account_id, tk.BooleanVar()), command=self._footer, bg=SURFACE, activebackground=SURFACE, selectcolor="white", bd=0, highlightthickness=0).grid(row=0, column=0, padx=7, pady=7)
-            vals = (str(start+r+1), a.account_name, a.profile_name, a.status_text, a.last_clean, f"{a.cycle_minutes} phút", a.note)
+            vals = (str(start+r+1), a.account_name, a.profile_name, a.status_text, a.last_clean, f"{a.cycle_minutes} phút")
             for c, val in enumerate(vals, 1):
                 fg = a.status_color if c == 4 else (MUTED if val == "—" or c == 1 else TEXT); font = ("Segoe UI", 9, "bold") if c in (2, 4) else ("Segoe UI", 9)
                 text = f"●  {val}" if c == 4 else val
                 tk.Label(row, text=text, bg=SURFACE, fg=fg, font=font, anchor="center" if c == 1 else "w").grid(row=0, column=c, padx=8, pady=9, sticky="ew")
+            log_cell = tk.Frame(row, bg=SURFACE); log_cell.grid(row=0, column=7, padx=6)
+            self._mini(log_cell, "Log", BLUE, lambda i=a.account_id: self.show_log(i), 6).pack()
             acts = tk.Frame(row, bg=SURFACE); acts.grid(row=0, column=8, padx=6)
             self._mini(acts, "▶", BLUE, lambda i=a.account_id: self.set_status(i, "running")).pack(side="left", padx=2)
             self._mini(acts, "■", RED, lambda i=a.account_id: self.set_status(i, "stopped")).pack(side="left", padx=2)
@@ -188,6 +190,14 @@ class ClearStallToolApp:
             except ValueError: return
             self.accounts = [replace(a, cycle_minutes=self.default_cycle) for a in self.accounts]; self.refresh(); w.destroy()
         self._button(body, "Lưu", save, True, 9).pack(side="right", pady=14); self._button(body, "Hủy", w.destroy, False, 9).pack(side="right", padx=8, pady=14)
+
+    def show_log(self, account_id: str) -> None:
+        a = next((x for x in self.accounts if x.account_id == account_id), None)
+        if not a: return
+        w = self._modal(f"Log - {a.account_name}", 560, 250); body = tk.Frame(w, bg=SURFACE); body.pack(fill="both", expand=True, padx=22, pady=18)
+        tk.Label(body, text="Log runtime", bg=SURFACE, fg=TEXT, font=("Segoe UI", 12, "bold")).pack(anchor="w")
+        tk.Label(body, text="Chế độ demo không ghi log runtime. Bản chạy thật sẽ hiển thị log trực tiếp tại đây.", bg=SURFACE, fg=MUTED, justify="left", wraplength=500).pack(anchor="w", pady=12)
+        self._button(body, "Đóng", w.destroy, True, 9).pack(anchor="e", pady=10)
 
     def details(self, account_id: str) -> None:
         a = next((x for x in self.accounts if x.account_id == account_id), None)
