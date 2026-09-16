@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from pathlib import Path
 import tkinter as tk
 
@@ -12,8 +13,66 @@ except ImportError:
 LOGO_PATH = Path(__file__).resolve().parent / "assets" / "kvtm_clear_stall_logo.png"
 
 
+def _load_logo_with_edge_transparency(master: tk.Misc) -> tk.PhotoImage:
+    """Load the operator-provided PNG and hide only its connected pale edge background.
+
+    The source PNG is kept byte-for-byte in the repository.  Its background pixels are
+    opaque, so without this small render-time cleanup the logo appears inside a grey box.
+    We only clear pale, low-saturation pixels connected to an image edge; colours inside
+    the stall artwork are left untouched.
+    """
+    image = tk.PhotoImage(master=master, file=str(LOGO_PATH))
+    width, height = image.width(), image.height()
+    if not width or not height:
+        return image
+
+    def is_edge_background(x: int, y: int) -> bool:
+        value = image.get(x, y)
+        if isinstance(value, str):
+            parts = value.split()
+            if len(parts) != 3:
+                return False
+            rgb = tuple(int(part) for part in parts)
+        else:
+            rgb = tuple(int(part) for part in value[:3])
+        low, high = min(rgb), max(rgb)
+        return low >= 190 and (high - low) <= 28
+
+    queue: deque[tuple[int, int]] = deque()
+    seen: set[tuple[int, int]] = set()
+
+    for x in range(width):
+        queue.append((x, 0))
+        if height > 1:
+            queue.append((x, height - 1))
+    for y in range(height):
+        queue.append((0, y))
+        if width > 1:
+            queue.append((width - 1, y))
+
+    while queue:
+        x, y = queue.popleft()
+        point = (x, y)
+        if point in seen:
+            continue
+        seen.add(point)
+        if not is_edge_background(x, y):
+            continue
+        image.transparency_set(x, y, True)
+        if x > 0:
+            queue.append((x - 1, y))
+        if x + 1 < width:
+            queue.append((x + 1, y))
+        if y > 0:
+            queue.append((x, y - 1))
+        if y + 1 < height:
+            queue.append((x, y + 1))
+
+    return image
+
+
 def install_branding(app_class) -> None:
-    """Install the approved Model-8 market-stall logo into the standalone GUI."""
+    """Install the approved Model-8 market-stall PNG into the standalone GUI."""
     if getattr(app_class, "_kvtm_branding_installed", False):
         return
 
@@ -23,9 +82,9 @@ def install_branding(app_class) -> None:
         original_setup(self)
         self.brand_logo_image = None
         try:
-            self.brand_logo_image = tk.PhotoImage(file=str(LOGO_PATH))
+            self.brand_logo_image = _load_logo_with_edge_transparency(self.root)
             self.root.iconphoto(True, self.brand_logo_image)
-        except (tk.TclError, OSError):
+        except (tk.TclError, OSError, ValueError):
             self.brand_logo_image = None
 
     def _header(self) -> None:
