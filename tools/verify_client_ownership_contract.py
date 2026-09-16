@@ -67,6 +67,14 @@ def main() -> int:
     require(ownership, "owned_pids", "Foreign PID adoption filter missing")
     require(ownership, 'get("ProcessId")', "Ownership adoption does not read running_clients ProcessId")
     require(ownership, "Bỏ qua ClientJS thuộc tool khác", "Foreign stop protection marker missing")
+    require(ownership, "if registry.owner == OWNER_CRY:", "Cry-only replacement reclaim guard missing")
+    require(ownership, "running_signature", "Replacement PID is not matched to exact profile signature")
+    require(ownership, "replacement ClientJS reclaimed", "Replacement PID reclaim operator marker missing")
+    require(
+        ownership,
+        "claimed = registry.claim(",
+        "Cry replacement PID is not atomically claimed before adoption",
+    )
 
     require(ownership, "• ONL • {entry['owner']}", "ONL owner label missing from account list")
     require(ownership, 'tree.heading("pid", text="PID • TOOL")', "Owner status column heading missing")
@@ -103,7 +111,7 @@ def main() -> int:
     print("registry=shared-appdata+named-mutex+atomic-json+schema2")
     print("identity=account-key+alias+profile+pid-creation-token")
     print("ui=wide-owner-column+account-window-title")
-    print("control=foreign-read-only+owner-only-adopt-stop+fail-close")
+    print("control=foreign-read-only+owner-only-adopt-stop+fail-close+cry-replacement-reclaim")
     print("secrets=hashed-identity-only-not-published")
     return 0
 
