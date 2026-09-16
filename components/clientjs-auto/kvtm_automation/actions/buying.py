@@ -103,7 +103,10 @@ class BuyingActions:
         """Click the same source listing until target is met or it disappears."""
         target = max(0, int(maximum))
         bought = 0
-        image_center_mode = os.environ.get("KVTM_CLEAR_STALL_IMAGE_CENTER_BUY") == "1"
+        image_center_mode = (
+            os.environ.get("KVTM_CLEAR_STALL_IMAGE_CENTER_BUY") == "1"
+            or os.environ.get("KVTM_CLEAR_STALL_SINGLE_SWIPE") == "1"
+        )
         while bought < target:
             self.context.ensure_running()
             if not self.listing_matches(observation):
@@ -129,8 +132,6 @@ class BuyingActions:
                     f"center={click_center} • score={scan_score:.3f}"
                 )
             else:
-                # Preserve the proven Multi DEV contract unless standalone
-                # explicitly enables image-center purchase mode.
                 click_center = observation.click_center
                 scan_score = None
 
