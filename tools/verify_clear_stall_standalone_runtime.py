@@ -107,6 +107,14 @@ def main() -> int:
     require(worker_src, "purchase_limit=purchase_limit", "full purchase target")
     require(worker_src, "resale_batch_limit=purchase_limit", "full resale target")
     require(worker_src, "return run_probe(", "shared business workflow")
+    require(worker_src, "def _bootstrap_standalone_image_runtime", "standalone image bootstrap")
+    require(worker_src, 'import_order="PIL_NUMPY_CV2"', "live fallback import order")
+    require(worker_src, 'importlib.import_module("numpy")', "numpy preload")
+    require(worker_src, 'importlib.import_module("cv2")', "opencv preload")
+    require(worker_src, 'os.environ["KVTM_SKIP_RUNTIME_SYNC"] = "1"', "no legacy runtime sync")
+    require(worker_src, "image_runtime_ready=True", "shared probe receives resident image runtime")
+    if worker_src.index('importlib.import_module("numpy")') > worker_src.index('importlib.import_module("cv2")'):
+        raise AssertionError("Standalone image runtime must make NumPy resident before cv2")
     if "class ClearStallWorkflow" in worker_src:
         raise AssertionError("Standalone worker must not duplicate ClearStallWorkflow")
 
@@ -120,6 +128,7 @@ def main() -> int:
     print("numeric_input=PLAIN_ENTRY_NO_SPINNER")
     print("runtime_log=PERSISTENT_PER_ACCOUNT+LIVE_VIEWER")
     print("table_progress=LOG_BUTTON_ONLY")
+    print("image_bootstrap=PIL_NUMPY_CV2_RESIDENT")
     return 0
 
 
