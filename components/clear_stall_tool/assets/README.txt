@@ -1,0 +1,1 @@
+Brand assets for the standalone Dọn Quầy GUI. Binary logo is committed via the Git data API.
