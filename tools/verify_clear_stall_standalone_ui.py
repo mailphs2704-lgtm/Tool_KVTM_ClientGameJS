@@ -29,10 +29,13 @@ def main() -> int:
         "KVTM - Dọn Quầy", "Bắt đầu tất cả", "Dừng tất cả", "Thêm tài khoản",
         "Đồng bộ profile", "Cấu hình nhanh", "Tổng tài khoản", "Đang chạy",
         "Sẵn sàng", "Đã dừng", "Chu kỳ mặc định", "TÊN TÀI KHOẢN",
-        "PROFILE", "TRẠNG THÁI", "LẦN DỌN CUỐI", "CHU KỲ", "GHI CHÚ",
-        "THAO TÁC", "PAGE_SIZE = 8",
+        "PROFILE", "TRẠNG THÁI", "LẦN DỌN CUỐI", "CHU KỲ", "LOG",
+        "THAO TÁC", "PAGE_SIZE = 8", "self.show_log",
     ):
         require(app, token, "Mẫu 8 UI contract")
+
+    if '"GHI CHÚ"' in app:
+        raise SystemExit("FAIL: runtime progress must use LOG button, not GHI CHÚ column")
 
     require(entry, "SetProcessDpiAwareness", "Windows DPI-awareness hook")
     require(entry, "install_runtime_integration", "runtime integration entrypoint")
@@ -50,6 +53,7 @@ def main() -> int:
     print("runtime_integration=ADAPTER")
     print("profile_chooser=PROFILE_ONLY")
     print("startup_state=STOPPED")
+    print("runtime_progress=LOG_BUTTON")
     return 0
 
 
