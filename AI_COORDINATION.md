@@ -673,3 +673,12 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - `auto_worker.py` nay bỏ qua đúng allow-list 6 khóa ngoại (`floor_swipe_duration`, `plant_harvest_duration`, `vp_collect_delay`, `vp_production_delay`, `crop_check_interval`, `clear_stall_drag_speed`) ở cả lúc khởi động và cập nhật live; khóa lạ ngoài allow-list vẫn fail-close.
 - Đường Nâng kho cũ được giữ nguyên và khóa bằng verifier: `auto_nang_kho`, loại kho, `time_nang_kho`, cân bằng và KC tiếp tục đi từ tab Nâng kho vào worker AUTO chính.
 - Source/static review PASS; Windows build/LIVE PENDING. Retest bằng Function 318 trong Chức năng chính, sau đó bật tab Nâng kho và chạy lại cùng Function.
+
+
+## 2026-09-16 — AUTO PRO gốc không còn tranh tài nguyên làm treo Multi
+
+- Root cause phù hợp triệu chứng sau tích hợp: AUTO PRO gốc giữ nhịp dò ảnh kiểu ADB nhưng Bridge V3 trả frame rất nhanh, tạo vòng capture dày và tranh CPU/GPU với Tk/DWM/Bridge monitor của Multi.
+- Adapter sạch nay điều tiết `EngineDriver.screenshot` tối đa 20 FPS theo từng driver; mỗi lần vẫn gọi Bridge lấy frame mới, không cache ảnh và không đổi logic nhận dạng/thao tác.
+- Tiến trình cửa sổ AUTO PRO gốc được mở với `BELOW_NORMAL_PRIORITY_CLASS` để message loop của Multi/ClientJS được ưu tiên khi máy tải cao.
+- Packaging verifier khóa cả process priority, capture interval và fresh-frame delegation.
+- Source/static review PASS; Windows LIVE PENDING. Retest đồng thời Multi + AUTO PRO gốc + nhiều ClientJS, theo dõi Task Manager và tình trạng Not Responding.
