@@ -118,6 +118,10 @@ if ($LASTEXITCODE -ne 0) {
 
 foreach ($required in @(
     (Join-Path $BuiltRoot "AUTO_PRO"),
+    (Join-Path $BuiltRoot "AUTO_PRO_ORIGINAL\cry_original_launcher.py"),
+    (Join-Path $BuiltRoot "AUTO_PRO_ORIGINAL\offline_api.py"),
+    (Join-Path $BuiltRoot "AUTO_PRO_ORIGINAL\bin\kvtm_loader_v3.exe"),
+    (Join-Path $BuiltRoot "AUTO_PRO_ORIGINAL\bin\kvtm_bridge_v3.dll"),
     (Join-Path $BuiltRoot "AUTO_PRO\bin\kvtm_loader_v3.exe"),
     (Join-Path $BuiltRoot "AUTO_PRO\bin\kvtm_bridge_v3.dll"),
     (Join-Path $BuiltRoot "Multi"),
@@ -139,7 +143,7 @@ foreach ($required in @(
 $releaseStage = Join-Path $DistRoot (".Kvtm_tool_Cry-runtime-stage-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $releaseStage -Force | Out-Null
 try {
-    foreach ($name in @("AUTO_PRO", "Multi", "components")) {
+    foreach ($name in @("AUTO_PRO", "AUTO_PRO_ORIGINAL", "Multi", "components")) {
         Copy-Item -LiteralPath (Join-Path $BuiltRoot $name) -Destination (Join-Path $releaseStage $name) -Recurse -Force
     }
     Copy-Item -LiteralPath (Join-Path $BuiltRoot ".source-head.txt") -Destination (Join-Path $releaseStage ".source-head.txt") -Force
