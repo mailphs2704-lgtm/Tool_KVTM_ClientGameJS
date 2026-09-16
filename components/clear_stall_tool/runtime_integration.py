@@ -59,11 +59,20 @@ def install_runtime_integration(app_class) -> None:
                 parent=self.root,
             )
             return
-        w = self._modal("Thêm tài khoản từ profile", 540, 420)
+        w = self._modal("Thêm tài khoản từ profile", 600, 450)
         body = tk.Frame(w, bg=SURFACE)
         body.pack(fill="both", expand=True, padx=22, pady=18)
         tk.Label(body, text="Chọn tài khoản có trong profile", bg=SURFACE, fg=TEXT, font=("Segoe UI", 12, "bold")).pack(anchor="w")
-        tk.Label(body, text="Chỉ profile đã đồng bộ từ AUTO MULTI DEV mới xuất hiện ở đây.", bg=SURFACE, fg=MUTED).pack(anchor="w", pady=(3, 12))
+        tk.Label(body, text="Chỉ profile đã đồng bộ từ AUTO MULTI DEV mới xuất hiện ở đây.", bg=SURFACE, fg=MUTED).pack(anchor="w", pady=(3, 2))
+        tk.Label(
+            body,
+            text=f"Nguồn: {self.profile_store.multi_profile_file}",
+            bg=SURFACE,
+            fg=MUTED,
+            anchor="w",
+            justify="left",
+            wraplength=550,
+        ).pack(anchor="w", pady=(0, 12))
         box = tk.Listbox(
             body, selectmode="extended", exportselection=False,
             relief="flat", bd=0, highlightthickness=1, highlightbackground="#DCE4EF",
@@ -97,7 +106,11 @@ def install_runtime_integration(app_class) -> None:
             return
         messagebox.showinfo(
             "KVTM - Dọn Quầy",
-            f"Đã đồng bộ {count} profile từ AUTO MULTI DEV.\nThiết lập Dọn quầy riêng của tool không bị ghi đè.",
+            (
+                f"Đã đồng bộ {count} profile từ AUTO MULTI DEV.\n"
+                f"Nguồn: {self.profile_store.multi_profile_file}\n\n"
+                "Thiết lập Dọn quầy riêng của tool không bị ghi đè."
+            ),
             parent=self.root,
         )
 
