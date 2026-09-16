@@ -655,3 +655,5 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Registered errors keep their typed handler at the exact module checkpoint. InventoryFull stops the VP collector on a fresh-frame probe before each click, descends to the stall sale workflow, returns to the production floor, and retries the same producer.
 - Only unregistered Function errors use the bounded global fallback: ESC exactly 3 times, click the operator-supplied green “Ở lại” point at logical (573,605), prove exact-main, visit friend #1 and return, then retry the same Function loop without incrementing counters.
 - Verification: tools/verify_recovery_architecture_contract.py statically enforces these ownership and lifecycle invariants. Static verification is not a live runtime PASS.
+
+- Build-gate follow-up: updated verify_multi_dev_main_boundary_contract.py, verify_auto_function_two_ui_contract.py, and verify_auto_main_sale_contract.py so no static verifier requires the removed 3-hour ClientRestartRequested lifecycle. All 31 verify_*.py files were scanned; no stale restart requirement remains.
