@@ -35,7 +35,8 @@ OWNERSHIP_FILE = (
     / "KVTM Client Ownership"
     / "clients.json"
 )
-DEVICE_PREFIX = "KVTMPROFILE:"
+DEVICE_PREFIX = "KVTMPROFILE__"
+DEVICE_SEPARATOR = "__"
 _MUTEX_NAME = r"Local\KVTM_Cry_UploadedAutoPro_v1"
 _ERROR_ALREADY_EXISTS = 183
 
@@ -277,7 +278,7 @@ def bridge_v3_connect(device_id=None, *args, **kwargs):
         raise RuntimeError("ADB đã tắt trong AUTO PRO gốc")
     identity = value[len(DEVICE_PREFIX):].strip()
     try:
-        owner, profile_id = identity.split(":", 1)
+        owner, profile_id = identity.split(DEVICE_SEPARATOR, 1)
     except ValueError as exc:
         raise RuntimeError(f"Thiết bị KVTM không hợp lệ: {value}") from exc
     owner = owner.upper()
@@ -318,7 +319,7 @@ def fetch_cry_devices(self):
         if not profile_id:
             continue
         owner = str(item["owner"])
-        device_id = f"{DEVICE_PREFIX}{owner}:{profile_id}"
+        device_id = f"{DEVICE_PREFIX}{owner}{DEVICE_SEPARATOR}{profile_id}"
         display_name = f"{owner} - {item['name']} [{pid}]"
         data["adb_id_list"].append(device_id)
         data["adb_id_to_name"][device_id] = display_name
@@ -345,7 +346,7 @@ def cry_device_online(self, device_id):
         return False
     identity = value[len(DEVICE_PREFIX):].strip()
     try:
-        owner, profile_id = identity.split(":", 1)
+        owner, profile_id = identity.split(DEVICE_SEPARATOR, 1)
     except ValueError:
         return False
     return any(
