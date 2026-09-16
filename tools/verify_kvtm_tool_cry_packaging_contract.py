@@ -215,6 +215,31 @@ def main() -> int:
         "Uploaded AUTO PRO does not bind Bridge V3 by stable profile identity",
     )
     require(uploaded_launcher, "ADB đã tắt", "Uploaded AUTO PRO does not fail closed on ADB")
+    require(
+        uploaded_launcher,
+        "adb_controller.ADBController.openGame = clientjs_open_game",
+        "Uploaded AUTO PRO still uses the emulator account/icon startup gate",
+    )
+    require(
+        uploaded_launcher,
+        'find_image("friend_off", threshold=0.9)',
+        "ClientJS startup does not prove the in-game screen",
+    )
+    require(
+        uploaded_launcher,
+        "deadline = time.monotonic() + 90.0",
+        "ClientJS startup proof is not bounded",
+    )
+    forbid(
+        uploaded_launcher,
+        'find_image("icon_game"',
+        "Clean ClientJS adapter must not search emulator icon_game",
+    )
+    forbid(
+        uploaded_launcher,
+        'find_image("tai_khoan"',
+        "Clean ClientJS adapter must not search emulator account icon",
+    )
     forbid(uploaded_launcher, "import local_launcher", "Uploaded AUTO PRO imports modified old launcher")
     forbid(uploaded_launcher, "import local_bridge", "Uploaded AUTO PRO imports tracking/web bridge")
     forbid(uploaded_launcher, "clientjs_auto_patch", "Uploaded AUTO PRO imports old behavior patch")
@@ -260,7 +285,7 @@ def main() -> int:
     print("parity=dev-host+dwm-off+fps-hardcap+fixed-position+pre-ui-shop-drag-speed+bridge-v3")
     print("dev-isolation=stable-running-not-stopped-by-release-build")
     print("security=no-embedded-github-token")
-    print("original-auto-pro=uploaded-sha256+separate-gui+offline-stateless+stable-profile-id+bridge-v3+no-adb")
+    print("original-auto-pro=uploaded-sha256+separate-gui+offline-stateless+stable-profile-id+clientjs-startup+bridge-v3+no-adb")
     return 0
 
 
