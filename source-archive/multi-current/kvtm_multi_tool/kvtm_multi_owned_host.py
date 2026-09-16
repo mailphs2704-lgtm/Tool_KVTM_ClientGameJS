@@ -8,6 +8,7 @@ import client_video_recorder
 import daily_sale_counter_integration
 import fps_hardcap_integration
 import optional_features_integration
+import original_auto_pro_integration
 import stall_speed_integration
 
 
@@ -40,6 +41,11 @@ def _install_runtime_integrations(app_cls, core) -> None:
     # Optional features live beside the preserved Function selector in AUTO
     # MULTI DEV and freeze per-profile state into each worker run.
     optional_features_integration.install_optional_features_integration(
+        app_cls, core
+    )
+    # Stable-only escape hatch: original uploaded AUTO PRO runs in a separate
+    # process and sees only CRY-owned ClientJS through Bridge V3.
+    original_auto_pro_integration.install_original_auto_pro_integration(
         app_cls, core
     )
     _ORIGINAL_RECORDER_INSTALL(app_cls, core)
