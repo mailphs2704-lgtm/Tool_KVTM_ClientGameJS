@@ -39,14 +39,13 @@ def install_branding(app_class) -> None:
         frame.grid_columnconfigure(1, weight=1)
 
         if self.brand_logo_image is not None:
-            logo = tk.Label(
+            tk.Label(
                 frame,
                 image=self.brand_logo_image,
                 bg=SURFACE,
                 bd=0,
                 highlightthickness=0,
-            )
-            logo.grid(row=0, column=0, rowspan=2, padx=(14, 12), pady=8)
+            ).grid(row=0, column=0, rowspan=2, padx=(14, 12), pady=8)
         else:
             tk.Label(
                 frame,

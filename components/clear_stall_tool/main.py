@@ -9,8 +9,10 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from app import ClearStallToolApp, demo_accounts
+    from branding import install_branding
 else:
     from .app import ClearStallToolApp, demo_accounts
+    from .branding import install_branding
 
 
 def _enable_windows_dpi_awareness() -> None:
@@ -31,6 +33,7 @@ def main() -> int:
     args = parser.parse_args()
 
     _enable_windows_dpi_awareness()
+    install_branding(ClearStallToolApp)
     root = tk.Tk()
     ClearStallToolApp(root, [] if args.empty else demo_accounts())
     root.mainloop()
