@@ -579,6 +579,8 @@ class MultiApp(tk.Tk):
         self.processes: dict[str, subprocess.Popen] = {}
         self.previews: dict[str, PreviewWindow] = {}
         self._bridged_pids: set[int] = set()
+        self._bridge_inflight_pids: set[int] = set()
+        self._bridge_ready_after: dict[int, float] = {}
         self._bridge_lock = threading.Lock()
         self._bridge_stop = threading.Event()
         self._bridge_error = ""
@@ -3928,6 +3930,9 @@ class MultiApp(tk.Tk):
         secret_args = json.loads(unprotect(profile["secret"]).decode("utf-8"))
         proc = subprocess.Popen([str(client), str(game_dir), *secret_args], cwd=str(game_dir))
         self.processes[profile["id"]] = proc
+        with self._bridge_lock:
+            # Let ClientJS create and settle its HWND before any loader touches it.
+            self._bridge_ready_after[int(proc.pid)] = time.monotonic() + 2.0
         self.after(1200, lambda p=proc: self._apply_display_to_process(p))
 
     def _profiles_for(self, ids: list[str]) -> list[dict]:
@@ -4208,9 +4213,10 @@ class MultiApp(tk.Tk):
             return
         display = self.settings["display"]
         self._resize_client(hwnd, display["width"], display["height"])
-        self._inject_bridge(proc.pid)
+        self._request_bridge_injection(int(proc.pid))
         self.note.set(
-            f"Đã đặt client {display['width']}x{display['height']} px; mốc quy đổi auto {display['dpi']} DPI"
+            f"Đã đặt client {display['width']}x{display['height']} px; "
+            f"mốc quy đổi auto {display['dpi']} DPI • Bridge đang nạp nền"
         )
 
     def configure_display(self) -> None:
@@ -4263,33 +4269,93 @@ class MultiApp(tk.Tk):
         save_settings(self.settings)
         with self._bridge_lock:
             self._bridged_pids.clear()
+            self._bridge_inflight_pids.clear()
+            self._bridge_ready_after.clear()
         self.note.set(f"Đã lưu Bridge DLL: {folder}")
         return True
 
-    def _inject_bridge(self, pid: int) -> bool:
-        files = self._bridge_files()
-        if not files or pid <= 0:
+    def _request_bridge_injection(self, pid: int) -> bool:
+        """Reserve one PID and run the blocking loader outside the Tk thread."""
+        pid = int(pid)
+        if pid <= 0 or not self._bridge_files():
             return False
         with self._bridge_lock:
-            if pid in self._bridged_pids:
+            if pid in self._bridged_pids or pid in self._bridge_inflight_pids:
                 return True
+            ready_at = float(self._bridge_ready_after.get(pid, 0.0) or 0.0)
+            if time.monotonic() < ready_at:
+                delay_ms = max(
+                    50, int((ready_at - time.monotonic()) * 1000)
+                )
+                self.after(
+                    delay_ms,
+                    lambda target_pid=pid:
+                    self._request_bridge_injection(target_pid),
+                )
+                return True
+            self._bridge_inflight_pids.add(pid)
+        threading.Thread(
+            target=self._inject_bridge,
+            args=(pid,),
+            name=f"kvtm-bridge-inject-{pid}",
+            daemon=True,
+        ).start()
+        return True
+
+    def _inject_bridge(self, pid: int) -> bool:
+        """Blocking loader body; caller must reserve PID before entering."""
+        files = self._bridge_files()
+        if not files or pid <= 0:
+            with self._bridge_lock:
+                self._bridge_inflight_pids.discard(int(pid))
+            return False
         loader, bridge = files
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        ok = False
+        error = ""
         try:
             result = subprocess.run(
-                [str(loader), str(pid), str(bridge)], capture_output=True, text=True,
-                creationflags=flags, timeout=15,
+                [str(loader), str(pid), str(bridge)],
+                capture_output=True,
+                text=True,
+                creationflags=flags,
+                timeout=15,
             )
             if result.returncode != 0:
-                self._bridge_error = (result.stderr or result.stdout or f"mã {result.returncode}").strip()
-                return False
-            with self._bridge_lock:
-                self._bridged_pids.add(pid)
-            self._bridge_error = ""
-            return True
+                error = (
+                    result.stderr
+                    or result.stdout
+                    or f"mã {result.returncode}"
+                ).strip()
+            else:
+                ok = True
         except Exception as exc:
-            self._bridge_error = str(exc)
-            return False
+            error = str(exc)
+        finally:
+            with self._bridge_lock:
+                self._bridge_inflight_pids.discard(pid)
+                if ok:
+                    self._bridged_pids.add(pid)
+                    self._bridge_ready_after.pop(pid, None)
+                self._bridge_error = "" if ok else error
+        try:
+            self.after(
+                0,
+                lambda target_pid=pid, success=ok, detail=error:
+                self._finish_bridge_injection(target_pid, success, detail),
+            )
+        except RuntimeError:
+            pass
+        return ok
+
+    def _finish_bridge_injection(
+        self, pid: int, success: bool, error: str
+    ) -> None:
+        if success:
+            self.note.set(f"Bridge READY nền • PID {pid}")
+            return
+        if error:
+            self.note.set(f"Bridge PID {pid} chưa sẵn sàng • sẽ thử lại nền")
 
     def _bridge_monitor(self) -> None:
         while not self._bridge_stop.wait(2.0):
@@ -4316,9 +4382,20 @@ class MultiApp(tk.Tk):
                     continue
                 with self._bridge_lock:
                     self._bridged_pids.intersection_update(live)
-                    pending = live - self._bridged_pids
+                    self._bridge_inflight_pids.intersection_update(live)
+                    self._bridge_ready_after = {
+                        pid: ready_at
+                        for pid, ready_at in self._bridge_ready_after.items()
+                        if pid in live
+                    }
+                    pending = (
+                        live
+                        - self._bridged_pids
+                        - self._bridge_inflight_pids
+                    )
                 for pid in pending:
-                    self._inject_bridge(pid)
+                    if self._window_for_pid(pid):
+                        self._request_bridge_injection(pid)
             except Exception as exc:
                 self._bridge_error = str(exc)
 
