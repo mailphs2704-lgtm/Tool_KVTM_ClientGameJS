@@ -26,46 +26,30 @@ def main() -> int:
     readme = README.read_text(encoding="utf-8")
 
     for token in (
-        "KVTM - Dọn Quầy",
-        "Bắt đầu tất cả",
-        "Dừng tất cả",
-        "Thêm tài khoản",
-        "Đồng bộ profile",
-        "Cấu hình nhanh",
-        "Tổng tài khoản",
-        "Đang chạy",
-        "Sẵn sàng",
-        "Đã dừng",
-        "Chu kỳ mặc định",
-        "TÊN TÀI KHOẢN",
-        "PROFILE",
-        "TRẠNG THÁI",
-        "LẦN DỌN CUỐI",
-        "CHU KỲ",
-        "GHI CHÚ",
-        "THAO TÁC",
-        "PAGE_SIZE = 8",
+        "KVTM - Dọn Quầy", "Bắt đầu tất cả", "Dừng tất cả", "Thêm tài khoản",
+        "Đồng bộ profile", "Cấu hình nhanh", "Tổng tài khoản", "Đang chạy",
+        "Sẵn sàng", "Đã dừng", "Chu kỳ mặc định", "TÊN TÀI KHOẢN",
+        "PROFILE", "TRẠNG THÁI", "LẦN DỌN CUỐI", "CHU KỲ", "GHI CHÚ",
+        "THAO TÁC", "PAGE_SIZE = 8",
     ):
         require(app, token, "Mẫu 8 UI contract")
 
     require(entry, "SetProcessDpiAwareness", "Windows DPI-awareness hook")
-    require(readme, "Chưa nối business runtime Dọn quầy", "GUI/runtime boundary")
-    require(readme, "không chứa profile/account thật", "demo-data privacy boundary")
+    require(entry, "install_runtime_integration", "runtime integration entrypoint")
+    require(readme, "kế thừa nghiệp vụ Dọn quầy", "shared runtime boundary")
+    require(readme, "không có ô nhập account/profile tự do", "profile-only account chooser")
+    require(readme, "mọi tài khoản đều bắt đầu ở trạng thái `Đã dừng`", "startup stopped contract")
 
-    forbidden = (
-        "clear_stall_probe_runtime",
-        "kvtm_automation.workflows.clear_stall",
-        "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py",
-    )
-    for token in forbidden:
-        if token in app or token in entry:
-            raise SystemExit(f"FAIL: UI scaffold must not own runtime wiring: {token}")
+    for token in ("clear_stall_probe_runtime", "kvtm_automation.workflows.clear_stall", "subprocess.Popen", "ClientOwnershipRegistry"):
+        if token in app:
+            raise SystemExit(f"FAIL: app.py must remain presentation-only: {token}")
 
     print("CLEAR STALL STANDALONE UI CONTRACT PASS")
     print("layout=model-8")
     print("page_size=8")
-    print("runtime_wiring=NONE")
-    print("persistence=NONE")
+    print("runtime_integration=ADAPTER")
+    print("profile_chooser=PROFILE_ONLY")
+    print("startup_state=STOPPED")
     return 0
 
 
