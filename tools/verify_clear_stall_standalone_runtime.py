@@ -20,13 +20,23 @@ def require(source: str, needle: str, label: str) -> None:
 
 
 def main() -> int:
+    app_src = text("app.py")
     main_src = text("main.py")
     store_src = text("profile_store.py")
+    log_src = text("runtime_log.py")
     controller_src = text("runtime_controller.py")
     integration_src = text("runtime_integration.py")
     worker_src = text("standalone_clear_stall_worker.py")
 
-    for name, source in (("main.py", main_src), ("profile_store.py", store_src), ("runtime_controller.py", controller_src), ("runtime_integration.py", integration_src), ("standalone_clear_stall_worker.py", worker_src)):
+    for name, source in (
+        ("app.py", app_src),
+        ("main.py", main_src),
+        ("profile_store.py", store_src),
+        ("runtime_log.py", log_src),
+        ("runtime_controller.py", controller_src),
+        ("runtime_integration.py", integration_src),
+        ("standalone_clear_stall_worker.py", worker_src),
+    ):
         ast.parse(source, filename=name)
 
     require(store_src, 'APPDATA", Path.home())) / "KVTM Dọn Quầy"', "separate app data")
@@ -68,6 +78,24 @@ def main() -> int:
     if "Spinbox" in integration_src:
         raise AssertionError("Per-account/quick numeric settings must not use spinner +/- controls")
 
+    require(app_src, '"LOG"', "table log column")
+    require(app_src, "self.show_log", "per-account log button")
+    if '"GHI CHÚ"' in app_src:
+        raise AssertionError("Runtime progress must not be rendered in the old GHI CHÚ column")
+    require(log_src, 'self.log_dir = Path(app_dir) / "logs"', "persistent log directory")
+    require(log_src, "MAX_BYTES", "runtime log rotation")
+    require(log_src, "read_tail", "runtime log reader")
+    require(controller_src, "RuntimeLogStore", "controller log store")
+    require(controller_src, '"worker_stdout"', "raw worker stdout logging")
+    require(controller_src, '"worker_started"', "worker lifecycle logging")
+    require(controller_src, '"client_started"', "client lifecycle logging")
+    require(controller_src, "def log_path", "log path API")
+    require(controller_src, "def read_log", "log reader API")
+    require(integration_src, "def show_log", "live log viewer")
+    require(integration_src, "runtime_controller.read_log", "viewer reads persistent log")
+    require(integration_src, "Tự động làm mới log mỗi 0.7 giây", "live log refresh")
+    require(integration_src, "Runtime progress belongs in the persistent Log window", "no progress in table note")
+
     require(controller_src, "MAX_CONCURRENCY = 2", "clear-stall concurrency")
     require(controller_src, "ClientOwnershipRegistry", "ownership safety")
     require(controller_src, "Dọn quầy không giành quyền điều khiển", "no ownership stealing")
@@ -90,6 +118,8 @@ def main() -> int:
     print("profile_source=%APPDATA%\\KVTM Multi DEV\\profiles.json")
     print("account_settings=VP+HOUSE_COUNT+VP_QUANTITY+INTERVAL")
     print("numeric_input=PLAIN_ENTRY_NO_SPINNER")
+    print("runtime_log=PERSISTENT_PER_ACCOUNT+LIVE_VIEWER")
+    print("table_progress=LOG_BUTTON_ONLY")
     return 0
 
 
