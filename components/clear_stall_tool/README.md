@@ -28,8 +28,8 @@ Dữ liệu runtime của tool nằm ngoài Git tại:
 
 Đây là cùng thư mục mà `START_MULTI_DEV_SILENT.ps1` gán vào `KVTM_MULTI_APP_DIR`. Tool Dọn Quầy chạy ở process riêng nên tự bind về đúng thư mục này; nó **không được tự động lấy `%APPDATA%\KVTM Multi\profiles.json`** của bản Multi khác/legacy.
 
-- Lần mở đầu, nếu chưa có snapshot thì tool tự import profile Multi DEV hiện có.
-- `Đồng bộ profile` cập nhật snapshot khi Multi DEV có tài khoản mới/thay đổi.
+- Mỗi lần mở tool, snapshot profile được refresh từ AUTO MULTI DEV hiện tại nếu file nguồn tồn tại.
+- `Đồng bộ profile` cho phép refresh lại ngay khi Multi DEV vừa có tài khoản mới/thay đổi trong lúc tool đang mở.
 - Popup `Thêm tài khoản` và thông báo đồng bộ hiển thị đường dẫn nguồn profile để operator kiểm tra trực tiếp.
 - Không ghi ngược vào profile/settings của AUTO MULTI DEV.
 - Settings Dọn quầy riêng được giữ khi đồng bộ profile.
