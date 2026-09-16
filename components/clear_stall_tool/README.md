@@ -1,33 +1,60 @@
-# KVTM Dọn Quầy — standalone UI scaffold
+# KVTM Dọn Quầy — standalone
 
-Mốc này chỉ dựng **GUI độc lập** theo mẫu 8 đã được operator chọn. Chưa nối business runtime Dọn quầy, profile persistence hay settings persistence.
+Tool Dọn quầy độc lập dùng giao diện Mẫu 8, nhưng **kế thừa nghiệp vụ Dọn quầy đã được kiểm chứng của AUTO MULTI DEV** thay vì sao chép thuật toán.
 
-## Design contract
+## Runtime contract
 
-- giao diện sáng, gọn, dùng font Segoe UI và chỉ phụ thuộc Python standard library (`tkinter`);
-- header `KVTM - Dọn Quầy` + trạng thái tổng;
-- toolbar: `Bắt đầu tất cả`, `Dừng tất cả`, `Thêm tài khoản`, `Đồng bộ profile`, `Cấu hình nhanh`;
-- 5 card: tổng tài khoản, đang chạy, sẵn sàng, đã dừng, chu kỳ mặc định;
-- bảng account có checkbox, tên tài khoản, profile, trạng thái, lần dọn cuối, chu kỳ, ghi chú và thao tác;
-- hỗ trợ chọn nhiều account, phân trang, nút start/stop từng account;
-- popup Thêm tài khoản / Đồng bộ profile / Cấu hình nhanh đã có shell UI để nối runtime sau;
-- dữ liệu demo chỉ dùng tên giả, không chứa profile/account thật.
+- business runtime dùng lại `components/clientjs-auto/worker/clear_stall_probe_runtime.py` từ package Multi DEV đã build;
+- một lượt thật chạy full-resale: mua đúng target rồi thu vàng/treo lại đúng các lô x10 đã xác minh;
+- tối đa 2 tài khoản chạy Dọn quầy đồng thời;
+- ClientJS do tool Dọn quầy tự mở sẽ được đóng sau mỗi lượt;
+- registry ownership được kiểm tra trước khi mở: nếu cùng tài khoản đang thuộc Multi/Cry hoặc instance khác, tool không giành quyền điều khiển;
+- Stop gửi qua command channel của worker hiện hành.
 
-## Chạy preview
+## Profile và settings riêng
 
-```bat
-python components\clear_stall_tool\main.py
+Dữ liệu runtime nằm ngoài Git tại:
+
+```text
+%APPDATA%\KVTM Dọn Quầy\profiles.json
+%APPDATA%\KVTM Dọn Quầy\settings.json
+%APPDATA%\KVTM Dọn Quầy\runs\
 ```
 
-Mặc định hiển thị dữ liệu demo để review layout. Muốn xem trạng thái rỗng:
+`profiles.json` là snapshot riêng lấy từ `%APPDATA%\KVTM Multi\profiles.json`.
+
+- Lần mở đầu, nếu chưa có snapshot thì tool tự import profile Multi hiện có.
+- `Đồng bộ profile` cập nhật snapshot khi Multi có tài khoản mới/thay đổi.
+- Không ghi ngược vào profile/settings của AUTO MULTI DEV.
+- Settings Dọn quầy riêng được giữ khi đồng bộ profile.
+- `Thêm tài khoản` chỉ cho chọn profile đã đồng bộ; **không có ô nhập account/profile tự do**.
+
+## Startup / trạng thái
+
+Mỗi lần mở tool, **mọi tài khoản đều bắt đầu ở trạng thái `Đã dừng`**. Trạng thái chạy không persist qua restart.
+
+- `▶` một tài khoản: bật lịch và chạy lượt Dọn quầy đầu tiên ngay.
+- `■`: dừng lịch và gửi stop cho worker nếu đang thao tác.
+- `Bắt đầu tất cả` / `Dừng tất cả`: áp dụng cho toàn bộ tài khoản đã thêm.
+- Sau lượt thành công, lịch chờ theo `interval_minutes` rồi chạy lượt kế tiếp.
+
+## Chạy
+
+Tool cần runtime Multi DEV đã build. Nếu package chưa có, chạy `KVTM_DEV_CONTROL.bat -> [1]` trong repo Multi DEV trước.
 
 ```bat
-python components\clear_stall_tool\main.py --empty
+py -3.11 components\clear_stall_tool\main.py
+```
+
+Chế độ chỉ xem demo:
+
+```bat
+py -3.11 components\clear_stall_tool\main.py --demo
 ```
 
 ## Boundary
 
 - Không sửa AUTO MULTI DEV production UI.
-- Không sửa `clear_stall_probe_runtime.py` hoặc nghiệp vụ Dọn quầy.
-- Không tạo `profiles.json`/`settings.json` thật ở mốc GUI này.
-- Giai đoạn sau sẽ nối profile riêng của tool với thao tác `Đồng bộ profile` từ AUTO MULTI DEV và giữ runtime/shared files dùng chung theo contract đã chốt với operator.
+- Không fork/chép `ClearStallWorkflow`.
+- Không commit `profiles.json`, `settings.json`, token, cookie, password hay launch secret.
+- Static/build PASS không phải runtime PASS; lượt thật chỉ chốt khi có operator evidence.
