@@ -15,8 +15,7 @@ FILE_FUNCTIONS = (
     "Thay khối mô tả AUTO MULTI DEV bằng menu chọn Function + số vòng giữa hai lần bán",
     "Hiển thị trực tiếp thời gian chờ giữa các vòng Function trên AUTO MULTI DEV",
     "Thêm công tắc chung qua nhà bạn #1 sau mỗi ba vòng Function để làm mới scene/item treo",
-    "Restart ClientJS định kỳ 3 giờ tại safe Function boundary sau lượt bán VP an toàn",
-    "Tự relaunch đúng profile ClientJS rồi gắn lại worker AUTO với cấu hình cũ",
+    "Chặn restart ClientJS định kỳ và restart do lỗi; giữ nguyên process/profile",
     "Bổ sung Tốc độ thu VP vào đúng cửa sổ Cấu hình tốc độ hiện có",
     "Đưa Log hành động + Log chi tiết xuống hàng riêng dưới nút AUTO MULTI DEV",
     "Ghi cấu hình Function AUTO Main theo từng run mà không thay Bridge/capture ownership",
@@ -29,7 +28,7 @@ _AUTO_MAIN_FUNCTION_OPTIONS = (
     ("function_3", "9 Nước hoa hồng - 9 Trà đá - 9 Vải vàng"),
 )
 _FRIEND_REFRESH_SETTING_KEY = "auto_multi_dev_friend_refresh_enabled"
-_CLIENT_RESTART_INTERVAL_SECONDS = 10800.0
+_CLIENT_RESTART_INTERVAL_SECONDS = 0.0
 _CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"
 
 
@@ -242,9 +241,8 @@ def install_auto_builder_integration(app_class, core) -> None:
             text=(
                 "Vào game + đóng popup → bán VP lần 1 → chạy Function. "
                 "Nếu bật làm mới: sau vòng 3/6/9..., bán đến hạn xong sẽ sang "
-                "nhà bạn đầu tiên rồi quay về. Restart ClientJS định kỳ 3 giờ; "
-                "nếu đến hạn giữa Function thì chờ Function hiện tại PASS, "
-                "chạy sale an toàn tại boundary rồi mới restart."
+                "nhà bạn đầu tiên rồi quay về. Restart ClientJS sau 3 giờ hoặc "
+                "do lỗi đã bị BLOCK; recovery tiếp tục trong cùng process."
             ),
             style="AutoValue.TLabel",
             anchor="w",
@@ -362,7 +360,7 @@ def install_auto_builder_integration(app_class, core) -> None:
             f"AUTO MULTI DEV • {label} • bán lại sau {sale_every} vòng • "
             f"chờ giữa vòng {loop_delay:g}s • qua bạn #1/3 vòng="
             f"{'BẬT' if friend_refresh_enabled else 'TẮT'} • "
-            "restart ClientJS=3 giờ/safe-Function-boundary"
+            "restart ClientJS=BLOCK (3h + lỗi)"
         )
         original_start_clean_session(self)
 
@@ -518,14 +516,16 @@ def install_auto_builder_integration(app_class, core) -> None:
         profile_id = str(profile_id)
         reason = str(payload.get("reason") or "")
         lifecycle_event = str(payload.get("lifecycle_event") or "")
-        scheduled_restart = (
+        scheduled_restart = False
+        if (
             outcome == "client_restart_requested"
             or lifecycle_event == "client_restart_requested"
-            or (
-                outcome == "stopped"
-                and reason.startswith(_CLIENT_RESTART_REQUEST_PREFIX)
+            or reason.startswith(_CLIENT_RESTART_REQUEST_PREFIX)
+        ):
+            self.note.set(
+                "BLOCK restart ClientJS • giữ nguyên process; worker đã dừng để "
+                "không đóng/mở lại tài khoản ngoài ý muốn"
             )
-        )
         if scheduled_restart:
             # Scheduled restart is lifecycle orchestration only. RecoveryManager
             # is not involved because the current Function and safe-boundary sale
