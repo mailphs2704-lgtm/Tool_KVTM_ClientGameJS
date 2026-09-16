@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
@@ -7,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = ROOT / "bridge-v3/native/kvtm_bridge_v3.cpp"
 BASE = ROOT / "bridge-v3/native/kvtm_bridge_v3_base.cpp"
 ENGINE = ROOT / "test-candidates/auto-pro-clientjs-temp/engine_driver.py"
+MULTI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
+DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 
 
 def require(text: str, token: str, label: str) -> None:
@@ -15,13 +18,17 @@ def require(text: str, token: str, label: str) -> None:
 
 
 def main() -> int:
-    for path in (WRAPPER, BASE, ENGINE):
+    for path in (WRAPPER, BASE, ENGINE, MULTI, DEV_ENTRY):
         if not path.is_file():
             raise AssertionError(f"Missing Bridge V3 contract file: {path}")
 
     wrapper = WRAPPER.read_text(encoding="utf-8")
     base = BASE.read_text(encoding="utf-8")
     engine = ENGINE.read_text(encoding="utf-8")
+    multi = MULTI.read_text(encoding="utf-8")
+    dev_entry = DEV_ENTRY.read_text(encoding="utf-8")
+    ast.parse(multi, filename=str(MULTI))
+    ast.parse(dev_entry, filename=str(DEV_ENTRY))
 
     for token in (
         "KVTM_BRIDGE_V3",
@@ -64,12 +71,36 @@ def main() -> int:
     ):
         require(engine, token, "AUTO Multi DEV V3 driver")
 
+    for token in (
+        "self._bridge_inflight_pids: set[int] = set()",
+        "def _request_bridge_injection",
+        "target=self._inject_bridge",
+        "self._bridge_inflight_pids.add(pid)",
+        "self._bridge_inflight_pids.discard(pid)",
+        "self._request_bridge_injection(int(proc.pid))",
+        "live - self._bridged_pids",
+        "- self._bridge_inflight_pids",
+        "if self._window_for_pid(pid):",
+    ):
+        require(multi, token, "Non-blocking single-owner Bridge injection")
+    apply_display = multi.split(
+        "def _apply_display_to_process", 1
+    )[1].split("def configure_display", 1)[0]
+    if "self._inject_bridge(" in apply_display:
+        raise AssertionError("Tk display callback still runs blocking Bridge loader")
+    require(
+        dev_entry,
+        "self._bridged_pids.add(int(new_pid))",
+        "Restarted PID ready-Bridge adoption",
+    )
+
     print("AUTO MULTI DEV BRIDGE V3 CONTRACT VERIFIED")
     print("capture=CAPTURE3")
     print("input=INPUT4")
     print("fps=hard-cap-present")
     print("no-layout=true")
     print("sleep-throttle=false")
+    print("loader=background+single-inflight-per-pid+hwnd-ready")
     return 0
 
 
