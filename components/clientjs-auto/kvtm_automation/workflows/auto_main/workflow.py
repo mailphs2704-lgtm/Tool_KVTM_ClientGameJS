@@ -5,7 +5,7 @@ import json
 import time
 
 from ...automation import KVAutomation
-from ...errors import ClientRestartRequested
+from ...errors import AutomationStopped
 from ..auto_builder.catalog import FunctionSpec, get_function_spec
 from ..auto_builder.modules import FunctionModule
 from ..auto_vp_sale import AutoVpSaleWorkflow
@@ -19,9 +19,9 @@ FILE_FUNCTIONS = (
     "Chạy Function hoàn chỉnh liên tục cho tới khi operator bấm Dừng",
     "Sau lần bán đầu, bán lại theo số vòng Function cấu hình",
     "Nếu GUI bật, periodic Friend Refresh chạy theo counter riêng sau Function PASS",
-    "Scheduled ClientJS restart mặc định mỗi 3 giờ và không cắt ngang Function",
-    "Khi 3h đến giữa Function, chờ đúng Function hiện tại PASS rồi mới xử lý boundary",
-    "Trước scheduled restart luôn hoàn tất một sale an toàn để resume có thể skip sale đầu đúng một lần",
+    "Chặn tuyệt đối scheduled/error ClientJS restart; lỗi được phục hồi trong cùng process",
+    "Lỗi đã đăng ký dùng handler tại đúng checkpoint; lỗi chưa đăng ký dùng global fallback",
+    "Global fallback: ESC x3 -> Ở lại -> exact-main -> nhà bạn #1 -> quay về -> retry cùng vòng",
     "Giữ stop-check trước Function, sale, maintenance và thời gian chờ",
     "Fail-close nếu Function chưa có runner/completion gate runtime hoàn chỉnh",
 )
@@ -54,22 +54,16 @@ class AutoMainWorkflow:
         -> periodic Friend Refresh when due
         -> next Function
 
-    Scheduled ClientJS restart is scheduler-wide and defaults to three hours.
-    A deadline never interrupts an in-progress Function. If the deadline becomes
-    due while a Function is running, the scheduler waits for that Function to
-    PASS. At that safe boundary it guarantees one sale has just completed, then
-    emits ``ClientRestartRequested``. This preserves the existing one-shot
-    ``skip_initial_sale_once`` restart handoff without delaying restart for extra
-    Function loops merely to reach the normal sale cadence.
-
-    Emergency/recovery restart is intentionally not implemented here yet. It
-    requires the separate durable-checkpoint policy that will be wired only when
-    the operator identifies/approves the corresponding error branch.
+    ClientJS restart is deliberately blocked. Registered production/navigation
+    errors remain owned by their typed checkpoint handlers. Only an exception
+    escaping those handlers enters the global fallback, which clears the stuck
+    modal, proves exact-main, refreshes through friend #1, then retries the same
+    Function-loop checkpoint without advancing scheduler counters.
     """
 
     FRIEND_REFRESH_EVERY_LOOPS = 3
-    CLIENT_RESTART_INTERVAL_SECONDS = 10800.0
-    CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"
+    CLIENT_RESTART_INTERVAL_SECONDS = 0.0
+    GLOBAL_RECOVERY_LIMIT = 3
 
     def __init__(
         self,
@@ -98,9 +92,13 @@ class AutoMainWorkflow:
             raise ValueError("max_function_loops phải >= 1 khi được cấu hình")
 
         maintenance = self._load_runtime_maintenance_config()
-        self.client_restart_interval_seconds = float(
-            maintenance["client_restart_interval_seconds"]
-        )
+        requested_restart = float(maintenance["client_restart_interval_seconds"])
+        self.client_restart_interval_seconds = 0.0
+        if requested_restart > 0.0:
+            self.context.log(
+                "AUTO MULTI DEV • BLOCK restart ClientJS • bỏ qua cấu hình "
+                f"{requested_restart:.0f}s; recovery giữ nguyên process/profile"
+            )
         self.skip_initial_sale_once = bool(maintenance["skip_initial_sale_once"])
         if not 0.0 <= self.client_restart_interval_seconds <= 86400.0:
             raise ValueError(
@@ -117,7 +115,7 @@ class AutoMainWorkflow:
         self.sold_listings = 0
         self.collected_gold_slots = 0
         self.friend_refresh_calls = 0
-        self._client_restart_due_at = 0.0
+        self._global_recovery_count = 0
 
     def _load_runtime_maintenance_config(self) -> dict[str, object]:
         """Read integration-only maintenance fields from this run marker."""
@@ -275,28 +273,39 @@ class AutoMainWorkflow:
             f"thu_vàng={sale.collected_gold_slots}"
         )
 
-    def _client_restart_due(self) -> bool:
-        return bool(
-            self.client_restart_interval_seconds > 0.0
-            and self._client_restart_due_at > 0.0
-            and time.monotonic() >= self._client_restart_due_at
-        )
-
-    def _request_client_restart_at_safe_boundary(self) -> None:
-        self.context.ensure_running()
-        self.context.stage("auto-main-client-restart-safe-boundary")
+    def _recover_unregistered_function_error(
+        self,
+        *,
+        loop_ordinal: int,
+        error: Exception,
+    ) -> None:
+        """Last-resort recovery for errors not claimed by a typed handler."""
+        self._global_recovery_count += 1
+        attempt = self._global_recovery_count
+        if attempt > self.GLOBAL_RECOVERY_LIMIT:
+            raise error
+        self.context.stage("auto-main-global-unregistered-recovery")
         self.context.log(
-            "AUTO MULTI DEV • restart ClientJS SAFE • Function hiện tại đã PASS "
-            "và sale trước restart đã hoàn tất • "
-            f"loops={self.function_loops} • sale_calls={self.sale_calls} • "
-            f"interval={self.client_restart_interval_seconds:.0f}s"
+            "AUTO global fallback • lỗi chưa có quy tắc riêng • "
+            f"vòng={loop_ordinal} • lần={attempt}/{self.GLOBAL_RECOVERY_LIMIT} • "
+            f"{type(error).__name__}: {error} • giữ nguyên checkpoint vòng"
         )
-        raise ClientRestartRequested(
-            f"{self.CLIENT_RESTART_REQUEST_PREFIX}|"
-            f"function_id={self.spec.function_id}|"
-            f"function_loops={self.function_loops}|"
-            f"sale_calls={self.sale_calls}|"
-            f"interval_seconds={self.client_restart_interval_seconds:.0f}"
+        self.auto.popup.escape_three_then_stay(
+            label=f"global fallback vòng {loop_ordinal}"
+        )
+        self.friend_refresh.recovery.recover_unknown_to_main(
+            f"global fallback vòng {loop_ordinal}: exact-main",
+            reason=f"unregistered-function-error:{type(error).__name__}",
+        )
+        passed = self.friend_refresh.run(completed_loops=self.function_loops)
+        if not passed:
+            self.friend_refresh.recovery.ensure_main(
+                f"global fallback vòng {loop_ordinal}: friend refresh recovered"
+            )
+        self.context.stage("auto-main-global-unregistered-resume")
+        self.context.log(
+            "AUTO global fallback • exact-main + nhà bạn #1 PASS • "
+            f"quay lại checkpoint vòng {loop_ordinal}, không tăng counter"
         )
 
     def _friend_refresh_if_due(self) -> None:
@@ -341,11 +350,6 @@ class AutoMainWorkflow:
 
     def run(self) -> AutoMainResult:
         started = time.monotonic()
-        self._client_restart_due_at = (
-            started + self.client_restart_interval_seconds
-            if self.client_restart_interval_seconds > 0.0
-            else 0.0
-        )
         self.context.stage("auto-main-pipeline-start")
         self.context.log(
             "AUTO MULTI DEV • Function đã chọn: "
@@ -353,8 +357,7 @@ class AutoMainWorkflow:
             f"các lần sau mỗi {self.sale_every_loops} vòng • "
             f"refresh nhà bạn mỗi {self.FRIEND_REFRESH_EVERY_LOOPS} vòng="
             f"{'BẬT' if self.friend_refresh_enabled else 'TẮT'} • "
-            f"restart ClientJS={self.client_restart_interval_seconds:.0f}s/3h "
-            "(defer đến Function boundary) • "
+            "restart ClientJS=BLOCK (3h + error) • "
             f"chờ giữa vòng Function={self.function_loop_delay_seconds:.3f}s"
         )
 
@@ -377,10 +380,20 @@ class AutoMainWorkflow:
             self.context.log(
                 f"AUTO MULTI DEV • {self.spec.label} • vòng {next_loop} START"
             )
-            payload = self.function.run(function_id=self.spec.function_id)
-            self._validate_function_result(payload)
-            self.context.ensure_running()
+            try:
+                payload = self.function.run(function_id=self.spec.function_id)
+                self._validate_function_result(payload)
+                self.context.ensure_running()
+            except AutomationStopped:
+                raise
+            except Exception as exc:
+                self._recover_unregistered_function_error(
+                    loop_ordinal=next_loop,
+                    error=exc,
+                )
+                continue
 
+            self._global_recovery_count = 0
             self.function_loops += 1
             loops_since_sale += 1
             self.context.stage(
@@ -396,20 +409,6 @@ class AutoMainWorkflow:
                 self._sale_once(ordinal=self.sale_calls + 1)
                 loops_since_sale = 0
                 sale_completed_at_boundary = True
-
-            # 3h reached during the Function: we are now at the first safe
-            # Function boundary. Guarantee a sale immediately before restart so
-            # the parent can preserve the existing skip_initial_sale_once handoff.
-            if self._client_restart_due():
-                if not sale_completed_at_boundary:
-                    self.context.stage("auto-main-client-restart-pre-sale")
-                    self.context.log(
-                        "AUTO MULTI DEV • mốc 3h đã đến • Function hiện tại PASS • "
-                        "chạy sale an toàn trước scheduled restart"
-                    )
-                    self._sale_once(ordinal=self.sale_calls + 1)
-                    loops_since_sale = 0
-                self._request_client_restart_at_safe_boundary()
 
             self._friend_refresh_if_due()
 
