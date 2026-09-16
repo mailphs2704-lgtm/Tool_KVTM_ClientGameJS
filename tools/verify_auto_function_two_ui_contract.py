@@ -40,9 +40,9 @@ def main() -> int:
     require(integration, "valid_ids = {item[0] for item in _AUTO_MAIN_FUNCTION_OPTIONS}", "AUTO Main start does not validate selected Function")
     require(integration, '"function_id": function_id', "Selected Function is not frozen into worker config")
     require(integration, 'start_button.configure(command=self._start_configured_auto_main)', "AUTO Main Start is not bound to configured Function")
-    require(integration, 'resume["skip_initial_sale_once"] = True', "Client restart resume guard changed")
-    require(integration, "self._start_clean_auto_profile_only(profile_id)", "Client restart does not relaunch only requesting profile")
-    require(integration, "_CLIENT_RESTART_INTERVAL_SECONDS = 10800.0", "Function 2 UI integration no longer uses 3h restart")
+    require(integration, "_CLIENT_RESTART_INTERVAL_SECONDS = 0.0", "Function 2 UI integration must block restart")
+    require(integration, "scheduled_restart = False", "Function 2 integration restart supervisor is not blocked")
+    require(integration, "restart ClientJS=BLOCK (3h + lỗi)", "Function 2 UI blocked-restart marker missing")
 
     require(catalog, '"function_1": FunctionSpec(', "Function 1 catalog entry missing")
     require(catalog, '"function_2": FunctionSpec(', "Function 2 catalog entry missing")
@@ -57,7 +57,7 @@ def main() -> int:
     print("AUTO MULTI DEV FUNCTION TWO UI STATIC CONTRACT VERIFIED")
     print("dropdown=function1-default+function2-explicit")
     print("worker_config=function-id-frozen-per-profile")
-    print("restart=3h+same-profile+skip-duplicate-initial-sale")
+    print("restart=blocked-3h-and-error")
     return 0
 
 
