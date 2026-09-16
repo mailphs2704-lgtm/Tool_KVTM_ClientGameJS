@@ -261,10 +261,7 @@ def main() -> int:
         )
 
         from kvtm_automation import AutomationContext, KVAutomation
-        from kvtm_automation.errors import (
-            AutomationStopped,
-            ClientRestartRequested,
-        )
+        from kvtm_automation.errors import AutomationStopped
         from kvtm_automation.workflows.game_session import GameSessionWorkflow
 
         channel = StopChannel(
@@ -424,8 +421,9 @@ def main() -> int:
             f"qua nhà bạn #1 sau mỗi 3 vòng="
             f"{'BẬT' if friend_refresh_enabled else 'TẮT'} • "
             f"startup_mode={startup_mode} • "
-            "runtime_error_policy=typed-recovery+global-unhandled-recovery • "
-            "unregistered_error=exact-main->friend1->own-home->restart-auto"
+            "runtime_error_policy=typed-checkpoint-first+global-fallback • "
+            "unregistered_error=ESCx3->stay->exact-main->friend1->resume-same-loop • "
+            "client_restart=BLOCK"
         )
 
         try:
@@ -448,29 +446,6 @@ def main() -> int:
                 **result_payload,
             )
             return 0
-        except ClientRestartRequested as exc:
-            # Scheduled ClientJS restart is a lifecycle request, not an AUTO
-            # failure and not a generic AutomationStopped. Emit a dedicated
-            # lifecycle event, then a compatibility terminal event so the
-            # current Multi supervisor can hand the exact profile to its restart
-            # adapter without mistaking this for an unregistered runtime error.
-            emit(
-                "client_restart_requested", workflow=WORKFLOW_NAME,
-                profile_id=args.profile_id,
-                reason=str(exc),
-                function_id=function_id,
-            )
-            emit(
-                "worker_stopped", workflow=WORKFLOW_NAME,
-                profile_id=args.profile_id,
-                reason=str(exc),
-                lifecycle_event="client_restart_requested",
-                function_id=function_id,
-            )
-            log(
-                "AUTO MULTI DEV • scheduled ClientJS restart requested at safe boundary"
-            )
-            return 75
         except AutomationStopped as exc:
             emit(
                 "worker_stopped", workflow=WORKFLOW_NAME,
