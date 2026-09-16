@@ -665,3 +665,11 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Bridge Monitor chỉ inject PID có HWND, loại cả PID READY và IN-FLIGHT. PID do Auto Multi restart phát ra được đánh dấu READY vì EngineDriver chỉ publish sau khi Bridge V3 đã kết nối.
 - Không đổi launcher, title, vị trí, 1000x1000, DWM hay worker AUTO.
 - AST và static Bridge contract PASS; Windows LIVE PENDING.
+
+
+## 2026-09-16 — Chức năng chính tương thích schema tốc độ; giữ Nâng kho AUTO PRO
+
+- Root cause của `Lỗi AUTO / Thông số tốc độ không hỗ trợ`: GUI dùng chung object tốc độ và gửi cả khóa của AUTO MULTI DEV/Dọn quầy vào worker AUTO PRO lịch sử.
+- `auto_worker.py` nay bỏ qua đúng allow-list 6 khóa ngoại (`floor_swipe_duration`, `plant_harvest_duration`, `vp_collect_delay`, `vp_production_delay`, `crop_check_interval`, `clear_stall_drag_speed`) ở cả lúc khởi động và cập nhật live; khóa lạ ngoài allow-list vẫn fail-close.
+- Đường Nâng kho cũ được giữ nguyên và khóa bằng verifier: `auto_nang_kho`, loại kho, `time_nang_kho`, cân bằng và KC tiếp tục đi từ tab Nâng kho vào worker AUTO chính.
+- Source/static review PASS; Windows build/LIVE PENDING. Retest bằng Function 318 trong Chức năng chính, sau đó bật tab Nâng kho và chạy lại cùng Function.
