@@ -486,15 +486,79 @@ def install_client_ownership_integration(app_cls, core) -> None:
 
     def ownership_adopt(self, rows: list[dict]) -> None:
         try:
-            owned_pids = {
-                int(item["pid"])
-                for item in registry.snapshot()
-                if item["owner"] == registry.owner
-            }
+            snapshot = registry.snapshot()
         except OwnershipError as exc:
             self.note.set(f"Không adopt ClientJS: ownership registry lỗi: {exc}")
-            owned_pids = set()
+            snapshot = []
 
+        # AUTO PRO gốc restarts the exact Cry profile inside EngineDriver.  The
+        # replacement PID initially has no registry row, so filtering only
+        # already-owned PIDs creates a deadlock: Cry can neither adopt nor claim
+        # it.  Reclaim only for the Stable CRY owner and only after the complete
+        # saved profile signature (game path + protected launch arguments)
+        # matches. DEV never enters this recovery path.
+        if registry.owner == OWNER_CRY:
+            signatures = {
+                str(profile.get("id") or ""): self._profile_signature(profile)
+                for profile in self.profiles
+            }
+            for row in rows or []:
+                try:
+                    pid = int(
+                        (row or {}).get("ProcessId")
+                        or (row or {}).get("pid")
+                        or 0
+                    )
+                    args = core.split_windows_command_line(
+                        (row or {}).get("CommandLine") or ""
+                    )
+                    if pid <= 0 or len(args) < 2:
+                        continue
+                    running_signature = (
+                        os.path.normcase(os.path.abspath(args[1])),
+                        args[2:],
+                    )
+                    profile = next(
+                        (
+                            item for item in self.profiles
+                            if signatures.get(str(item.get("id") or ""))
+                            == running_signature
+                        ),
+                        None,
+                    )
+                    if profile is None:
+                        continue
+                    profile_id, account_key, account_name = identity_for_profile(
+                        self, profile
+                    )
+                    existing = entry_for_profile(self, profile, snapshot)
+                    if existing is not None:
+                        # A live self/foreign owner remains authoritative. Never
+                        # replace it merely because another matching PID exists.
+                        continue
+                    claimed = registry.claim(
+                        pid, profile_id, account_key, account_name
+                    )
+                    snapshot.append(claimed)
+                    print(
+                        "[KVTM CRY] replacement ClientJS reclaimed • "
+                        f"profile={profile_id} pid={pid}",
+                        flush=True,
+                    )
+                except ForeignOwnershipError:
+                    continue
+                except Exception as exc:
+                    print(
+                        "[KVTM CRY] replacement reclaim skipped • "
+                        f"{type(exc).__name__}: {exc}",
+                        flush=True,
+                    )
+
+        owned_pids = {
+            int(item["pid"])
+            for item in snapshot
+            if item["owner"] == registry.owner
+        }
         filtered = []
         for row in rows or []:
             try:
