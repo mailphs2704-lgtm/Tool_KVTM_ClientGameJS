@@ -20,6 +20,10 @@ OWNED_HOST = MULTI / "kvtm_multi_owned_host.py"
 DEV_HOST = MULTI / "kvtm_multi_dev_host.py"
 FPS_HARDCAP = MULTI / "fps_hardcap_integration.py"
 WINDOW_POSITION = MULTI / "clear_stall_window_position.py"
+ORIGINAL_AUTO_INTEGRATION = MULTI / "original_auto_pro_integration.py"
+UPLOADED_AUTO = ROOT / "source-archive" / "auto-pro-uploaded-clean"
+UPLOADED_LAUNCHER = UPLOADED_AUTO / "cry_original_launcher.py"
+UPLOADED_OFFLINE_API = UPLOADED_AUTO / "offline_api.py"
 
 
 def text(path: Path) -> str:
@@ -65,6 +69,9 @@ def main() -> int:
     dev_host = text(DEV_HOST)
     fps_hardcap = text(FPS_HARDCAP)
     window_position = text(WINDOW_POSITION)
+    original_auto_integration = text(ORIGINAL_AUTO_INTEGRATION)
+    uploaded_launcher = text(UPLOADED_LAUNCHER)
+    uploaded_offline_api = text(UPLOADED_OFFLINE_API)
 
     # Product identity is stable/final; DEV remains a separate product/data root.
     for body, label in ((runtime, "runtime"), (update, "updater"), (install, "installer")):
@@ -183,6 +190,34 @@ def main() -> int:
     require(dev_host, "install_auto_main_profile_settings", "Stable/DEV speed/profile settings integration missing")
     require(fps_hardcap, "OpenGL present governor", "Bridge V3 FPS governor missing")
     require(window_position, "top-right work area", "Fixed ClientJS position contract missing")
+    require(
+        owned_host,
+        "install_original_auto_pro_integration",
+        "Stable does not install the separate original AUTO PRO entry",
+    )
+    require(
+        original_auto_integration,
+        'package_root / "AUTO_PRO_ORIGINAL"',
+        "Stable launcher still targets the modified AUTO_PRO runtime",
+    )
+    require(
+        uploaded_launcher,
+        "d3366f3e687fc3a3e2ecbc848ac160ed2452c39187e8009eb8b1d3d09de78328",
+        "Uploaded AUTO PRO source identity is missing",
+    )
+    require(uploaded_launcher, "EngineDriver", "Uploaded AUTO PRO does not use Bridge V3 driver")
+    require(uploaded_launcher, "ADB đã tắt", "Uploaded AUTO PRO does not fail closed on ADB")
+    forbid(uploaded_launcher, "import local_launcher", "Uploaded AUTO PRO imports modified old launcher")
+    forbid(uploaded_launcher, "import local_bridge", "Uploaded AUTO PRO imports tracking/web bridge")
+    forbid(uploaded_launcher, "clientjs_auto_patch", "Uploaded AUTO PRO imports old behavior patch")
+    forbid(uploaded_offline_api, "requests", "Offline API contains HTTP client")
+    forbid(uploaded_offline_api, "sqlite", "Offline API records local tracking data")
+    require(build, '$OriginalAutoOut = Join-Path $OutputRoot "AUTO_PRO_ORIGINAL"', "Clean original runtime is not packaged")
+    require(build, '@("runtime", "_internal", "assets")', "Clean original payload allowlist changed")
+    require(build, '"clientjs_auto_patch.py"', "Clean original forbidden-sidecar gate missing")
+    require(build, '"platform-tools"', "Clean original ADB exclusion gate missing")
+    require(build, '"AUTO_PRO_ORIGINAL\\cry_original_launcher.py"', "Stable release does not require clean launcher")
+    require(build, '@("AUTO_PRO", "AUTO_PRO_ORIGINAL", "Multi", "components")', "Stable release omits clean original runtime")
     for required in (
         'AUTO_PRO\\bin\\kvtm_loader_v3.exe',
         'AUTO_PRO\\bin\\kvtm_bridge_v3.dll',
@@ -216,6 +251,7 @@ def main() -> int:
     print("parity=dev-host+dwm-off+fps-hardcap+fixed-position+pre-ui-shop-drag-speed+bridge-v3")
     print("dev-isolation=stable-running-not-stopped-by-release-build")
     print("security=no-embedded-github-token")
+    print("original-auto-pro=uploaded-sha256+separate-gui+offline-stateless+bridge-v3+no-adb")
     return 0
 
 
