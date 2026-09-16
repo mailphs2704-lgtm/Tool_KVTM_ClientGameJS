@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import time
 
 
 ROOT = Path(__file__).resolve().parent
@@ -160,6 +161,67 @@ AutomationGUI.send_telegram_notification = lambda self, *args, **kwargs: None
 AutomationGUI.send_registration_renewal_notification = (
     lambda self, *args, **kwargs: None
 )
+
+# The recovered Android openGame flow waits for emulator-only tai_khoan and
+# icon_game images. ClientJS launches directly into the game, so that gate can
+# never pass. Replace only this transport/startup boundary; all original AUTO
+# functions and image-driven game actions remain untouched.
+import adb_controller  # noqa: E402
+
+
+def clientjs_open_game(self, stop_event=None):
+    def stopped() -> bool:
+        return bool(stop_event is not None and stop_event.is_set())
+
+    if stopped():
+        self.update_progress("Đã dừng task mở game")
+        return None
+
+    self.update_progress("Khởi động lại ClientJS")
+    self.driver.app_stop("vn.kvtm.js")
+    if stopped():
+        return None
+    time.sleep(1.0)
+    self.driver.app_start("vn.kvtm.js")
+
+    self.update_progress("Chờ ClientJS vào game")
+    deadline = time.monotonic() + 90.0
+    while time.monotonic() < deadline:
+        if stopped():
+            return None
+        if not self.is_game_running():
+            time.sleep(0.5)
+            continue
+        if self.image_processor.find_image("friend_off", threshold=0.9):
+            self.update_progress("Đã vào game")
+            break
+        time.sleep(1.0)
+    else:
+        raise RuntimeError(
+            "ClientJS đã mở nhưng không thấy giao diện game sau 90 giây"
+        )
+
+    for remaining in range(int(self.delay_vao_game), 0, -1):
+        if stopped():
+            return None
+        self.update_progress(f"Chờ : {remaining}s")
+        time.sleep(1.0)
+
+    # Preserve the original post-login close/Back cleanup, but keep it bounded.
+    for _ in range(10):
+        if stopped():
+            return None
+        if self.image_processor.find_image("close_game", click=True):
+            self.update_progress("Bắt Đầu Cào")
+            time.sleep(0.3)
+            return None
+        self.press_back(stop_event)
+        time.sleep(0.5)
+    self.update_progress("Bắt Đầu Cào")
+    return None
+
+
+adb_controller.ADBController.openGame = clientjs_open_game
 
 
 def _pid_alive(pid: int) -> bool:
