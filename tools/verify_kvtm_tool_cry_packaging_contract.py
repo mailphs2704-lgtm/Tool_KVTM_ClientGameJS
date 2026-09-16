@@ -208,6 +208,12 @@ def main() -> int:
         "Uploaded AUTO PRO source identity is missing",
     )
     require(uploaded_launcher, "EngineDriver", "Uploaded AUTO PRO does not use Bridge V3 driver")
+    require(uploaded_launcher, 'DEVICE_PREFIX = "CRYPROFILE:"', "Uploaded AUTO PRO device identity is still PID-based")
+    require(
+        uploaded_launcher,
+        "return EngineDriver(profile_id, reference_size=(1000, 1000))",
+        "Uploaded AUTO PRO does not bind Bridge V3 by stable profile identity",
+    )
     require(uploaded_launcher, "ADB đã tắt", "Uploaded AUTO PRO does not fail closed on ADB")
     forbid(uploaded_launcher, "import local_launcher", "Uploaded AUTO PRO imports modified old launcher")
     forbid(uploaded_launcher, "import local_bridge", "Uploaded AUTO PRO imports tracking/web bridge")
@@ -254,7 +260,7 @@ def main() -> int:
     print("parity=dev-host+dwm-off+fps-hardcap+fixed-position+pre-ui-shop-drag-speed+bridge-v3")
     print("dev-isolation=stable-running-not-stopped-by-release-build")
     print("security=no-embedded-github-token")
-    print("original-auto-pro=uploaded-sha256+separate-gui+offline-stateless+bridge-v3+no-adb")
+    print("original-auto-pro=uploaded-sha256+separate-gui+offline-stateless+stable-profile-id+bridge-v3+no-adb")
     return 0
 
 
