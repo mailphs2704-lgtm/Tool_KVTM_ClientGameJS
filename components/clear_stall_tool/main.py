@@ -2,9 +2,45 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import os
 import sys
 import tkinter as tk
 from pathlib import Path
+
+
+def _bind_multi_dev_profile_source() -> None:
+    """Point the standalone store at the active AUTO MULTI DEV data directory.
+
+    The operator keeps this tool in a separate worktree, while the authoritative
+    Multi DEV runtime normally lives in D:\\Tool_KVTM_Multi_DEV.  Resolve that
+    runtime before importing profile_store so its profile/settings constants use
+    the same authoritative source.  An explicit KVTM_MULTI_APP_DIR always wins.
+    """
+    if os.environ.get("KVTM_MULTI_APP_DIR", "").strip():
+        return
+
+    source_root = Path(__file__).resolve().parents[2]
+    candidates = [
+        source_root / "dist" / "KVTM-ClientJS-Suite-Multi-DEV" / "data-dev",
+        source_root.parent / "Tool_KVTM_Multi_DEV" / "dist" / "KVTM-ClientJS-Suite-Multi-DEV" / "data-dev",
+        Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi",
+    ]
+    valid = []
+    for directory in candidates:
+        profile_file = directory / "profiles.json"
+        if not profile_file.is_file():
+            continue
+        try:
+            stamp = profile_file.stat().st_mtime
+        except OSError:
+            stamp = 0.0
+        valid.append((stamp, directory))
+    if valid:
+        valid.sort(key=lambda item: item[0], reverse=True)
+        os.environ["KVTM_MULTI_APP_DIR"] = str(valid[0][1])
+
+
+_bind_multi_dev_profile_source()
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -52,6 +88,9 @@ def main() -> int:
     root = tk.Tk()
     app = ClearStallToolApp(root, store.account_rows())
     try:
+        # Full transactional Dọn quầy remains machine-wide serialized, matching
+        # the proven Multi contract: never let two accounts buy/resell at once.
+        ClearStallController.MAX_CONCURRENCY = 1
         controller = ClearStallController(root, store, lambda *_args: None)
     except RuntimeLayoutError as exc:
         from tkinter import messagebox
