@@ -10,6 +10,15 @@ except ImportError:
     from app import AccountRecord, MUTED, SURFACE, TEXT
 
 
+VP_OPTIONS = (
+    ("nuoc_hoa_hong", "Nước hoa hồng"),
+    ("tinh_dau_hh", "Tinh dầu hoa hồng"),
+    ("vai_vang", "Vải vàng"),
+    ("tao_say", "Táo sấy"),
+    ("tra_da", "Trà đá"),
+)
+
+
 def install_runtime_integration(app_class) -> None:
     """Wire Model-8 GUI controls to the standalone Dọn quầy controller."""
     if getattr(app_class, "_standalone_runtime_integration_installed", False):
@@ -143,18 +152,161 @@ def install_runtime_integration(app_class) -> None:
         if row is None:
             return
         job = self.profile_store.ensure_job(account_id)
-        w = self._modal("Chi tiết tài khoản", 500, 330)
+        w = self._modal("Cấu hình Dọn quầy", 590, 510)
         body = tk.Frame(w, bg=SURFACE)
-        body.pack(fill="both", expand=True, padx=22, pady=18)
-        tk.Label(body, text=row.account_name, bg=SURFACE, fg=TEXT, font=("Segoe UI", 12, "bold")).pack(anchor="w")
-        text = (
-            f"Trạng thái: {row.status_text}\n"
-            f"Chu kỳ: {job['interval_minutes']} phút\n"
-            f"Nhà bạn: {job['target_friend_ordinal']} · Kho VP: {job['target_stall_id']}\n"
-            f"Số lượng: {job['buy_quantity']} VP · Tốc độ kéo quầy: {job['clear_stall_drag_speed']:.2f}s\n"
-            f"Lần dọn cuối: {row.last_clean}"
-        )
-        tk.Label(body, text=text, bg=SURFACE, fg=TEXT, justify="left").pack(anchor="w", pady=12)
+        body.pack(fill="both", expand=True, padx=24, pady=20)
+
+        tk.Label(
+            body,
+            text=row.account_name,
+            bg=SURFACE,
+            fg=TEXT,
+            font=("Segoe UI", 13, "bold"),
+        ).pack(anchor="w")
+        tk.Label(
+            body,
+            text="Thiết lập riêng cho tài khoản này",
+            bg=SURFACE,
+            fg=MUTED,
+        ).pack(anchor="w", pady=(2, 16))
+
+        form = tk.Frame(body, bg=SURFACE)
+        form.pack(fill="x")
+        form.grid_columnconfigure(1, weight=1)
+
+        tk.Label(
+            form,
+            text="Chọn VP dọn",
+            bg=SURFACE,
+            fg=TEXT,
+            font=("Segoe UI", 10, "bold"),
+            anchor="nw",
+        ).grid(row=0, column=0, sticky="nw", padx=(0, 22), pady=(2, 14))
+
+        vp_frame = tk.Frame(form, bg=SURFACE)
+        vp_frame.grid(row=0, column=1, sticky="ew", pady=(0, 14))
+        current_items = set(job.get("allowed_item_ids", ()))
+        vp_vars: dict[str, tk.BooleanVar] = {}
+        for index, (item_id, label) in enumerate(VP_OPTIONS):
+            variable = tk.BooleanVar(value=item_id in current_items)
+            vp_vars[item_id] = variable
+            tk.Checkbutton(
+                vp_frame,
+                text=label,
+                variable=variable,
+                bg=SURFACE,
+                fg=TEXT,
+                activebackground=SURFACE,
+                activeforeground=TEXT,
+                selectcolor=SURFACE,
+                highlightthickness=0,
+                bd=0,
+                font=("Segoe UI", 10),
+            ).grid(
+                row=index // 2,
+                column=index % 2,
+                sticky="w",
+                padx=(0, 24),
+                pady=3,
+            )
+
+        house_var = tk.StringVar(value=str(job.get("target_friend_ordinal", 1)))
+        quantity_var = tk.StringVar(value=str(job.get("buy_quantity", 10)))
+        interval_var = tk.StringVar(value=str(job.get("interval_minutes", 65)))
+
+        def add_number_row(grid_row: int, label: str, variable: tk.StringVar, hint: str) -> None:
+            tk.Label(
+                form,
+                text=label,
+                bg=SURFACE,
+                fg=TEXT,
+                font=("Segoe UI", 10, "bold"),
+                anchor="w",
+            ).grid(row=grid_row, column=0, sticky="w", padx=(0, 22), pady=9)
+            holder = tk.Frame(form, bg=SURFACE)
+            holder.grid(row=grid_row, column=1, sticky="ew", pady=9)
+            # Intentionally use a plain Entry: operator enters the exact number
+            # directly; there are no spinner +/- or increment/decrement buttons.
+            ttk.Entry(
+                holder,
+                textvariable=variable,
+                style="Modern.TEntry",
+                width=18,
+            ).pack(side="left")
+            tk.Label(
+                holder,
+                text=hint,
+                bg=SURFACE,
+                fg=MUTED,
+                font=("Segoe UI", 9),
+            ).pack(side="left", padx=(10, 0))
+
+        add_number_row(1, "Số lượng nhà", house_var, "1 - 7 nhà")
+        add_number_row(2, "Số lượng VP dọn", quantity_var, "10 - 1000 VP, bội số 10")
+        add_number_row(3, "Thời gian chu kỳ", interval_var, "5 - 1440 phút")
+
+        tk.Label(
+            body,
+            text=(
+                "Các ô số cho phép nhập trực tiếp bằng bàn phím, không dùng nút tăng/giảm. "
+                "Nếu tài khoản đang chạy, cấu hình mới áp dụng từ lượt kế tiếp."
+            ),
+            bg=SURFACE,
+            fg=MUTED,
+            justify="left",
+            wraplength=525,
+            font=("Segoe UI", 9),
+        ).pack(anchor="w", pady=(14, 0))
+
+        def save_settings() -> None:
+            selected_items = [item_id for item_id, _label in VP_OPTIONS if vp_vars[item_id].get()]
+            if not selected_items:
+                messagebox.showerror(
+                    "KVTM - Dọn Quầy",
+                    "Hãy chọn ít nhất 1 VP cần dọn.",
+                    parent=w,
+                )
+                return
+            try:
+                house_count = int(house_var.get().strip())
+                quantity = int(quantity_var.get().strip())
+                interval = int(interval_var.get().strip())
+            except ValueError:
+                messagebox.showerror(
+                    "KVTM - Dọn Quầy",
+                    "Số lượng nhà, số lượng VP và thời gian chu kỳ phải là số nguyên.",
+                    parent=w,
+                )
+                return
+            if not 1 <= house_count <= 7:
+                messagebox.showerror("KVTM - Dọn Quầy", "Số lượng nhà phải từ 1 đến 7.", parent=w)
+                return
+            if not 10 <= quantity <= 1000 or quantity % 10:
+                messagebox.showerror(
+                    "KVTM - Dọn Quầy",
+                    "Số lượng VP dọn phải từ 10 đến 1000 và là bội số của 10.",
+                    parent=w,
+                )
+                return
+            if not 5 <= interval <= 1440:
+                messagebox.showerror(
+                    "KVTM - Dọn Quầy",
+                    "Thời gian chu kỳ phải từ 5 đến 1440 phút.",
+                    parent=w,
+                )
+                return
+
+            self.profile_store.update_job(
+                account_id,
+                {
+                    "allowed_item_ids": selected_items,
+                    "target_friend_ordinal": house_count,
+                    "buy_quantity": quantity,
+                    "interval_minutes": interval,
+                },
+            )
+            _reload_rows(self)
+            w.destroy()
 
         def remove() -> None:
             self.runtime_controller.stop(account_id)
@@ -162,8 +314,11 @@ def install_runtime_integration(app_class) -> None:
             _reload_rows(self)
             w.destroy()
 
-        self._button(body, "Xóa khỏi tool", remove, False, 12).pack(side="left", pady=12)
-        self._button(body, "Đóng", w.destroy, True, 9).pack(side="right", pady=12)
+        controls = tk.Frame(body, bg=SURFACE)
+        controls.pack(fill="x", pady=(22, 0))
+        self._button(controls, "Xóa khỏi tool", remove, False, 12).pack(side="left")
+        self._button(controls, "Lưu cấu hình", save_settings, True, 12).pack(side="right")
+        self._button(controls, "Hủy", w.destroy, False, 9).pack(side="right", padx=8)
 
     app_class._record_for_profile = _record_for_profile
     app_class._reload_rows = _reload_rows
