@@ -25,12 +25,17 @@ DATA_ROOT = Path(
     or (Path(os.environ.get("APPDATA", Path.home())) / "Kvtm_tool_Cry")
 )
 PROFILE_FILE = DATA_ROOT / "profiles.json"
+DEV_PROFILE_FILE = (
+    Path(os.environ.get("APPDATA", Path.home()))
+    / "KVTM Multi DEV"
+    / "profiles.json"
+)
 OWNERSHIP_FILE = (
     Path(os.environ.get("APPDATA", Path.home()))
     / "KVTM Client Ownership"
     / "clients.json"
 )
-DEVICE_PREFIX = "CRYPROFILE:"
+DEVICE_PREFIX = "KVTMPROFILE:"
 _MUTEX_NAME = r"Local\KVTM_Cry_UploadedAutoPro_v1"
 _ERROR_ALREADY_EXISTS = 183
 
@@ -145,6 +150,7 @@ gui_popups.LoginPopup = OfflineLoginPopup
 import gui  # noqa: E402
 import gui_device  # noqa: E402
 import uiautomator2 as u2  # noqa: E402
+import engine_driver as engine_driver_module  # noqa: E402
 from engine_driver import EngineDriver  # noqa: E402
 
 gui.LoginPopup = OfflineLoginPopup
@@ -170,6 +176,7 @@ import adb_controller  # noqa: E402
 
 
 def clientjs_open_game(self, stop_event=None):
+    """Attach to an already-open ClientJS; never run emulator icon/login gates."""
     def stopped() -> bool:
         return bool(stop_event is not None and stop_event.is_set())
 
@@ -177,49 +184,43 @@ def clientjs_open_game(self, stop_event=None):
         self.update_progress("Đã dừng task mở game")
         return None
 
-    self.update_progress("Khởi động lại ClientJS")
-    self.driver.app_stop("vn.kvtm.js")
-    if stopped():
-        return None
-    time.sleep(1.0)
-    self.driver.app_start("vn.kvtm.js")
-
-    self.update_progress("Chờ ClientJS vào game")
-    deadline = time.monotonic() + 90.0
+    self.update_progress("Kết nối ClientJS đang mở")
+    deadline = time.monotonic() + 30.0
+    consecutive_frames = 0
     while time.monotonic() < deadline:
         if stopped():
             return None
-        if not self.is_game_running():
-            time.sleep(0.5)
-            continue
-        if self.image_processor.find_image("friend_off", threshold=0.9):
-            self.update_progress("Đã vào game")
-            break
-        time.sleep(1.0)
+        try:
+            if not self.is_game_running():
+                consecutive_frames = 0
+                time.sleep(0.5)
+                continue
+            frame = self.driver.screenshot(format="opencv")
+            if frame is None or getattr(frame, "size", 0) <= 0:
+                raise RuntimeError("Bridge V3 trả frame rỗng")
+            consecutive_frames += 1
+            if consecutive_frames >= 2:
+                self.update_progress("Đã kết nối ClientJS")
+                break
+        except Exception:
+            consecutive_frames = 0
+        time.sleep(0.35)
     else:
         raise RuntimeError(
-            "ClientJS đã mở nhưng không thấy giao diện game sau 90 giây"
+            "ClientJS đang mở nhưng Bridge V3 không trả hai frame liên tiếp "
+            "sau 30 giây"
         )
 
-    for remaining in range(int(self.delay_vao_game), 0, -1):
-        if stopped():
-            return None
-        self.update_progress(f"Chờ : {remaining}s")
-        time.sleep(1.0)
-
-    # Preserve the original post-login close/Back cleanup, but keep it bounded.
     for _ in range(10):
         if stopped():
             return None
         if self.image_processor.find_image("close_game", click=True):
-            self.update_progress("Bắt Đầu Cào")
             time.sleep(0.3)
-            return None
+            break
         self.press_back(stop_event)
         time.sleep(0.5)
     self.update_progress("Bắt Đầu Cào")
     return None
-
 
 adb_controller.ADBController.openGame = clientjs_open_game
 
@@ -234,8 +235,8 @@ def _pid_alive(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
-def _cry_owned_clients() -> list[dict]:
-    """Read Cry ownership metadata only; do not inspect commands or credentials."""
+def _owned_clients() -> list[dict]:
+    """Read Cry/DEV ownership metadata only; never read commands or credentials."""
     try:
         payload = json.loads(OWNERSHIP_FILE.read_text(encoding="utf-8-sig"))
     except (FileNotFoundError, OSError, ValueError, TypeError, json.JSONDecodeError):
@@ -245,7 +246,8 @@ def _cry_owned_clients() -> list[dict]:
     for item in rows:
         if not isinstance(item, dict):
             continue
-        if str(item.get("owner") or "").upper() != "CRY":
+        owner = str(item.get("owner") or "").upper()
+        if owner not in {"CRY", "DEV"}:
             continue
         try:
             pid = int(item.get("pid") or 0)
@@ -256,6 +258,7 @@ def _cry_owned_clients() -> list[dict]:
         result.append(
             {
                 "pid": pid,
+                "owner": owner,
                 "profile_id": str(item.get("profile_id") or ""),
                 "name": str(
                     item.get("account_name")
@@ -271,13 +274,27 @@ def bridge_v3_connect(device_id=None, *args, **kwargs):
     del args, kwargs
     value = str(device_id or "")
     if not value.startswith(DEVICE_PREFIX):
-        raise RuntimeError("ADB đã tắt trong AUTO PRO gốc của Cry")
-    profile_id = value[len(DEVICE_PREFIX):].strip()
-    if not profile_id:
-        raise RuntimeError(f"Thiết bị Cry không hợp lệ: {value}")
-    # Stable profile identity survives ClientJS app_stop/app_start PID changes.
-    return EngineDriver(profile_id, reference_size=(1000, 1000))
+        raise RuntimeError("ADB đã tắt trong AUTO PRO gốc")
+    identity = value[len(DEVICE_PREFIX):].strip()
+    try:
+        owner, profile_id = identity.split(":", 1)
+    except ValueError as exc:
+        raise RuntimeError(f"Thiết bị KVTM không hợp lệ: {value}") from exc
+    owner = owner.upper()
+    matches = [
+        item for item in _owned_clients()
+        if item["owner"] == owner and item["profile_id"] == profile_id
+    ]
+    if not matches:
+        raise RuntimeError(f"ClientJS {owner}/{profile_id} không còn online")
 
+    profile_file = PROFILE_FILE if owner == "CRY" else DEV_PROFILE_FILE
+    previous_profile_file = engine_driver_module.PROFILE_FILE
+    engine_driver_module.PROFILE_FILE = profile_file
+    try:
+        return EngineDriver(int(matches[0]["pid"]), reference_size=(1000, 1000))
+    finally:
+        engine_driver_module.PROFILE_FILE = previous_profile_file
 
 u2.connect = bridge_v3_connect
 DeviceManager = gui_device.DeviceManagerMixin
@@ -295,13 +312,14 @@ def fetch_cry_devices(self):
         "adb_id_pairs": {},
         "all_tab_info": {},
     }
-    for item in _cry_owned_clients():
+    for item in _owned_clients():
         pid = int(item["pid"])
         profile_id = str(item["profile_id"] or "").strip()
         if not profile_id:
             continue
-        device_id = f"{DEVICE_PREFIX}{profile_id}"
-        display_name = f"Cry - {item['name']} [{pid}]"
+        owner = str(item["owner"])
+        device_id = f"{DEVICE_PREFIX}{owner}:{profile_id}"
+        display_name = f"{owner} - {item['name']} [{pid}]"
         data["adb_id_list"].append(device_id)
         data["adb_id_to_name"][device_id] = display_name
         data["display_devices"].append(display_name)
@@ -325,14 +343,17 @@ def cry_device_online(self, device_id):
     value = str(device_id or "")
     if not value.startswith(DEVICE_PREFIX):
         return False
-    profile_id = value[len(DEVICE_PREFIX):].strip()
-    if not profile_id:
+    identity = value[len(DEVICE_PREFIX):].strip()
+    try:
+        owner, profile_id = identity.split(":", 1)
+    except ValueError:
         return False
     return any(
-        item["profile_id"] == profile_id and _pid_alive(int(item["pid"]))
-        for item in _cry_owned_clients()
+        item["owner"] == owner.upper()
+        and item["profile_id"] == profile_id
+        and _pid_alive(int(item["pid"]))
+        for item in _owned_clients()
     )
-
 
 def no_device_side_effect(self, device_id):
     del self, device_id
