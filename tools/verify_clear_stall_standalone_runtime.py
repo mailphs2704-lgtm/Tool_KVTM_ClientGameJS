@@ -47,6 +47,27 @@ def main() -> int:
     if 'Tên tài khoản", name' in integration_src or "ttk.Entry(row, textvariable=profile" in integration_src:
         raise AssertionError("Add Account must not restore free-text account/profile fields")
 
+    for label in (
+        "Chọn VP dọn",
+        "Số lượng nhà",
+        "Số lượng VP dọn",
+        "Thời gian chu kỳ",
+        "Lưu cấu hình",
+    ):
+        require(integration_src, label, "per-account settings editor")
+    for item_id in (
+        "nuoc_hoa_hong",
+        "tinh_dau_hh",
+        "vai_vang",
+        "tao_say",
+        "tra_da",
+    ):
+        require(integration_src, item_id, "VP selector")
+    require(integration_src, "profile_store.update_job", "per-account settings persistence")
+    require(integration_src, "ttk.Entry(", "free numeric entry")
+    if "Spinbox" in integration_src:
+        raise AssertionError("Per-account/quick numeric settings must not use spinner +/- controls")
+
     require(controller_src, "MAX_CONCURRENCY = 2", "clear-stall concurrency")
     require(controller_src, "ClientOwnershipRegistry", "ownership safety")
     require(controller_src, "Dọn quầy không giành quyền điều khiển", "no ownership stealing")
@@ -67,6 +88,8 @@ def main() -> int:
 
     print("CLEAR STALL STANDALONE RUNTIME CONTRACT PASS")
     print("profile_source=%APPDATA%\\KVTM Multi DEV\\profiles.json")
+    print("account_settings=VP+HOUSE_COUNT+VP_QUANTITY+INTERVAL")
+    print("numeric_input=PLAIN_ENTRY_NO_SPINNER")
     return 0
 
 
