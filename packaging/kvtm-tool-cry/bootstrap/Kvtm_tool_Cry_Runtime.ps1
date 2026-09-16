@@ -85,6 +85,7 @@ foreach ($required in @(
     (Join-Path $MultiRoot "client_ownership_integration.py"),
     (Join-Path $MultiRoot "kvtm_multi_dev_entry.py"),
     (Join-Path $RuntimeRoot "AUTO_PRO"),
+    (Join-Path $RuntimeRoot "AUTO_PRO_ORIGINAL\cry_original_launcher.py"),
     (Join-Path $RuntimeRoot "components\clientjs-auto")
 )) {
     if (-not (Test-Path -LiteralPath $required)) {
