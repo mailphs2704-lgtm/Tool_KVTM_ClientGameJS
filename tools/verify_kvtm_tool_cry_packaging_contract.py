@@ -208,11 +208,14 @@ def main() -> int:
         "Uploaded AUTO PRO source identity is missing",
     )
     require(uploaded_launcher, "EngineDriver", "Uploaded AUTO PRO does not use Bridge V3 driver")
-    require(uploaded_launcher, 'DEVICE_PREFIX = "CRYPROFILE:"', "Uploaded AUTO PRO device identity is still PID-based")
+    require(uploaded_launcher, 'DEVICE_PREFIX = "KVTMPROFILE:"', "Uploaded AUTO PRO device identity is not owner+profile based")
+    require(uploaded_launcher, 'owner not in {"CRY", "DEV"}', "Uploaded AUTO PRO does not discover both Cry and DEV")
+    require(uploaded_launcher, 'identity.split(":", 1)', "Uploaded AUTO PRO device identity omits owner/profile split")
+    require(uploaded_launcher, "DEV_PROFILE_FILE", "Uploaded AUTO PRO cannot resolve DEV profiles")
     require(
         uploaded_launcher,
-        "return EngineDriver(profile_id, reference_size=(1000, 1000))",
-        "Uploaded AUTO PRO does not bind Bridge V3 by stable profile identity",
+        'return EngineDriver(int(matches[0]["pid"]), reference_size=(1000, 1000))',
+        "Uploaded AUTO PRO does not attach Bridge V3 to the current owned PID",
     )
     require(uploaded_launcher, "ADB đã tắt", "Uploaded AUTO PRO does not fail closed on ADB")
     require(
@@ -222,14 +225,27 @@ def main() -> int:
     )
     require(
         uploaded_launcher,
-        'find_image("friend_off", threshold=0.9)',
-        "ClientJS startup does not prove the in-game screen",
+        'self.driver.screenshot(format="opencv")',
+        "ClientJS startup does not prove Bridge V3 capture readiness",
     )
     require(
         uploaded_launcher,
-        "deadline = time.monotonic() + 90.0",
-        "ClientJS startup proof is not bounded",
+        "consecutive_frames >= 2",
+        "ClientJS startup does not require stable consecutive frames",
     )
+    require(
+        uploaded_launcher,
+        "deadline = time.monotonic() + 30.0",
+        "ClientJS transport readiness proof is not bounded",
+    )
+    open_game_start = uploaded_launcher.index("def clientjs_open_game")
+    open_game_end = uploaded_launcher.index(
+        "adb_controller.ADBController.openGame = clientjs_open_game",
+        open_game_start,
+    )
+    open_game_body = uploaded_launcher[open_game_start:open_game_end]
+    forbid(open_game_body, ".app_stop(", "AUTO PRO startup unexpectedly restarts an attached ClientJS")
+    forbid(open_game_body, ".app_start(", "AUTO PRO startup unexpectedly relaunches an attached ClientJS")
     forbid(
         uploaded_launcher,
         'find_image("icon_game"',
@@ -285,7 +301,7 @@ def main() -> int:
     print("parity=dev-host+dwm-off+fps-hardcap+fixed-position+pre-ui-shop-drag-speed+bridge-v3")
     print("dev-isolation=stable-running-not-stopped-by-release-build")
     print("security=no-embedded-github-token")
-    print("original-auto-pro=uploaded-sha256+separate-gui+offline-stateless+stable-profile-id+clientjs-startup+bridge-v3+no-adb")
+    print("original-auto-pro=uploaded-sha256+separate-gui+offline-stateless+owner-profile-id+cry-dev-attach+two-frame-startup+bridge-v3+no-adb")
     return 0
 
 
