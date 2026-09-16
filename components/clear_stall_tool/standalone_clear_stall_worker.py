@@ -11,6 +11,11 @@ import time
 
 
 _DLL_HANDLES: list[object] = []
+_REQUIRED_BRIDGE_PROTOCOL = (
+    "OK PONG KVTM_BRIDGE_V3 CAPTURE3 INPUT4 BATCH_SWIPE "
+    "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2 "
+    "CAPTURE3_WRITERMSG1"
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -97,6 +102,38 @@ def _install_unicode_safe_imwrite(cv2, emit) -> None:
         "probe_boot",
         stage="standalone-unicode-imwrite-ready",
         writer="cv2.imencode+Path.write_bytes",
+    )
+
+
+def _install_capture3_same_request(auto_root: Path, emit) -> None:
+    """Install the same CAPTUREW writer-specific mapping path as AUTO MULTI DEV."""
+    engine_driver = importlib.import_module("engine_driver")
+    source = _module_path(engine_driver)
+    root = Path(auto_root).resolve()
+    if not _inside(source, root):
+        raise RuntimeError(f"engine_driver không được nạp từ AUTO_PRO: {source}")
+
+    engine_driver._PROTOCOL_PREFIX = _REQUIRED_BRIDGE_PROTOCOL
+    helper = importlib.import_module("capture3_same_request")
+    install_capture3_same_request_wait = getattr(
+        helper, "install_capture3_same_request_wait"
+    )
+    install_capture3_same_request_wait(engine_driver)
+    emit(
+        "probe_boot",
+        stage="standalone-capture3-same-request-ready",
+        capture_command="CAPTUREW",
+        writer_map=True,
+        writer_message=True,
+        strict_stale_rejection=True,
+    )
+    emit(
+        "probe_progress",
+        message=(
+            "DLL bridge V3: CAPTURE3 WRITERMAP2+WRITERMSG1 ENABLED • "
+            "mỗi CAPTUREW khóa đúng writer mapping + dispatch • "
+            "stale frame vẫn bị từ chối"
+        ),
     )
 
 
@@ -300,6 +337,7 @@ def main() -> int:
     configure_utf8_stdio()
     try:
         _bootstrap_standalone_image_runtime(auto_root, emit)
+        _install_capture3_same_request(auto_root, emit)
         _install_transient_capture_retry(auto_root, emit)
     except Exception as exc:
         emit("probe_error", error=f"Standalone runtime bootstrap lỗi: {exc}")
