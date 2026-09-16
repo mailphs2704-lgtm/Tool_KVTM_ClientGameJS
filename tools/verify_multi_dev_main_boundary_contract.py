@@ -217,11 +217,17 @@ def main() -> int:
     require(material_recovery, "chỉ xếp tiếp còn=", "Resume-only-remaining log marker missing")
 
     # Worker is a lifecycle host, not a second recovery engine. Startup hands it
-    # exact-main; registered typed recovery stays below in RecoveryManager and any
-    # unregistered exception must fail-close without MAIN-normalize/rerun.
+    # exact-main; registered typed recovery stays below in RecoveryManager. The
+    # scheduler owns the bounded unknown-error fallback and ClientJS restart is blocked.
     require(worker, "GameSessionWorkflow(automation).run(timeout=args.timeout)", "Worker startup session gate missing")
     require(worker, "automation.popup.is_own_exact_main_screen()", "Worker no longer consumes startup exact-main proof")
-    require(worker, "ClientRestartRequested", "Scheduled restart lifecycle signal missing")
+    forbid(worker, "ClientRestartRequested", "Blocked ClientJS restart signal returned")
+    require(worker, "client_restart=BLOCK", "Worker blocked-restart policy missing")
+    require(
+        worker,
+        "unregistered_error=ESCx3->stay->exact-main->friend1->resume-same-loop",
+        "Worker global fallback lifecycle marker missing",
+    )
     require(worker, "unregistered_runtime_error; recovery=fail-close", "Worker fail-close marker missing")
     forbid(worker, "_recover_auto_main_to_main_screen", "Worker catch-all MAIN recovery helper returned")
     require(function_one, "self.auto.popup.is_own_exact_main_screen()", "Function transitions no longer require exact-main proof")
@@ -245,7 +251,8 @@ def main() -> int:
     print("cotton_replenishment=neutral-crop-action")
     print("apple_shortage=main->floor1->five-floor-harvest-replant-x3->main")
     print("production_resume=verified-progress->remaining-only")
-    print("worker_unregistered_error=fail-close")
+    print("worker_restart=blocked")
+    print("worker_unregistered_error=scheduler-fallback+outer-fail-close")
     print("background_world_anchor=forbidden_as_runtime_gate")
     print("boundary_change_max=6.0")
     print("boundary_stable_required=2")
