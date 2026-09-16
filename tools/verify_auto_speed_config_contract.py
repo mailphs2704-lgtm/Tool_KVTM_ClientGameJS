@@ -16,6 +16,7 @@ YELLOW_FABRIC_PATH = ROOT / "components/clientjs-auto/kvtm_automation/actions/ye
 AUTOMATION_PATH = ROOT / "components/clientjs-auto/kvtm_automation/automation.py"
 DEV_ENTRY_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
 AUTO_MULTI_WORKER_PATH = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
+LEGACY_AUTO_WORKER_PATH = ROOT / "components/clientjs-auto/worker/auto_worker.py"
 GUI_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 INTEGRATION_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py"
 STALL_SPEED_INTEGRATION_PATH = ROOT / "source-archive/multi-current/kvtm_multi_tool/stall_speed_integration.py"
@@ -70,6 +71,7 @@ def main() -> int:
     automation = check_python(AUTOMATION_PATH)
     dev = check_python(DEV_ENTRY_PATH)
     worker = check_python(AUTO_MULTI_WORKER_PATH)
+    legacy_worker = check_python(LEGACY_AUTO_WORKER_PATH)
     gui = check_python(GUI_PATH)
     integration = check_python(INTEGRATION_PATH)
     stall_speed_integration = check_python(STALL_SPEED_INTEGRATION_PATH)
@@ -98,6 +100,36 @@ def main() -> int:
     require(integration, "_install_vp_collect_speed_control(core)", "VP collect speed control is not installed before app construction")
 
     require(worker, "speed_config=speed_values", "Isolated worker speed injection missing")
+    require(
+        legacy_worker,
+        '"clear_stall_drag_speed",',
+        "Legacy AUTO worker does not tolerate the standalone clear-stall speed key",
+    )
+    require(
+        legacy_worker,
+        "for key in foreign_tuning_keys:",
+        "Legacy AUTO worker compatibility filter missing",
+    )
+    require(
+        legacy_worker,
+        'requested_tuning.pop(key, None)',
+        "Legacy AUTO startup tuning is not filtered",
+    )
+    require(
+        legacy_worker,
+        'requested_update.pop(key, None)',
+        "Legacy AUTO live tuning update is not filtered",
+    )
+    require(
+        legacy_worker,
+        '"auto_nang_kho",',
+        "Legacy AUTO storage-upgrade option was disconnected",
+    )
+    require(
+        legacy_worker,
+        '"time_nang_kho": auto_nang_kho_time_hours',
+        "Legacy AUTO storage-upgrade timing alias missing",
+    )
     require(worker, "Tốc độ MULTI DEV |", "Worker speed audit log missing")
     require(worker, "thu VP={speed.vp_collect_delay:.3f}s", "Worker VP collect speed audit missing")
     require(dev, '"--speed-json"', "GUI speed JSON handoff missing")
