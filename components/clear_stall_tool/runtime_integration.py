@@ -5,9 +5,9 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 try:
-    from .app import AccountRecord, MUTED, SURFACE, TEXT
+    from .app import AccountRecord, BLUE, BORDER, MUTED, SURFACE, TEXT
 except ImportError:
-    from app import AccountRecord, MUTED, SURFACE, TEXT
+    from app import AccountRecord, BLUE, BORDER, MUTED, SURFACE, TEXT
 
 
 VP_OPTIONS = (
@@ -84,7 +84,7 @@ def install_runtime_integration(app_class) -> None:
         ).pack(anchor="w", pady=(0, 12))
         box = tk.Listbox(
             body, selectmode="extended", exportselection=False,
-            relief="flat", bd=0, highlightthickness=1, highlightbackground="#DCE4EF",
+            relief="flat", bd=0, highlightthickness=1, highlightbackground=BORDER,
             font=("Segoe UI", 10), activestyle="none",
         )
         box.pack(fill="both", expand=True)
@@ -146,6 +146,105 @@ def install_runtime_integration(app_class) -> None:
 
         self._button(body, "Lưu", save, True, 9).pack(side="right", pady=14)
         self._button(body, "Hủy", w.destroy, False, 9).pack(side="right", padx=8, pady=14)
+
+    def show_log(self, account_id: str) -> None:
+        row = _record_for_profile(self, account_id)
+        if row is None:
+            return
+        w = tk.Toplevel(self.root)
+        w.title(f"Log Dọn quầy - {row.account_name}")
+        w.configure(bg=SURFACE)
+        w.geometry("900x560")
+        w.minsize(680, 400)
+        w.transient(self.root)
+
+        top = tk.Frame(w, bg=SURFACE)
+        top.pack(fill="x", padx=18, pady=(16, 8))
+        tk.Label(
+            top,
+            text=f"Log runtime · {row.account_name}",
+            bg=SURFACE,
+            fg=TEXT,
+            font=("Segoe UI", 12, "bold"),
+        ).pack(anchor="w")
+        log_path = self.runtime_controller.log_path(account_id)
+        tk.Label(
+            top,
+            text=f"File: {log_path}",
+            bg=SURFACE,
+            fg=MUTED,
+            font=("Segoe UI", 8),
+            anchor="w",
+            justify="left",
+            wraplength=850,
+        ).pack(anchor="w", pady=(3, 0))
+
+        host = tk.Frame(w, bg=SURFACE, highlightthickness=1, highlightbackground=BORDER)
+        host.pack(fill="both", expand=True, padx=18, pady=(0, 10))
+        host.grid_rowconfigure(0, weight=1)
+        host.grid_columnconfigure(0, weight=1)
+        text = tk.Text(
+            host,
+            bg="#0F1724",
+            fg="#DCE7F5",
+            insertbackground="#FFFFFF",
+            relief="flat",
+            bd=0,
+            wrap="none",
+            font=("Consolas", 9),
+            padx=10,
+            pady=8,
+            state="disabled",
+        )
+        ybar = ttk.Scrollbar(host, orient="vertical", command=text.yview)
+        xbar = ttk.Scrollbar(host, orient="horizontal", command=text.xview)
+        text.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
+        text.grid(row=0, column=0, sticky="nsew")
+        ybar.grid(row=0, column=1, sticky="ns")
+        xbar.grid(row=1, column=0, sticky="ew")
+
+        footer = tk.Frame(w, bg=SURFACE)
+        footer.pack(fill="x", padx=18, pady=(0, 14))
+        status = tk.StringVar(value="Tự động làm mới log mỗi 0.7 giây")
+        tk.Label(footer, textvariable=status, bg=SURFACE, fg=MUTED, font=("Segoe UI", 8)).pack(side="left")
+
+        refresh_job = {"id": None}
+        last_text = {"value": None}
+
+        def refresh_log(force: bool = False) -> None:
+            if not w.winfo_exists():
+                return
+            try:
+                payload = self.runtime_controller.read_log(account_id, max_lines=1200)
+            except Exception as exc:
+                payload = f"Không đọc được log: {exc}\n"
+            if force or payload != last_text["value"]:
+                try:
+                    at_end = text.yview()[1] >= 0.98
+                except tk.TclError:
+                    at_end = True
+                text.configure(state="normal")
+                text.delete("1.0", "end")
+                text.insert("1.0", payload)
+                text.configure(state="disabled")
+                if at_end or last_text["value"] is None:
+                    text.see("end")
+                last_text["value"] = payload
+            refresh_job["id"] = w.after(700, refresh_log)
+
+        def close_log() -> None:
+            job = refresh_job.get("id")
+            if job is not None:
+                try:
+                    w.after_cancel(job)
+                except tk.TclError:
+                    pass
+            w.destroy()
+
+        self._button(footer, "Đóng", close_log, True, 9).pack(side="right")
+        self._button(footer, "Làm mới", lambda: refresh_log(True), False, 9).pack(side="right", padx=8)
+        w.protocol("WM_DELETE_WINDOW", close_log)
+        refresh_log(True)
 
     def details(self, account_id: str) -> None:
         row = _record_for_profile(self, account_id)
@@ -328,6 +427,7 @@ def install_runtime_integration(app_class) -> None:
     app_class.add_account = add_account
     app_class.sync_profiles = sync_profiles
     app_class.quick_config = quick_config
+    app_class.show_log = show_log
     app_class.details = details
     app_class._standalone_runtime_integration_installed = True
 
@@ -342,16 +442,19 @@ def bind_runtime(app, profile_store, runtime_controller) -> None:
             if row.account_id != profile_id:
                 rows.append(row)
                 continue
-            note = str(data.get("message") or row.note or "—")
+            # Runtime progress belongs in the persistent Log window, not in the
+            # compact account table.  Keep only a short internal note for errors.
+            note = row.note
             if event in {"running", "cycle_start", "progress"}:
                 status = "running"
             elif event == "stopped":
                 status = "stopped"
-            elif event == "cycle_error":
+            elif event in {"cycle_error", "error"}:
                 status = "running" if runtime_controller.enabled(profile_id) else "stopped"
-                note = "Lỗi: " + note
+                note = "Có lỗi - xem Log"
             elif event == "cycle_done":
                 status = "running" if runtime_controller.enabled(profile_id) else "stopped"
+                note = "—"
             else:
                 status = row.status
             last_clean = str(data.get("last_clean") or row.last_clean)
