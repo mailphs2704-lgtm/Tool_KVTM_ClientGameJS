@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import time
 from typing import Any
@@ -33,9 +34,8 @@ CELL_HALF_HEIGHT = 67
 # Keep a wide separation so empty stall wood is never treated as an item.
 EMPTY_THRESHOLD = 20.0
 
-# AUTO PRO's proven stall drag uses the configurable "Tốc độ kéo quầy"
-# value.  The user's working reference is 0.35 s.  The old clean probe used
-# 0.08 s, which outran ClientJS rendering and could capture between slot views.
+# Shared/Multi default stays unchanged. Standalone can opt into one 0.20 s
+# swipe per scan through KVTM_CLEAR_STALL_SINGLE_SWIPE without changing Multi.
 STALL_SWIPE_DURATION = 0.35
 STALL_RENDER_SETTLE = 0.55
 
@@ -70,6 +70,13 @@ class StallActions:
         self.swipe_settle = float(policy.swipe_settle)
         self.swipe_start = (int(policy.swipe_start_x), int(policy.swipe_start_y))
         self.swipe_end = (int(policy.swipe_end_x), int(policy.swipe_end_y))
+        if os.environ.get("KVTM_CLEAR_STALL_SINGLE_SWIPE") == "1":
+            self.swipe_pulses = 1
+            self.swipe_duration = 0.20
+            self.context.log(
+                "Dọn quầy standalone • 1 swipe/scan • duration=0.20s • "
+                "mua theo tâm ảnh scan"
+            )
 
     @staticmethod
     def physical_slot(view: int, local_slot: int) -> int:
@@ -158,8 +165,6 @@ class StallActions:
                 self.context.log("Đã vào quầy bán của clone")
                 return
             if self.vision.find("quay_hang", threshold=0.74) is not None:
-                # AUTO PRO deliberately taps this entry point several times to
-                # make the shop panel settle before looking for quay_hang_on.
                 for _ in range(3):
                     self.context.ensure_running()
                     self.vision.driver.click(*self.OWN_STALL_ENTRY_POINT)
@@ -173,7 +178,6 @@ class StallActions:
                         return
             attempts += 1
             if attempts >= 3:
-                # Recovered recovery tap closes a stale modal before retrying.
                 self.vision.driver.click(965, 198)
                 attempts = 0
             self.waiter.sleep(0.55)
@@ -202,11 +206,7 @@ class StallActions:
         for local_slot in range(1, visible_limit + 1):
             self.context.ensure_running()
             frame = self.vision.frame()
-            # Do not reuse the friend-stall price-coin heuristic here: the
-            # collectible gold pile is also orange and was incorrectly skipped.
             cx, cy = VISIBLE_SLOT_CENTERS[local_slot - 1]
-            # Gold pile is inside the slot body. Keep the price bar below
-            # (top y~498, bottom y~688) completely outside this zone.
             slot_zone = (cx - 58, cy - 70, 116, 100)
             match = self.vision.find(
                 "vang",
@@ -234,8 +234,6 @@ class StallActions:
                     break
 
             if not disappeared:
-                # Some ClientJS builds accept the sold-slot body rather than
-                # the decorative gold pixels. Retry once at the slot center.
                 self.vision.driver.click(cx, cy)
                 verify_deadline = time.monotonic() + 2.0
                 while time.monotonic() < verify_deadline:
@@ -268,29 +266,27 @@ class StallActions:
         return collected
 
     def next_view(self) -> None:
-        """Send two consecutive swipes, then allow ClientJS to render once."""
+        """Move one logical view using the configured swipe pulse count."""
         for swipe_index in range(1, self.swipe_pulses + 1):
             self.context.ensure_running()
             self.vision.driver.swipe(
                 *self.swipe_start, *self.swipe_end, duration=self.swipe_duration
             )
             self.context.log(
-                f"Kéo quầy • swipe {swipe_index}/{self.swipe_pulses} liên tiếp • "
+                f"Kéo quầy • swipe {swipe_index}/{self.swipe_pulses} • "
                 f"duration={self.swipe_duration:.2f}s"
             )
-        # Do not let the stall snap between the two short pulses. The pair is
-        # one logical movement; only the completed movement gets a render wait.
         self.waiter.sleep(self.swipe_settle)
 
     def previous_view(self) -> None:
-        """Send two consecutive reverse swipes, then allow one render wait."""
+        """Return one logical view using the configured swipe pulse count."""
         for swipe_index in range(1, self.swipe_pulses + 1):
             self.context.ensure_running()
             self.vision.driver.swipe(
                 *self.swipe_end, *self.swipe_start, duration=self.swipe_duration
             )
             self.context.log(
-                f"Kéo quầy về • swipe {swipe_index}/{self.swipe_pulses} liên tiếp • "
+                f"Kéo quầy về • swipe {swipe_index}/{self.swipe_pulses} • "
                 f"duration={self.swipe_duration:.2f}s"
             )
         self.waiter.sleep(self.swipe_settle)
@@ -300,13 +296,7 @@ class StallActions:
             self.previous_view()
 
     def listing_is_available(self, frame: Any, local_slot: int) -> bool:
-        """Reject sold cells before purchase planning at any client resolution.
-
-        A purchasable friend listing always shows the orange coin icon at the
-        right side of its price bar. The recovered geometry stays logical 1000;
-        only this small color ROI and its pixel-count threshold are converted to
-        the current rendered frame.
-        """
+        """Reject sold cells before purchase planning at any client resolution."""
         slot = int(local_slot)
         if not 1 <= slot <= len(VISIBLE_SLOT_CENTERS):
             return False
@@ -319,9 +309,6 @@ class StallActions:
         roi = frame[y : y + height, x : x + width]
         if roi is None or getattr(roi, "size", 0) == 0:
             return False
-        # BGR/BGRA channel test for the orange/yellow coin. Live Gate 3B
-        # evidence at 1000: correct top/bottom price bands separate empty/sold
-        # cells (0 pixels) from available x10 listings (130..199 pixels).
         blue = roi[:, :, 0]
         green = roi[:, :, 1]
         red = roi[:, :, 2]
