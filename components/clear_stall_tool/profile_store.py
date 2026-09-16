@@ -9,7 +9,7 @@ from typing import Iterable
 APP_DIR = Path(os.environ.get("KVTM_CLEAR_STALL_APP_DIR") or (Path(os.environ.get("APPDATA", Path.home())) / "KVTM Dọn Quầy"))
 PROFILE_FILE = APP_DIR / "profiles.json"
 SETTINGS_FILE = APP_DIR / "settings.json"
-MULTI_APP_DIR = Path(os.environ.get("KVTM_MULTI_APP_DIR") or (Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi"))
+MULTI_APP_DIR = Path(os.environ.get("KVTM_MULTI_APP_DIR") or (Path(os.environ.get("APPDATA", Path.home())) / "KVTM Multi DEV"))
 MULTI_PROFILE_FILE = MULTI_APP_DIR / "profiles.json"
 MULTI_SETTINGS_FILE = MULTI_APP_DIR / "settings.json"
 
@@ -60,6 +60,10 @@ class ProfileStore:
     @property
     def profile_file(self) -> Path:
         return PROFILE_FILE
+
+    @property
+    def multi_profile_file(self) -> Path:
+        return MULTI_PROFILE_FILE
 
     @property
     def app_dir(self) -> Path:
