@@ -653,3 +653,12 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Đây là hợp đồng cũ làm AUTO kết thúc khi đến lịch restart; runtime mới cố ý không còn marker này.
 - Verifier nay khóa hợp đồng mới: exact old-PID stop, same-profile relaunch, `client_pid_changed`, login/popup watch, one-shot sale skip và `client_restart_completed`.
 - Đồng thời cấm marker terminal cũ quay lại. Verifier AST PASS; Windows full build cần chạy lại.
+
+## 2026-09-16 — ClientJS startup không còn khóa GUI/tiêm Bridge trùng
+
+- Root cause: callback Tk `_apply_display_to_process` gọi đồng bộ `kvtm_loader.exe` tối đa 15 giây; đồng thời Bridge Monitor có thể khởi chạy loader thứ hai cho cùng PID vì chỉ đánh dấu sau khi inject xong.
+- `_apply_display_to_process` nay chỉ resize và reserve inject; loader chạy trong daemon thread.
+- Thêm `_bridge_inflight_pids` để một PID có đúng một owner inject và `_bridge_ready_after` để ClientJS mới có 2 giây tạo/ổn định HWND.
+- Bridge Monitor chỉ inject PID có HWND, loại cả PID READY và IN-FLIGHT. PID do Auto Multi restart phát ra được đánh dấu READY vì EngineDriver chỉ publish sau khi Bridge V3 đã kết nối.
+- Không đổi launcher, title, vị trí, 1000x1000, DWM hay worker AUTO.
+- AST và static Bridge contract PASS; Windows LIVE PENDING.
