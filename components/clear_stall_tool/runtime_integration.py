@@ -52,6 +52,10 @@ def install_runtime_integration(app_class) -> None:
         else:
             self.runtime_controller.stop(pid)
 
+    def enqueue_account(self, account_id: str) -> None:
+        """Put one account into the same serialized process used by Start All."""
+        self.runtime_controller.enqueue(str(account_id))
+
     def start_all(self) -> None:
         for row in list(self.accounts):
             self.runtime_controller.start(row.account_id)
@@ -324,8 +328,6 @@ def install_runtime_integration(app_class) -> None:
             ).grid(row=grid_row, column=0, sticky="w", padx=(0, 22), pady=9)
             holder = tk.Frame(form, bg=SURFACE)
             holder.grid(row=grid_row, column=1, sticky="ew", pady=9)
-            # Intentionally use a plain Entry: operator enters the exact number
-            # directly; there are no spinner +/- or increment/decrement buttons.
             ttk.Entry(
                 holder,
                 textvariable=variable,
@@ -422,6 +424,7 @@ def install_runtime_integration(app_class) -> None:
     app_class._record_for_profile = _record_for_profile
     app_class._reload_rows = _reload_rows
     app_class.set_status = set_status
+    app_class.enqueue_account = enqueue_account
     app_class.start_all = start_all
     app_class.stop_all = stop_all
     app_class.add_account = add_account
@@ -437,15 +440,20 @@ def bind_runtime(app, profile_store, runtime_controller) -> None:
     app.runtime_controller = runtime_controller
 
     def on_runtime_event(profile_id: str, event: str, data: dict) -> None:
+        # Progress can fire dozens of times per second while matching images.
+        # It belongs in the Log window. Rebuilding every Tk row here caused the
+        # entire account table to flicker continuously during a live run.
+        if event == "progress":
+            return
+
         rows = []
+        changed = False
         for row in app.accounts:
             if row.account_id != profile_id:
                 rows.append(row)
                 continue
-            # Runtime progress belongs in the persistent Log window, not in the
-            # compact account table.  Keep only a short internal note for errors.
             note = row.note
-            if event in {"running", "cycle_start", "progress"}:
+            if event in {"running", "cycle_start"}:
                 status = "running"
             elif event == "stopped":
                 status = "stopped"
@@ -458,9 +466,12 @@ def bind_runtime(app, profile_store, runtime_controller) -> None:
             else:
                 status = row.status
             last_clean = str(data.get("last_clean") or row.last_clean)
-            rows.append(replace(row, status=status, note=note, last_clean=last_clean))
-        app.accounts = rows
-        app.refresh()
+            updated = replace(row, status=status, note=note, last_clean=last_clean)
+            rows.append(updated)
+            changed = changed or updated != row
+        if changed:
+            app.accounts = rows
+            app.refresh()
 
     runtime_controller.callback = on_runtime_event
     if not app.accounts:
