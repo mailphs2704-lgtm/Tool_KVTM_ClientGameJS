@@ -52,10 +52,14 @@ class ProfileStore:
     def __init__(self) -> None:
         APP_DIR.mkdir(parents=True, exist_ok=True)
         self._settings = self._load_settings()
-        if not PROFILE_FILE.is_file() and MULTI_PROFILE_FILE.is_file():
-            self.sync_from_multi()
         self._profiles = self._load_profiles()
-        self._normalize_selected()
+        # Keep the chooser tied to the current authoritative Multi DEV profile
+        # on every tool start. Standalone settings/jobs are separate and survive
+        # this refresh; deleted DEV profiles are removed from the local mirror.
+        if MULTI_PROFILE_FILE.is_file():
+            self.sync_from_multi()
+        else:
+            self._normalize_selected()
 
     @property
     def profile_file(self) -> Path:
