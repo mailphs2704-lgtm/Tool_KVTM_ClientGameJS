@@ -31,7 +31,10 @@ def install_original_auto_pro_integration(app_cls, core) -> None:
         env["KVTM_MULTI_PROFILE_FILE"] = str(core.PROFILE_FILE)
         env["KVTM_AUTO_PRO_TRANSPORT"] = "bridge-v3"
         env["KVTM_AUTO_PRO_ADB_DISABLED"] = "1"
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        flags = (
+            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
+        )
         try:
             child = subprocess.Popen(
                 [sys.executable, str(launcher)],
@@ -70,6 +73,6 @@ def install_original_auto_pro_integration(app_cls, core) -> None:
     app_cls._original_auto_pro_integration_installed = True
     print(
         "[KVTM CRY] Original AUTO PRO launcher READY • separate GUI • "
-        "offline auth • Cry ownership • Bridge V3 • ADB disabled",
+        "offline auth • Cry ownership • Bridge V3 • ADB disabled • low-priority",
         flush=True,
     )
