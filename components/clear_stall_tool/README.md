@@ -6,14 +6,13 @@ Tool Dọn quầy độc lập dùng giao diện Mẫu 8, nhưng **kế thừa n
 
 - business runtime dùng lại `components/clientjs-auto/worker/clear_stall_probe_runtime.py` từ package Multi DEV đã build;
 - một lượt thật chạy full-resale: mua đúng target rồi thu vàng/treo lại đúng các lô x10 đã xác minh;
-- tối đa 2 tài khoản chạy Dọn quầy đồng thời;
 - ClientJS do tool Dọn quầy tự mở sẽ được đóng sau mỗi lượt;
 - registry ownership được kiểm tra trước khi mở: nếu cùng tài khoản đang thuộc Multi/Cry hoặc instance khác, tool không giành quyền điều khiển;
 - Stop gửi qua command channel của worker hiện hành.
 
 ## Profile và settings riêng
 
-Dữ liệu runtime nằm ngoài Git tại:
+Dữ liệu runtime của tool nằm ngoài Git tại:
 
 ```text
 %APPDATA%\KVTM Dọn Quầy\profiles.json
@@ -21,13 +20,22 @@ Dữ liệu runtime nằm ngoài Git tại:
 %APPDATA%\KVTM Dọn Quầy\runs\
 ```
 
-`profiles.json` là snapshot riêng lấy từ `%APPDATA%\KVTM Multi\profiles.json`.
+`profiles.json` của tool là snapshot riêng lấy từ profile **AUTO MULTI DEV authoritative**:
 
-- Lần mở đầu, nếu chưa có snapshot thì tool tự import profile Multi hiện có.
-- `Đồng bộ profile` cập nhật snapshot khi Multi có tài khoản mới/thay đổi.
+```text
+%APPDATA%\KVTM Multi DEV\profiles.json
+```
+
+Đây là cùng thư mục mà `START_MULTI_DEV_SILENT.ps1` gán vào `KVTM_MULTI_APP_DIR`. Tool Dọn Quầy chạy ở process riêng nên tự bind về đúng thư mục này; nó **không được tự động lấy `%APPDATA%\KVTM Multi\profiles.json`** của bản Multi khác/legacy.
+
+- Lần mở đầu, nếu chưa có snapshot thì tool tự import profile Multi DEV hiện có.
+- `Đồng bộ profile` cập nhật snapshot khi Multi DEV có tài khoản mới/thay đổi.
+- Popup `Thêm tài khoản` và thông báo đồng bộ hiển thị đường dẫn nguồn profile để operator kiểm tra trực tiếp.
 - Không ghi ngược vào profile/settings của AUTO MULTI DEV.
 - Settings Dọn quầy riêng được giữ khi đồng bộ profile.
 - `Thêm tài khoản` chỉ cho chọn profile đã đồng bộ; **không có ô nhập account/profile tự do**.
+
+Nếu `%APPDATA%\KVTM Multi DEV\profiles.json` chưa tồn tại, tool chỉ cho phép fallback migration tới `data-dev` của package Multi DEV cũ; tuyệt đối không chọn profile production/legacy theo thời gian sửa file.
 
 ## Startup / trạng thái
 
