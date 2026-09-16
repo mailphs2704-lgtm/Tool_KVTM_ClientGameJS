@@ -56,14 +56,16 @@ if __package__ in {None, ""}:
     from app import ClearStallToolApp, demo_accounts
     from branding import install_branding
     from profile_store import ProfileStore
-    from runtime_controller import ClearStallController, RuntimeLayoutError
+    from runtime_controller import RuntimeLayoutError
     from runtime_integration import bind_runtime, install_runtime_integration
+    from runtime_policy import OrderedSafeClearStallController
 else:
     from .app import ClearStallToolApp, demo_accounts
     from .branding import install_branding
     from .profile_store import ProfileStore
-    from .runtime_controller import ClearStallController, RuntimeLayoutError
+    from .runtime_controller import RuntimeLayoutError
     from .runtime_integration import bind_runtime, install_runtime_integration
+    from .runtime_policy import OrderedSafeClearStallController
 
 
 def _enable_windows_dpi_awareness() -> None:
@@ -97,10 +99,13 @@ def main() -> int:
     root = tk.Tk()
     app = ClearStallToolApp(root, store.account_rows())
     try:
-        # Full transactional Dọn quầy remains machine-wide serialized, matching
-        # the proven Multi contract: never let two accounts buy/resell at once.
-        ClearStallController.MAX_CONCURRENCY = 1
-        controller = ClearStallController(root, store, lambda *_args: None)
+        # Full transactional Dọn quầy remains machine-wide serialized. The
+        # ordered controller also guarantees Start All enters this single slot
+        # in the same top-to-bottom order shown by the account table.
+        OrderedSafeClearStallController.MAX_CONCURRENCY = 1
+        controller = OrderedSafeClearStallController(
+            root, store, lambda *_args: None
+        )
     except RuntimeLayoutError as exc:
         from tkinter import messagebox
         root.withdraw()
