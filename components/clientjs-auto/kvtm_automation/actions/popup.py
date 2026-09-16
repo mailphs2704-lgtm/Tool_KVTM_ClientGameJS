@@ -197,6 +197,56 @@ class PopupActions:
         self.waiter.sleep(0.45)
         return True
 
+    def _post_escape_key(self) -> None:
+        """Send one real ESC key to the exact ClientJS process window."""
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        target_pid = int(self.context.pid)
+        windows: list[int] = []
+        callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        @callback_type
+        def collect(hwnd, _lparam):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if int(pid.value) == target_pid and user32.IsWindowVisible(hwnd):
+                windows.append(int(hwnd))
+                return False
+            return True
+
+        user32.EnumWindows(collect, 0)
+        if not windows:
+            raise ScreenTimeout(
+                f"Không tìm thấy cửa sổ ClientJS PID {target_pid} để gửi ESC"
+            )
+        hwnd = windows[0]
+        vk_escape = 0x1B
+        user32.PostMessageW(hwnd, 0x0100, vk_escape, 0)
+        user32.PostMessageW(hwnd, 0x0101, vk_escape, 0)
+
+    def escape_three_then_stay(self, *, label: str) -> None:
+        """Run ESC three times, click the green stay button, and invalidate camera."""
+        self.context.stage("auto-global-fallback-esc-three-stay")
+        for ordinal in range(1, 4):
+            self.context.ensure_running()
+            self._post_escape_key()
+            self.context.detail(
+                f"AUTO global fallback | {label} | ESC={ordinal}/3"
+            )
+            self.waiter.sleep(0.20)
+
+        # Live operator frame 2026-09-16: green Ở lại center=(573, 605)
+        # in logical native-1000 coordinates. Vision/driver owns native scaling.
+        stay_point = (573, 605)
+        self.vision.driver.click(*stay_point)
+        self.context.log(
+            f"AUTO global fallback • {label} • ESC x3 → click Ở lại {stay_point}"
+        )
+        self.waiter.sleep(0.65)
+        self.context.invalidate_camera_main("global-fallback-esc-three-stay")
+
     def _handle_portal_entry(self) -> bool:
         """Enter the game/account using only template-guarded portal actions."""
         match = self.vision.find("tai_khoan", threshold=0.78, click=True)
