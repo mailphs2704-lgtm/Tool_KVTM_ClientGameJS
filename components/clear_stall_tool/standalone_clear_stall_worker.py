@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import struct
 import sys
+import time
 
 
 _DLL_HANDLES: list[object] = []
@@ -68,7 +69,7 @@ def _install_unicode_safe_imwrite(cv2, emit) -> None:
     """Make OpenCV image writes safe for Vietnamese Windows paths.
 
     ``cv2.imwrite`` can return ``False`` when the target path contains Unicode
-    characters even though the frame itself is valid.  Encode in memory and let
+    characters even though the frame itself is valid. Encode in memory and let
     Python write the bytes so the shared Dọn quầy runtime can keep its existing
     ``cv2.imwrite`` contract without changing AUTO MULTI DEV source.
     """
@@ -96,6 +97,69 @@ def _install_unicode_safe_imwrite(cv2, emit) -> None:
         "probe_boot",
         stage="standalone-unicode-imwrite-ready",
         writer="cv2.imencode+Path.write_bytes",
+    )
+
+
+def _install_transient_capture_retry(auto_root: Path, emit) -> None:
+    """Retry only the strict Bridge V3 writer-map startup race.
+
+    A ready PING can precede publication of the writer-specific CAPTURE3 shared
+    mapping by a short interval. The packaged driver intentionally refuses HWND
+    fallback; keep that contract and simply repeat the same strict screenshot
+    call for the exact transient WinError 2 condition.
+    """
+    engine_driver = importlib.import_module("engine_driver")
+    source = _module_path(engine_driver)
+    root = Path(auto_root).resolve()
+    if not _inside(source, root):
+        raise RuntimeError(f"engine_driver không được nạp từ AUTO_PRO: {source}")
+
+    EngineDriver = getattr(engine_driver, "EngineDriver")
+    original = EngineDriver.screenshot
+    if getattr(original, "_kvtm_standalone_capture_retry", False):
+        return
+
+    waits = (0.15, 0.30, 0.60, 1.00)
+
+    def is_transient(exc: BaseException) -> bool:
+        text = str(exc)
+        return "Bridge V3 capture thất bại" in text and "[WinError 2]" in text
+
+    def screenshot_with_retry(self, *args, **kwargs):
+        try:
+            return original(self, *args, **kwargs)
+        except RuntimeError as exc:
+            if not is_transient(exc):
+                raise
+            last_error = exc
+
+        for attempt, delay in enumerate(waits, 1):
+            emit(
+                "probe_progress",
+                message=(
+                    "Bridge V3 capture transient WinError 2 • "
+                    f"retry {attempt}/{len(waits)} sau {delay:.2f}s"
+                ),
+            )
+            time.sleep(delay)
+            try:
+                return original(self, *args, **kwargs)
+            except RuntimeError as exc:
+                if not is_transient(exc):
+                    raise
+                last_error = exc
+
+        raise last_error
+
+    screenshot_with_retry._kvtm_standalone_capture_retry = True
+    EngineDriver.screenshot = screenshot_with_retry
+    emit(
+        "probe_boot",
+        stage="standalone-capture-retry-ready",
+        retries=len(waits),
+        waits_seconds=list(waits),
+        strict_bridge_only=True,
+        hwnd_fallback=False,
     )
 
 
@@ -236,8 +300,9 @@ def main() -> int:
     configure_utf8_stdio()
     try:
         _bootstrap_standalone_image_runtime(auto_root, emit)
+        _install_transient_capture_retry(auto_root, emit)
     except Exception as exc:
-        emit("probe_error", error=f"Standalone image runtime lỗi: {exc}")
+        emit("probe_error", error=f"Standalone runtime bootstrap lỗi: {exc}")
         return 3
 
     from clear_stall_probe_runtime import ProbeConfig, run_probe
