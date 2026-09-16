@@ -16,6 +16,13 @@ _REQUIRED_BRIDGE_PROTOCOL = (
     "NO_LAYOUT CAPTURE3_SYNC2 CAPTURE3_FIXEDMAP CAPTURE3_WRITERMAP2 "
     "CAPTURE3_WRITERMSG1"
 )
+_VP_TEMPLATE_NAMES = frozenset((
+    "nuoc_hoa_hong",
+    "tinh_dau_hh",
+    "vai_vang",
+    "tao_say",
+    "tra_da",
+))
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -30,7 +37,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--quantity", type=int, required=True)
     parser.add_argument("--max-stall-passes", type=int, default=10)
     parser.add_argument("--allowed-items-json", default="[]")
-    parser.add_argument("--drag-speed", type=float, default=0.35)
+    parser.add_argument("--drag-speed", type=float, default=0.20)
     parser.add_argument("--work-dir", required=True)
     return parser
 
@@ -71,12 +78,7 @@ def _install_dll_dirs(*directories: Path) -> None:
 
 
 def _install_unicode_safe_imread(cv2, numpy, emit) -> None:
-    """Make OpenCV image reads safe for Vietnamese Windows paths.
-
-    ``cv2.imread`` may return ``None`` for a valid file when its Windows path
-    contains Unicode characters. Read bytes with Python and decode in memory so
-    the shared Dọn quầy runtime can keep its existing ``cv2.imread`` contract.
-    """
+    """Make OpenCV image reads safe for Vietnamese Windows paths."""
     current = cv2.imread
     if getattr(current, "_kvtm_unicode_safe", False):
         return
@@ -104,13 +106,7 @@ def _install_unicode_safe_imread(cv2, numpy, emit) -> None:
 
 
 def _install_unicode_safe_imwrite(cv2, emit) -> None:
-    """Make OpenCV image writes safe for Vietnamese Windows paths.
-
-    ``cv2.imwrite`` can return ``False`` when the target path contains Unicode
-    characters even though the frame itself is valid. Encode in memory and let
-    Python write the bytes so the shared Dọn quầy runtime can keep its existing
-    ``cv2.imwrite`` contract without changing AUTO MULTI DEV source.
-    """
+    """Make OpenCV image writes safe for Vietnamese Windows paths."""
     current = cv2.imwrite
     if getattr(current, "_kvtm_unicode_safe", False):
         return
@@ -171,13 +167,7 @@ def _install_capture3_same_request(auto_root: Path, emit) -> None:
 
 
 def _install_transient_capture_retry(auto_root: Path, emit) -> None:
-    """Retry only the strict Bridge V3 writer-map startup race.
-
-    A ready PING can precede publication of the writer-specific CAPTURE3 shared
-    mapping by a short interval. The packaged driver intentionally refuses HWND
-    fallback; keep that contract and simply repeat the same strict screenshot
-    call for the exact transient WinError 2 condition.
-    """
+    """Retry only the strict Bridge V3 writer-map startup race."""
     engine_driver = importlib.import_module("engine_driver")
     source = _module_path(engine_driver)
     root = Path(auto_root).resolve()
@@ -233,16 +223,63 @@ def _install_transient_capture_retry(auto_root: Path, emit) -> None:
     )
 
 
-def _install_stall_per_swipe_settle(runtime_root: Path, emit) -> None:
-    """Restore the proven stall cadence for standalone horizontal view changes.
+def _install_scan_match_center_capture(runtime_root: Path, emit) -> None:
+    """Remember the exact image-match center selected during VP scan.
 
-    A later shared-runtime change moved the render wait after both short swipe
-    pulses. Live standalone evidence then reached view 2+ with zero available
-    physical slots because ClientJS was captured before the slot grid had
-    snapped back onto the fixed 1000x1000 geometry. Keep shared business logic
-    untouched and restore the earlier cadence here: swipe -> settle -> swipe ->
-    settle -> scan. Reverse rewinds use the same cadence.
+    The shared workflow asks VisionEngine.find() whether an allowed VP template
+    exists inside each scanned stall cell, but historically discarded Match.center
+    and later bought at a fixed cell coordinate. Standalone records that exact
+    PASS center by scan zone so BuyingActions can click the same image center.
     """
+    vision_module = importlib.import_module("kvtm_automation.runtime.vision")
+    source = _module_path(vision_module)
+    component_root = Path(runtime_root).resolve() / "components" / "clientjs-auto"
+    if not _inside(source, component_root):
+        raise RuntimeError(
+            f"VisionEngine không được nạp từ runtime Multi DEV: {source}"
+        )
+
+    VisionEngine = getattr(vision_module, "VisionEngine")
+    original = VisionEngine.find
+    if getattr(original, "_kvtm_standalone_scan_center_capture", False):
+        return
+
+    def find_with_scan_center_capture(self, name, *args, **kwargs):
+        match = original(self, name, *args, **kwargs)
+        zone = kwargs.get("zone")
+        if match is not None and str(name) in _VP_TEMPLATE_NAMES and zone is not None:
+            try:
+                key = tuple(int(round(float(value))) for value in zone)
+            except (TypeError, ValueError):
+                key = ()
+            if len(key) == 4:
+                centers = getattr(
+                    self,
+                    "_kvtm_clear_stall_vp_match_centers",
+                    None,
+                )
+                if not isinstance(centers, dict):
+                    centers = {}
+                    self._kvtm_clear_stall_vp_match_centers = centers
+                centers[key] = {
+                    "center": tuple(int(value) for value in match.center),
+                    "score": float(match.score),
+                    "name": str(name),
+                }
+        return match
+
+    find_with_scan_center_capture._kvtm_standalone_scan_center_capture = True
+    VisionEngine.find = find_with_scan_center_capture
+    emit(
+        "probe_boot",
+        stage="standalone-scan-center-capture-ready",
+        source="VisionEngine.Match.center",
+        fallback_fixed_purchase_coordinate=False,
+    )
+
+
+def _install_stall_per_swipe_settle(runtime_root: Path, emit) -> None:
+    """Use configured swipe pulses with a render settle after every pulse."""
     stall_module = importlib.import_module("kvtm_automation.actions.stall")
     source = _module_path(stall_module)
     component_root = (
@@ -290,23 +327,17 @@ def _install_stall_per_swipe_settle(runtime_root: Path, emit) -> None:
     previous_view_with_per_swipe_settle._kvtm_standalone_per_swipe_settle = True
     StallActions.next_view = next_view_with_per_swipe_settle
     StallActions.previous_view = previous_view_with_per_swipe_settle
+    single_swipe = os.environ.get("KVTM_CLEAR_STALL_SINGLE_SWIPE") == "1"
     emit(
         "probe_boot",
         stage="standalone-stall-per-swipe-settle-ready",
-        cadence="SWIPE_SETTLE_SWIPE_SETTLE_SCAN",
+        cadence=("ONE_SWIPE_SETTLE_SCAN" if single_swipe else "PER_SWIPE_SETTLE_SCAN"),
         shared_business_logic_unchanged=True,
     )
 
 
 def _bootstrap_standalone_image_runtime(auto_root: Path, emit) -> None:
-    """Preload the packaged image stack without the unverified cv2-first route.
-
-    The shared clean bootstrap currently imports Pillow -> cv2 -> NumPy. Live
-    standalone evidence on Windows/CPython 3.11 shows that route can block
-    inside the cv2 import. For the standalone tool we keep the same packaged
-    AUTO_PRO files and DLL directories but make NumPy resident before OpenCV,
-    then hand the already-loaded image runtime to the shared Dọn quầy workflow.
-    """
+    """Preload the packaged image stack without the unverified cv2-first route."""
     if tuple(sys.version_info[:2]) != (3, 11) or struct.calcsize("P") * 8 != 64:
         raise RuntimeError(
             "Dọn quầy standalone yêu cầu CPython 3.11 64-bit; "
@@ -347,8 +378,6 @@ def _bootstrap_standalone_image_runtime(auto_root: Path, emit) -> None:
 
     previous_sys_path = list(sys.path)
     try:
-        # Match the proven local launcher search surface: PYC, _internal, then
-        # pywin32 subfolders. auto_root is already present in previous_sys_path.
         for directory in (pyc, internal):
             sys.path.insert(0, str(directory))
         for directory in (
@@ -438,6 +467,7 @@ def main() -> int:
         _bootstrap_standalone_image_runtime(auto_root, emit)
         _install_capture3_same_request(auto_root, emit)
         _install_transient_capture_retry(auto_root, emit)
+        _install_scan_match_center_capture(runtime_root, emit)
         _install_stall_per_swipe_settle(runtime_root, emit)
     except Exception as exc:
         emit("probe_error", error=f"Standalone runtime bootstrap lỗi: {exc}")
