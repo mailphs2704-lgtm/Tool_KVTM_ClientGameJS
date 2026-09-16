@@ -64,6 +64,41 @@ def _install_dll_dirs(*directories: Path) -> None:
             pass
 
 
+def _install_unicode_safe_imwrite(cv2, emit) -> None:
+    """Make OpenCV image writes safe for Vietnamese Windows paths.
+
+    ``cv2.imwrite`` can return ``False`` when the target path contains Unicode
+    characters even though the frame itself is valid.  Encode in memory and let
+    Python write the bytes so the shared Dọn quầy runtime can keep its existing
+    ``cv2.imwrite`` contract without changing AUTO MULTI DEV source.
+    """
+    current = cv2.imwrite
+    if getattr(current, "_kvtm_unicode_safe", False):
+        return
+
+    def unicode_safe_imwrite(filename, image, params=None):
+        try:
+            target = Path(os.fspath(filename))
+            suffix = target.suffix or ".png"
+            encode_params = [] if params is None else list(params)
+            ok, encoded = cv2.imencode(suffix, image, encode_params)
+            if not ok:
+                return False
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(encoded.tobytes())
+            return True
+        except Exception:
+            return False
+
+    unicode_safe_imwrite._kvtm_unicode_safe = True
+    cv2.imwrite = unicode_safe_imwrite
+    emit(
+        "probe_boot",
+        stage="standalone-unicode-imwrite-ready",
+        writer="cv2.imencode+Path.write_bytes",
+    )
+
+
 def _bootstrap_standalone_image_runtime(auto_root: Path, emit) -> None:
     """Preload the packaged image stack without the unverified cv2-first route.
 
@@ -163,6 +198,7 @@ def _bootstrap_standalone_image_runtime(auto_root: Path, emit) -> None:
                 f"{getattr(cv2, '__version__', '?')} source={_module_path(cv2)}"
             ),
         )
+        _install_unicode_safe_imwrite(cv2, emit)
 
         for name, module in (("PIL", PIL), ("numpy", numpy), ("cv2", cv2)):
             source = _module_path(module)
