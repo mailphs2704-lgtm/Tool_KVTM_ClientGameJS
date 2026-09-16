@@ -20,7 +20,7 @@ def install_original_auto_pro_integration(app_cls, core) -> None:
             return
 
         package_root = Path(__file__).resolve().parent.parent
-        auto_root = package_root / "AUTO_PRO"
+        auto_root = package_root / "AUTO_PRO_ORIGINAL"
         launcher = auto_root / "cry_original_launcher.py"
         if not launcher.is_file():
             self.note.set(f"Thiếu launcher AUTO PRO gốc: {launcher}")
