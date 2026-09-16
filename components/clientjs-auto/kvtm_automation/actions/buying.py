@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import os
-from pathlib import Path
 
 from ..context import AutomationContext
 from ..errors import InventoryFull, TransactionError
@@ -16,8 +15,6 @@ class BuyingActions:
     """Direct friend-stall purchase loop reconstructed from GoFiendHome."""
 
     STORAGE_FULL_ZONE = (669, 351, 91, 88)
-    FRIEND_STALL_CONTENT_ZONE = (196, 340, 599, 395)
-    SCANNED_TEMPLATE_THRESHOLD = 0.58
 
     def __init__(
         self,
@@ -45,52 +42,33 @@ class BuyingActions:
             observation.fingerprint.perceptual_hash,
         ) <= self.fingerprint_distance
 
-    def _scanned_image_center(
+    def _captured_scan_center(
         self,
         observation: StallSlotObservation,
-    ) -> tuple[tuple[int, int], float] | None:
-        """Relocate the exact VP image captured by scan and return its live center."""
-        import cv2
-
-        template_path = Path(str(observation.fingerprint.template_file or ""))
-        if not template_path.is_file():
-            return None
-        template = cv2.imread(str(template_path), cv2.IMREAD_COLOR)
-        if template is None or getattr(template, "size", 0) == 0:
-            return None
-
-        frame = self.vision.frame()
-        source = frame
-        if source.ndim == 3 and source.shape[2] == 4:
-            source = cv2.cvtColor(source, cv2.COLOR_BGRA2BGR)
-        x0, y0, width, height = self.vision.logical_zone_to_frame(
-            self.FRIEND_STALL_CONTENT_ZONE,
-            source,
+    ) -> tuple[tuple[int, int], float, str] | None:
+        """Return Match.center captured by the standalone VP recognition scan."""
+        cx, cy = observation.center
+        key = (int(cx) - 50, int(cy) - 58, 100, 108)
+        centers = getattr(
+            self.vision,
+            "_kvtm_clear_stall_vp_match_centers",
+            None,
         )
-        roi = source[y0 : y0 + height, x0 : x0 + width]
-        if roi.size == 0:
+        if not isinstance(centers, dict):
             return None
-
-        frame_sx, frame_sy = self.vision.frame_scales(source)
-        tw = max(2, int(round(template.shape[1] * frame_sx)))
-        th = max(2, int(round(template.shape[0] * frame_sy)))
-        if (tw, th) != (template.shape[1], template.shape[0]):
-            template = cv2.resize(template, (tw, th), interpolation=cv2.INTER_AREA)
-        if tw > roi.shape[1] or th > roi.shape[0]:
+        payload = centers.get(key)
+        if not isinstance(payload, dict):
             return None
-
-        result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
-        _minimum, maximum, _min_loc, max_loc = cv2.minMaxLoc(result)
-        score = float(maximum)
-        if score < self.SCANNED_TEMPLATE_THRESHOLD:
+        center = payload.get("center")
+        if not isinstance(center, (tuple, list)) or len(center) != 2:
             return None
-
-        frame_center = (
-            x0 + int(max_loc[0]) + tw // 2,
-            y0 + int(max_loc[1]) + th // 2,
-        )
-        logical_center = self.vision.frame_point_to_logical(frame_center, source)
-        return logical_center, score
+        try:
+            point = (int(center[0]), int(center[1]))
+            score = float(payload.get("score", 0.0))
+            name = str(payload.get("name") or "")
+        except (TypeError, ValueError):
+            return None
+        return point, score, name
 
     def buy_from_listing(
         self,
@@ -100,7 +78,7 @@ class BuyingActions:
         on_unit: Callable[[int], None] | None = None,
         skip_unbuyable: bool = False,
     ) -> int:
-        """Click the same source listing until target is met or it disappears."""
+        """Buy and verify one scanned listing at a time."""
         target = max(0, int(maximum))
         bought = 0
         image_center_mode = (
@@ -113,27 +91,29 @@ class BuyingActions:
                 break
 
             if image_center_mode:
-                relocated = self._scanned_image_center(observation)
-                if relocated is None:
+                captured = self._captured_scan_center(observation)
+                if captured is None:
                     if skip_unbuyable:
                         self.context.log(
                             "Bỏ qua VP ô vật lý "
-                            f"{observation.physical_slot}: không định vị lại được tâm ảnh scan; "
+                            f"{observation.physical_slot}: thiếu tâm ảnh PASS từ scan; "
                             "không click tọa độ cố định"
                         )
                         return bought
                     raise TransactionError(
-                        "Không định vị lại được tâm ảnh VP đã scan; không dùng tọa độ mua cố định"
+                        "Thiếu tâm ảnh VP PASS từ scan; không dùng tọa độ mua cố định"
                     )
-                click_center, scan_score = relocated
+                click_center, scan_score, scan_name = captured
                 self.context.log(
                     "Mua VP theo tâm ảnh scan • "
                     f"ô vật lý {observation.physical_slot} • "
-                    f"center={click_center} • score={scan_score:.3f}"
+                    f"template={scan_name} • center={click_center} • "
+                    f"score={scan_score:.3f}"
                 )
             else:
+                # Multi DEV keeps its established click contract. Standalone is
+                # the only mode that opts into exact scan-center buying.
                 click_center = observation.click_center
-                scan_score = None
 
             self.vision.driver.click(*click_center)
             self.waiter.settle(0.50)
@@ -144,6 +124,9 @@ class BuyingActions:
             ) is not None:
                 raise InventoryFull("Kho clone đã đầy trong lúc mua VP")
 
+            # Never account a click as a purchase by timing alone. The source
+            # listing must disappear/change first; otherwise stop before the
+            # manifest counter is incremented.
             changed = False
             for _ in range(10):
                 if not self.listing_matches(observation):
