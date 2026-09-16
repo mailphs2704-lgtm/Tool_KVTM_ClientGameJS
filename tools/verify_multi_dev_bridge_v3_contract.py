@@ -78,7 +78,7 @@ def main() -> int:
         "self._bridge_inflight_pids.add(pid)",
         "self._bridge_inflight_pids.discard(pid)",
         "self._request_bridge_injection(int(proc.pid))",
-        "live - self._bridged_pids",
+        "- self._bridged_pids",
         "- self._bridge_inflight_pids",
         "if self._window_for_pid(pid):",
     ):
