@@ -129,8 +129,9 @@ def main() -> int:
     if not gold < qc < listing:
         raise AssertionError("Sale view order must be gold -> QC -> list VP")
 
-    # AUTO Main scheduler is Function-bound and scheduled restart is 3h at a safe
-    # post-Function boundary with a guaranteed sale before relaunch.
+    # AUTO Main scheduler is Function-bound. ClientJS restart is blocked;
+    # registered errors retain typed checkpoint recovery and only unknown errors
+    # enter the bounded ESC/stay/exact-main/friend refresh fallback.
     require(catalog, 'sale_item_ids=("tao_say", "vai_vang")', "Function-1 sale ownership missing")
     require(catalog, 'sale_item_ids=("tao_say", "vai_vang", "tinh_dau_hh")', "Function-2 sale ownership missing")
     require(catalog, 'sale_item_ids=("nuoc_hoa_hong", "tra_da", "vai_vang")',
@@ -141,18 +142,15 @@ def main() -> int:
             "Function-3 Trà đá primary dialog proof missing")
     require(action, 'self.SELECTED_ITEM_FALLBACK_TEMPLATES.get(item.item_id, ())',
             "Function-3 Trà đá fallback is not wired into dialog proof")
-    require(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 10800.0", "Scheduler 3h restart interval changed")
-    require(auto_main, "def _request_client_restart_at_safe_boundary", "Safe restart boundary helper missing")
-    require(auto_main, "raise ClientRestartRequested(", "Restart signal missing")
-    require(auto_main, "auto-main-client-restart-pre-sale", "Safe pre-restart sale stage missing")
-    require(auto_main, "mốc 3h đã đến", "3h safe-boundary runtime marker missing")
-    require(errors, "class ClientRestartRequested(AutomationStopped):", "Restart cooperative-stop signal missing")
-    require(integration, "_CLIENT_RESTART_INTERVAL_SECONDS = 10800.0", "Integration 3h restart interval changed")
-    require(integration, '_CLIENT_RESTART_REQUEST_PREFIX = "CLIENT_RESTART_REQUESTED"', "Restart handoff prefix missing")
-    require(integration, 'resume["skip_initial_sale_once"] = True', "Post-restart duplicate-sale guard missing")
-    require(integration, "self._start_clean_auto_profile_only(profile_id)", "Restart does not relaunch requesting profile")
-    require(worker, "except ClientRestartRequested as exc:", "Worker dedicated restart lifecycle branch missing")
-    require(worker, '"client_restart_requested"', "Worker restart lifecycle event missing")
+    require(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 0.0", "Scheduler restart is not blocked")
+    require(auto_main, "GLOBAL_RECOVERY_LIMIT = 3", "Unknown-error fallback bound missing")
+    require(auto_main, "escape_three_then_stay(", "ESC x3 / Ở lại fallback missing")
+    require(auto_main, "self.friend_refresh.run(", "Unknown-error friend refresh missing")
+    forbid(auto_main, "ClientRestartRequested", "Scheduler restart request returned")
+    require(integration, "_CLIENT_RESTART_INTERVAL_SECONDS = 0.0", "Integration restart is not blocked")
+    require(integration, "scheduled_restart = False", "Supervisor restart branch is not blocked")
+    forbid(worker, "ClientRestartRequested", "Worker restart lifecycle branch returned")
+    require(worker, "client_restart=BLOCK", "Worker blocked-restart marker missing")
 
     # Periodic Friend refresh remains independent from sale/restart business work.
     require(friend_refresh, "class FriendRefreshWorkflow:", "FriendRefreshWorkflow missing")
@@ -184,7 +182,7 @@ def main() -> int:
     print("transaction=empty-click-once->storage2->exact-x10->post-sale-own-stall")
     print("views=5;order=gold->QC->listing;return=caller")
     print("resolution=native500-or-native1000-static-tables")
-    print("client_restart=3h+safe-sale-boundary+same-profile-relaunch")
+    print("client_restart=blocked-3h-and-error")
     print("auto_builder=verified")
     return 0
 
