@@ -27,6 +27,8 @@ WORKER = ROOT / "components/clientjs-auto/worker/auto_multi_dev_worker.py"
 MULTI_TOOL = ROOT / "source-archive/multi-current/kvtm_multi_tool"
 BUILDER_INTEGRATION = MULTI_TOOL / "auto_builder_integration.py"
 PROFILE_SETTINGS = MULTI_TOOL / "auto_main_profile_settings.py"
+POPUP = CLEAN / "actions/popup.py"
+PRODUCTION_PANEL = CLEAN / "actions/production_panel.py"
 
 
 def read(path: Path) -> str:
@@ -85,6 +87,8 @@ def main() -> int:
     worker = read(WORKER)
     builder_integration = read(BUILDER_INTEGRATION)
     profile_settings = read(PROFILE_SETTINGS)
+    popup = read(POPUP)
+    production_panel = read(PRODUCTION_PANEL)
 
     # errors.py declares signals only.
     require(errors, "class WrongProductionMachine(NavigationError):", "Wrong-machine signal missing")
@@ -242,33 +246,42 @@ def main() -> int:
     require(game_session, "mark_startup_exact_main", "Startup MAIN contract marker missing")
     forbid(game_session, "go_down_one_toward_main", "Startup must not manufacture MAIN with goDown(1)")
 
-    # Scheduler restart is three-hour, safe-boundary lifecycle only. Emergency
-    # mid-Function restart remains a separate durable-checkpoint feature.
-    require(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 10800.0", "AUTO Main restart is not 3h")
-    require(auto_main, "_request_client_restart_at_safe_boundary", "Safe restart boundary API missing")
-    require(auto_main, "auto-main-client-restart-pre-sale", "Pre-restart safe sale missing")
-    require(auto_main, "skip_initial_sale_once", "Post-restart one-shot sale skip missing")
-    forbid(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 7200.0", "Old 2h AUTO Main restart remains")
+    # ClientJS restart is blocked at scheduler, worker and Multi supervisor.
+    require(auto_main, "CLIENT_RESTART_INTERVAL_SECONDS = 0.0", "AUTO Main restart is not blocked")
+    require(auto_main, "GLOBAL_RECOVERY_LIMIT = 3", "Global fallback bound missing")
+    require(auto_main, "escape_three_then_stay(", "Global fallback escape sequence missing")
+    require(auto_main, "recover_unknown_to_main(", "Global fallback exact-main proof missing")
+    require(auto_main, "self.friend_refresh.run(", "Global fallback friend refresh missing")
+    require(auto_main, "continue", "Global fallback does not retry same Function loop")
+    forbid(auto_main, "ClientRestartRequested", "AUTO Main can still request ClientJS restart")
 
-    # Worker is a lifecycle host, not a second recovery engine. Registered errors
-    # are handled below it; anything escaping RecoveryManager fails closed.
-    require(worker, "except ClientRestartRequested as exc:", "Worker restart lifecycle branch missing")
-    require(worker, '"client_restart_requested"', "Worker explicit restart lifecycle event missing")
-    require(worker, 'lifecycle_event="client_restart_requested"', "Worker restart supervisor bridge missing")
-    require(worker, "unregistered_runtime_error; recovery=fail-close", "Worker fail-close contract missing")
-    forbid(worker, "_AUTO_MAIN_SAME_ERROR_LIMIT", "Old catch-all same-error restart loop remains")
-    forbid(worker, "_recover_auto_main_to_main_screen", "Worker still owns generic camera recovery")
-    forbid(worker, "runtime_error_policy=recover-main-restart", "Worker still advertises pipeline restart recovery")
+    require(popup, "def escape_three_then_stay(", "ESC/stay popup primitive missing")
+    require(popup, "for ordinal in range(1, 4):", "Fallback does not send exactly three ESC keys")
+    require(popup, "stay_point = (573, 605)", "Operator-supplied Ở lại point missing")
+    require(
+        production_panel,
+        "Probe a fresh frame before every",
+        "VP collector does not probe full warehouse between clicks",
+    )
+    require(
+        production_panel,
+        "self._raise_inventory_full(label)",
+        "VP collector does not hand full warehouse to typed recovery",
+    )
 
-    # Multi integration owns only scheduled ClientJS lifecycle: exact profile,
-    # new worker/Bridge generation and one-shot startup-sale skip.
-    require(builder_integration, "_CLIENT_RESTART_INTERVAL_SECONDS = 10800.0", "Multi restart integration is not 3h")
-    require(builder_integration, 'lifecycle_event == "client_restart_requested"', "Supervisor lifecycle marker missing")
-    require(builder_integration, 'resume["skip_initial_sale_once"] = True', "Restart handoff does not skip duplicate startup sale")
-    require(builder_integration, "_start_clean_auto_profile_only(profile_id)", "Restart does not relaunch exact profile")
-    forbid(builder_integration, "_CLIENT_RESTART_INTERVAL_SECONDS = 7200.0", "Old 2h integration constant remains")
-    forbid(builder_integration, "restart ClientJS=2 giờ", "Old 2h integration UI remains")
-    forbid(profile_settings, "restart ClientJS=2 giờ", "Old 2h profile UI remains")
+    forbid(worker, "ClientRestartRequested", "Worker restart lifecycle branch remains")
+    forbid(worker, '"client_restart_requested"', "Worker still emits restart lifecycle")
+    require(worker, "client_restart=BLOCK", "Worker blocked-restart marker missing")
+    require(
+        worker,
+        "unregistered_error=ESCx3->stay->exact-main->friend1->resume-same-loop",
+        "Worker global fallback contract marker missing",
+    )
+    require(worker, "unregistered_runtime_error; recovery=fail-close", "Outer worker fail-close contract missing")
+
+    require(builder_integration, "_CLIENT_RESTART_INTERVAL_SECONDS = 0.0", "Multi restart interval is not blocked")
+    require(builder_integration, "scheduled_restart = False", "Multi supervisor restart branch is not blocked")
+    require(profile_settings, "restart ClientJS=BLOCK (3h + lỗi)", "Profile UI does not show blocked restart policy")
 
     # Old class remains adapter only; Function 1 composes RecipeBook and must not
     # duplicate unknown-camera or production recovery loops.
@@ -291,8 +304,8 @@ def main() -> int:
     print("warehouse_progress=unbounded-sale+qc-until-real-x10-listing")
     print("startup=continuous-popup-watch-60s+no-goDown-main-normalize")
     print("tdhh=finished-vp+rose-snow-materials+resident-production-facade")
-    print("scheduled_restart=3h+safe-function-boundary+exact-profile-relaunch")
-    print("worker=typed-recovery-boundary+unregistered-fail-close")
+    print("client_restart=blocked-3h-and-error")
+    print("worker=typed-checkpoint-first+global-fallback+outer-fail-close")
     print("auto_builder_import=lazy-runner-no-recovery-cycle")
     print("recipes=share-one-RecoveryManager-per-function")
     print("functions=business-flow-composes-RecipeBook")
