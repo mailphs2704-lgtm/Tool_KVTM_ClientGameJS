@@ -208,6 +208,26 @@ def main() -> int:
         "Uploaded AUTO PRO source identity is missing",
     )
     require(uploaded_launcher, "EngineDriver", "Uploaded AUTO PRO does not use Bridge V3 driver")
+    require(
+        original_auto_integration,
+        '"BELOW_NORMAL_PRIORITY_CLASS"',
+        "Original AUTO PRO child can starve the Multi UI at normal priority",
+    )
+    require(
+        uploaded_launcher,
+        "_CAPTURE_MIN_INTERVAL_SECONDS = 0.05",
+        "Original AUTO PRO Bridge capture hard cap missing",
+    )
+    require(
+        uploaded_launcher,
+        "EngineDriver.screenshot = governed_engine_screenshot",
+        "Original AUTO PRO does not route capture through its governor",
+    )
+    require(
+        uploaded_launcher,
+        "return _original_engine_screenshot(self, *args, **kwargs)",
+        "Capture governor does not preserve fresh Bridge frames",
+    )
     require(uploaded_launcher, 'DEVICE_PREFIX = "KVTMPROFILE__"', "Uploaded AUTO PRO device identity is not filename-safe")
     require(uploaded_launcher, 'DEVICE_SEPARATOR = "__"', "Uploaded AUTO PRO owner/profile separator is not filename-safe")
     require(uploaded_launcher, 'owner not in {"CRY", "DEV"}', "Uploaded AUTO PRO does not discover both Cry and DEV")
@@ -308,7 +328,7 @@ def main() -> int:
     print("parity=dev-host+dwm-off+fps-hardcap+fixed-position+pre-ui-shop-drag-speed+bridge-v3")
     print("dev-isolation=stable-running-not-stopped-by-release-build")
     print("security=no-embedded-github-token")
-    print("original-auto-pro=uploaded-sha256+separate-gui+offline-stateless+owner-profile-id+cry-dev-attach+two-frame-startup+bridge-v3+no-adb")
+    print("original-auto-pro=uploaded-sha256+separate-gui+offline-stateless+owner-profile-id+cry-dev-attach+two-frame-startup+bridge-v3+no-adb+low-priority+capture20fps")
     return 0
 
 
