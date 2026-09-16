@@ -29,7 +29,7 @@ OWNERSHIP_FILE = (
     / "KVTM Client Ownership"
     / "clients.json"
 )
-DEVICE_PREFIX = "CRY:"
+DEVICE_PREFIX = "CRYPROFILE:"
 _MUTEX_NAME = r"Local\KVTM_Cry_UploadedAutoPro_v1"
 _ERROR_ALREADY_EXISTS = 183
 
@@ -210,10 +210,11 @@ def bridge_v3_connect(device_id=None, *args, **kwargs):
     value = str(device_id or "")
     if not value.startswith(DEVICE_PREFIX):
         raise RuntimeError("ADB đã tắt trong AUTO PRO gốc của Cry")
-    pid_text = value[len(DEVICE_PREFIX):]
-    if not pid_text.isdigit():
+    profile_id = value[len(DEVICE_PREFIX):].strip()
+    if not profile_id:
         raise RuntimeError(f"Thiết bị Cry không hợp lệ: {value}")
-    return EngineDriver(int(pid_text), reference_size=(1000, 1000))
+    # Stable profile identity survives ClientJS app_stop/app_start PID changes.
+    return EngineDriver(profile_id, reference_size=(1000, 1000))
 
 
 u2.connect = bridge_v3_connect
@@ -234,7 +235,10 @@ def fetch_cry_devices(self):
     }
     for item in _cry_owned_clients():
         pid = int(item["pid"])
-        device_id = f"{DEVICE_PREFIX}{pid}"
+        profile_id = str(item["profile_id"] or "").strip()
+        if not profile_id:
+            continue
+        device_id = f"{DEVICE_PREFIX}{profile_id}"
         display_name = f"Cry - {item['name']} [{pid}]"
         data["adb_id_list"].append(device_id)
         data["adb_id_to_name"][device_id] = display_name
@@ -259,8 +263,13 @@ def cry_device_online(self, device_id):
     value = str(device_id or "")
     if not value.startswith(DEVICE_PREFIX):
         return False
-    pid_text = value[len(DEVICE_PREFIX):]
-    return pid_text.isdigit() and _pid_alive(int(pid_text))
+    profile_id = value[len(DEVICE_PREFIX):].strip()
+    if not profile_id:
+        return False
+    return any(
+        item["profile_id"] == profile_id and _pid_alive(int(item["pid"]))
+        for item in _cry_owned_clients()
+    )
 
 
 def no_device_side_effect(self, device_id):
