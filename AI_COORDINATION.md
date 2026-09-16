@@ -657,3 +657,5 @@ AUTO MULTI DEV worker hiện dùng bootstrap kỹ thuật đã chứng minh củ
 - Verification: tools/verify_recovery_architecture_contract.py statically enforces these ownership and lifecycle invariants. Static verification is not a live runtime PASS.
 
 - Build-gate follow-up: updated verify_multi_dev_main_boundary_contract.py, verify_auto_function_two_ui_contract.py, and verify_auto_main_sale_contract.py so no static verifier requires the removed 3-hour ClientRestartRequested lifecycle. All 31 verify_*.py files were scanned; no stale restart requirement remains.
+
+- Speed-gate follow-up: verify_auto_speed_config_contract.py now preserves the 4×5=20 click accounting while requiring a fresh full-warehouse probe before every click. The old raw x5/no-vision assertion was intentionally removed because it contradicted the live blinking-full-kho safety fix.
