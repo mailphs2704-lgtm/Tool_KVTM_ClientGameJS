@@ -32,7 +32,10 @@ class FeedMillResult:
 class FeedMillWorkflow:
     """Operator-confirmed event-feed sequence in logical 1000x1000 space."""
 
-    EVENT_WOLF_POINT = (706, 704)
+    # Operator's red marker is on the wolf at the lower-left edge of MAIN.
+    # The previous (706, 704) point hit the NPC beside the haunted house and
+    # never entered the feed event map.
+    EVENT_WOLF_POINT = (587, 940)
     MILL_ENTRY_POINT = (316, 749)
     WHEAT_POINT = (412, 380)
     MILL_INPUT_POINT = (245, 558)
@@ -44,6 +47,8 @@ class FeedMillWorkflow:
     PANEL_SETTLE_SECONDS = 2.5
     SWIPE_SETTLE_SECONDS = 1.5
     HOME_MAP_SETTLE_SECONDS = 5.0
+    EVENT_MAP_CHANGE_THRESHOLD = 25.0
+    EVENT_MAP_ENTRY_ATTEMPTS = 2
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
@@ -89,6 +94,33 @@ class FeedMillWorkflow:
         )
         return blue >= 0.12
 
+    @staticmethod
+    def _frame_change_score(before, after) -> float:
+        if before is None or after is None or before.shape != after.shape:
+            return 0.0
+        # int16 prevents uint8 subtraction wrap-around. A real MAIN -> event
+        # transition is a full-screen change (operator evidence is ~98 mean
+        # absolute levels); ordinary idle animation stays far below 25.
+        delta = before.astype("int16") - after.astype("int16")
+        return float(abs(delta).mean())
+
+    def _enter_event_map(self, main_frame) -> None:
+        for attempt in range(1, self.EVENT_MAP_ENTRY_ATTEMPTS + 1):
+            self._tap(
+                self.EVENT_WOLF_POINT,
+                f"auto-feed-mill-enter-event-map-{attempt}",
+            )
+            self.auto.wait.sleep(self.EVENT_MAP_WAIT_SECONDS)
+            score = self._frame_change_score(main_frame, self.vision.frame())
+            self.context.log(
+                "AUTO Sx cám • kiểm tra vào map sự kiện • "
+                f"attempt={attempt}/{self.EVENT_MAP_ENTRY_ATTEMPTS} • "
+                f"frame_change={score:.2f}/{self.EVENT_MAP_CHANGE_THRESHOLD:.2f}"
+            )
+            if score >= self.EVENT_MAP_CHANGE_THRESHOLD:
+                return
+        raise ScreenTimeout("Sx cám chưa vào được map sự kiện sau khi click NPC sói")
+
     def run(self) -> FeedMillResult:
         started = time.monotonic()
         self.context.ensure_running()
@@ -99,10 +131,9 @@ class FeedMillWorkflow:
         self.context.log(
             "AUTO Sx cám • bắt đầu tại safe boundary sau Function + bán VP"
         )
+        main_frame = self.vision.frame()
         self.context.invalidate_camera_main("feed-mill-leave-own-main")
-
-        self._tap(self.EVENT_WOLF_POINT, "auto-feed-mill-enter-event-map")
-        self.auto.wait.sleep(self.EVENT_MAP_WAIT_SECONDS)
+        self._enter_event_map(main_frame)
 
         self._tap(self.MILL_ENTRY_POINT, "auto-feed-mill-entry-click-1")
         self.auto.wait.sleep(self.BETWEEN_MILL_CLICKS_SECONDS)

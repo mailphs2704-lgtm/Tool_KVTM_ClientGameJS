@@ -1,7 +1,7 @@
 # AUTO MULTI DEV — SẢN XUẤT CÁM
 
-Date: 2026-09-17  
-Branch: `develop/multi-auto-dev`  
+Date: 2026-09-17
+Branch: `develop/multi-auto-dev`
 Status: **SOURCE/STATIC PASS — WINDOWS BUILD/LIVE PENDING**
 
 ## Operator contract
@@ -14,7 +14,9 @@ Status: **SOURCE/STATIC PASS — WINDOWS BUILD/LIVE PENDING**
 
 ## Chuỗi thao tác logical 1000x1000
 
-1. Từ exact-main, click NPC sói `(706, 704)` để vào map sự kiện.
+1. Từ exact-main, click dấu đỏ trên NPC sói `(587, 940)` để vào map sự kiện.
+   So sánh fresh frame trước/sau, retry tối đa 2 lần và chỉ chạy tiếp khi đã
+   chứng minh chuyển map toàn màn hình; không vào map thì SAFE_ABORT ngay tại đây.
 2. Chờ map 4 giây; click máy xay `(316, 749)` hai lần, cách nhau 1.5 giây.
 3. Chờ panel ổn định và xác nhận header/overlay.
 4. Một native `swipe_points`: bông lúa `(412, 380)` → máng `(245, 558)`.

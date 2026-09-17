@@ -312,6 +312,16 @@ def main() -> int:
     )
     require(
         feed_mill_workflow,
+        "EVENT_WOLF_POINT = (587, 940)",
+        "Feed Mill wolf entry point no longer matches operator evidence",
+    )
+    require(
+        feed_mill_workflow,
+        "Sx cám chưa vào được map sự kiện sau khi click NPC sói",
+        "Feed Mill must prove event-map transition before clicking the mill",
+    )
+    require(
+        feed_mill_workflow,
         "self.driver.swipe_points(",
         "Feed Mill wheat transfer is not one native swipe",
     )
