@@ -1,5 +1,18 @@
 # AUTO MULTI DEV — LATEST HANDOFF
 
+## 22. 2026-09-17 — Tùy chọn Sx cám sau Function + bán VP
+
+- Toggle `Sx cám` nằm ngay sau `Thăm bạn`, mặc định OFF, lưu/snapshot riêng
+  từng profile giống tùy chọn Mở rương.
+- Scheduler chỉ xét Sx cám sau Function PASS và lần bán VP tại safe boundary;
+  lần kế tiếp sau 35 phút monotonic, không có thread/poll UI mới.
+- Workflow theo đúng 6 ảnh operator: NPC sói → click máy xay hai lần cách 1.5s
+  → swipe bông lúa vào máng → xác nhận timer → đóng X → Nhà → exact-main.
+- Panel/timer/main không được chứng minh thì SAFE_ABORT, recovery main và retry
+  sau lần sale kế tiếp; không click tiếp mù.
+- Checkpoint: `docs/AUTO_FEED_MILL_CHECKPOINT_20260917.md`.
+- Targeted static PASS; Windows build/live PENDING.
+
 ## 21. 2026-09-17 — Không khóa UI khi ClientJS tải ZingPlay
 
 - Live evidence sau bản timeout: Multi vẫn giật/khó thao tác khi nhiều ClientJS
