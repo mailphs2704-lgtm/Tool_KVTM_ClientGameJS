@@ -131,7 +131,7 @@ class PlantingActions:
     SEED_PANEL_PROOF_RECHECKS = 3
     SEED_PANEL_PROOF_RECHECK_SECONDS = 0.15
     SEED_MAX_PAGE_TURNS = 8
-    SEED_PICKER_CLOSE_ATTEMPTS = 3
+    SEED_PICKER_CLOSE_ATTEMPTS = 4
 
     def __init__(
         self,
@@ -303,7 +303,12 @@ class PlantingActions:
         return match
 
     def close_seed_picker_verified(self, *, label: str) -> None:
-        """Close the planting picker and prove it no longer owns input."""
+        """Close the picker without letting one weak arrow match abort a Function.
+
+        The arrow template can false-match crop/farm pixels near threshold after
+        a successful planting swipe. Repeated close inputs plus the side/backdrop
+        close are therefore stronger evidence than one residual arrow match.
+        """
 
         for attempt in range(1, self.SEED_PICKER_CLOSE_ATTEMPTS + 1):
             self.context.ensure_running()
@@ -313,11 +318,21 @@ class PlantingActions:
                 )
                 return
             self.vision.driver.click(*self.CLOSE_POINT)
-            self.waiter.sleep(0.30)
-        if self._prove_seed_picker_open_for_page_turn() is not None:
-            raise ScreenTimeout(
-                f"Bảng gieo chưa đóng sau {self.SEED_PICKER_CLOSE_ATTEMPTS} lần: {label}"
+            self.waiter.sleep(0.40)
+            if attempt >= 2:
+                self.vision.driver.click(*self.CLOSE_SIDE_POINT)
+                self.waiter.sleep(0.25)
+
+        residual = self._prove_seed_picker_open_for_page_turn()
+        if residual is not None:
+            self.context.log(
+                "AUTO planting picker close • residual arrow AMBIGUOUS sau "
+                f"{self.SEED_PICKER_CLOSE_ATTEMPTS} lần • label={label} • "
+                f"center={residual.center} • không ném ScreenTimeout; "
+                "Navigation sẽ đóng backdrop thêm một lần trước chuyển tầng"
             )
+            self.vision.driver.click(*self.CLOSE_SIDE_POINT)
+            self.waiter.sleep(0.40)
 
     def _scan_first_pot_state(self, seed_template: str) -> tuple[str, object | None]:
         self.context.ensure_running()
