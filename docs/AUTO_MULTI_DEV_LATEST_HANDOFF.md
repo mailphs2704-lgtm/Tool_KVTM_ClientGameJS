@@ -1,5 +1,18 @@
 # AUTO MULTI DEV — LATEST HANDOFF
 
+## 20. 2026-09-17 — Giảm log nền và cô lập ClientJS treo
+
+- Runtime diagnostic sidecar nay mặc định tắt; chỉ bật có chủ đích bằng
+  `KVTM_RUNTIME_DIAGNOSTICS=1`.
+- Log chi tiết ghi theo batch tối đa 0.75 giây; action milestone vẫn flush ngay.
+- Cửa sổ Log chỉ đọc tail 512 KiB và tối đa 1000 action row.
+- Bridge V3 dùng timeout 1 giây cho input và 2 giây cho capture; một ClientJS
+  treo trả `ERROR_TIMEOUT` về đúng worker thay vì khóa pipe vô hạn.
+- Contract CAPTURE3/INPUT4/WRITERMAP2/WRITERMSG1 giữ nguyên.
+- Checkpoint: `docs/AUTO_MULTI_DEV_LOG_AND_CLIENT_ISOLATION_20260917.md`.
+- Static targeted PASS; Windows build/live PENDING. NEXT: Control Center `[1]`,
+  `[2]`, test ít nhất ba client với một client cố tình treo ở ZingPlay.
+
 Cập nhật: 2026-09-15
 Repo: `mailphs2704-lgtm/Tool_KVTM_ClientGameJS`
 Branch bắt buộc: `develop/multi-auto-dev`
@@ -353,4 +366,3 @@ Build/live pending. NEXT: Control Center publish Stable, require automatic `0.1.
 - Khi bắt được lỗi, collector đợi 5 giây lấy đủ context, giới hạn tối đa một upload/phút và gọi uploader độc lập.
 - Uploader chỉ gửi text đã che profile/tên tài khoản/PID/đường dẫn user/credential lên branch `diagnostics/runtime-errors`; không gửi ảnh, `profiles.json`, `settings.json`, `.kvtm` hoặc secret.
 - Windows PowerShell syntax và Git push LIVE: PENDING.
-
