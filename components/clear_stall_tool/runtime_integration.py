@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import math
 import time
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -94,7 +95,7 @@ def install_runtime_integration(app_class) -> None:
         tk.Label(custom, text="phút", bg=SURFACE, fg=MUTED).pack(side="left")
 
         success_text = (
-            f"Còn {max(0, int(round(remaining_from_success / 60)))} phút "
+            f"Còn {max(0, int(math.ceil(remaining_from_success / 60)))} phút "
             f"(lần thành công cuối: {row.last_clean})"
             if last_success > 0
             else "Chưa có lần thành công • sẽ chạy ngay"
@@ -114,7 +115,11 @@ def install_runtime_integration(app_class) -> None:
 
         def submit() -> None:
             if mode.get() == "last_success":
-                delay = remaining_from_success
+                # Recalculate when the user confirms, not when the dialog opened.
+                delay = max(
+                    0.0,
+                    (last_success + interval * 60) - time.time(),
+                ) if last_success > 0 else 0.0
             else:
                 try:
                     minutes = int(custom_minutes.get().strip())

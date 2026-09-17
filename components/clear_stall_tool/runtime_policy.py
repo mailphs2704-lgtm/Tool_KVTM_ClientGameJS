@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -355,7 +356,7 @@ class OrderedSafeClearStallController(ClearStallController):
                     "first_cycle_wait",
                     message=(
                         "Đang chờ phiên đầu • còn "
-                        f"{max(1, int(round(first_delay / 60)))} phút"
+                        f"{max(1, int(math.ceil(first_delay / 60)))} phút"
                     ),
                     wait_seconds=first_delay,
                 )

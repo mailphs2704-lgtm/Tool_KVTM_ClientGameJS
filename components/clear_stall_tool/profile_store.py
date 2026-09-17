@@ -265,11 +265,28 @@ class ProfileStore:
         self._save_settings()
 
     def last_success_at(self, profile_id: str) -> float:
-        value = self._settings.get("last_success_at", {}).get(str(profile_id), 0)
+        pid = str(profile_id)
+        value = self._settings.get("last_success_at", {}).get(pid, 0)
         try:
-            return max(0.0, float(value or 0))
+            timestamp = max(0.0, float(value or 0))
         except (TypeError, ValueError):
+            timestamp = 0.0
+        if timestamp > 0:
+            return timestamp
+
+        # Migrate successful runs recorded before last_success_at existed.
+        legacy = str(self._settings.get("last_clean", {}).get(pid) or "").strip()
+        if not legacy or legacy == "—":
             return 0.0
+        try:
+            timestamp = time.mktime(time.strptime(legacy, "%H:%M %d/%m/%Y"))
+        except (OverflowError, ValueError):
+            return 0.0
+        if timestamp <= 0:
+            return 0.0
+        self._settings.setdefault("last_success_at", {})[pid] = timestamp
+        self._save_settings()
+        return timestamp
 
     def account_rows(self):
         # Import lazily to avoid a circular import when unit-testing the store.
