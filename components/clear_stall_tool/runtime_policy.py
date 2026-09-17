@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import threading
@@ -526,6 +527,38 @@ class OrderedSafeClearStallController(ClearStallController):
             self._threads.pop(profile_id, None)
             self._emit(profile_id, "stopped", message="Dọn quầy đã dừng")
 
+    def _prune_profile_runs(self, profile_id: str, keep: int = 2) -> None:
+        """Keep only the newest completed run folders for one account."""
+        profile_root = self.store.app_dir / "runs" / str(profile_id)
+        if not profile_root.is_dir():
+            return
+        try:
+            runs = sorted(
+                (path for path in profile_root.iterdir() if path.is_dir()),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError as exc:
+            self._log(profile_id, "run_retention_scan_error", str(exc))
+            return
+
+        for old_run in runs[max(0, int(keep)):]:
+            try:
+                shutil.rmtree(old_run)
+                self._log(
+                    profile_id,
+                    "run_retention_removed",
+                    "Đã xóa dữ liệu ảnh của phiên Dọn quầy cũ",
+                    run_id=old_run.name,
+                )
+            except OSError as exc:
+                self._log(
+                    profile_id,
+                    "run_retention_remove_error",
+                    str(exc),
+                    run_id=old_run.name,
+                )
+
     def _run_once(self, profile_id: str, stop_event: threading.Event) -> None:
         profile = self.store.profile(profile_id)
         if profile is None:
@@ -567,6 +600,9 @@ class OrderedSafeClearStallController(ClearStallController):
             if stop_event.wait(2.5):
                 return
 
+            # Retention runs before creating the new directory, leaving at
+            # most two completed sessions plus the active one per account.
+            self._prune_profile_runs(profile_id, keep=2)
             run_id = time.strftime("%Y%m%d-%H%M%S")
             work_dir = self.store.app_dir / "runs" / profile_id / run_id
             work_dir.mkdir(parents=True, exist_ok=True)
