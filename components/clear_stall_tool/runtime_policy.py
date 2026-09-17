@@ -21,10 +21,10 @@ except ImportError:
 class OrderedSafeClearStallController(ClearStallController):
     """Standalone orchestration policy for deterministic account startup."""
 
-    # Dọn quầy must never keep two game sessions active at once.  The ordered
-    # start-ticket queue handles first admission; this semaphore also serializes
-    # all later scheduled cycles.
-    MAX_CONCURRENCY = 1
+    # Two accounts may clean concurrently. Start tickets preserve deterministic
+    # order, while the launch gate spaces ClientJS startups and slot handoffs.
+    MAX_CONCURRENCY = 2
+    CLIENT_LAUNCH_DELAY_SECONDS = 5.0
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -32,6 +32,8 @@ class OrderedSafeClearStallController(ClearStallController):
         self._issued_start_ticket = 0
         self._next_start_ticket = 1
         self._finished_start_tickets: set[int] = set()
+        self._launch_condition = threading.Condition()
+        self._next_client_launch_at = 0.0
 
     def _issue_start_ticket(self) -> int:
         with self._start_condition:
@@ -70,6 +72,52 @@ class OrderedSafeClearStallController(ClearStallController):
     def _wake_start_queue(self) -> None:
         with self._start_condition:
             self._start_condition.notify_all()
+        with self._launch_condition:
+            self._launch_condition.notify_all()
+
+    def _wait_client_launch_turn(
+        self,
+        profile_id: str,
+        stop_event: threading.Event,
+    ) -> bool:
+        """Wait for the global ClientJS launch gap without blocking cancellation."""
+        with self._launch_condition:
+            while True:
+                if (
+                    stop_event.is_set()
+                    or self._closed
+                    or profile_id not in self._enabled
+                ):
+                    return False
+                remaining = self._next_client_launch_at - time.monotonic()
+                if remaining <= 0:
+                    self._next_client_launch_at = (
+                        time.monotonic() + self.CLIENT_LAUNCH_DELAY_SECONDS
+                    )
+                    self._log(
+                        profile_id,
+                        "client_launch_admitted",
+                        "Được mở ClientJS theo hàng đợi 2 acc",
+                        next_launch_delay_seconds=self.CLIENT_LAUNCH_DELAY_SECONDS,
+                    )
+                    return True
+                self._launch_condition.wait(timeout=min(0.25, remaining))
+
+    def _arm_client_launch_delay(self, profile_id: str, reason: str) -> None:
+        """Queued accounts wait five seconds after a slot finishes."""
+        with self._launch_condition:
+            self._next_client_launch_at = max(
+                self._next_client_launch_at,
+                time.monotonic() + self.CLIENT_LAUNCH_DELAY_SECONDS,
+            )
+            self._launch_condition.notify_all()
+        self._log(
+            profile_id,
+            "client_launch_delayed",
+            "Acc tiếp theo chờ 5 giây trước khi mở ClientJS",
+            reason=str(reason),
+            delay_seconds=self.CLIENT_LAUNCH_DELAY_SECONDS,
+        )
 
     def _live_client(self, profile_id: str) -> subprocess.Popen | None:
         pid = str(profile_id)
@@ -411,28 +459,31 @@ class OrderedSafeClearStallController(ClearStallController):
                     )
                 first = False
 
-                if pending_ticket is not None:
-                    if not self._wait_start_turn(
-                        pending_ticket, profile_id, stop_event
-                    ):
-                        break
-                    self._log(
-                        profile_id,
-                        "start_order_enter",
-                        f"Bắt đầu theo hàng đợi thứ tự {pending_ticket}",
-                        start_ticket=pending_ticket,
-                    )
-
-                if (
-                    stop_event.is_set()
-                    or profile_id not in self._enabled
-                    or self._closed
-                ):
-                    break
+                if pending_ticket is None:
+                    pending_ticket = self._issue_start_ticket()
 
                 hard_error = False
+                cycle_admitted = False
                 try:
                     with self._semaphore:
+                        if not self._wait_start_turn(
+                            pending_ticket, profile_id, stop_event
+                        ):
+                            break
+                        self._log(
+                            profile_id,
+                            "start_order_enter",
+                            f"Bắt đầu theo hàng đợi thứ tự {pending_ticket}",
+                            start_ticket=pending_ticket,
+                        )
+                        if not self._wait_client_launch_turn(
+                            profile_id, stop_event
+                        ):
+                            break
+                        self._finish_start_ticket(pending_ticket)
+                        pending_ticket = None
+                        cycle_admitted = True
+
                         if (
                             stop_event.is_set()
                             or profile_id not in self._enabled
@@ -462,6 +513,10 @@ class OrderedSafeClearStallController(ClearStallController):
                     if pending_ticket is not None:
                         self._finish_start_ticket(pending_ticket)
                         pending_ticket = None
+                    if cycle_admitted:
+                        self._arm_client_launch_delay(
+                            profile_id, "cycle_slot_released"
+                        )
 
                 if hard_error:
                     break
