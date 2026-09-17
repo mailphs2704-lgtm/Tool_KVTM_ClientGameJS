@@ -364,6 +364,19 @@ def run_probe(
                     break
                 confirmed = 0
 
+                # Freeze the scanned icon before clicking. The verified purchase
+                # refreshes the stall and may remove its temporary scan template;
+                # reading that file afterwards can fail even though the purchase
+                # itself succeeded.
+                icon_source = Path(selected.fingerprint.template_file)
+                import cv2
+
+                listing_icon = cv2.imread(str(icon_source), cv2.IMREAD_COLOR)
+                if listing_icon is None or listing_icon.size == 0:
+                    raise RuntimeError(
+                        "Không đọc được icon VP trước giao dịch; không thực hiện mua"
+                    )
+
                 def on_purchase(_listing_count: int) -> None:
                     nonlocal confirmed
                     confirmed += 10
@@ -420,18 +433,10 @@ def run_probe(
                 purchase_evidence.append(evidence)
                 # Freeze the exact icon that produced this verified purchase.
                 # Scan templates may be overwritten by overlapping later views.
-                icon_source = Path(selected.fingerprint.template_file)
                 icon_target = (
                     work_dir / "purchased-icons" / f"purchase-{sequence:02d}.png"
                 )
                 icon_target.parent.mkdir(parents=True, exist_ok=True)
-                import cv2
-
-                listing_icon = cv2.imread(str(icon_source), cv2.IMREAD_COLOR)
-                if listing_icon is None or listing_icon.size == 0:
-                    raise RuntimeError(
-                        "Không đọc được icon VP ngay sau giao dịch đã xác minh"
-                    )
                 icon_height, icon_width = listing_icon.shape[:2]
                 # A friend-stall tile contains the pedestal and quantity label
                 # (x10), while inventory shows another background/quantity.

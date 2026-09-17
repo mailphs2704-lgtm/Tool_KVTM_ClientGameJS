@@ -343,7 +343,25 @@ def main() -> int:
         emit("probe_error", error=f"Standalone runtime bootstrap lỗi: {exc}")
         return 3
 
+    # Dependencies and native binaries come from the packaged Multi DEV runtime,
+    # but the clear-stall orchestration must come from this standalone checkout.
+    # Otherwise a stale dist build silently runs the old five-view workflow.
+    standalone_worker_dir = (
+        Path(__file__).resolve().parents[1] / "clientjs-auto" / "worker"
+    )
+    standalone_probe = standalone_worker_dir / "clear_stall_probe_runtime.py"
+    if not standalone_probe.is_file():
+        emit("probe_error", error=f"Thiếu standalone probe: {standalone_probe}")
+        return 3
+    sys.path.insert(0, str(standalone_worker_dir))
+
     from clear_stall_probe_runtime import ProbeConfig, run_probe
+
+    emit(
+        "probe_boot",
+        stage="standalone-probe-source-ready",
+        source=str(standalone_probe),
+    )
 
     try:
         allowed = json.loads(args.allowed_items_json)
