@@ -5,7 +5,7 @@ import time
 import traceback
 
 from ...daily_pirate_chest_counter import record_pirate_chest_opened
-from ...daily_sale_counter import record_successful_listings
+from ...daily_sale_counter import read_daily_sale_count_for_context
 from ...error_journal import explain_error_vi, record_auto_error
 from ...errors import AutomationStopped, ClientRestartRequested, ScreenTimeout
 from ...recovery import RecoveryManager
@@ -332,10 +332,10 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self.sale_calls += 1
         self.sold_listings += int(sale.sold_listings)
         self.collected_gold_slots += int(sale.collected_gold_slots)
-        daily_turns = record_successful_listings(
-            self.context,
-            sold_listings=int(sale.sold_listings),
-        )
+        # AutoVpSaleWorkflow is the sole writer for a proven sale, including
+        # normal, Builder and warehouse-recovery callers. This scheduler only
+        # reads the total; writing here used to count the same listings twice.
+        daily_turns = read_daily_sale_count_for_context(self.context)
         self.context.stage(
             f"auto-main-{self.spec.function_id}-sale-{ordinal}-finished"
         )

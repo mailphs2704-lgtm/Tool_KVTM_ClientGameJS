@@ -684,6 +684,16 @@ def main() -> int:
         "Successful VP listings are not wired to the daily counter",
     )
     require(
+        pirate_chest_schedule,
+        "daily_turns = read_daily_sale_count_for_context(self.context)",
+        "AUTO Main scheduler must read the sale count after the sale module writes it",
+    )
+    forbid(
+        pirate_chest_schedule,
+        "record_successful_listings(",
+        "AUTO Main scheduler double-counts listings already recorded by AutoVpSaleWorkflow",
+    )
+    require(
         auto_vp_sale_init,
         "non-blocking write failed",
         "Counter persistence failure is no longer non-blocking",

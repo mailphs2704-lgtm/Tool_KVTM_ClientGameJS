@@ -22,6 +22,7 @@ import threading
 __all__ = [
     "counter_file_for_profile",
     "read_daily_sale_count",
+    "read_daily_sale_count_for_context",
     "record_successful_listings",
 ]
 
@@ -91,6 +92,20 @@ def _app_dir_from_context(context) -> Path:
         if parent.name.lower() == "auto-multi-dev":
             return parent.parent
     return work_dir
+
+
+def read_daily_sale_count_for_context(
+    context,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Read the current profile total without mutating it."""
+
+    return read_daily_sale_count(
+        _app_dir_from_context(context),
+        str(getattr(context, "profile_id", "") or ""),
+        now=now,
+    )
 
 
 def record_successful_listings(
