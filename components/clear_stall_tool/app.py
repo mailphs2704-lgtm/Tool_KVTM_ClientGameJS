@@ -36,6 +36,7 @@ class ClearStallToolApp:
         self.root = root; self.accounts = list(accounts); self.page = 0; self.default_cycle = 30
         self.selected = {a.account_id: tk.BooleanVar(value=False) for a in self.accounts}
         self.header_select = tk.BooleanVar(value=False); self.status_var = tk.StringVar(value="Sẵn sàng")
+        self._row_signature = None; self._row_value_labels = {}
         self._setup(); self._build(); self.refresh()
 
     def _setup(self) -> None:
@@ -111,8 +112,33 @@ class ClearStallToolApp:
         self._rows(); self._footer()
 
     def _rows(self) -> None:
-        for w in self.rows.winfo_children(): w.destroy()
         start = self.page * self.PAGE_SIZE; page = self.accounts[start:start + self.PAGE_SIZE]
+        signature = tuple(a.account_id for a in page)
+        if signature == self._row_signature:
+            for offset, account in enumerate(page):
+                labels = self._row_value_labels.get(account.account_id)
+                if not labels:
+                    self._row_signature = None
+                    break
+                values = (
+                    str(start + offset + 1), account.account_name,
+                    account.profile_name, account.status_text,
+                    account.last_clean, f"{account.cycle_minutes} phút",
+                )
+                for column, (label, value) in enumerate(zip(labels, values), 1):
+                    label.configure(
+                        text=f"●  {value}" if column == 4 else value,
+                        fg=(
+                            account.status_color if column == 4
+                            else (MUTED if value == "—" or column == 1 else TEXT)
+                        ),
+                    )
+            if signature == self._row_signature:
+                return
+
+        for w in self.rows.winfo_children(): w.destroy()
+        self._row_signature = signature
+        self._row_value_labels = {}
         if not page:
             f = tk.Frame(self.rows, bg=SURFACE); f.grid(row=0, column=0, pady=70)
             tk.Label(f, text="Chưa có tài khoản", bg=SURFACE, fg=TEXT, font=("Segoe UI", 11, "bold")).pack()
@@ -121,10 +147,14 @@ class ClearStallToolApp:
             row = tk.Frame(self.rows, bg=SURFACE); row.grid(row=r, column=0, sticky="ew"); self._columns(row)
             tk.Checkbutton(row, variable=self.selected.setdefault(a.account_id, tk.BooleanVar()), command=self._footer, bg=SURFACE, activebackground=SURFACE, selectcolor="white", bd=0, highlightthickness=0).grid(row=0, column=0, padx=7, pady=7)
             vals = (str(start+r+1), a.account_name, a.profile_name, a.status_text, a.last_clean, f"{a.cycle_minutes} phút")
+            value_labels = []
             for c, val in enumerate(vals, 1):
                 fg = a.status_color if c == 4 else (MUTED if val == "—" or c == 1 else TEXT); font = ("Segoe UI", 9, "bold") if c in (2, 4) else ("Segoe UI", 9)
                 text = f"●  {val}" if c == 4 else val
-                tk.Label(row, text=text, bg=SURFACE, fg=fg, font=font, anchor="center" if c == 1 else "w").grid(row=0, column=c, padx=8, pady=9, sticky="ew")
+                label = tk.Label(row, text=text, bg=SURFACE, fg=fg, font=font, anchor="center" if c == 1 else "w")
+                label.grid(row=0, column=c, padx=8, pady=9, sticky="ew")
+                value_labels.append(label)
+            self._row_value_labels[a.account_id] = value_labels
             log_cell = tk.Frame(row, bg=SURFACE); log_cell.grid(row=0, column=7, padx=6)
             self._mini(log_cell, "Log", BLUE, lambda i=a.account_id: self.show_log(i), 6).pack()
             acts = tk.Frame(row, bg=SURFACE); acts.grid(row=0, column=8, padx=6)

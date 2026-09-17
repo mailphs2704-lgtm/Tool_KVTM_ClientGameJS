@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import json
+import os
 from pathlib import Path
 import threading
 import time
@@ -13,6 +14,7 @@ PROBE_VERSION = 16
 STALL_VIEW_COUNT = 4
 # Five scan positions are required to expose the complete friend-stall tail.
 FRIEND_STALL_SCAN_COUNT = 5
+STANDALONE_FRIEND_STALL_SCAN_COUNT = 7
 # The last two own-stall cells can remain just outside the fourth nominal view.
 # Permit one terminal two-swipe alignment and force a final scan before failing.
 OWN_STALL_RESALE_SCAN_LIMIT = STALL_VIEW_COUNT + 1
@@ -586,10 +588,17 @@ def run_probe(
             nonlocal current_view
             bought_before = purchased_quantity
             current_view = 1
-            for view in range(1, FRIEND_STALL_SCAN_COUNT + 1):
+            standalone_seven_view = (
+                os.environ.get("KVTM_CLEAR_STALL_SEVEN_VIEW_SCAN_BUY") == "1"
+            )
+            scan_count = (
+                STANDALONE_FRIEND_STALL_SCAN_COUNT
+                if standalone_seven_view else FRIEND_STALL_SCAN_COUNT
+            )
+            for view in range(1, scan_count + 1):
                 context.ensure_running()
-                # The fifth scan is a terminal edge alignment. Reuse the
-                # fourth logical slot mapping while scanning the newly exposed tail.
+                # Scans beyond the fourth logical map are edge alignments.
+                # Reuse slot geometry while buying from the fresh rendered frame.
                 mapping_view = min(view, STALL_VIEW_COUNT)
                 current_view = mapping_view
                 checkpoint(
@@ -597,6 +606,12 @@ def run_probe(
                     f"scan-view-{view:02d}"
                 )
                 frame = automation.vision.frame()
+                frame_height, frame_width = frame.shape[:2]
+                if (int(frame_width), int(frame_height)) != (1000, 1000):
+                    raise RuntimeError(
+                        "Dừng Dọn quầy trước thao tác: frame sai độ phân giải • "
+                        f"expected=1000x1000 actual={frame_width}x{frame_height}"
+                    )
                 if primary_report:
                     view_path = work_dir / f"view-{view:02d}.png"
                     template_root = templates_dir
@@ -724,7 +739,7 @@ def run_probe(
                     "probe_progress",
                     message=(
                         f"Nhà {friend_index} lượt {stall_pass} • "
-                        f"view {view}/{FRIEND_STALL_SCAN_COUNT} • "
+                        f"view {view}/{scan_count} • "
                         f"{len(eligible_observations)}/"
                         f"{len(observations)} ô đúng danh sách VP"
                     ),
@@ -740,7 +755,7 @@ def run_probe(
                     buy_visible(eligible_observations, friend_index, stall_pass)
                     if purchased_quantity >= expected_quantity:
                         break
-                if view < FRIEND_STALL_SCAN_COUNT:
+                if view < scan_count:
                     checkpoint(
                         "stall-step-start",
                         friend_ordinal=friend_index,
@@ -748,10 +763,14 @@ def run_probe(
                         from_view=view,
                         to_view=view + 1,
                         swipe_pulses=automation.stall.swipe_pulses,
-                        order="BUY_THEN_TWO_SWIPES_THEN_SCAN",
+                        order=(
+                            "SCAN_BUY_THEN_ONE_SWIPE"
+                            if standalone_seven_view
+                            else "BUY_THEN_TWO_SWIPES_THEN_SCAN"
+                        ),
                     )
-                    # One logical movement is exactly two consecutive swipes.
-                    # Never scan or buy between pulse 1 and pulse 2.
+                    # Standalone moves exactly one swipe, then captures a fresh
+                    # 1000x1000 frame and scans/buys the newly exposed view.
                     automation.stall.next_view()
                     transition_path = (
                         work_dir / f"friend-{friend_index:02d}-pass-"
@@ -765,7 +784,11 @@ def run_probe(
                         next_view=view + 1,
                         swipe_pulses=automation.stall.swipe_pulses,
                         capture=str(transition_path),
-                        order="TWO_SWIPES_THEN_SCAN_BUY",
+                        order=(
+                            "ONE_SWIPE_THEN_SCAN_BUY"
+                            if standalone_seven_view
+                            else "TWO_SWIPES_THEN_SCAN_BUY"
+                        ),
                     )
             return purchased_quantity - bought_before
 

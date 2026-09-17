@@ -42,6 +42,8 @@ def main() -> int:
     require(readme, "kế thừa nghiệp vụ Dọn quầy", "shared runtime boundary")
     require(readme, "không có ô nhập account/profile tự do", "profile-only account chooser")
     require(readme, "mọi tài khoản đều bắt đầu ở trạng thái `Đã dừng`", "startup stopped contract")
+    require(app, 'self._mini(acts, "＋"', "per-account Add button")
+    require(app, "self._row_signature", "non-flicker stable row cache")
 
     for token in ("clear_stall_probe_runtime", "kvtm_automation.workflows.clear_stall", "subprocess.Popen", "ClientOwnershipRegistry"):
         if token in app:

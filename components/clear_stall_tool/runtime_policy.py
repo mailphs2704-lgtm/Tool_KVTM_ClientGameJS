@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+from ctypes import wintypes
 import json
 import os
 from pathlib import Path
@@ -16,17 +18,12 @@ except ImportError:
 
 
 class OrderedSafeClearStallController(ClearStallController):
-    """Standalone orchestration policy for deterministic account startup.
+    """Standalone orchestration policy for deterministic account startup."""
 
-    Business behavior remains in ``clear_stall_probe_runtime``.  This class only
-    owns standalone lifecycle policy:
-
-    * first runs are admitted in the exact order ``start()`` is requested;
-    * a hard failure before ``probe_ok`` keeps ClientJS open for inspection;
-    * a hard failure pauses that account instead of silently waiting a full
-      cycle and trying again;
-    * successful runs and explicit Stop still close the ClientJS process.
-    """
+    # Dọn quầy must never keep two game sessions active at once.  The ordered
+    # start-ticket queue handles first admission; this semaphore also serializes
+    # all later scheduled cycles.
+    MAX_CONCURRENCY = 1
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -113,7 +110,150 @@ class OrderedSafeClearStallController(ClearStallController):
             except OSError:
                 pass
 
-    def start(self, profile_id: str) -> None:
+    @staticmethod
+    def _hwnd_value(hwnd) -> int:
+        if isinstance(hwnd, int):
+            return int(hwnd)
+        return int(ctypes.cast(hwnd, ctypes.c_void_p).value or 0)
+
+    @classmethod
+    def _find_window_win64_safe(cls, pid: int) -> int:
+        """Find the largest visible top-level window for pid with pointer-safe HWNDs."""
+        if os.name != "nt":
+            return 0
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        callback_type = ctypes.WINFUNCTYPE(
+            wintypes.BOOL,
+            wintypes.HWND,
+            wintypes.LPARAM,
+        )
+        user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+        user32.EnumWindows.restype = wintypes.BOOL
+        user32.GetWindowThreadProcessId.argtypes = [
+            wintypes.HWND,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.IsWindowVisible.restype = wintypes.BOOL
+        user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        user32.GetClientRect.restype = wintypes.BOOL
+
+        candidates: list[tuple[int, int]] = []
+
+        @callback_type
+        def callback(hwnd, _lparam):
+            window_pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+            if int(window_pid.value) != int(pid) or not user32.IsWindowVisible(hwnd):
+                return True
+            rect = wintypes.RECT()
+            if user32.GetClientRect(hwnd, ctypes.byref(rect)):
+                width = max(0, int(rect.right - rect.left))
+                height = max(0, int(rect.bottom - rect.top))
+                if width > 0 and height > 0:
+                    candidates.append((width * height, cls._hwnd_value(hwnd)))
+            return True
+
+        if not user32.EnumWindows(callback, 0):
+            error = ctypes.get_last_error()
+            if error:
+                raise ctypes.WinError(error)
+        if not candidates:
+            return 0
+        return max(candidates, key=lambda item: item[0])[1]
+
+    def _resize_client(self, pid: int, stop_event: threading.Event) -> None:
+        """Resize ClientJS and prove the client area is exactly 1000x1000.
+
+        This deliberately bypasses packaged pc_driver.find_window.  Its untyped
+        EnumWindows callback can truncate a 64-bit HWND and spam OverflowError,
+        which also made resize randomly miss the actual game window.
+        """
+        if os.name != "nt":
+            raise RuntimeError("Chuẩn hóa ClientJS 1000x1000 chỉ hỗ trợ Windows")
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.GetWindowLongW.restype = ctypes.c_long
+        user32.AdjustWindowRectEx.argtypes = [
+            ctypes.POINTER(wintypes.RECT),
+            wintypes.DWORD,
+            wintypes.BOOL,
+            wintypes.DWORD,
+        ]
+        user32.AdjustWindowRectEx.restype = wintypes.BOOL
+        user32.SetWindowPos.argtypes = [
+            wintypes.HWND,
+            wintypes.HWND,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            wintypes.UINT,
+        ]
+        user32.SetWindowPos.restype = wintypes.BOOL
+        user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        user32.GetClientRect.restype = wintypes.BOOL
+
+        deadline = time.monotonic() + 25.0
+        hwnd_value = 0
+        while time.monotonic() < deadline and not stop_event.is_set():
+            hwnd_value = self._find_window_win64_safe(int(pid))
+            if hwnd_value:
+                break
+            time.sleep(0.10)
+        if not hwnd_value:
+            raise RuntimeError(
+                "ClientJS đã mở nhưng chưa tìm thấy cửa sổ Win64-safe để chuẩn hóa 1000x1000"
+            )
+
+        hwnd = wintypes.HWND(hwnd_value)
+        style = ctypes.c_uint32(user32.GetWindowLongW(hwnd, -16)).value
+        ex_style = ctypes.c_uint32(user32.GetWindowLongW(hwnd, -20)).value
+        target = wintypes.RECT(0, 0, 1000, 1000)
+        if not user32.AdjustWindowRectEx(
+            ctypes.byref(target), style, False, ex_style
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        outer_width = int(target.right - target.left)
+        outer_height = int(target.bottom - target.top)
+
+        last_client = (0, 0)
+        resize_deadline = time.monotonic() + 8.0
+        while time.monotonic() < resize_deadline and not stop_event.is_set():
+            if not user32.SetWindowPos(
+                hwnd,
+                None,
+                0,
+                0,
+                max(100, int(outer_width)),
+                max(100, int(outer_height)),
+                0x0002 | 0x0004 | 0x0040,
+            ):
+                raise ctypes.WinError(ctypes.get_last_error())
+            time.sleep(0.15)
+            client_rect = wintypes.RECT()
+            if not user32.GetClientRect(hwnd, ctypes.byref(client_rect)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            client_width = int(client_rect.right - client_rect.left)
+            client_height = int(client_rect.bottom - client_rect.top)
+            last_client = (client_width, client_height)
+            if last_client == (1000, 1000):
+                return
+            # DPI/non-client metrics can differ across machines. Correct the
+            # outer dimensions by the measured client-area error and verify again.
+            outer_width += 1000 - client_width
+            outer_height += 1000 - client_height
+
+        if stop_event.is_set():
+            return
+        raise RuntimeError(
+            "Không chuẩn hóa được ClientJS về client-area 1000x1000 • "
+            f"đo lần cuối={last_client[0]}x{last_client[1]}"
+        )
+
+    def start(self, profile_id: str, *, first_delay_seconds: float = 0.0) -> None:
         pid = str(profile_id or "")
         if not pid or self._closed or pid in self._enabled:
             return
@@ -125,25 +265,42 @@ class OrderedSafeClearStallController(ClearStallController):
             )
             return
 
-        ticket = self._issue_start_ticket()
+        first_delay = max(0.0, float(first_delay_seconds or 0.0))
+        ticket = self._issue_start_ticket() if first_delay <= 0 else None
         self._enabled.add(pid)
         stop_event = threading.Event()
         self._stop_events[pid] = stop_event
         self._log(
             pid,
             "start_order_queued",
-            f"Đã xếp hàng khởi động thứ tự {ticket}",
+            (
+                f"Đã xếp hàng khởi động thứ tự {ticket}"
+                if ticket is not None
+                else f"Phiên đầu sẽ bắt đầu sau {int(round(first_delay / 60))} phút"
+            ),
             start_ticket=ticket,
+            first_delay_seconds=first_delay,
         )
         self._emit(pid, "running", message="Đã bật lịch Dọn quầy")
         thread = threading.Thread(
             target=self._schedule_loop,
-            args=(pid, stop_event, ticket),
+            args=(pid, stop_event, ticket, first_delay),
             name=f"kvtm-clear-stall-{pid[:8]}",
             daemon=True,
         )
         self._threads[pid] = thread
         thread.start()
+
+    def enqueue(self, profile_id: str, *, first_delay_seconds: float = 0.0) -> None:
+        """Schedule one account; only its first cycle uses the requested delay."""
+        pid = str(profile_id or "")
+        if not pid:
+            return
+        if pid in self._enabled:
+            self._log(pid, "manual_add_ignored", "Tài khoản đã có trong tiến trình Dọn quầy")
+            return
+        self._log(pid, "manual_add_requested", "Đã thêm tài khoản vào tiến trình Dọn quầy")
+        self.start(pid, first_delay_seconds=first_delay_seconds)
 
     def stop(self, profile_id: str) -> None:
         pid = str(profile_id or "")
@@ -167,8 +324,6 @@ class OrderedSafeClearStallController(ClearStallController):
             except OSError as exc:
                 self._log(pid, "worker_stop_error", str(exc))
         else:
-            # A failed pre-clean cycle deliberately leaves ClientJS open.  An
-            # explicit Stop is the operator's instruction to close it.
             self._close_client(pid, "explicit_stop")
 
         self._wake_start_queue()
@@ -187,11 +342,26 @@ class OrderedSafeClearStallController(ClearStallController):
         self,
         profile_id: str,
         stop_event: threading.Event,
-        start_ticket: int,
+        start_ticket: int | None,
+        first_delay_seconds: float = 0.0,
     ) -> None:
         first = True
-        pending_ticket: int | None = int(start_ticket)
+        pending_ticket = int(start_ticket) if start_ticket is not None else None
         try:
+            first_delay = max(0.0, float(first_delay_seconds or 0.0))
+            if first_delay > 0:
+                self._emit(
+                    profile_id,
+                    "first_cycle_wait",
+                    message=(
+                        "Đang chờ phiên đầu • còn "
+                        f"{max(1, int(round(first_delay / 60)))} phút"
+                    ),
+                    wait_seconds=first_delay,
+                )
+                if stop_event.wait(first_delay):
+                    return
+                pending_ticket = self._issue_start_ticket()
             while (
                 not stop_event.is_set()
                 and profile_id in self._enabled
@@ -247,14 +417,11 @@ class OrderedSafeClearStallController(ClearStallController):
                         str(exc),
                         traceback=traceback.format_exc(),
                     )
-                    # Fail closed for automation, but do not destroy the game
-                    # window.  The operator can inspect it and the Log, then
-                    # press Play to retry or Stop to close it.
                     self._enabled.discard(profile_id)
                     self._log(
                         profile_id,
                         "cycle_paused_after_error",
-                        "Đã tạm dừng tài khoản sau lỗi; giữ ClientJS mở để kiểm tra",
+                        "Đã tạm dừng tài khoản sau lỗi; ClientJS đã được đóng để giải phóng phiên online",
                     )
                     self._emit(profile_id, "cycle_error", message=str(exc))
                 finally:
@@ -293,8 +460,8 @@ class OrderedSafeClearStallController(ClearStallController):
             else:
                 self._log(
                     profile_id,
-                    "client_reused_after_error",
-                    "Dùng lại ClientJS đang mở từ lượt lỗi trước",
+                    "client_reused",
+                    "Dùng lại ClientJS đang được controller theo dõi",
                     client_pid=proc.pid,
                 )
 
@@ -302,8 +469,11 @@ class OrderedSafeClearStallController(ClearStallController):
             self._log(
                 profile_id,
                 "client_ready",
-                "ClientJS đã sẵn sàng 1000x1000",
+                "ClientJS đã xác minh client-area 1000x1000",
                 client_pid=proc.pid,
+                verified_client_width=1000,
+                verified_client_height=1000,
+                window_lookup="WIN64_POINTER_SAFE_ENUMWINDOWS",
             )
             if stop_event.wait(2.5):
                 return
@@ -326,11 +496,13 @@ class OrderedSafeClearStallController(ClearStallController):
                 "--quantity", str(quantity),
                 "--max-stall-passes", str(int(job.get("max_scan_pages", 10))),
                 "--allowed-items-json", json.dumps(allowed, ensure_ascii=True),
-                "--drag-speed", str(float(job.get("clear_stall_drag_speed", 0.35))),
+                "--drag-speed", "0.20",
                 "--work-dir", str(work_dir),
             ]
             env = os.environ.copy()
             env["KVTM_MULTI_PROFILE_FILE"] = str(self.store.profile_file)
+            env["KVTM_CLEAR_STALL_SINGLE_SWIPE"] = "1"
+            env["KVTM_CLEAR_STALL_SEVEN_VIEW_SCAN_BUY"] = "1"
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             worker = subprocess.Popen(
                 args,
@@ -421,18 +593,10 @@ class OrderedSafeClearStallController(ClearStallController):
             )
         finally:
             self._workers.pop(profile_id, None)
-            # Never close a newly launched game merely because the worker failed
-            # before Dọn quầy completed.  Preserve it for live diagnosis/retry.
             if terminal_ok:
-                self._close_client(profile_id, "cycle_completed")
+                close_reason = "cycle_completed"
             elif stop_event.is_set() or self._closed:
-                self._close_client(profile_id, "operator_stop")
+                close_reason = "operator_stop"
             else:
-                client = self._live_client(profile_id)
-                if client is not None:
-                    self._log(
-                        profile_id,
-                        "client_preserved_after_error",
-                        "Worker chưa hoàn tất; giữ ClientJS mở để kiểm tra/retry",
-                        client_pid=client.pid,
-                    )
+                close_reason = "cycle_failed"
+            self._close_client(profile_id, close_reason)

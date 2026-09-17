@@ -25,8 +25,10 @@ def main() -> int:
     store_src = text("profile_store.py")
     log_src = text("runtime_log.py")
     controller_src = text("runtime_controller.py")
+    policy_src = text("runtime_policy.py")
     integration_src = text("runtime_integration.py")
     worker_src = text("standalone_clear_stall_worker.py")
+    probe_src = (ROOT / "components" / "clientjs-auto" / "worker" / "clear_stall_probe_runtime.py").read_text(encoding="utf-8")
 
     for name, source in (
         ("app.py", app_src),
@@ -34,6 +36,7 @@ def main() -> int:
         ("profile_store.py", store_src),
         ("runtime_log.py", log_src),
         ("runtime_controller.py", controller_src),
+        ("runtime_policy.py", policy_src),
         ("runtime_integration.py", integration_src),
         ("standalone_clear_stall_worker.py", worker_src),
     ):
@@ -94,7 +97,13 @@ def main() -> int:
     require(integration_src, "def show_log", "live log viewer")
     require(integration_src, "runtime_controller.read_log", "viewer reads persistent log")
     require(integration_src, "Tự động làm mới log mỗi 0.7 giây", "live log refresh")
-    require(integration_src, "Runtime progress belongs in the persistent Log window", "no progress in table note")
+    require(integration_src, 'if event == "progress":', "no progress redraw in account table")
+    require(app_src, "self._row_signature", "stable account-row identity")
+    require(app_src, "self._row_value_labels", "in-place account-row updates")
+    require(integration_src, "Chờ riêng cho phiên đầu", "manual Add first-session delay")
+    require(integration_src, "Theo thời gian lần cuối thành công", "manual Add last-success mode")
+    require(integration_src, "last_success_at", "last-success schedule lookup")
+    require(store_src, 'raw.setdefault("last_success_at", {})', "last-success timestamp persistence")
 
     require(controller_src, "MAX_CONCURRENCY = 2", "clear-stall concurrency")
     require(controller_src, "ClientOwnershipRegistry", "ownership safety")
@@ -113,6 +122,11 @@ def main() -> int:
     require(worker_src, 'importlib.import_module("cv2")', "opencv preload")
     require(worker_src, 'os.environ["KVTM_SKIP_RUNTIME_SYNC"] = "1"', "no legacy runtime sync")
     require(worker_src, "image_runtime_ready=True", "shared probe receives resident image runtime")
+    require(policy_src, "first_delay_seconds", "first-cycle-only delay API")
+    require(policy_src, 'env["KVTM_CLEAR_STALL_SEVEN_VIEW_SCAN_BUY"] = "1"', "standalone seven-view mode")
+    require(probe_src, "STANDALONE_FRIEND_STALL_SCAN_COUNT = 7", "seven scan-buy views")
+    require(probe_src, '"SCAN_BUY_THEN_ONE_SWIPE"', "one-swipe view order")
+    require(probe_src, 'expected=1000x1000 actual=', "per-view resolution fail-close")
     if worker_src.index('importlib.import_module("numpy")') > worker_src.index('importlib.import_module("cv2")'):
         raise AssertionError("Standalone image runtime must make NumPy resident before cv2")
     if "class ClearStallWorkflow" in worker_src:

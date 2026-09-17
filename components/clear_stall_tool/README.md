@@ -42,9 +42,24 @@ Nếu `%APPDATA%\KVTM Multi DEV\profiles.json` chưa tồn tại, tool chỉ cho
 Mỗi lần mở tool, **mọi tài khoản đều bắt đầu ở trạng thái `Đã dừng`**. Trạng thái chạy không persist qua restart.
 
 - `▶` một tài khoản: bật lịch và chạy lượt Dọn quầy đầu tiên ngay.
+- `＋` một tài khoản: chọn chờ riêng cho đúng phiên đầu hoặc tính thời gian còn
+  lại từ lần thành công cuối; các phiên sau trở về `interval_minutes` đã cài.
 - `■`: dừng lịch và gửi stop cho worker nếu đang thao tác.
 - `Bắt đầu tất cả` / `Dừng tất cả`: áp dụng cho toàn bộ tài khoản đã thêm.
 - Sau lượt thành công, lịch chờ theo `interval_minutes` rồi chạy lượt kế tiếp.
+
+## Nhịp quét/mua standalone
+
+Mỗi nhà chạy đúng 7 view theo thứ tự cố định:
+
+```text
+scan frame 1000x1000 → nhận diện VP → mua tại tâm ảnh PASS
+→ 1 swipe 0.20 giây → scan view kế tiếp
+```
+
+Không quét trước toàn bộ quầy rồi mới quay lại mua. Mỗi view chỉ có một swipe
+chuyển tiếp. Nếu bất kỳ frame nào khác `1000x1000`, lượt dừng trước click để
+không mở nhầm tab hoặc ghi log dây chuyền trên bố cục sai.
 
 ## Chạy
 

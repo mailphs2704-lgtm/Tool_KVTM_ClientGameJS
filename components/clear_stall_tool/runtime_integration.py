@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -51,6 +52,92 @@ def install_runtime_integration(app_class) -> None:
             self.runtime_controller.start(pid)
         else:
             self.runtime_controller.stop(pid)
+
+    def enqueue_account(self, account_id: str) -> None:
+        """Choose how the next cycle is delayed; later cycles use normal settings."""
+        pid = str(account_id)
+        row = _record_for_profile(self, pid)
+        if row is None:
+            return
+        job = self.profile_store.ensure_job(pid)
+        interval = max(5, int(job.get("interval_minutes", 65) or 65))
+        last_success = self.profile_store.last_success_at(pid)
+        remaining_from_success = max(
+            0.0, (last_success + interval * 60) - time.time()
+        ) if last_success > 0 else 0.0
+
+        w = self._modal("Thêm lịch Dọn quầy", 570, 350)
+        body = tk.Frame(w, bg=SURFACE)
+        body.pack(fill="both", expand=True, padx=24, pady=20)
+        tk.Label(
+            body, text=row.account_name, bg=SURFACE, fg=TEXT,
+            font=("Segoe UI", 13, "bold"),
+        ).pack(anchor="w")
+        tk.Label(
+            body,
+            text="Chọn cách chờ cho phiên sắp tới. Các phiên sau luôn quay lại theo Chu kỳ đã cài.",
+            bg=SURFACE, fg=MUTED, justify="left", wraplength=515,
+        ).pack(anchor="w", pady=(3, 16))
+
+        mode = tk.StringVar(value="custom")
+        custom_minutes = tk.StringVar(value=str(interval))
+        custom = tk.Frame(body, bg=SURFACE)
+        custom.pack(fill="x", pady=5)
+        tk.Radiobutton(
+            custom, text="Chờ riêng cho phiên đầu", variable=mode,
+            value="custom", bg=SURFACE, fg=TEXT, activebackground=SURFACE,
+            selectcolor=SURFACE, font=("Segoe UI", 10, "bold"),
+        ).pack(side="left")
+        ttk.Entry(
+            custom, textvariable=custom_minutes, style="Modern.TEntry", width=9,
+        ).pack(side="left", padx=(12, 6))
+        tk.Label(custom, text="phút", bg=SURFACE, fg=MUTED).pack(side="left")
+
+        success_text = (
+            f"Còn {max(0, int(round(remaining_from_success / 60)))} phút "
+            f"(lần thành công cuối: {row.last_clean})"
+            if last_success > 0
+            else "Chưa có lần thành công • sẽ chạy ngay"
+        )
+        previous = tk.Frame(body, bg=SURFACE)
+        previous.pack(fill="x", pady=5)
+        tk.Radiobutton(
+            previous, text="Theo thời gian lần cuối thành công", variable=mode,
+            value="last_success", bg=SURFACE, fg=TEXT,
+            activebackground=SURFACE, selectcolor=SURFACE,
+            font=("Segoe UI", 10, "bold"),
+        ).pack(anchor="w")
+        tk.Label(
+            previous, text=success_text, bg=SURFACE, fg=MUTED,
+            font=("Segoe UI", 9),
+        ).pack(anchor="w", padx=(26, 0), pady=(2, 0))
+
+        def submit() -> None:
+            if mode.get() == "last_success":
+                delay = remaining_from_success
+            else:
+                try:
+                    minutes = int(custom_minutes.get().strip())
+                except ValueError:
+                    messagebox.showerror(
+                        "KVTM - Dọn Quầy", "Thời gian chờ phải là số nguyên.", parent=w
+                    )
+                    return
+                if not 0 <= minutes <= 1440:
+                    messagebox.showerror(
+                        "KVTM - Dọn Quầy",
+                        "Thời gian chờ phiên đầu phải từ 0 đến 1440 phút.",
+                        parent=w,
+                    )
+                    return
+                delay = minutes * 60.0
+            self.runtime_controller.enqueue(pid, first_delay_seconds=delay)
+            w.destroy()
+
+        controls = tk.Frame(body, bg=SURFACE)
+        controls.pack(fill="x", pady=(24, 0))
+        self._button(controls, "Thêm vào lịch", submit, True, 12).pack(side="right")
+        self._button(controls, "Hủy", w.destroy, False, 9).pack(side="right", padx=8)
 
     def start_all(self) -> None:
         for row in list(self.accounts):
@@ -324,8 +411,6 @@ def install_runtime_integration(app_class) -> None:
             ).grid(row=grid_row, column=0, sticky="w", padx=(0, 22), pady=9)
             holder = tk.Frame(form, bg=SURFACE)
             holder.grid(row=grid_row, column=1, sticky="ew", pady=9)
-            # Intentionally use a plain Entry: operator enters the exact number
-            # directly; there are no spinner +/- or increment/decrement buttons.
             ttk.Entry(
                 holder,
                 textvariable=variable,
@@ -422,6 +507,7 @@ def install_runtime_integration(app_class) -> None:
     app_class._record_for_profile = _record_for_profile
     app_class._reload_rows = _reload_rows
     app_class.set_status = set_status
+    app_class.enqueue_account = enqueue_account
     app_class.start_all = start_all
     app_class.stop_all = stop_all
     app_class.add_account = add_account
@@ -437,15 +523,20 @@ def bind_runtime(app, profile_store, runtime_controller) -> None:
     app.runtime_controller = runtime_controller
 
     def on_runtime_event(profile_id: str, event: str, data: dict) -> None:
+        # Progress can fire dozens of times per second while matching images.
+        # It belongs in the Log window. Rebuilding every Tk row here caused the
+        # entire account table to flicker continuously during a live run.
+        if event == "progress":
+            return
+
         rows = []
+        changed = False
         for row in app.accounts:
             if row.account_id != profile_id:
                 rows.append(row)
                 continue
-            # Runtime progress belongs in the persistent Log window, not in the
-            # compact account table.  Keep only a short internal note for errors.
             note = row.note
-            if event in {"running", "cycle_start", "progress"}:
+            if event in {"running", "cycle_start", "first_cycle_wait"}:
                 status = "running"
             elif event == "stopped":
                 status = "stopped"
@@ -458,9 +549,12 @@ def bind_runtime(app, profile_store, runtime_controller) -> None:
             else:
                 status = row.status
             last_clean = str(data.get("last_clean") or row.last_clean)
-            rows.append(replace(row, status=status, note=note, last_clean=last_clean))
-        app.accounts = rows
-        app.refresh()
+            updated = replace(row, status=status, note=note, last_clean=last_clean)
+            rows.append(updated)
+            changed = changed or updated != row
+        if changed:
+            app.accounts = rows
+            app.refresh()
 
     runtime_controller.callback = on_runtime_event
     if not app.accounts:

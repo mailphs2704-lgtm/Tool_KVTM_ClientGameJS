@@ -81,3 +81,16 @@ python tools/verify_clear_stall_standalone_runtime.py
 ```
 
 Static/source PASS không thay cho live evidence. Windows LIVE full-resale: **PENDING**.
+
+## Cập nhật 2026-09-17 — lịch Add, chống nhấp nháy và 7 view
+
+- Giữ nút `＋` ngay cạnh Play của từng tài khoản.
+- Popup Add có hai lựa chọn: chờ riêng cho phiên đầu, hoặc tính hạn từ lần dọn
+  thành công cuối. Chỉ phiên đầu dùng lựa chọn này; các phiên sau dùng chu kỳ.
+- Lưu `last_success_at` riêng trong settings Dọn quầy, không ghi sang Multi.
+- Bảng account giữ nguyên widget theo `account_id` và chỉ cập nhật text/màu;
+  progress tần suất cao chỉ vào Log, không phá/tạo lại toàn bộ hàng.
+- Standalone chạy đúng 7 view: scan/mua tại tâm ảnh PASS, một swipe, rồi scan
+  view kế tiếp.
+- Mỗi frame trước scan/mua phải đúng `1000x1000`; sai kích thước thì fail-close
+  trước input để tránh mở nhầm tab và log chạy loạn.

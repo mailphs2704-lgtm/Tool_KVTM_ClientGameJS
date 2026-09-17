@@ -95,6 +95,7 @@ class ProfileStore:
         raw.setdefault("selected_profile_ids", [])
         raw.setdefault("clear_stall_jobs", {})
         raw.setdefault("last_clean", {})
+        raw.setdefault("last_success_at", {})
         return raw
 
     def _save_settings(self) -> None:
@@ -258,8 +259,17 @@ class ProfileStore:
         return str(value or "—")
 
     def mark_clean(self, profile_id: str, text: str) -> None:
-        self._settings.setdefault("last_clean", {})[str(profile_id)] = str(text)
+        pid = str(profile_id)
+        self._settings.setdefault("last_clean", {})[pid] = str(text)
+        self._settings.setdefault("last_success_at", {})[pid] = time.time()
         self._save_settings()
+
+    def last_success_at(self, profile_id: str) -> float:
+        value = self._settings.get("last_success_at", {}).get(str(profile_id), 0)
+        try:
+            return max(0.0, float(value or 0))
+        except (TypeError, ValueError):
+            return 0.0
 
     def account_rows(self):
         # Import lazily to avoid a circular import when unit-testing the store.
