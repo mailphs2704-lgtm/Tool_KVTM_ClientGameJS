@@ -855,6 +855,18 @@ def main() -> int:
     require(stall_speed_integration, '"Kéo quầy Dọn quầy (giây/swipe)"', "Dọn quầy speed GUI control missing")
     require(probe, "designer_config_path(config.work_dir.parents[2])", "Runtime must load policy from active data-dev")
     require(probe, '"clear-stall-designer-policy-applied"', "Runtime policy trace missing")
+    require(
+        probe,
+        "PROBE_STORAGE_LIMIT_BYTES = 128 * 1024 * 1024",
+        "Runtime probe storage cap missing",
+    )
+    require(probe, "FAILED_RUN_IMAGE_LIMIT = 12", "Failed probe evidence limit missing")
+    require(
+        probe,
+        "_compact_completed_run(work_dir, succeeded=succeeded)",
+        "Completed probe image compaction missing",
+    )
+    require(probe, "_prune_probe_storage(work_dir)", "Runtime probe retention cleanup missing")
     require(stall, "def apply_runtime_policy", "Stall action policy hook missing")
     require(inventory, "self.storage_open_wait", "Storage wait policy hook missing")
     require(builder, "designer_policy.py", "Builder must package runtime designer policy")

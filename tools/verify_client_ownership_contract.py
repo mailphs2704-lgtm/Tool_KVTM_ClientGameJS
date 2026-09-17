@@ -74,7 +74,22 @@ def main() -> int:
     require(ownership, "SetWindowTextW", "ClientJS account-name title update missing")
     require(ownership, 'entry["owner"] != registry.owner', "Window title is not owner-scoped")
     require(ownership, 'str(entry["account_name"])', "Window title does not use account display name")
-    require(ownership, "attempt < 120", "ClientJS title retry window is too short")
+    require(ownership, "attempt < 40", "ClientJS title retry window must remain bounded")
+    require(
+        ownership,
+        "user32.GetWindowThreadProcessId.argtypes",
+        "64-bit HWND signature missing from ownership title callback",
+    )
+    require(
+        ownership,
+        "except (ctypes.ArgumentError, OSError, OverflowError, ValueError)",
+        "Native title callback must contain Python exceptions",
+    )
+    require(
+        ownership,
+        "title_retry_generation",
+        "Window-title retry de-duplication missing",
+    )
 
     forbid(ownership, 'profile["secret"]', "Ownership integration directly reads encrypted profile secret")
     forbid(ownership, "unprotect(", "Ownership integration directly decrypts account credentials")
@@ -91,8 +106,10 @@ def main() -> int:
     require(owned_host, "kvtm_multi_dev_host.main()", "Ownership wrapper bypasses resident host")
     require(dev_start, '$HostScript = Join-Path $MultiRoot "kvtm_multi_owned_host.py"', "DEV does not launch ownership wrapper")
     require(dev_start, '$env:KVTM_CLIENT_OWNER = "DEV"', "DEV owner identity missing")
+    require(dev_start, "$logBudget = 268435456L", "DEV redirected-log retention cap missing")
     require(cry_runtime, '$HostScript = Join-Path $MultiRoot "kvtm_multi_owned_host.py"', "Stable does not launch ownership wrapper")
     require(cry_runtime, '$env:KVTM_CLIENT_OWNER = "CRY"', "Stable owner identity missing")
+    require(cry_runtime, "$logBudget = 268435456L", "Stable redirected-log retention cap missing")
     require(cry_update, 'kvtm_multi_owned_host.py', "Stable updater singleton check still targets old host")
 
     version = tuple(int(part) for part in text(VERSION).strip().split("."))

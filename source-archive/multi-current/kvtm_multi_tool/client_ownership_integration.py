@@ -350,16 +350,34 @@ class ClientOwnershipRegistry:
             wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
         )
 
+        # ctypes defaults undeclared WinAPI parameters to C ``int``. HWND is
+        # pointer-sized, so a 64-bit handle otherwise raises OverflowError in
+        # every EnumWindows callback and floods the host stderr log.
+        user32.GetWindowThreadProcessId.argtypes = (
+            wintypes.HWND,
+            ctypes.POINTER(wintypes.DWORD),
+        )
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        user32.IsWindowVisible.argtypes = (wintypes.HWND,)
+        user32.IsWindowVisible.restype = wintypes.BOOL
+        user32.SetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPCWSTR)
+        user32.SetWindowTextW.restype = wintypes.BOOL
+
         @enum_proc_type
         def callback(hwnd, _lparam):
-            window_pid = wintypes.DWORD()
-            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
-            if int(window_pid.value) != target_pid:
+            # Exceptions must not escape a native callback: ctypes prints each
+            # one to stderr and an enumeration can contain many windows.
+            try:
+                window_pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+                if int(window_pid.value) != target_pid:
+                    return True
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+                if user32.SetWindowTextW(hwnd, safe_title):
+                    found["value"] = True
+            except (ctypes.ArgumentError, OSError, OverflowError, ValueError):
                 return True
-            if not user32.IsWindowVisible(hwnd):
-                return True
-            if user32.SetWindowTextW(hwnd, safe_title):
-                found["value"] = True
             return True
 
         user32.EnumWindows(callback, 0)
@@ -379,6 +397,7 @@ def install_client_ownership_integration(app_cls, core) -> None:
     original_launch = app_cls._launch
     original_stop_selected = app_cls.stop_selected
     original_worker_event = getattr(app_cls, "_handle_auto_worker_event", None)
+    title_retry_generation: dict[tuple[str, int], int] = {}
 
     def profile_for(self, profile_id: str) -> dict | None:
         wanted = str(profile_id or "")
@@ -433,21 +452,38 @@ def install_client_ownership_integration(app_cls, core) -> None:
             None,
         )
 
-    def schedule_title(self, profile_id: str, pid: int, attempt: int = 0) -> None:
+    def schedule_title(
+        self,
+        profile_id: str,
+        pid: int,
+        attempt: int = 0,
+        generation: int | None = None,
+    ) -> None:
+        retry_key = (str(profile_id), int(pid))
+        if generation is None:
+            generation = title_retry_generation.get(retry_key, 0) + 1
+            title_retry_generation[retry_key] = generation
+        elif title_retry_generation.get(retry_key) != generation:
+            return
         try:
             entry = registry.lookup_pid(int(pid))
         except OwnershipError:
+            title_retry_generation.pop(retry_key, None)
             return
         if not entry or entry["owner"] != registry.owner:
+            title_retry_generation.pop(retry_key, None)
             return
         if registry.set_window_title(int(pid), str(entry["account_name"])):
+            title_retry_generation.pop(retry_key, None)
             return
-        if attempt < 120:
+        if attempt < 40:
             self.after(
                 500,
-                lambda p=str(profile_id), n=int(pid), a=attempt + 1:
-                    schedule_title(self, p, n, a),
+                lambda p=str(profile_id), n=int(pid), a=attempt + 1, g=generation:
+                    schedule_title(self, p, n, a, g),
             )
+        else:
+            title_retry_generation.pop(retry_key, None)
 
     def decorate_rows(self) -> None:
         try:

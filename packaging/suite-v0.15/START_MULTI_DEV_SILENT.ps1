@@ -67,6 +67,25 @@ if ([string]::IsNullOrWhiteSpace($python)) {
 
 New-Item -ItemType Directory -Path $DataRoot, $LogRoot -Force | Out-Null
 
+# Redirected host logs cannot be rotated while Python owns them. Bound all
+# completed logs before each launch so a past noisy session cannot accumulate
+# indefinitely. The current session is protected because its files do not yet
+# exist at this point.
+$logBudget = 268435456L
+$logBytes = 0L
+$logCount = 0
+Get-ChildItem -LiteralPath $LogRoot -File -Filter "*.log" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    ForEach-Object {
+        if ($logCount -lt 10 -and ($logBytes + $_.Length) -le $logBudget) {
+            $logCount += 1
+            $logBytes += $_.Length
+        }
+        else {
+            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
+
 # One-time migration from the historical package-local data-dev. Never overwrite
 # an existing persistent file: after migration %APPDATA% is authoritative.
 foreach ($name in @("profiles.json", "settings.json", "clear-stall-history.jsonl")) {

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import json
 from pathlib import Path
+import shutil
 import threading
 import time
 import traceback
@@ -45,6 +46,102 @@ class ProbeConfig:
 
 
 EventSink = Callable[[dict], None]
+
+
+PROBE_STORAGE_LIMIT_BYTES = 128 * 1024 * 1024
+FAILED_RUN_IMAGE_LIMIT = 12
+
+
+def _path_size(path: Path) -> int:
+    total = 0
+    try:
+        for item in path.rglob("*"):
+            if item.is_file():
+                try:
+                    total += item.stat().st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+
+def _compact_completed_run(work_dir: Path, *, succeeded: bool) -> None:
+    """Keep the report while bounding high-volume screenshot evidence."""
+
+    image_suffixes = {".png", ".bmp", ".jpg", ".jpeg"}
+    try:
+        images = [
+            path
+            for path in work_dir.rglob("*")
+            if path.is_file() and path.suffix.lower() in image_suffixes
+        ]
+    except OSError:
+        return
+
+    def modified(path: Path) -> float:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    images.sort(key=modified, reverse=True)
+    keep = 0 if succeeded else FAILED_RUN_IMAGE_LIMIT
+    for path in images[keep:]:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def _prune_probe_storage(work_dir: Path, *, exclude: Path | None = None) -> None:
+    """Delete oldest completed runs until probe storage is at most 128 MiB."""
+
+    probe_root = work_dir.parents[1]
+    excluded = exclude.resolve() if exclude is not None else None
+    runs: list[tuple[float, int, Path]] = []
+    try:
+        profile_dirs = tuple(path for path in probe_root.iterdir() if path.is_dir())
+    except OSError:
+        return
+    for profile_dir in profile_dirs:
+        try:
+            candidates = tuple(path for path in profile_dir.iterdir() if path.is_dir())
+        except OSError:
+            continue
+        for run_dir in candidates:
+            try:
+                if excluded is not None and run_dir.resolve() == excluded:
+                    continue
+                report_path = run_dir / "report.json"
+                completed = False
+                if report_path.is_file():
+                    try:
+                        completed = bool(
+                            json.loads(report_path.read_text(encoding="utf-8")).get(
+                                "completed_at"
+                            )
+                        )
+                    except (OSError, ValueError, TypeError):
+                        pass
+                # Never remove another concurrently running profile. A folder
+                # without a completed report is eligible only after six hours,
+                # when it is necessarily a stale/crashed historical run.
+                if not completed and time.time() - run_dir.stat().st_mtime < 21600:
+                    continue
+                runs.append((run_dir.stat().st_mtime, _path_size(run_dir), run_dir))
+            except OSError:
+                continue
+
+    total = sum(size for _mtime, size, _path in runs)
+    for _mtime, size, run_dir in sorted(runs):
+        if total <= PROBE_STORAGE_LIMIT_BYTES:
+            break
+        try:
+            shutil.rmtree(run_dir)
+        except OSError:
+            continue
+        total -= size
 
 
 def run_probe(
@@ -150,6 +247,9 @@ def run_probe(
     auto_root = Path(config.auto_root).resolve()
     work_dir = Path(config.work_dir).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
+    # Clean unbounded historical runs left by older Stable/DEV releases before
+    # collecting another frame. The active run is never removed mid-flight.
+    _prune_probe_storage(work_dir, exclude=work_dir)
     report_path = work_dir / "report.json"
     templates_dir = work_dir / "templates"
 
@@ -991,3 +1091,6 @@ def run_probe(
                 automation.navigation.return_home(timeout=30.0)
             except Exception:
                 pass
+        succeeded = bool(report.get("ok"))
+        _compact_completed_run(work_dir, succeeded=succeeded)
+        _prune_probe_storage(work_dir)

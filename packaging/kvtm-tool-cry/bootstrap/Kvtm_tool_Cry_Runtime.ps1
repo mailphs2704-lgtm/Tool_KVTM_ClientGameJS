@@ -94,6 +94,23 @@ foreach ($required in @(
 
 $python = Resolve-Python311X64
 New-Item -ItemType Directory -Path $DataRoot, $LogRoot -Force | Out-Null
+
+# Keep completed redirected logs below 256 MiB/10 files. A callback failure in
+# an older release therefore cannot continue occupying disk after restart.
+$logBudget = 268435456L
+$logBytes = 0L
+$logCount = 0
+Get-ChildItem -LiteralPath $LogRoot -File -Filter "*.log" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    ForEach-Object {
+        if ($logCount -lt 10 -and ($logBytes + $_.Length) -le $logBudget) {
+            $logCount += 1
+            $logBytes += $_.Length
+        }
+        else {
+            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $stdout = Join-Path $LogRoot ("kvtm-tool-cry-" + $version + "-" + $stamp + ".out.log")
 $stderr = Join-Path $LogRoot ("kvtm-tool-cry-" + $version + "-" + $stamp + ".err.log")
