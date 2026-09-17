@@ -10,7 +10,6 @@ _SWP_NOSIZE = 0x0001
 _SWP_NOZORDER = 0x0004
 _SWP_NOACTIVATE = 0x0010
 _POSITION_FLAGS = _SWP_NOSIZE | _SWP_NOZORDER | _SWP_NOACTIVATE
-_POLL_MS = 50
 _WINDOW_CLOSE_CONFIRM_SECONDS = 0.75
 
 
@@ -76,19 +75,6 @@ def install_clear_stall_window_position(app_cls, core) -> None:
             lifecycle_hwnds(self)[int(pid)] = int(hwnd)
             missing_since(self).pop(int(pid), None)
             closed_reported(self).discard(int(pid))
-
-    def process_alive(self, pid: int) -> bool:
-        for process in tuple(getattr(self, "processes", {}).values()):
-            try:
-                if (
-                    process is not None
-                    and int(process.pid) == int(pid)
-                    and process.poll() is None
-                ):
-                    return True
-            except Exception:
-                continue
-        return False
 
     def reconcile_client_windows(self) -> None:
         """Drop stale online refs after a ClientJS main HWND has really closed.
@@ -195,28 +181,6 @@ def install_clear_stall_window_position(app_cls, core) -> None:
             )
         )
 
-    def pin_when_window_exists(self, pid: int) -> None:
-        pid = int(pid)
-        marks = tracked_pids(self)
-        if pid not in marks:
-            return
-        if not process_alive(self, pid):
-            marks.discard(pid)
-            return
-        try:
-            hwnd = int(self._window_for_pid(pid) or 0)
-        except Exception:
-            hwnd = 0
-        if hwnd:
-            remember_window(self, pid, hwnd)
-        if hwnd and pin_top_right(hwnd):
-            print(
-                f"[KVTM DEV] ClientJS pinned top-right | pid={pid} hwnd={hwnd}",
-                flush=True,
-            )
-            return
-        self.after(_POLL_MS, lambda target_pid=pid: pin_when_window_exists(self, target_pid))
-
     def launch_with_top_right_position(self, profile: dict):
         profile_id = str((profile or {}).get("id") or "")
         # If the previous ClientJS window was already destroyed but its process
@@ -234,7 +198,6 @@ def install_clear_stall_window_position(app_cls, core) -> None:
             missing_since(self).pop(pid, None)
             closed_reported(self).discard(pid)
             tracked_pids(self).add(pid)
-            self.after(0, lambda target_pid=pid: pin_when_window_exists(self, target_pid))
         return result
 
     def apply_display_then_restore_position(self, proc) -> None:
@@ -268,6 +231,7 @@ def install_clear_stall_window_position(app_cls, core) -> None:
     app_cls._clear_stall_window_position_installed = True
     print(
         "[KVTM DEV] ClientJS window position/state READY • top-right work area • "
+        "one-shot after display-ready • no 50ms startup polling • "
         "OFF follows closed HWND • hidden HWND stays ONLINE",
         flush=True,
     )

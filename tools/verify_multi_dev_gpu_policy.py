@@ -77,8 +77,26 @@ def main() -> int:
         "app_class._schedule_multi_dev_fps_policy = _schedule_fps_hardcap_policy",
         "app_class._set_multi_dev_render_fps = _set_fps_hardcap_target",
         "app_class._inject_bridge = inject_bridge_with_hardcap",
+        "loading=uncapped",
+        "apply=menu-or-auto-worker",
     ):
         require(hardcap, token, "Multi DEV hard-cap integration")
+
+    hardcap_inject = hardcap.split("def inject_bridge_with_hardcap", 1)[1].split(
+        "app_class._fps_v3_files", 1
+    )[0]
+    if "_schedule_multi_dev_fps_policy" in hardcap_inject:
+        raise AssertionError("Bridge attach must not apply FPS during ZingPlay loading")
+
+    profile_adopt = profile.split("def adopt_running_clients", 1)[1].split(
+        "def inject_bridge", 1
+    )[0]
+    profile_inject = profile.split("def inject_bridge", 1)[1].split(
+        "def build_auto_panel", 1
+    )[0]
+    if "_schedule_multi_dev_fps_policy" in profile_adopt + profile_inject:
+        raise AssertionError("Profile lifecycle must not reassert FPS during loading")
+    require(profile, "loading=uncapped", "Persistent FPS loading deferral missing")
 
     for token in (
         "import fps_hardcap_integration",

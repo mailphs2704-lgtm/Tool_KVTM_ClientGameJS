@@ -34,6 +34,7 @@ CLEAR_STALL_HISTORY_FILE = APP_DIR / "clear-stall-history.jsonl"
 DEFAULT_CLIENT = Path(r"C:\Program Files\ZingPlay\data\flutter_assets\assets\runtime\GameClientJS.exe")
 DEFAULT_GAME = Path(os.environ.get("APPDATA", Path.home())) / "VNG Corporation" / "ZingPlay" / "zpp" / GAME_ID / "game"
 DEFAULT_DISPLAY = {"width": 1000, "height": 1000, "dpi": 240}
+LAUNCH_STAGGER_MS = 4000
 CLEAR_STALL_ITEM_OPTIONS = (
     ("nuoc_hoa_hong", "Nước hoa hồng"),
     ("tinh_dau_hh", "Tinh dầu hoa hồng"),
@@ -582,6 +583,7 @@ class MultiApp(tk.Tk):
         self._bridge_lock = threading.Lock()
         self._bridge_stop = threading.Event()
         self._bridge_error = ""
+        self._launch_batch_generation = 0
         self._live_images: dict[str, tk.PhotoImage] = {}
         self._live_enabled: set[str] = set()
         self._live_thumbnails: dict[str, ctypes.c_void_p] = {}
@@ -3948,18 +3950,42 @@ class MultiApp(tk.Tk):
         if profiles and not self._bridge_files() and not self.configure_bridge():
             messagebox.showwarning(APP_NAME, "Chưa có Bridge DLL nên Multi chưa thể khóa khung game vuông.")
             return
+        profiles = list(profiles)
+        if not profiles:
+            return
+        self._launch_batch_generation += 1
+        generation = self._launch_batch_generation
         errors = []
-        for profile in profiles:
+
+        def launch_next(index: int) -> None:
+            if generation != self._launch_batch_generation:
+                return
+            if index >= len(profiles):
+                self.refresh()
+                if errors:
+                    messagebox.showerror(APP_NAME, "Không mở được:\n\n" + "\n".join(errors))
+                else:
+                    self.note.set(f"Đã gửi lệnh mở {len(profiles)} hồ sơ")
+                return
+            profile = profiles[index]
             try:
                 self._launch(profile)
-                time.sleep(0.35)
             except Exception as exc:
                 errors.append(f"{profile.get('name')}: {exc}")
-        self.refresh()
-        if errors:
-            messagebox.showerror(APP_NAME, "Không mở được:\n\n" + "\n".join(errors))
-        else:
-            self.note.set(f"Đã gửi lệnh mở {len(profiles)} hồ sơ")
+            self.refresh()
+            self.note.set(
+                f"Đang mở ClientJS {index + 1}/{len(profiles)} • "
+                "khởi động giãn nhịp để tránh nghẽn ZingPlay"
+            )
+            if index + 1 >= len(profiles):
+                launch_next(index + 1)
+            else:
+                self.after(
+                    LAUNCH_STAGGER_MS,
+                    lambda next_index=index + 1: launch_next(next_index),
+                )
+
+        launch_next(0)
 
     def stop_selected(self) -> None:
         for profile_id in self.selected_ids():
@@ -4208,10 +4234,26 @@ class MultiApp(tk.Tk):
             return
         display = self.settings["display"]
         self._resize_client(hwnd, display["width"], display["height"])
-        self._inject_bridge(proc.pid)
         self.note.set(
-            f"Đã đặt client {display['width']}x{display['height']} px; mốc quy đổi auto {display['dpi']} DPI"
+            f"Đã đặt client {display['width']}x{display['height']} px; "
+            "Bridge/FPS đang gắn nền"
         )
+
+        def attach_bridge() -> None:
+            ready = self._inject_bridge(proc.pid)
+            self.after(
+                0,
+                lambda: self.note.set(
+                    f"Client {proc.pid}: Bridge/FPS "
+                    + ("đã sẵn sàng" if ready else "đang chờ retry nền")
+                ),
+            )
+
+        threading.Thread(
+            target=attach_bridge,
+            name=f"kvtm-bridge-attach-{proc.pid}",
+            daemon=True,
+        ).start()
 
     def configure_display(self) -> None:
         display = self.settings["display"]
@@ -4273,6 +4315,13 @@ class MultiApp(tk.Tk):
         with self._bridge_lock:
             if pid in self._bridged_pids:
                 return True
+            pending = getattr(self, "_bridge_injecting_pids", None)
+            if pending is None:
+                pending = set()
+                self._bridge_injecting_pids = pending
+            if pid in pending:
+                return True
+            pending.add(pid)
         loader, bridge = files
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
@@ -4290,6 +4339,9 @@ class MultiApp(tk.Tk):
         except Exception as exc:
             self._bridge_error = str(exc)
             return False
+        finally:
+            with self._bridge_lock:
+                self._bridge_injecting_pids.discard(pid)
 
     def _bridge_monitor(self) -> None:
         while not self._bridge_stop.wait(2.0):

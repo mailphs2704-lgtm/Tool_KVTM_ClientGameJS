@@ -16,8 +16,8 @@ FILE_FUNCTIONS = (
     "Đổi acc sẽ nạp ngay số vòng bán, thời gian chờ và công tắc qua bạn của acc đó",
     "Start nhiều acc sẽ đóng băng snapshot scheduler riêng của từng profile",
     "Migrate công tắc qua bạn global cũ sang từng profile một lần để không mất hành vi hiện tại",
-    "Giữ FPS render Multi DEV theo vòng đời ClientJS/Bridge thay vì chỉ khi Function bắt đầu",
-    "Tái khẳng định FPS trong bootstrap và định kỳ để chống ClientJS ghi đè animation interval",
+    "Giữ lựa chọn FPS để AUTO worker áp dụng sau khi bắt đầu",
+    "Không áp hoặc reassert FPS trong màn hình tải ZingPlay",
 )
 
 _PROFILE_SETTINGS_KEY = "auto_multi_dev_profiles"
@@ -27,9 +27,7 @@ _RENDER_FPS_ENV_KEY = "KVTM_MULTI_DEV_RENDER_FPS"
 _RENDER_FPS_PRESETS = (10, 15, 20, 25, 30, 40, 60)
 _RENDER_FPS_DEFAULT = 20
 _RENDER_FPS_CAPABILITY = "FPS_LIMIT1"
-_RENDER_FPS_STARTUP_WINDOW_SECONDS = 60.0
-_RENDER_FPS_STARTUP_REASSERT_SECONDS = 2.0
-_RENDER_FPS_STEADY_REASSERT_SECONDS = 30.0
+_RENDER_FPS_REASSERT_SECONDS = 300.0
 _RENDER_FPS_SUCCESS_LOG_SECONDS = 30.0
 _DEFAULT_PROFILE_SETTINGS = {
     "sale_every_loops": 1,
@@ -345,11 +343,7 @@ def install_auto_main_profile_settings(app_class, core) -> None:
         now = time.monotonic()
         first_seen.setdefault(pid, now)
         startup_age = max(0.0, now - float(first_seen.get(pid, now) or now))
-        reassert_seconds = (
-            _RENDER_FPS_STARTUP_REASSERT_SECONDS
-            if startup_age <= _RENDER_FPS_STARTUP_WINDOW_SECONDS
-            else _RENDER_FPS_STEADY_REASSERT_SECONDS
-        )
+        reassert_seconds = _RENDER_FPS_REASSERT_SECONDS
         previous_target = applied.get(pid)
         previous_applied_at = float(applied_at.get(pid, 0.0) or 0.0)
         if (
@@ -462,11 +456,6 @@ def install_auto_main_profile_settings(app_class, core) -> None:
             except Exception:
                 pass
 
-        self._schedule_multi_dev_fps_policy(
-            self._live_client_pids(),
-            source="menu-change",
-            force=True,
-        )
         print(
             "[KVTM DEV] FPS policy SELECTED • "
             f"target={fps} • persisted=true • worker_env={_RENDER_FPS_ENV_KEY}",
@@ -509,11 +498,8 @@ def install_auto_main_profile_settings(app_class, core) -> None:
 
         print(
             "[KVTM DEV] FPS persistent policy READY • "
-            f"target={target} • bootstrap reassert="
-            f"{_RENDER_FPS_STARTUP_REASSERT_SECONDS:g}s/"
-            f"{_RENDER_FPS_STARTUP_WINDOW_SECONDS:g}s • steady reassert="
-            f"{_RENDER_FPS_STEADY_REASSERT_SECONDS:g}s • "
-            "AUTO worker inherits same target",
+            f"target={target} • loading=uncapped • host-reassert=disabled • "
+            "menu=explicit • AUTO worker inherits and applies target",
             flush=True,
         )
 
@@ -521,23 +507,11 @@ def install_auto_main_profile_settings(app_class, core) -> None:
         result = original_adopt_running_clients(self, rows)
         live_pids = self._live_client_pids()
         self._prune_multi_dev_fps_state(live_pids)
-        self._schedule_multi_dev_fps_policy(
-            live_pids,
-            source="adopt",
-            force=False,
-        )
         return result
 
     def inject_bridge(self, pid: int) -> bool:
         pid = int(pid)
-        already_bridged = pid in set(getattr(self, "_bridged_pids", set()))
         ready = bool(original_inject_bridge(self, pid))
-        if ready:
-            self._schedule_multi_dev_fps_policy(
-                (pid,),
-                source="bridge-ready",
-                force=not already_bridged,
-            )
         return ready
 
     def build_auto_panel(self) -> None:

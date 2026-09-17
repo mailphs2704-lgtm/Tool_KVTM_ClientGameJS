@@ -291,10 +291,9 @@ def install_fps_hardcap_integration(app_class, core) -> None:
                 flush=True,
             )
         hardcap_ready = self._ensure_fps_v3_bridge(pid)
-        if hardcap_ready:
-            self._schedule_multi_dev_fps_policy(
-                (pid,), source="bridge-ready-v3", force=True
-            )
+        # Do not cap the render loop while ZingPlay is still loading. The
+        # operator FPS menu applies explicitly, and the isolated AUTO worker
+        # applies the inherited target when automation actually starts.
         return legacy_ready or hardcap_ready
 
     app_class._fps_v3_files = _fps_v3_files
@@ -309,6 +308,7 @@ def install_fps_hardcap_integration(app_class, core) -> None:
     print(
         "[KVTM DEV] FPS hard-cap runtime READY • "
         "OpenGL present governor • kernel waitable timer • "
+        "loading=uncapped • apply=menu-or-auto-worker • "
         "no persistent Python polling • CAPTURE3/native resolution UNCHANGED",
         flush=True,
     )
