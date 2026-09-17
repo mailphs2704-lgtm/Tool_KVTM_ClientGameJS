@@ -17,7 +17,10 @@ FRIEND_STALL_SCAN_COUNT = 5
 STANDALONE_FRIEND_STALL_SCAN_COUNT = 7
 # The last two own-stall cells can remain just outside the fourth nominal view.
 # Permit one terminal two-swipe alignment and force a final scan before failing.
-OWN_STALL_RESALE_SCAN_LIMIT = STALL_VIEW_COUNT + 1
+# One short swipe exposes roughly one additional stall column. Scan all eight
+# alignments at the clone's own stall so every one of the 20 sale slots can be
+# reached before declaring that no empty slot remains.
+OWN_STALL_RESALE_SCAN_LIMIT = 8
 TOTAL_STALL_SLOTS = 20
 ALLOWED_ITEM_TEMPLATES = {
     "nuoc_hoa_hong": "Nước hoa hồng",
@@ -276,10 +279,57 @@ def run_probe(
             loader=str(auto_root / "bin" / "kvtm_loader.exe"),
         )
 
+        # Packaged pc_driver omitted Win64 ctypes prototypes. Without them,
+        # HWND is coerced to c_int and EnumWindows callbacks raise OverflowError.
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            import pc_driver
+
+            pc_driver.user32.EnumWindows.argtypes = [
+                ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM),
+                wintypes.LPARAM,
+            ]
+            pc_driver.user32.EnumWindows.restype = wintypes.BOOL
+            pc_driver.user32.GetWindowThreadProcessId.argtypes = [
+                wintypes.HWND,
+                ctypes.POINTER(wintypes.DWORD),
+            ]
+            pc_driver.user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+            pc_driver.user32.IsWindowVisible.argtypes = [wintypes.HWND]
+            pc_driver.user32.IsWindowVisible.restype = wintypes.BOOL
+            pc_driver.user32.GetClientRect.argtypes = [
+                wintypes.HWND,
+                ctypes.POINTER(wintypes.RECT),
+            ]
+            pc_driver.user32.GetClientRect.restype = wintypes.BOOL
+            context.log("Dọn quầy standalone • Win64 HWND prototype READY")
+
         automation = KVAutomation(
             context,
             image_runtime_ready=bool(image_runtime_ready),
         )
+
+        # Inventory resale reopens frozen PNGs from a Vietnamese Windows path.
+        # Patch the shared cv2 module once so packaged selling.py can read them.
+        import cv2
+        import numpy
+
+        current_imread = cv2.imread
+        if not getattr(current_imread, "_kvtm_unicode_safe", False):
+            def unicode_safe_imread(filename, flags=cv2.IMREAD_COLOR):
+                try:
+                    payload = Path(filename).read_bytes()
+                    encoded = numpy.frombuffer(payload, dtype=numpy.uint8)
+                    if encoded.size == 0:
+                        return None
+                    return cv2.imdecode(encoded, int(flags))
+                except Exception:
+                    return None
+
+            unicode_safe_imread._kvtm_unicode_safe = True
+            cv2.imread = unicode_safe_imread
+            context.log("Dọn quầy standalone • Unicode imread READY cho bán lại")
         designer_policy = load_runtime_policy(designer_config_path(config.work_dir.parents[2]))
         clear_stall_drag_speed = max(
             0.05, min(3.0, float(config.clear_stall_drag_speed))
@@ -290,6 +340,8 @@ def run_probe(
         )
         designer_policy.validate()
         automation.stall.apply_runtime_policy(designer_policy)
+        if os.environ.get("KVTM_CLEAR_STALL_SINGLE_SWIPE") == "1":
+            automation.stall.swipe_pulses = 1
         context.log(
             "Dọn quầy tốc độ kéo • "
             f"{clear_stall_drag_speed:.3f}s/swipe • "
@@ -364,17 +416,15 @@ def run_probe(
                     break
                 confirmed = 0
 
-                # Freeze the scanned icon before clicking. The verified purchase
-                # refreshes the stall and may remove its temporary scan template;
-                # reading that file afterwards can fail even though the purchase
-                # itself succeeded.
-                icon_source = Path(selected.fingerprint.template_file)
-                import cv2
-
-                listing_icon = cv2.imread(str(icon_source), cv2.IMREAD_COLOR)
+                # Freeze the visible icon directly from the in-memory ClientJS
+                # frame before clicking; do not depend on a temporary PNG path.
+                listing_frame = automation.vision.frame()
+                listing_icon = automation.stall.crop_icon(
+                    listing_frame, int(selected.local_slot)
+                ).copy()
                 if listing_icon is None or listing_icon.size == 0:
                     raise RuntimeError(
-                        "Không đọc được icon VP trước giao dịch; không thực hiện mua"
+                        "Không lấy được icon VP từ frame trước giao dịch; không thực hiện mua"
                     )
 
                 def on_purchase(_listing_count: int) -> None:
@@ -437,6 +487,8 @@ def run_probe(
                     work_dir / "purchased-icons" / f"purchase-{sequence:02d}.png"
                 )
                 icon_target.parent.mkdir(parents=True, exist_ok=True)
+                import cv2
+
                 icon_height, icon_width = listing_icon.shape[:2]
                 # A friend-stall tile contains the pedestal and quantity label
                 # (x10), while inventory shows another background/quantity.
@@ -604,7 +656,14 @@ def run_probe(
                 context.ensure_running()
                 # Scans beyond the fourth logical map are edge alignments.
                 # Reuse slot geometry while buying from the fresh rendered frame.
-                mapping_view = min(view, STALL_VIEW_COUNT)
+                # The recovered four-view map advances after two swipe
+                # pulses. Standalone uses one pulse per scan, so each logical
+                # map must span two consecutive scan views: 1,1,2,2,3,3,4.
+                mapping_view = (
+                    min((view + 1) // 2, STALL_VIEW_COUNT)
+                    if standalone_seven_view
+                    else min(view, STALL_VIEW_COUNT)
+                )
                 current_view = mapping_view
                 checkpoint(
                     f"friend-{friend_index:02d}-pass-{stall_pass:02d}-"
