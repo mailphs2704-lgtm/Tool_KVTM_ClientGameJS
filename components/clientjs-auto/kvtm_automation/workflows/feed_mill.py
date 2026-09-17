@@ -45,6 +45,7 @@ class FeedMillWorkflow:
     EVENT_MAP_WAIT_SECONDS = 4.0
     BETWEEN_MILL_CLICKS_SECONDS = 1.5
     PANEL_SETTLE_SECONDS = 2.5
+    WHEAT_SWIPE_DURATION_SECONDS = 0.30
     SWIPE_SETTLE_SECONDS = 1.5
     HOME_MAP_SETTLE_SECONDS = 5.0
     EVENT_MAP_CHANGE_THRESHOLD = 25.0
@@ -146,7 +147,7 @@ class FeedMillWorkflow:
         self.context.stage("auto-feed-mill-wheat-swipe")
         self.driver.swipe_points(
             (self.WHEAT_POINT, self.MILL_INPUT_POINT),
-            duration=0.65,
+            duration=self.WHEAT_SWIPE_DURATION_SECONDS,
         )
         self.auto.wait.sleep(self.SWIPE_SETTLE_SECONDS)
         if not self._production_started(self.vision.frame()):

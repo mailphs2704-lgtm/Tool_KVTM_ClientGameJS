@@ -342,6 +342,16 @@ def main() -> int:
     )
     require(
         feed_mill_workflow,
+        "WHEAT_SWIPE_DURATION_SECONDS = 0.30",
+        "Feed Mill wheat swipe speed changed from the operator-approved fast value",
+    )
+    require(
+        feed_mill_workflow,
+        "duration=self.WHEAT_SWIPE_DURATION_SECONDS",
+        "Feed Mill wheat swipe does not use its bounded speed constant",
+    )
+    require(
+        feed_mill_workflow,
         'self.context.mark_camera_exact_main("feed-mill event-home deterministic route")',
         "Feed Mill does not prove exact-main after Home",
     )
