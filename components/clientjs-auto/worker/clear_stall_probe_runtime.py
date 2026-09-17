@@ -228,12 +228,24 @@ def run_probe(
     current_view = 1
     all_observations = []
 
-    def save_frame(path: Path, frame) -> None:
+    # Full 1000x1000 progress frames previously consumed several GB per hour.
+    # Recognition already uses the in-memory frame, so persist only the final
+    # error evidence by default. Developers can opt back in for a bounded
+    # diagnostic run with KVTM_CLEAR_STALL_SAVE_DEBUG_FRAMES=1.
+    save_debug_frames = str(
+        os.environ.get("KVTM_CLEAR_STALL_SAVE_DEBUG_FRAMES", "")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+    def save_frame(path: Path, frame) -> bool:
+        if not save_debug_frames and "error-state" not in path.name.lower():
+            return False
+
         import cv2
 
         path.parent.mkdir(parents=True, exist_ok=True)
         if not cv2.imwrite(str(path), frame):
             raise RuntimeError(f"Không lưu được ảnh probe: {path}")
+        return True
 
     def capture(name: str, driver):
         checkpoint(f"{name}-capture-start")
@@ -246,10 +258,10 @@ def run_probe(
         stages = report["stages"]
         assert isinstance(stages, list)
         path = work_dir / f"stage-{len(stages):02d}-{name}.png"
-        save_frame(path, frame)
+        frame_saved = save_frame(path, frame)
         entry = {
             "stage": str(name),
-            "capture": str(path),
+            "capture": str(path) if frame_saved else "",
             "frame_size": [int(width), int(height)],
             "at": time.time(),
         }
@@ -260,9 +272,13 @@ def run_probe(
             persist()
         emit(
             "probe_progress",
-            message=f"Đã chụp {name} ({width}x{height})",
+            message=(
+                f"Đã lưu ảnh {name} ({width}x{height})"
+                if frame_saved
+                else f"Đã kiểm tra {name} ({width}x{height}) • không ghi ảnh tiến trình"
+            ),
             stage=str(name),
-            capture=str(path),
+            capture=str(path) if frame_saved else "",
         )
         return frame
 
