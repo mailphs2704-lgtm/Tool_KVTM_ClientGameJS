@@ -297,6 +297,21 @@ def main() -> int:
     )
     require(
         pirate_chest_schedule,
+        "self._feed_mill_first_sale_pending = bool(self.feed_mill_enabled)",
+        "Feed Mill must be pending immediately at every AUTO start",
+    )
+    require(
+        pirate_chest_schedule,
+        "if self._feed_mill_first_sale_pending:",
+        "Feed Mill first run is not bound to the first sale boundary",
+    )
+    require(
+        pirate_chest_schedule,
+        "self._feed_mill_first_sale_pending = False",
+        "Feed Mill first-sale pending state is not cleared after PASS",
+    )
+    require(
+        pirate_chest_schedule,
         "if self._feed_mill_due_after_sale():",
         "Feed Mill is not checked immediately after VP sale",
     )

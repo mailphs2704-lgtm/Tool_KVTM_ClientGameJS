@@ -44,7 +44,10 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self.pirate_chest_calls = 0
         self.feed_mill_enabled = self._load_feed_mill_enabled()
         self.feed_mill_calls = 0
-        self._feed_mill_initialized = False
+        # Every AUTO start gets one immediate feed-mill run at the first safe
+        # boundary: Function PASS -> first successful VP sale -> Sx cám. The
+        # 35-minute deadline begins only after that first run succeeds.
+        self._feed_mill_first_sale_pending = bool(self.feed_mill_enabled)
         self._feed_mill_next_due_at = 0.0
         self._feed_mill_retry_after_sale = False
         startup_opened_at = getattr(
@@ -79,7 +82,8 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self.context.log(
             "AUTO tùy chọn • Sx cám="
             + ("BẬT" if self.feed_mill_enabled else "TẮT")
-            + " • check đầu sau Function + sale VP • chu kỳ 35 phút"
+            + " • lần đầu=ngay sau Function + sale VP đầu tiên"
+            + " • chỉ PASS mới bắt đầu đếm 35 phút"
         )
 
     def _load_pirate_chest_enabled(self) -> bool:
@@ -114,7 +118,9 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
     def _feed_mill_due_after_sale(self) -> bool:
         if not self.feed_mill_enabled or self.function_loops <= 0:
             return False
-        if not self._feed_mill_initialized or self._feed_mill_retry_after_sale:
+        if self._feed_mill_first_sale_pending:
+            return True
+        if self._feed_mill_retry_after_sale:
             return True
         return time.monotonic() >= self._feed_mill_next_due_at
 
@@ -157,13 +163,14 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             return
 
         self.feed_mill_calls += 1
-        self._feed_mill_initialized = True
+        self._feed_mill_first_sale_pending = False
         self._feed_mill_retry_after_sale = False
         self._feed_mill_next_due_at = time.monotonic() + self.FEED_MILL_INTERVAL_SECONDS
         self.context.stage(f"auto-main-feed-mill-{ordinal}-finished")
         self.context.log(
             "AUTO Sx cám • safe boundary PASS • "
-            f"lần={ordinal} • check_lại={self.FEED_MILL_INTERVAL_SECONDS:.0f}s"
+            f"lần={ordinal} • bắt đầu đếm ngược="
+            f"{self.FEED_MILL_INTERVAL_SECONDS:.0f}s"
         )
 
     def _pirate_chest_due(self) -> bool:
