@@ -159,6 +159,7 @@ class ClearStallToolApp:
             self._mini(log_cell, "Log", BLUE, lambda i=a.account_id: self.show_log(i), 6).pack()
             acts = tk.Frame(row, bg=SURFACE); acts.grid(row=0, column=8, padx=6)
             self._mini(acts, "▶", BLUE, lambda i=a.account_id: self.set_status(i, "running")).pack(side="left", padx=2)
+            self._mini(acts, "＋", GREEN, lambda i=a.account_id: self.enqueue_account(i)).pack(side="left", padx=2)
             self._mini(acts, "■", RED, lambda i=a.account_id: self.set_status(i, "stopped")).pack(side="left", padx=2)
             self._mini(acts, "•••", MUTED, lambda i=a.account_id: self.details(i), 4).pack(side="left", padx=2)
             tk.Frame(row, bg=BORDER, height=1).grid(row=1, column=0, columnspan=9, sticky="ew")
