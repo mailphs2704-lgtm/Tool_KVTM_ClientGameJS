@@ -1,5 +1,23 @@
 # AUTO MULTI DEV — LATEST HANDOFF
 
+## 21. 2026-09-17 — Không khóa UI khi ClientJS tải ZingPlay
+
+- Live evidence sau bản timeout: Multi vẫn giật/khó thao tác khi nhiều ClientJS
+  cùng đến màn hình ZingPlay. Operator xác định lỗi bắt đầu sau tính năng cố
+  định top-right và nặng hơn sau bộ chỉnh FPS.
+- Root cause: `_apply_display_to_process()` gọi loader/Bridge/FPS đồng bộ từ Tk
+  callback; mỗi lần có thể chờ tới 15 giây. `Mở tất cả` còn sleep trên Tk và mở
+  các client quá sát nhau.
+- Source nay mở client cách nhau 4 giây bằng `after()`, không sleep Tk; resize
+  vẫn ở UI nhưng Bridge/FPS attach chạy thread riêng theo PID, có inflight guard.
+- Một client load treo không chặn lịch mở client sau.
+- Bỏ vòng poll HWND 50 ms/client của top-right; vị trí chỉ áp dụng một lần sau
+  display-ready. Không ép/reassert FPS trong lúc ZingPlay tải; menu FPS vẫn áp
+  dụng ngay khi người dùng chọn, AUTO worker áp target khi AUTO thật sự chạy.
+- Checkpoint: `docs/AUTO_MULTI_DEV_LOADING_RESPONSIVENESS_20260917.md`.
+- Launch, GPU, Bridge V3 và Cry packaging targeted static PASS; Windows
+  build/live PENDING.
+
 ## 20. 2026-09-17 — Giảm log nền và cô lập ClientJS treo
 
 - Runtime diagnostic sidecar nay mặc định tắt; chỉ bật có chủ đích bằng
