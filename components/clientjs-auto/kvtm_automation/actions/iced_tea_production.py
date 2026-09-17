@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..errors import ScreenTimeout
+from ..errors import ProductSearchExhausted, ScreenTimeout
 from .production import ProductionResult
 from .production_panel import ProductionPanelActions
 
@@ -69,49 +69,19 @@ class IcedTeaProductionActions(ProductionPanelActions):
                 "KHÔNG click mũi tên trang • lặp shared thu VP tối thiểu 20 click • "
                 f"open_round={open_round} • tổng click={click_count}"
             )
+            if open_round >= self.PANEL_OPEN_ROUNDS:
+                raise ProductSearchExhausted(
+                    f"Trà đá: không xác nhận được panel sau {open_round} vòng"
+                )
 
         page_turns = 0
-        missing_panel_rounds = 0
-        while product is None:
-            self.context.ensure_running()
-            frame = self.vision.frame()
-            warehouse_full, empty_ready = self._panel_state(frame=frame)
-            if warehouse_full:
-                self._raise_inventory_full("Trà đá")
-
-            product = self._find_product_match(
-                self.PRODUCT_TEMPLATE,
-                threshold=0.70,
-                frame=frame,
+        if product is None:
+            product, page_turns = self.find_product_bounded_pages(
+                product_template=self.PRODUCT_TEMPLATE,
+                label="Trà đá",
+                page_next_point=self.PAGE_NEXT_POINT,
+                product_threshold=0.70,
             )
-            if product is not None:
-                self.context.log(
-                    "AUTO Trà đá • tìm thấy template sau chuyển trang • "
-                    f"page_turns={page_turns} • center={product.center} • "
-                    f"score={product.score:.3f}"
-                )
-                break
-
-            if not empty_ready:
-                missing_panel_rounds += 1
-                if missing_panel_rounds == 1 or missing_panel_rounds % 10 == 0:
-                    self.context.log(
-                        "AUTO Trà đá • mất panel-open anchor khi đang tìm template • "
-                        "KHÔNG chuyển trang • chờ/recheck • "
-                        f"miss={missing_panel_rounds}"
-                    )
-                self.waiter.sleep(self.PAGE_SETTLE_SECONDS)
-                continue
-
-            missing_panel_rounds = 0
-            self.context.log(
-                "AUTO Trà đá • panel SX đang mở VERIFIED • chưa thấy template • "
-                "click mũi tên phải đúng 1 lần "
-                f"tại {self.PAGE_NEXT_POINT} • page_turn={page_turns + 1}"
-            )
-            self.vision.driver.click(*self.PAGE_NEXT_POINT)
-            page_turns += 1
-            self.waiter.sleep(self.PAGE_SETTLE_SECONDS)
 
         empty, product_point, top_point = self._wait_for_idle_open_panel(
             product_template=self.PRODUCT_TEMPLATE,

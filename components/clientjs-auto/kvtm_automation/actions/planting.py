@@ -130,6 +130,8 @@ class PlantingActions:
     SEED_PAGE_SETTLE_SECONDS = 0.35
     SEED_PANEL_PROOF_RECHECKS = 3
     SEED_PANEL_PROOF_RECHECK_SECONDS = 0.15
+    SEED_MAX_PAGE_TURNS = 8
+    SEED_PICKER_CLOSE_ATTEMPTS = 3
 
     def __init__(
         self,
@@ -279,6 +281,11 @@ class PlantingActions:
                 )
 
             page_moves += 1
+            if page_moves > self.SEED_MAX_PAGE_TURNS:
+                raise ScreenTimeout(
+                    f"Không tìm thấy hạt {item_label} sau "
+                    f"{self.SEED_MAX_PAGE_TURNS} lần chuyển trang"
+                )
             self.context.log(
                 f"AUTO trồng • bảng gieo VERIFIED bằng {self.SEED_PANEL_ARROW_TEMPLATE} "
                 f"center={arrow.center} • seed {item_label} MISS • "
@@ -294,6 +301,23 @@ class PlantingActions:
             f"page_moves={page_moves} | center={match.center}"
         )
         return match
+
+    def close_seed_picker_verified(self, *, label: str) -> None:
+        """Close the planting picker and prove it no longer owns input."""
+
+        for attempt in range(1, self.SEED_PICKER_CLOSE_ATTEMPTS + 1):
+            self.context.ensure_running()
+            if self._prove_seed_picker_open_for_page_turn() is None:
+                self.context.detail(
+                    f"AUTO planting picker CLOSED VERIFIED | label={label} | attempt={attempt}"
+                )
+                return
+            self.vision.driver.click(*self.CLOSE_POINT)
+            self.waiter.sleep(0.30)
+        if self._prove_seed_picker_open_for_page_turn() is not None:
+            raise ScreenTimeout(
+                f"Bảng gieo chưa đóng sau {self.SEED_PICKER_CLOSE_ATTEMPTS} lần: {label}"
+            )
 
     def _scan_first_pot_state(self, seed_template: str) -> tuple[str, object | None]:
         self.context.ensure_running()
@@ -402,8 +426,8 @@ class PlantingActions:
                     duration=self.speed_config.plant_harvest_duration,
                 )
                 self.waiter.sleep(0.45)
-                self.vision.driver.click(*self.CLOSE_POINT)
-                self.waiter.sleep(0.45)
+                self.close_seed_picker_verified(label=label)
+                self.waiter.sleep(0.15)
                 self.context.log(
                     f"AUTO trồng • {label} • PASS gieo {plant_requested}/{plant_requested}"
                 )
@@ -421,8 +445,7 @@ class PlantingActions:
                 f"lần {attempt}/{attempts_limit} • "
                 f"đã click lại điểm mở chuẩn={self.OPEN_PLANT_POINT}"
             )
-            self.vision.driver.click(*self.CLOSE_POINT)
-            self.waiter.sleep(0.30)
+            self.close_seed_picker_verified(label=f"{label}: trạng thái chưa xác định")
 
         raise ScreenTimeout(
             f"Không hoàn tất planting segment {label} sau {attempts_limit} lần; fail-close"

@@ -4,7 +4,13 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
 from ..error_journal import record_auto_error
-from ..errors import InventoryFull, ScreenTimeout, WrongProductionMachine
+from ..errors import (
+    FunctionRestartRequested,
+    InventoryFull,
+    ProductSearchExhausted,
+    ScreenTimeout,
+    WrongProductionMachine,
+)
 from ..workflows.auto_builder.catalog import get_function_spec
 from ..workflows.auto_vp_sale import AutoVpSaleWorkflow
 from .events import RecoveryEvent, RecoveryEventKind
@@ -22,6 +28,15 @@ class ProductionRecovery:
     """Central policy for recoverable production events."""
 
     WRONG_MACHINE_RECOVERY_LIMIT = 3
+    CANONICAL_PRODUCTION_FLOORS = {
+        "Táo sấy": 1,
+        "Trà sấy": 1,
+        "Nước táo": 2,
+        "Vải vàng": 3,
+        "Tinh dầu hoa hồng": 5,
+        "Trà đá": 6,
+        "Nước hoa hồng": 8,
+    }
 
     def __init__(
         self,
@@ -52,7 +67,18 @@ class ProductionRecovery:
     ) -> _T:
         warehouse_recovery_round = 0
         wrong_machine_recovery_round = 0
-        work_floor = int(floor)
+        if label not in self.CANONICAL_PRODUCTION_FLOORS:
+            raise ValueError(f"Chưa khai báo tầng sản xuất chuẩn cho {label!r}")
+        work_floor = self.CANONICAL_PRODUCTION_FLOORS[label]
+        if int(floor) != work_floor:
+            raise ValueError(
+                f"Sai hợp đồng tầng sản xuất: {label} phải ở tầng {work_floor}, "
+                f"caller truyền tầng {floor}"
+            )
+        self.context.log(
+            f"AUTO {label} • floor contract VERIFIED • tầng chuẩn={work_floor} • "
+            "mọi recovery sẽ exact-main → đúng tầng chuẩn"
+        )
 
         def recover_wrong_machine(
             checkpoint: ModuleCheckpoint,
@@ -85,6 +111,31 @@ class ProductionRecovery:
                     },
                 )
             )
+            if isinstance(exc, ProductSearchExhausted):
+                self.context.action("Không tìm thấy VP sản xuất, chuyển trạng thái xử lí")
+                self.context.stage("auto-production-product-search-recovery")
+                self.context.log(
+                    f"AUTO {label} • hết 2 vòng tìm VP • "
+                    f"recovery={wrong_machine_recovery_round}/2 • ESC x3"
+                )
+                self.auto.popup.escape_three_then_stay(
+                    label=f"{label}: product-search-{wrong_machine_recovery_round}"
+                )
+                if wrong_machine_recovery_round == 1:
+                    self.navigation.recover_unknown_to_floor(
+                        work_floor,
+                        label,
+                        reason=f"product-search-exhausted:{label}:retry-production",
+                    )
+                    return
+                self.navigation.recover_unknown_to_main(
+                    label,
+                    reason=f"product-search-exhausted:{label}:restart-function",
+                )
+                raise FunctionRestartRequested(
+                    f"{label}: không tìm thấy VP sau 2 lần vào lại đúng tầng"
+                ) from exc
+
             if wrong_machine_recovery_round > self.WRONG_MACHINE_RECOVERY_LIMIT:
                 self.emit(
                     RecoveryEvent(

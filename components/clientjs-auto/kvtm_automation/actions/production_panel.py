@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from ..context import AutomationContext
-from ..errors import InventoryFull, WrongProductionMachine
+from ..errors import (
+    InventoryFull,
+    ProductSearchExhausted,
+    ScreenTimeout,
+    WrongProductionMachine,
+)
 from ..runtime.auto_speed_config import AutoSpeedConfig
 from ..runtime.vision import VisionEngine
 from ..runtime.wait import Waiter
@@ -42,6 +47,12 @@ class ProductionPanelActions:
     COLLECT_CLICK_BURST = 5
     COLLECT_MIN_BURSTS = 4
     COLLECT_MIN_CLICKS = COLLECT_CLICK_BURST * COLLECT_MIN_BURSTS
+    PRODUCT_PAGE_SEARCH_TURNS = 2
+    PANEL_OPEN_ROUNDS = 2
+    OPEN_PANEL_PRODUCT_MISS_LIMIT = 3
+    SEED_PICKER_TEMPLATE = "next_gieo_trai"
+    SEED_PICKER_ZONE = (124, 729, 347, 236)
+    SEED_PICKER_CLOSE_POINT = (965, 198)
 
     def __init__(
         self,
@@ -272,6 +283,77 @@ class ProductionPanelActions:
             self.vision.driver.click(*machine_point)
         return self.COLLECT_CLICK_BURST
 
+    def _seed_picker_is_open(self) -> bool:
+        return self.vision.find(
+            self.SEED_PICKER_TEMPLATE,
+            threshold=0.70,
+            zone=self.SEED_PICKER_ZONE,
+            scales=(0.80, 0.90, 1.00, 1.10, 1.20),
+            click=False,
+        ) is not None
+
+    def _close_seed_picker_before_machine(self, label: str) -> None:
+        """Never let machine clicks pass through an open planting picker."""
+
+        if not self._seed_picker_is_open():
+            return
+        for attempt in range(1, 4):
+            self.context.ensure_running()
+            self.vision.driver.click(*self.SEED_PICKER_CLOSE_POINT)
+            self.waiter.sleep(0.25)
+            if not self._seed_picker_is_open():
+                self.context.log(
+                    f"AUTO {label} • đóng bảng gieo còn sót VERIFIED • attempt={attempt}/3"
+                )
+                return
+        raise ScreenTimeout(
+            f"{label}: bảng gieo vẫn mở; chặn thu VP để tránh click vô tận"
+        )
+
+    def find_product_bounded_pages(
+        self,
+        *,
+        product_template: str,
+        label: str,
+        page_next_point: tuple[int, int],
+        product_threshold: float = 0.70,
+    ):
+        """Search current page plus two right turns, then hand off recovery."""
+
+        for page_turn in range(0, self.PRODUCT_PAGE_SEARCH_TURNS + 1):
+            self.context.ensure_running()
+            frame = self.vision.frame()
+            warehouse_full, empty_ready = self._panel_state(frame=frame)
+            if warehouse_full:
+                self._raise_inventory_full(label)
+            product = self._find_product_match(
+                product_template,
+                threshold=product_threshold,
+                frame=frame,
+            )
+            if product is not None:
+                self.context.log(
+                    f"AUTO {label} • tìm VP PASS • page_turn={page_turn}/"
+                    f"{self.PRODUCT_PAGE_SEARCH_TURNS} • center={product.center}"
+                )
+                return product, page_turn
+            if not empty_ready:
+                raise ProductSearchExhausted(
+                    f"{label}: mất bằng chứng panel khi tìm {product_template}"
+                )
+            if page_turn >= self.PRODUCT_PAGE_SEARCH_TURNS:
+                break
+            self.context.log(
+                f"AUTO {label} • chưa thấy {product_template} • "
+                f"chuyển trang {page_turn + 1}/{self.PRODUCT_PAGE_SEARCH_TURNS}"
+            )
+            self.vision.driver.click(*page_next_point)
+            self.waiter.sleep(0.35)
+        raise ProductSearchExhausted(
+            f"{label}: không thấy {product_template} sau "
+            f"{self.PRODUCT_PAGE_SEARCH_TURNS} vòng tìm kiếm"
+        )
+
     def collect_vp_before_machine_panel(
         self,
         *,
@@ -288,6 +370,8 @@ class ProductionPanelActions:
         click_count = 0
         for burst in range(1, self.COLLECT_MIN_BURSTS + 1):
             self.context.ensure_running()
+            if burst == 1:
+                self._close_seed_picker_before_machine(label)
             # Full-kho can blink between clicks. Probe a fresh frame before every
             # click so the machine point cannot dismiss the popup and hide the
             # typed InventoryFull signal until the next 20-click round.
@@ -336,12 +420,12 @@ class ProductionPanelActions:
         """Open and prove the exact requested product panel.
 
         Each recognition round first runs the shared hard minimum collection
-        contract (4 burst x5 = 20 clicks). The outer wait stays unbounded because
-        no operator-defined maximum round/time exists yet.
+        contract (4 burst x5 = 20 clicks). Two misses hand control to central
+        exact-main/floor recovery instead of clicking the machine forever.
         """
         click_count = 0
         collect_round = 0
-        while True:
+        while collect_round < self.PANEL_OPEN_ROUNDS:
             self.context.ensure_running()
             collect_round += 1
             click_count += self.collect_vp_before_machine_panel(
@@ -394,6 +478,10 @@ class ProductionPanelActions:
                     f"• round={collect_round} • tổng click={click_count} • "
                     "lặp lại shared collector"
                 )
+        raise ProductSearchExhausted(
+            f"{label}: không mở/xác nhận được panel {product_template} sau "
+            f"{self.PANEL_OPEN_ROUNDS} vòng collector"
+        )
 
     def _wait_for_idle_open_panel(
         self,
@@ -422,11 +510,15 @@ class ProductionPanelActions:
             )
             if product is None:
                 product_misses += 1
-                if product_misses == 1 or product_misses % 10 == 0:
+                if product_misses == 1:
                     self.context.log(
                         f"AUTO {label} • ảnh sản phẩm tạm chưa khớp khi đang chờ "
-                        f"• misses={product_misses} • KHÔNG dừng AUTO • "
+                        f"• misses={product_misses}/{self.OPEN_PANEL_PRODUCT_MISS_LIMIT} • "
                         f"giữ trạng thái và recheck sau {self.PANEL_RECHECK_SECONDS:.1f}s"
+                    )
+                if product_misses >= self.OPEN_PANEL_PRODUCT_MISS_LIMIT:
+                    raise ProductSearchExhausted(
+                        f"{label}: mất ảnh {product_template} khi đang giữ panel mở"
                     )
                 self.waiter.sleep(self.PANEL_RECHECK_SECONDS)
                 continue

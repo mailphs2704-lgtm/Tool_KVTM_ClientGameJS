@@ -58,7 +58,7 @@ class AppleSupplyActions(PlantingActions):
         )
         if ripe is not None:
             return "RIPE", ripe
-        if empty is not None and seed is not None:
+        if empty is not None:
             return "EMPTY", seed
         self.vision.driver.click(*self.CLOSE_PANEL)
         return "GROWING", None
@@ -94,13 +94,18 @@ class AppleSupplyActions(PlantingActions):
 
     def _plant_open_panel(self, seed, farm_path, count: int, label: str) -> int:
         self.context.ensure_running()
+        seed = self._find_seed_in_open_picker(
+            self.APPLE_TEMPLATE,
+            "Táo",
+            first_match=seed,
+        )
         self.vision.driver.swipe_points(
             (seed.center,) + tuple(farm_path[1:]),
             duration=self.speed_config.plant_harvest_duration,
         )
         self.waiter.sleep(0.45)
-        self.vision.driver.click(*self.CLOSE_PANEL)
-        self.waiter.sleep(0.55)
+        self.close_seed_picker_verified(label=label)
+        self.waiter.sleep(0.25)
         self.context.log(f"AUTO nguyên liệu • đã gieo {label}")
         return count
 

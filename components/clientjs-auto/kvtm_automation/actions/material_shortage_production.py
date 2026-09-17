@@ -737,15 +737,20 @@ class MaterialAwareCottonPlantingActions(BaseCottonPlantingActions):
                 self.waiter.sleep(0.45)
                 continue
 
-            if state == "EMPTY" and match is not None:
+            if state == "EMPTY":
+                match = self._find_seed_in_open_picker(
+                    self.COTTON_TEMPLATE,
+                    "Bông",
+                    first_match=match,
+                )
                 path = (match.center,) + self.rose_path()[1:]
                 self.vision.driver.swipe_points(
                     path,
                     duration=self.speed_config.plant_harvest_duration,
                 )
                 self.waiter.sleep(0.40)
-                self.vision.driver.click(*self.CLOSE_POINT)
-                self.waiter.sleep(0.55)
+                self.close_seed_picker_verified(label="Bổ sung Bông")
+                self.waiter.sleep(0.25)
                 if harvested:
                     self.context.log(
                         "AUTO bổ sung Bông • đã thu 27 Bông và gieo lại đúng cay_bong"
@@ -761,7 +766,7 @@ class MaterialAwareCottonPlantingActions(BaseCottonPlantingActions):
             # Growing/unknown: close the picker if it is open and wait instead of
             # failing after five rapid probes. A material recovery must eventually
             # bring an actual harvested batch back to inventory.
-            self.vision.driver.click(*self.CLOSE_POINT)
+            self.close_seed_picker_verified(label="Bổ sung Bông: cây chưa chín")
             if cycle == 1 or cycle % 10 == 0:
                 self.context.log(
                     "AUTO bổ sung Bông • cây chưa chín • "

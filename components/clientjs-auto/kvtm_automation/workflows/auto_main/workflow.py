@@ -5,7 +5,7 @@ import json
 import time
 
 from ...automation import KVAutomation
-from ...errors import AutomationStopped
+from ...errors import AutomationStopped, FunctionRestartRequested
 from ..auto_builder.catalog import FunctionSpec, get_function_spec
 from ..auto_builder.modules import FunctionModule
 from ..auto_vp_sale import AutoVpSaleWorkflow
@@ -386,6 +386,14 @@ class AutoMainWorkflow:
                 self.context.ensure_running()
             except AutomationStopped:
                 raise
+            except FunctionRestartRequested as exc:
+                self.context.stage("auto-main-function-restart-requested")
+                self.context.action("Khởi động lại Function sau lỗi tìm VP sản xuất")
+                self.context.log(
+                    "AUTO Main • exact-main đã phục hồi • bắt đầu lại cùng Function • "
+                    f"vòng={next_loop} • reason={exc}"
+                )
+                continue
             except Exception as exc:
                 self._recover_unregistered_function_error(
                     loop_ordinal=next_loop,

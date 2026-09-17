@@ -116,13 +116,18 @@ def main() -> int:
     )
     require(
         tea,
-        "if not empty_ready:",
+        "if empty_ready:",
         "Dried Tea page turn is not gated by production-panel proof",
     )
     require(
         tea,
-        "KHÔNG chuyển trang",
+        "KHÔNG click mũi tên trang",
         "Dried Tea panel-loss branch no longer fail-closes page movement",
+    )
+    require(
+        tea,
+        "find_product_bounded_pages(",
+        "Dried Tea product paging is not bounded by the shared two-turn search",
     )
     forbid(
         tea,

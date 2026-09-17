@@ -161,6 +161,26 @@ def main() -> int:
     forbid(production, "(ScreenTimeout,", "Generic ScreenTimeout registered as recoverable")
     require(production, "self.navigation.recover_unknown_to_floor(", "Wrong machine not routed through nav recovery")
     require(production, "AutoVpSaleWorkflow(", "Warehouse-full sale recovery missing")
+    for label, floor in (
+        ("Táo sấy", 1),
+        ("Trà sấy", 1),
+        ("Nước táo", 2),
+        ("Vải vàng", 3),
+        ("Tinh dầu hoa hồng", 5),
+        ("Trà đá", 6),
+        ("Nước hoa hồng", 8),
+    ):
+        require(
+            production,
+            f'"{label}": {floor}',
+            f"Canonical production floor missing: {label} -> {floor}",
+        )
+    require(production, "if int(floor) != work_floor:", "Production floor contract is not enforced")
+    require(production, "isinstance(exc, ProductSearchExhausted)", "Bounded product-search recovery missing")
+    require(production, "escape_three_then_stay(", "Product-search recovery does not send ESC x3")
+    require(production, "wrong_machine_recovery_round == 1", "First product-search retry boundary missing")
+    require(production, "raise FunctionRestartRequested(", "Second product-search miss does not restart Function")
+    require(auto_main, "except FunctionRestartRequested as exc:", "AUTO Main does not restart the current Function")
 
     inventory_recovery = section_between(
         production,

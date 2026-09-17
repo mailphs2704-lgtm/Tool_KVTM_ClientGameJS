@@ -67,8 +67,16 @@ def main() -> int:
     require(juice, "def run_from_main(", "Standalone juice entry missing")
     require(juice, "def run_current_floor_2(", "Known floor2 juice entry missing")
     require(juice, "def run_from_candidate_floor_2(", "Candidate floor2 juice entry missing")
-    require(juice, "probe_floor_2_machine()", "Candidate proof missing")
-    require(juice, "self.recovery.recover_unknown_to_floor(", "Candidate fallback missing")
+    require(
+        juice,
+        "production opener để chỉ chạy shared collector đúng một lần",
+        "Apple Juice candidate still risks a duplicate probe/collector",
+    )
+    forbid(
+        juice,
+        "probe_floor_2_machine()",
+        "Apple Juice recipe must not collect VP twice through candidate probe",
+    )
     require(juice, "self.recovery.run_production(", "Juice production recovery missing")
     require(juice, "self.auto.machine_repair.repair_after_production(produced)", "Juice repair missing")
     forbid(juice, "YellowFabricRecipe", "Apple Juice must not depend on Yellow Fabric")

@@ -34,7 +34,6 @@ class AppleJuiceRecipe:
     """
 
     REQUIRED_COUNT = 9
-    DIRECT_MAIN_RECOVERY_PASSES = 6
 
     def __init__(
         self,
@@ -103,37 +102,23 @@ class AppleJuiceRecipe:
     ) -> AppleJuiceRecipeResult:
         """Consume an optimized candidate such as Function-1 floor6→goDown(4).
 
-        A direct candidate is never trusted from movement alone. The bounded
-        ``nuoc_tao`` probe proves it. A miss closes the probe and delegates the
-        unknown-camera normalization to RecoveryManager before production.
+        The actual production opener is the single owner of both collection and
+        ``nuoc_tao`` proof. This avoids the old probe collecting once and the
+        production action collecting the same machine a second time.
         """
         self._require_supported_count(count)
         self.context.stage("auto-recipe-apple-juice-candidate-floor2")
-        verified = False
         fallback = False
 
         if verify_candidate:
-            verified = bool(self.auto.apple_juice_production.probe_floor_2_machine())
-            if not verified:
-                fallback = True
-                self.context.log(
-                    "AUTO recipe Nước táo • candidate tầng 2 MISS • "
-                    "RecoveryManager unknown → exact-main → tầng 2"
-                )
-                self.recovery.recover_unknown_to_floor(
-                    2,
-                    "Nước táo candidate fallback",
-                    reason="apple-juice-recipe-floor2-anchor-miss",
-                    max_passes=self.DIRECT_MAIN_RECOVERY_PASSES,
-                )
-            else:
-                self.context.log(
-                    "AUTO recipe Nước táo • candidate tầng 2 PASS bằng anchor nuoc_tao"
-                )
+            self.context.log(
+                "AUTO recipe Nước táo • candidate tầng 2 • giao xác minh cho "
+                "production opener để chỉ chạy shared collector đúng một lần"
+            )
 
         produced = self._produce_and_repair(count=count)
         return AppleJuiceRecipeResult(
             production=produced,
-            candidate_verified=verified,
+            candidate_verified=bool(verify_candidate),
             fallback_used=fallback,
         )

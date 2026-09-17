@@ -26,6 +26,14 @@ class WrongProductionMachine(NavigationError):
     """A production panel opened, but it belongs to a different machine/floor."""
 
 
+class ProductSearchExhausted(WrongProductionMachine):
+    """The requested product was not found after two bounded page searches."""
+
+
+class FunctionRestartRequested(AutomationError):
+    """Exact MAIN is restored and AUTO Main must restart the current Function."""
+
+
 class TransactionError(AutomationError):
     """Raised when a purchase/resale action cannot be verified safely."""
 
