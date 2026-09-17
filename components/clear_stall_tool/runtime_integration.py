@@ -562,7 +562,34 @@ def bind_runtime(app, profile_store, runtime_controller) -> None:
             app.refresh()
 
     runtime_controller.callback = on_runtime_event
+
+    def runtime_cycle_display(row) -> str:
+        if not runtime_controller.enabled(row.account_id):
+            return f"{row.cycle_minutes} phút"
+        next_run_at = runtime_controller.next_run_at(row.account_id)
+        if next_run_at <= 0:
+            return "Trong hàng chờ"
+        remaining = max(0, int(math.ceil(next_run_at - time.time())))
+        hours, tail = divmod(remaining, 3600)
+        minutes, seconds = divmod(tail, 60)
+        return (
+            f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            if hours else f"{minutes:02d}:{seconds:02d}"
+        )
+
+    app.runtime_cycle_display = runtime_cycle_display
+
+    def refresh_countdown() -> None:
+        if not app.root.winfo_exists():
+            return
+        app.refresh()
+        app.root.after(1000, refresh_countdown)
+
     if not app.accounts:
         app.default_cycle = 65
     app.root.protocol("WM_DELETE_WINDOW", lambda: (runtime_controller.close(), app.root.destroy()))
+    runtime_controller.restore_saved_schedules(
+        row.account_id for row in app.accounts
+    )
     app.refresh()
+    app.root.after(1000, refresh_countdown)

@@ -96,6 +96,7 @@ class ProfileStore:
         raw.setdefault("clear_stall_jobs", {})
         raw.setdefault("last_clean", {})
         raw.setdefault("last_success_at", {})
+        raw.setdefault("runtime_schedule", {})
         return raw
 
     def _save_settings(self) -> None:
@@ -287,6 +288,28 @@ class ProfileStore:
         self._settings.setdefault("last_success_at", {})[pid] = timestamp
         self._save_settings()
         return timestamp
+
+    def runtime_schedule(self, profile_id: str) -> dict:
+        value = self._settings.get("runtime_schedule", {}).get(str(profile_id), {})
+        if not isinstance(value, dict):
+            return {"enabled": False, "next_run_at": 0.0}
+        try:
+            next_run_at = max(0.0, float(value.get("next_run_at") or 0.0))
+        except (TypeError, ValueError):
+            next_run_at = 0.0
+        return {
+            "enabled": bool(value.get("enabled", False)),
+            "next_run_at": next_run_at,
+        }
+
+    def save_runtime_schedule(
+        self, profile_id: str, *, enabled: bool, next_run_at: float = 0.0
+    ) -> None:
+        self._settings.setdefault("runtime_schedule", {})[str(profile_id)] = {
+            "enabled": bool(enabled),
+            "next_run_at": max(0.0, float(next_run_at or 0.0)),
+        }
+        self._save_settings()
 
     def account_rows(self):
         # Import lazily to avoid a circular import when unit-testing the store.

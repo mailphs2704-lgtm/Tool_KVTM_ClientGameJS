@@ -267,6 +267,10 @@ class OrderedSafeClearStallController(ClearStallController):
             return
 
         first_delay = max(0.0, float(first_delay_seconds or 0.0))
+        next_run_at = time.time() + first_delay if first_delay > 0 else 0.0
+        self.store.save_runtime_schedule(
+            pid, enabled=True, next_run_at=next_run_at
+        )
         ticket = self._issue_start_ticket() if first_delay <= 0 else None
         self._enabled.add(pid)
         stop_event = threading.Event()
@@ -303,8 +307,10 @@ class OrderedSafeClearStallController(ClearStallController):
         self._log(pid, "manual_add_requested", "Đã thêm tài khoản vào tiến trình Dọn quầy")
         self.start(pid, first_delay_seconds=first_delay_seconds)
 
-    def stop(self, profile_id: str) -> None:
+    def stop(self, profile_id: str, *, preserve_schedule: bool = False) -> None:
         pid = str(profile_id or "")
+        if not preserve_schedule:
+            self.store.save_runtime_schedule(pid, enabled=False, next_run_at=0.0)
         self._enabled.discard(pid)
         event = self._stop_events.get(pid)
         if event:
@@ -337,7 +343,20 @@ class OrderedSafeClearStallController(ClearStallController):
     def close(self) -> None:
         self._closed = True
         self._wake_start_queue()
-        self.stop_all()
+        for pid in list(self._enabled | set(self._workers) | set(self._clients)):
+            self.stop(pid, preserve_schedule=True)
+
+    def next_run_at(self, profile_id: str) -> float:
+        return float(self.store.runtime_schedule(str(profile_id)).get("next_run_at") or 0.0)
+
+    def restore_saved_schedules(self, profile_ids) -> None:
+        for profile_id in profile_ids:
+            pid = str(profile_id)
+            state = self.store.runtime_schedule(pid)
+            if not state.get("enabled"):
+                continue
+            delay = max(0.0, float(state.get("next_run_at") or 0.0) - time.time())
+            self.start(pid, first_delay_seconds=delay)
 
     def _schedule_loop(
         self,
@@ -362,6 +381,9 @@ class OrderedSafeClearStallController(ClearStallController):
                 )
                 if stop_event.wait(first_delay):
                     return
+                self.store.save_runtime_schedule(
+                    profile_id, enabled=True, next_run_at=0.0
+                )
                 pending_ticket = self._issue_start_ticket()
             while (
                 not stop_event.is_set()
@@ -377,8 +399,16 @@ class OrderedSafeClearStallController(ClearStallController):
                         "cycle_wait",
                         f"Chờ {interval} phút tới lượt tiếp theo",
                     )
+                    self.store.save_runtime_schedule(
+                        profile_id,
+                        enabled=True,
+                        next_run_at=time.time() + max(5, interval) * 60,
+                    )
                     if stop_event.wait(max(5, interval) * 60):
                         break
+                    self.store.save_runtime_schedule(
+                        profile_id, enabled=True, next_run_at=0.0
+                    )
                 first = False
 
                 if pending_ticket is not None:
@@ -419,6 +449,9 @@ class OrderedSafeClearStallController(ClearStallController):
                         traceback=traceback.format_exc(),
                     )
                     self._enabled.discard(profile_id)
+                    self.store.save_runtime_schedule(
+                        profile_id, enabled=False, next_run_at=0.0
+                    )
                     self._log(
                         profile_id,
                         "cycle_paused_after_error",

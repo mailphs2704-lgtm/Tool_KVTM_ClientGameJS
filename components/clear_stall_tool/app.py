@@ -123,7 +123,7 @@ class ClearStallToolApp:
                 values = (
                     str(start + offset + 1), account.account_name,
                     account.profile_name, account.status_text,
-                    account.last_clean, f"{account.cycle_minutes} phút",
+                    account.last_clean, self._cycle_display(account),
                 )
                 for column, (label, value) in enumerate(zip(labels, values), 1):
                     label.configure(
@@ -146,7 +146,7 @@ class ClearStallToolApp:
         for r, a in enumerate(page):
             row = tk.Frame(self.rows, bg=SURFACE); row.grid(row=r, column=0, sticky="ew"); self._columns(row)
             tk.Checkbutton(row, variable=self.selected.setdefault(a.account_id, tk.BooleanVar()), command=self._footer, bg=SURFACE, activebackground=SURFACE, selectcolor="white", bd=0, highlightthickness=0).grid(row=0, column=0, padx=7, pady=7)
-            vals = (str(start+r+1), a.account_name, a.profile_name, a.status_text, a.last_clean, f"{a.cycle_minutes} phút")
+            vals = (str(start+r+1), a.account_name, a.profile_name, a.status_text, a.last_clean, self._cycle_display(a))
             value_labels = []
             for c, val in enumerate(vals, 1):
                 fg = a.status_color if c == 4 else (MUTED if val == "—" or c == 1 else TEXT); font = ("Segoe UI", 9, "bold") if c in (2, 4) else ("Segoe UI", 9)
@@ -167,6 +167,12 @@ class ClearStallToolApp:
     @staticmethod
     def _mini(master, text, fg, command, width=3):
         return tk.Button(master, text=text, command=command, bg=ALT, fg=fg, activebackground="#EEF3FA", relief="flat", bd=0, width=width, pady=3, cursor="hand2", highlightthickness=1, highlightbackground=BORDER, font=("Segoe UI", 8, "bold"))
+
+    def _cycle_display(self, account) -> str:
+        formatter = getattr(self, "runtime_cycle_display", None)
+        if callable(formatter):
+            return str(formatter(account))
+        return f"{account.cycle_minutes} phút"
 
     def _footer(self) -> None:
         self.selected_label.config(text=f"Đã chọn {sum(v.get() for v in self.selected.values())} tài khoản")
