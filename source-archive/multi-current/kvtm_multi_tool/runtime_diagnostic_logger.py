@@ -19,6 +19,7 @@ _HEARTBEAT_SECONDS = 10.0
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 PROCESS_VM_READ = 0x0010
 STILL_ACTIVE = 259
+_ENABLE_ENV = "KVTM_RUNTIME_DIAGNOSTICS"
 
 
 class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
@@ -261,6 +262,10 @@ def _monitor(parent_pid: int, data_root: Path, product: str) -> int:
 
 
 def start_runtime_diagnostic(data_root: Path, product: str) -> subprocess.Popen | None:
+    # Continuous health sampling is diagnostic-only. Keeping it opt-in avoids a
+    # permanent process/window/disk polling loop during normal multi-client use.
+    if os.environ.get(_ENABLE_ENV, "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return None
     if os.name != "nt":
         return None
     flags = (

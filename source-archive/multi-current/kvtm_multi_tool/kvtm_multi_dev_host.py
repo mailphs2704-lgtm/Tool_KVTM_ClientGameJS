@@ -569,12 +569,13 @@ def main() -> int:
             kvtm_multi_dev_entry.core.APP_DIR,
             str(kvtm_multi_dev_entry.core.APP_NAME),
         )
-        print(
-            "[KVTM DEV] Runtime diagnostic READY • "
-            f"pid={getattr(diagnostic_process, 'pid', 0)} • "
-            "diagnostics/runtime-diagnostic-current.jsonl",
-            flush=True,
-        )
+        if diagnostic_process is not None:
+            print(
+                "[KVTM DEV] Runtime diagnostic READY • "
+                f"pid={getattr(diagnostic_process, 'pid', 0)} • "
+                "diagnostics/runtime-diagnostic-current.jsonl",
+                flush=True,
+            )
         app.mainloop()
         return 0
     except Exception as exc:

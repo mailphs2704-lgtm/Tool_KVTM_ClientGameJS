@@ -20,11 +20,24 @@ FILE_FUNCTIONS = (
 _ACTION_RE = re.compile(
     r"^\[(?P<time>[^\]]+)\]\s*\.\s*(?P<account>.*?)\s*\.\s*(?P<message>.*)$"
 )
+_TAIL_LIMIT_BYTES = 512 * 1024
+_ACTION_ROW_LIMIT = 1000
 
 
-def _safe_read(path: Path) -> str:
+def _safe_read(path: Path, limit_bytes: int = _TAIL_LIMIT_BYTES) -> str:
+    """Read only the bounded tail so a long-running log cannot stall Tk."""
     try:
-        return Path(path).read_text(encoding="utf-8", errors="replace")
+        with Path(path).open("rb") as stream:
+            stream.seek(0, 2)
+            size = stream.tell()
+            start = max(0, size - max(4096, int(limit_bytes)))
+            stream.seek(start)
+            raw = stream.read()
+        if start:
+            _, separator, raw = raw.partition(b"\n")
+            if not separator:
+                raw = b""
+        return raw.decode("utf-8", errors="replace")
     except OSError:
         return ""
 
@@ -284,7 +297,7 @@ def open_auto_log_window(
             return
         state["action"] = raw
         action_tree.delete(*action_tree.get_children())
-        for line in raw.splitlines():
+        for line in raw.splitlines()[-_ACTION_ROW_LIMIT:]:
             match = _ACTION_RE.match(line.strip())
             if match:
                 values = (

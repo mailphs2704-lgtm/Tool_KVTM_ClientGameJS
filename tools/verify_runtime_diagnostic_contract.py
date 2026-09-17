@@ -35,8 +35,10 @@ def main() -> int:
     require(host, "from runtime_diagnostic_logger import start_runtime_diagnostic", "Host diagnostic import missing")
     require(host, "diagnostic_process = start_runtime_diagnostic(", "Host diagnostic startup missing")
     require(host, "kvtm_multi_dev_entry.core.APP_DIR", "Diagnostic data root is not product-owned")
+    require(logger, 'KVTM_RUNTIME_DIAGNOSTICS', "Diagnostic monitor must be opt-in")
+    require(logger, 'not in {"1", "true", "yes", "on"}', "Diagnostic monitor default-off guard missing")
     print("KVTM RUNTIME DIAGNOSTIC CONTRACT VERIFIED")
-    print("log=single-jsonl+rotating")
+    print("log=single-jsonl+rotating+opt-in")
     print("health=responding+cpu+memory+handles+client-summary")
     print("privacy=no-command-line+no-profile-content+no-token")
     return 0
