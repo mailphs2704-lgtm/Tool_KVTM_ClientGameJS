@@ -24,6 +24,9 @@ PIRATE_CHEST_SCHEDULE = (
     ROOT
     / "components/clientjs-auto/kvtm_automation/workflows/auto_main/pirate_chest_schedule.py"
 )
+FEED_MILL_WORKFLOW = (
+    ROOT / "components/clientjs-auto/kvtm_automation/workflows/feed_mill.py"
+)
 AUTOMATION_CONTEXT = (
     ROOT / "components/clientjs-auto/kvtm_automation/context.py"
 )
@@ -67,6 +70,7 @@ def main() -> int:
         (OPTIONAL_FEATURES, "AUTO Main optional-features layer"),
         (PIRATE_CHEST_WORKFLOW, "Pirate Chest workflow"),
         (PIRATE_CHEST_SCHEDULE, "Pirate Chest safe-boundary scheduler"),
+        (FEED_MILL_WORKFLOW, "event Feed Mill workflow"),
         (AUTOMATION_CONTEXT, "AUTO runtime context"),
         (GAME_SESSION_WORKFLOW, "Game Session workflow"),
         (AUTO_MAIN_INIT, "AUTO Main package entry"),
@@ -85,6 +89,7 @@ def main() -> int:
     optional_features = OPTIONAL_FEATURES.read_text(encoding="utf-8")
     pirate_chest_workflow = PIRATE_CHEST_WORKFLOW.read_text(encoding="utf-8")
     pirate_chest_schedule = PIRATE_CHEST_SCHEDULE.read_text(encoding="utf-8")
+    feed_mill_workflow = FEED_MILL_WORKFLOW.read_text(encoding="utf-8")
     automation_context = AUTOMATION_CONTEXT.read_text(encoding="utf-8")
     game_session_workflow = GAME_SESSION_WORKFLOW.read_text(encoding="utf-8")
     auto_main_init = AUTO_MAIN_INIT.read_text(encoding="utf-8")
@@ -99,6 +104,7 @@ def main() -> int:
         (OPTIONAL_FEATURES, optional_features),
         (PIRATE_CHEST_WORKFLOW, pirate_chest_workflow),
         (PIRATE_CHEST_SCHEDULE, pirate_chest_schedule),
+        (FEED_MILL_WORKFLOW, feed_mill_workflow),
         (AUTOMATION_CONTEXT, automation_context),
         (GAME_SESSION_WORKFLOW, game_session_workflow),
         (AUTO_MAIN_INIT, auto_main_init),
@@ -264,13 +270,55 @@ def main() -> int:
     )
     require(
         optional_features,
-        'config["pirate_chest_enabled"] = enabled',
+        'config["pirate_chest_enabled"] = chest_enabled',
         "Pirate Chest flag is not injected into AUTO Main run config",
     )
     require(
         optional_features,
         'getattr(self, "_auto_main_active_config", None)',
         "Pirate Chest flag is not preserved in active config for scheduled restart",
+    )
+    require(optional_features, '"feed_mill_enabled": False', "Feed Mill must default OFF")
+    require(optional_features, '"Sx cám"', "Feed Mill toggle is missing")
+    require(
+        optional_features,
+        'config["feed_mill_enabled"] = feed_enabled',
+        "Feed Mill flag is not injected into AUTO Main run config",
+    )
+    require(
+        pirate_chest_schedule,
+        "FEED_MILL_INTERVAL_SECONDS = 2100.0",
+        "Feed Mill interval changed from 35 minutes",
+    )
+    require(
+        pirate_chest_schedule,
+        "if not self.feed_mill_enabled or self.function_loops <= 0:",
+        "Feed Mill may run before a Function has completed",
+    )
+    require(
+        pirate_chest_schedule,
+        "if self._feed_mill_due_after_sale():",
+        "Feed Mill is not checked immediately after VP sale",
+    )
+    require(
+        pirate_chest_schedule,
+        "time.monotonic() + self.FEED_MILL_INTERVAL_SECONDS",
+        "Feed Mill PASS does not start a monotonic 35-minute deadline",
+    )
+    require(
+        feed_mill_workflow,
+        "BETWEEN_MILL_CLICKS_SECONDS = 1.5",
+        "Feed Mill double-click wait changed",
+    )
+    require(
+        feed_mill_workflow,
+        "self.driver.swipe_points(",
+        "Feed Mill wheat transfer is not one native swipe",
+    )
+    require(
+        feed_mill_workflow,
+        'self.context.mark_camera_exact_main("feed-mill event-home deterministic route")',
+        "Feed Mill does not prove exact-main after Home",
     )
 
     # Pirate Chest scheduler: first check after sale #1. Only OPENED starts

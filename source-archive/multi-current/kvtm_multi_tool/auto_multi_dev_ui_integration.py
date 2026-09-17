@@ -385,6 +385,7 @@ def install_auto_multi_dev_ui_integration(app_class, core) -> None:
         for attribute in (
             "auto_multi_dev_quick_chest_button",
             "auto_multi_dev_quick_friend_button",
+            "auto_multi_dev_quick_feed_button",
             "auto_multi_dev_logs_button",
         ):
             button = getattr(self, attribute, None)
@@ -504,8 +505,20 @@ def install_auto_multi_dev_ui_integration(app_class, core) -> None:
                 getattr(self, "_save_auto_multi_dev_friend_refresh", None),
             )
             friend_button.configure(anchor="center", width=14, padx=10, pady=5)
-            friend_button.pack(side="left")
+            friend_button.pack(side="left", padx=(0, 8))
             self.auto_multi_dev_quick_friend_button = friend_button
+
+        feed_var = getattr(self, "auto_multi_dev_feed_mill_enabled", None)
+        if feed_var is not None:
+            feed_button = self._make_toggle_button(
+                quick,
+                "Sx cám",
+                feed_var,
+                getattr(self, "_save_optional_features", None),
+            )
+            feed_button.configure(anchor="center", width=14, padx=10, pady=5)
+            feed_button.pack(side="left")
+            self.auto_multi_dev_quick_feed_button = feed_button
 
         for child in tuple(clean_actions.winfo_children()):
             try:
@@ -564,6 +577,6 @@ def install_auto_multi_dev_ui_integration(app_class, core) -> None:
 
     print(
         "[KVTM DEV] AUTO MULTI DEV UI READY • main-style compact layout • "
-        "test button hidden • quick=Mở rương+Thăm bạn • Config=Entry • Log=3 tabs",
+        "test button hidden • quick=Mở rương+Thăm bạn+Sx cám • Config=Entry • Log=3 tabs",
         flush=True,
     )

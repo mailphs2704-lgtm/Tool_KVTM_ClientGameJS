@@ -10,6 +10,7 @@ from ...error_journal import explain_error_vi, record_auto_error
 from ...errors import AutomationStopped, ClientRestartRequested, ScreenTimeout
 from ...recovery import RecoveryManager
 from ..auto_vp_sale import AutoVpSaleWorkflow
+from ..feed_mill import FeedMillWorkflow
 from ..pirate_chest import PirateChestWorkflow
 from .boundary_delay import AutoMainResult, AutoMainWorkflow as _BoundaryAutoMainWorkflow
 from .friend_refresh import FriendRefreshWorkflow
@@ -28,6 +29,7 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
     """
 
     PIRATE_CHEST_INTERVAL_SECONDS = 1200.0
+    FEED_MILL_INTERVAL_SECONDS = 2100.0
     _SALE_LABELS = {
         "tao_say": "táo sấy",
         "vai_vang": "vải vàng",
@@ -40,6 +42,11 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         super().__init__(*args, **kwargs)
         self.pirate_chest_enabled = self._load_pirate_chest_enabled()
         self.pirate_chest_calls = 0
+        self.feed_mill_enabled = self._load_feed_mill_enabled()
+        self.feed_mill_calls = 0
+        self._feed_mill_initialized = False
+        self._feed_mill_next_due_at = 0.0
+        self._feed_mill_retry_after_sale = False
         startup_opened_at = getattr(
             self.context,
             "pirate_chest_opened_at_monotonic",
@@ -69,6 +76,11 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             )
             + " • OPENED=20 phút • chưa mở=retry sau sale VP kế tiếp"
         )
+        self.context.log(
+            "AUTO tùy chọn • Sx cám="
+            + ("BẬT" if self.feed_mill_enabled else "TẮT")
+            + " • check đầu sau Function + sale VP • chu kỳ 35 phút"
+        )
 
     def _load_pirate_chest_enabled(self) -> bool:
         marker = self.context.work_dir / "auto-main-config.json"
@@ -90,6 +102,69 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
                 if "0" in flags:
                     return bool(flags["0"])
         return False
+
+    def _load_feed_mill_enabled(self) -> bool:
+        marker = self.context.work_dir / "auto-main-config.json"
+        try:
+            raw = json.loads(marker.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return False
+        return bool(raw.get("feed_mill_enabled", False)) if isinstance(raw, dict) else False
+
+    def _feed_mill_due_after_sale(self) -> bool:
+        if not self.feed_mill_enabled or self.function_loops <= 0:
+            return False
+        if not self._feed_mill_initialized or self._feed_mill_retry_after_sale:
+            return True
+        return time.monotonic() >= self._feed_mill_next_due_at
+
+    def _run_feed_mill(self, *, sale_ordinal: int) -> None:
+        """Run only after a completed Function and its safe-boundary VP sale."""
+        self._mark_boundary_activity_started()
+        self.context.ensure_running()
+        ordinal = self.feed_mill_calls + 1
+        self.context.stage(f"auto-main-feed-mill-{ordinal}-start")
+        self.context.log(
+            "AUTO Sx cám • đến hạn sau Function + bán VP • "
+            f"lần={ordinal} • sale={sale_ordinal}"
+        )
+        try:
+            self._prove_exact_main_boundary(reason="feed-mill-before-run")
+            result = FeedMillWorkflow(self.auto).run()
+            if not result.produced:
+                raise ScreenTimeout("Sx cám kết thúc nhưng chưa có bằng chứng sản xuất")
+        except AutomationStopped:
+            raise
+        except Exception as exc:
+            self._feed_mill_retry_after_sale = True
+            record_auto_error(
+                self.context,
+                exc,
+                traceback_text=traceback.format_exc(),
+                phase="sản xuất cám",
+                recovery_state="recover exact-main → retry sau sale VP kế tiếp",
+            )
+            self.context.action("Lỗi Sx cám, chuyển trạng thái xử lí")
+            self._pirate_chest_boundary_recovery.recover_unknown_to_main(
+                "Sx cám recovery",
+                reason=f"feed-mill-error:{type(exc).__name__}",
+            )
+            self._pirate_chest_boundary_recovery.ensure_main("Sx cám recovery")
+            self.context.log(
+                "AUTO Sx cám • SAFE_ABORT • đã recovery exact-main • "
+                "retry sau lần bán VP kế tiếp"
+            )
+            return
+
+        self.feed_mill_calls += 1
+        self._feed_mill_initialized = True
+        self._feed_mill_retry_after_sale = False
+        self._feed_mill_next_due_at = time.monotonic() + self.FEED_MILL_INTERVAL_SECONDS
+        self.context.stage(f"auto-main-feed-mill-{ordinal}-finished")
+        self.context.log(
+            "AUTO Sx cám • safe boundary PASS • "
+            f"lần={ordinal} • check_lại={self.FEED_MILL_INTERVAL_SECONDS:.0f}s"
+        )
 
     def _pirate_chest_due(self) -> bool:
         return bool(
@@ -290,6 +365,9 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
                 else f"retry-after-completed-sale-{ordinal}"
             )
             self._run_pirate_chest(reason=reason)
+
+        if self._feed_mill_due_after_sale():
+            self._run_feed_mill(sale_ordinal=ordinal)
 
     def _pirate_chest_checkpoint(self, *, reason: str) -> None:
         if not self._pirate_chest_due():

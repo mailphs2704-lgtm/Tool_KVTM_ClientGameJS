@@ -10,6 +10,7 @@ FILE_FUNCTIONS = (
     "Lưu trạng thái Mở rương riêng cho từng profile/tài khoản",
     "Đóng băng trạng thái tùy chọn theo từng run trước khi worker khởi động",
     "Ghi pirate_chest_enabled vào auto-main-config.json qua pending config hiện có",
+    "Ghi feed_mill_enabled vào config; AUTO chỉ xay sau Function + sale tại safe boundary",
     "Giữ flag qua scheduled ClientJS restart bằng active config hiện có",
     "Không thay đổi Bridge/capture, Function engine, sale cadence hay recovery ownership",
 )
@@ -17,6 +18,7 @@ FILE_FUNCTIONS = (
 _OPTIONAL_FEATURES_KEY = "auto_multi_dev_optional_features"
 _DEFAULT_OPTIONAL_FEATURES = {
     "pirate_chest_enabled": False,
+    "feed_mill_enabled": False,
 }
 
 
@@ -26,6 +28,7 @@ def _normalize_optional_features(raw) -> dict[str, bool]:
         "pirate_chest_enabled": bool(
             current.get("pirate_chest_enabled", False)
         ),
+        "feed_mill_enabled": bool(current.get("feed_mill_enabled", False)),
     }
 
 
@@ -76,17 +79,23 @@ def install_optional_features_integration(app_class, core) -> None:
         profile_ids = self._optional_target_profile_ids()
         if not profile_ids:
             return
-        enabled = bool(self.auto_multi_dev_pirate_chest_enabled.get())
-        saved = {"pirate_chest_enabled": enabled}
+        chest_enabled = bool(self.auto_multi_dev_pirate_chest_enabled.get())
+        feed_enabled = bool(self.auto_multi_dev_feed_mill_enabled.get())
+        saved = {
+            "pirate_chest_enabled": chest_enabled,
+            "feed_mill_enabled": feed_enabled,
+        }
         for profile_id in profile_ids:
             # Preserve the verifier's explicit per-profile assignment contract.
             self.settings.setdefault(_OPTIONAL_FEATURES_KEY, {})[profile_id] = saved
         core.save_settings(self.settings)
         self.note.set(
             "AUTO MULTI DEV • Tùy chọn Mở rương hải tặc="
-            + ("BẬT" if enabled else "TẮT")
+            + ("BẬT" if chest_enabled else "TẮT")
+            + " • Sx cám="
+            + ("BẬT" if feed_enabled else "TẮT")
             + f" • áp dụng {len(profile_ids)} tài khoản"
-            + (" • check đầu sau sale đầu • chu kỳ 20 phút" if enabled else "")
+            + (" • cám sau Function+sale • chu kỳ 35 phút" if feed_enabled else "")
         )
 
     def _refresh_optional_features(self) -> None:
@@ -95,9 +104,10 @@ def install_optional_features_integration(app_class, core) -> None:
         self._optional_features_refreshing = True
         try:
             profile_ids = self._optional_target_profile_ids()
-            enabled = False
+            chest_enabled = False
+            feed_enabled = False
             if profile_ids:
-                enabled = all(
+                chest_enabled = all(
                     bool(
                         self._optional_profile_settings(profile_id)[
                             "pirate_chest_enabled"
@@ -105,13 +115,26 @@ def install_optional_features_integration(app_class, core) -> None:
                     )
                     for profile_id in profile_ids
                 )
-            self.auto_multi_dev_pirate_chest_enabled.set(enabled)
-            button = getattr(self, "auto_multi_dev_pirate_chest_button", None)
-            if button is not None:
-                button.configure(
-                    state="normal" if profile_ids else "disabled",
-                    cursor="hand2" if profile_ids else "arrow",
+                feed_enabled = all(
+                    bool(
+                        self._optional_profile_settings(profile_id)[
+                            "feed_mill_enabled"
+                        ]
+                    )
+                    for profile_id in profile_ids
                 )
+            self.auto_multi_dev_pirate_chest_enabled.set(chest_enabled)
+            self.auto_multi_dev_feed_mill_enabled.set(feed_enabled)
+            for name in (
+                "auto_multi_dev_pirate_chest_button",
+                "auto_multi_dev_feed_mill_button",
+            ):
+                button = getattr(self, name, None)
+                if button is not None:
+                    button.configure(
+                        state="normal" if profile_ids else "disabled",
+                        cursor="hand2" if profile_ids else "arrow",
+                    )
         finally:
             self._optional_features_refreshing = False
 
@@ -169,9 +192,21 @@ def install_optional_features_integration(app_class, core) -> None:
         )
         self.auto_multi_dev_pirate_chest_button.pack(fill="x", pady=(4, 0))
 
+        self.auto_multi_dev_feed_mill_enabled = core.tk.BooleanVar(value=False)
+        self.auto_multi_dev_feed_mill_button = self._make_toggle_button(
+            option_box,
+            "Sx cám",
+            self.auto_multi_dev_feed_mill_enabled,
+            self._save_optional_features,
+        )
+        self.auto_multi_dev_feed_mill_button.configure(
+            anchor="center", padx=9, pady=6
+        )
+        self.auto_multi_dev_feed_mill_button.pack(fill="x", pady=(4, 0))
+
         core.ttk.Label(
             option_box,
-            text="Sau sale đầu • 20 phút/lần • chỉ chạy tại safe boundary",
+            text="Rương: sau sale đầu/20 phút • Cám: sau Function+sale/35 phút",
             style="AutoValue.TLabel",
             anchor="w",
             justify="left",
@@ -208,17 +243,20 @@ def install_optional_features_integration(app_class, core) -> None:
         snapshots = getattr(self, "_optional_features_run_snapshot", {})
         snapshot = snapshots.pop(profile_id, None) if isinstance(snapshots, dict) else None
         if isinstance(snapshot, dict):
-            enabled = bool(snapshot.get("pirate_chest_enabled", False))
+            chest_enabled = bool(snapshot.get("pirate_chest_enabled", False))
+            feed_enabled = bool(snapshot.get("feed_mill_enabled", False))
             pending = getattr(self, "_auto_main_pending_config", None)
             if isinstance(pending, dict):
                 config = pending.get(profile_id)
                 if isinstance(config, dict):
-                    config["pirate_chest_enabled"] = enabled
+                    config["pirate_chest_enabled"] = chest_enabled
+                    config["feed_mill_enabled"] = feed_enabled
             active = getattr(self, "_auto_main_active_config", None)
             if isinstance(active, dict):
                 config = active.get(profile_id)
                 if isinstance(config, dict):
-                    config["pirate_chest_enabled"] = enabled
+                    config["pirate_chest_enabled"] = chest_enabled
+                    config["feed_mill_enabled"] = feed_enabled
         return original_run_clean_main_thread(self, *args, **kwargs)
 
     app_class._build_auto_panel = build_auto_panel
@@ -236,6 +274,7 @@ def install_optional_features_integration(app_class, core) -> None:
     print(
         "[KVTM DEV] Optional Features READY • Function selector=PRESERVED • "
         "layout=single-row • logs=PRESERVED • #1 Mở rương hải tặc • "
-        "multi-select=READY • per-profile • default=OFF • safe-boundary=20m",
+        "#2 Sx cám • multi-select=READY • per-profile • default=OFF • "
+        "safe-boundary=rương20m+cám35m",
         flush=True,
     )
