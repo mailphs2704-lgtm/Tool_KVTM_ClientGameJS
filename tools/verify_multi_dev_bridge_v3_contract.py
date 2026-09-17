@@ -46,6 +46,9 @@ def main() -> int:
     for token in (
         'include "kvtm_bridge_v3_base.cpp"',
         "KvtmBridgeBaseSendMessageW",
+        "SendMessageTimeoutW",
+        "SMTO_ABORTIFHUNG | SMTO_BLOCK",
+        "ERROR_TIMEOUT",
         "WM_KVTM_FPS",
         "hooked_swap_buffers",
         "patch_iat_target",

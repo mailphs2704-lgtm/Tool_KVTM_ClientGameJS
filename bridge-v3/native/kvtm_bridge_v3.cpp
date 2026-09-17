@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <cstdint>
 #include <cstring>
+#include <new>
 
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
@@ -257,7 +258,48 @@ LRESULT WINAPI KvtmBridgeBaseSendMessageW(
         command->result = kvtm_hardcap::set_target(command->fps);
         return command->result;
     }
-    return ::SendMessageW(hwnd, message, wp, lp);
+
+    // Never let one hung ClientJS UI thread pin its Bridge pipe forever. Each
+    // client owns a separate DLL/pipe/worker, and timed-out payloads are kept
+    // alive deliberately because Windows may finish an in-flight message later.
+    DWORD timeout_ms = 0;
+    void* payload = nullptr;
+    size_t payload_size = 0;
+    if (message == WM_KVTM_TOUCH) {
+        timeout_ms = 1000;
+        payload_size = sizeof(TouchCommand);
+    } else if (message == WM_KVTM_CAPTURE || message == g_writer_capture_message) {
+        timeout_ms = 2000;
+        payload_size = sizeof(CaptureCommand);
+    } else {
+        return ::SendMessageW(hwnd, message, wp, lp);
+    }
+
+    payload = ::operator new(payload_size, std::nothrow);
+    if (!payload) {
+        if (message == WM_KVTM_TOUCH)
+            reinterpret_cast<TouchCommand*>(lp)->result = ERROR_NOT_ENOUGH_MEMORY;
+        else
+            reinterpret_cast<CaptureCommand*>(lp)->result = ERROR_NOT_ENOUGH_MEMORY;
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
+    std::memcpy(payload, reinterpret_cast<void*>(lp), payload_size);
+    DWORD_PTR result = 0;
+    const BOOL completed = ::SendMessageTimeoutW(
+        hwnd, message, wp, reinterpret_cast<LPARAM>(payload),
+        SMTO_ABORTIFHUNG | SMTO_BLOCK, timeout_ms, &result);
+    if (completed) {
+        std::memcpy(reinterpret_cast<void*>(lp), payload, payload_size);
+        ::operator delete(payload);
+        return static_cast<LRESULT>(result);
+    }
+
+    // Do not free payload on timeout: the window thread may already own it.
+    if (message == WM_KVTM_TOUCH)
+        reinterpret_cast<TouchCommand*>(lp)->result = ERROR_TIMEOUT;
+    else
+        reinterpret_cast<CaptureCommand*>(lp)->result = ERROR_TIMEOUT;
+    return ERROR_TIMEOUT;
 }
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
