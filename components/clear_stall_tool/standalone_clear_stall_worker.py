@@ -138,12 +138,11 @@ def _install_capture3_same_request(auto_root: Path, emit) -> None:
 
 
 def _install_transient_capture_retry(auto_root: Path, emit) -> None:
-    """Retry only the strict Bridge V3 writer-map startup race.
+    """Retry strict Bridge V3 capture while the new ClientJS renderer settles.
 
-    A ready PING can precede publication of the writer-specific CAPTURE3 shared
-    mapping by a short interval. The packaged driver intentionally refuses HWND
-    fallback; keep that contract and simply repeat the same strict screenshot
-    call for the exact transient WinError 2 condition.
+    A ready PING can precede both writer-map publication and the first renderable
+    frame. Keep the no-HWND-fallback contract, but treat WinError 2 and bridge
+    timeout ERR 1460 as bounded startup/transient conditions.
     """
     engine_driver = importlib.import_module("engine_driver")
     source = _module_path(engine_driver)
@@ -156,17 +155,24 @@ def _install_transient_capture_retry(auto_root: Path, emit) -> None:
     if getattr(original, "_kvtm_standalone_capture_retry", False):
         return
 
-    waits = (0.15, 0.30, 0.60, 1.00)
+    waits = (0.25, 0.50, 1.00, 2.00, 3.00, 5.00)
 
-    def is_transient(exc: BaseException) -> bool:
+    def transient_kind(exc: BaseException) -> str | None:
         text = str(exc)
-        return "Bridge V3 capture thất bại" in text and "[WinError 2]" in text
+        if "Bridge V3 capture thất bại" not in text:
+            return None
+        if "[WinError 2]" in text:
+            return "writer-map-not-ready"
+        if "ERR 1460" in text or "timed out" in text.lower():
+            return "capture-timeout"
+        return None
 
     def screenshot_with_retry(self, *args, **kwargs):
         try:
             return original(self, *args, **kwargs)
         except RuntimeError as exc:
-            if not is_transient(exc):
+            kind = transient_kind(exc)
+            if kind is None:
                 raise
             last_error = exc
 
@@ -174,7 +180,7 @@ def _install_transient_capture_retry(auto_root: Path, emit) -> None:
             emit(
                 "probe_progress",
                 message=(
-                    "Bridge V3 capture transient WinError 2 • "
+                    f"Bridge V3 capture transient {kind} • "
                     f"retry {attempt}/{len(waits)} sau {delay:.2f}s"
                 ),
             )
@@ -182,7 +188,8 @@ def _install_transient_capture_retry(auto_root: Path, emit) -> None:
             try:
                 return original(self, *args, **kwargs)
             except RuntimeError as exc:
-                if not is_transient(exc):
+                kind = transient_kind(exc)
+                if kind is None:
                     raise
                 last_error = exc
 
@@ -195,6 +202,7 @@ def _install_transient_capture_retry(auto_root: Path, emit) -> None:
         stage="standalone-capture-retry-ready",
         retries=len(waits),
         waits_seconds=list(waits),
+        transient_errors=["WinError 2", "ERR 1460", "timed out"],
         strict_bridge_only=True,
         hwnd_fallback=False,
     )
