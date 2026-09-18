@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 import threading
 import time
-from typing import Callable
+from typing import Callable, Iterator
 
 from .errors import AutomationStopped
 
@@ -62,6 +63,15 @@ class AutomationContext:
         init=False,
         repr=False,
     )
+    _runtime_guard: Callable[[], None] | None = field(
+        default=None, init=False, repr=False
+    )
+    _runtime_guard_interval_seconds: float = field(
+        default=0.80, init=False, repr=False
+    )
+    _runtime_guard_next_at: float = field(default=0.0, init=False, repr=False)
+    _runtime_guard_busy: bool = field(default=False, init=False, repr=False)
+    _runtime_guard_pause_depth: int = field(default=0, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.pid = int(self.pid)
@@ -169,6 +179,62 @@ class AutomationContext:
         )
         return opened_at
 
+    def install_runtime_guard(
+        self,
+        guard: Callable[[], None],
+        *,
+        interval_seconds: float = 0.80,
+    ) -> None:
+        """Install one cooperative visual guard on the owning worker thread.
+
+        The guard is sampled from existing cancellation checkpoints. It never
+        creates a polling/background thread, so CAPTUREW and INPUT4 remain
+        serialized with the active Function.
+        """
+        self._runtime_guard = guard
+        self._runtime_guard_interval_seconds = max(
+            0.25, float(interval_seconds)
+        )
+        self._runtime_guard_next_at = 0.0
+        self.detail(
+            "AUTO runtime guard | installed=true | "
+            f"interval={self._runtime_guard_interval_seconds:.2f}s | "
+            "thread=worker-owner"
+        )
+
+    @contextmanager
+    def runtime_guard_paused(self) -> Iterator[None]:
+        """Temporarily suppress recursive detection while recovery owns input."""
+        self._runtime_guard_pause_depth += 1
+        try:
+            yield
+        finally:
+            self._runtime_guard_pause_depth = max(
+                0, self._runtime_guard_pause_depth - 1
+            )
+            self._runtime_guard_next_at = (
+                time.monotonic() + self._runtime_guard_interval_seconds
+            )
+
     def ensure_running(self) -> None:
         if self.stop_event.is_set():
             raise AutomationStopped("AUTO ClientJS đã được yêu cầu dừng")
+
+        guard = self._runtime_guard
+        now = time.monotonic()
+        if (
+            guard is None
+            or self._runtime_guard_busy
+            or self._runtime_guard_pause_depth > 0
+            or now < self._runtime_guard_next_at
+        ):
+            return
+
+        self._runtime_guard_next_at = (
+            now + self._runtime_guard_interval_seconds
+        )
+        self._runtime_guard_busy = True
+        try:
+            guard()
+        finally:
+            self._runtime_guard_busy = False

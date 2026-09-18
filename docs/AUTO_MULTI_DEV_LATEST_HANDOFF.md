@@ -1,5 +1,15 @@
 # AUTO MULTI DEV — LATEST HANDOFF
 
+## 23. 2026-09-18 — Recovery popup Lên cấp toàn AUTO Main
+
+- Dùng template `lv_up.png` hiện có để nhận chữ LÊN CẤP trong vùng popup.
+- Guard hợp tác chạy mỗi 0.80s từ checkpoint worker; không tạo thread/poll UI mới.
+- Khi phát hiện: click đúng nút Nhận `(500,688)`, xác nhận popup biến mất,
+  recover unknown camera về exact MAIN và retry cùng vòng Function, không tăng counter.
+- Startup popup sweep dùng cùng đường claim; bỏ hành vi cũ click vào tiêu đề.
+- Checkpoint: `docs/AUTO_LEVEL_UP_RECOVERY_CHECKPOINT_20260918.md`.
+- Source/AST verification PASS; Windows build/live PENDING.
+
 ## 22. 2026-09-17 — Tùy chọn Sx cám sau Function + bán VP
 
 - Toggle `Sx cám` nằm ngay sau `Thăm bạn`, mặc định OFF, lưu/snapshot riêng

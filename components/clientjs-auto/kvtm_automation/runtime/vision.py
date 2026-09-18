@@ -165,6 +165,7 @@ class VisionEngine:
         scales: Iterable[float] = (1.0,),
         click: bool = False,
         frame=None,
+        trace: bool = True,
     ) -> Match | None:
         import cv2
 
@@ -183,15 +184,16 @@ class VisionEngine:
         frame_roi = (x0, y0, roi_w, roi_h)
 
         if roi.size == 0:
-            self._detail(
+            if trace:
+                self._detail(
                 f"Match [{name}] | Context: clean-main | Score: -1.0000 | "
                 f"Threshold: {float(threshold):.4f} | LogicalZone: {zone or 'FULL'} | "
                 f"FrameROI: {frame_roi} | Frame: {width}x{height} | "
                 f"FrameScale: ({frame_sx:.4f},{frame_sy:.4f}) | "
                 "BestBoxLogical: NONE | BestCenterLogical: NONE | "
                 "BestBoxFrame: NONE | BestCenterFrame: NONE | "
-                "Scale: 0.00 | Template: NONE | FAIL"
-            )
+                    "Scale: 0.00 | Template: NONE | FAIL"
+                )
             return None
 
         best: Match | None = None
@@ -255,8 +257,9 @@ class VisionEngine:
         best_box = str(best.box) if best is not None else "NONE"
         best_center = str(best.center) if best is not None else "NONE"
         template_name = best.template.name if best is not None else "NONE"
-        self._detail(
-            f"Match [{name}] | Context: clean-main | Score: {score:.4f} | "
+        if trace:
+            self._detail(
+                f"Match [{name}] | Context: clean-main | Score: {score:.4f} | "
             f"Threshold: {float(threshold):.4f} | LogicalZone: {zone or 'FULL'} | "
             f"FrameROI: {frame_roi} | Frame: {width}x{height} | "
             f"FrameScale: ({frame_sx:.4f},{frame_sy:.4f}) | "
@@ -265,8 +268,8 @@ class VisionEngine:
             f"BestCenterFrame: {best_frame_center or 'NONE'} | "
             f"TemplateFrameSize: {best_template_size or 'NONE'} | "
             f"Scale: {scale:.2f} | Template: {template_name} | "
-            f"{'PASS' if passed else 'FAIL'}"
-        )
+                f"{'PASS' if passed else 'FAIL'}"
+            )
         if not passed:
             return None
         if click:

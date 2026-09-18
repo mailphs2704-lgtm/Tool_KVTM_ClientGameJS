@@ -34,6 +34,10 @@ class FunctionRestartRequested(AutomationError):
     """Exact MAIN is restored and AUTO Main must restart the current Function."""
 
 
+class LevelUpPopupDetected(FunctionRestartRequested):
+    """Cooperative guard found the blocking level-up reward popup."""
+
+
 class TransactionError(AutomationError):
     """Raised when a purchase/resale action cannot be verified safely."""
 

@@ -5,7 +5,11 @@ import json
 import time
 
 from ...automation import KVAutomation
-from ...errors import AutomationStopped, FunctionRestartRequested
+from ...errors import (
+    AutomationStopped,
+    FunctionRestartRequested,
+    LevelUpPopupDetected,
+)
 from ..auto_builder.catalog import FunctionSpec, get_function_spec
 from ..auto_builder.modules import FunctionModule
 from ..auto_vp_sale import AutoVpSaleWorkflow
@@ -64,6 +68,9 @@ class AutoMainWorkflow:
     FRIEND_REFRESH_EVERY_LOOPS = 3
     CLIENT_RESTART_INTERVAL_SECONDS = 0.0
     GLOBAL_RECOVERY_LIMIT = 3
+    LEVEL_UP_GUARD_INTERVAL_SECONDS = 0.80
+    LEVEL_UP_TITLE_ZONE = (330, 315, 340, 125)
+    LEVEL_UP_TITLE_SCALES = (0.92, 0.96, 1.00, 1.04, 1.08)
 
     def __init__(
         self,
@@ -116,6 +123,59 @@ class AutoMainWorkflow:
         self.collected_gold_slots = 0
         self.friend_refresh_calls = 0
         self._global_recovery_count = 0
+        self.context.install_runtime_guard(
+            self._guard_level_up_popup,
+            interval_seconds=self.LEVEL_UP_GUARD_INTERVAL_SECONDS,
+        )
+
+    def _guard_level_up_popup(self) -> None:
+        """Detect the blocking popup without a background capture/input thread."""
+        frame = self.auto.vision.frame()
+        match = self.auto.vision.find(
+            "lv_up",
+            threshold=0.69,
+            zone=self.LEVEL_UP_TITLE_ZONE,
+            scales=self.LEVEL_UP_TITLE_SCALES,
+            frame=frame,
+            trace=False,
+        )
+        if match is None:
+            return
+        self.context.detail(
+            "AUTO level-up guard | detected=true | "
+            f"score={match.score:.4f} | center={match.center}"
+        )
+        raise LevelUpPopupDetected(
+            f"Phát hiện popup Lên cấp score={match.score:.4f}"
+        )
+
+    def _recover_level_up_popup(
+        self,
+        *,
+        loop_ordinal: int,
+        error: LevelUpPopupDetected,
+    ) -> None:
+        """Claim reward, prove exact MAIN, then restart the same Function loop."""
+        self.context.stage("auto-main-level-up-recovery")
+        self.context.action(
+            "Phát hiện Lên cấp, nhận quà và chạy lại Function"
+        )
+        with self.context.runtime_guard_paused():
+            self.auto.popup.claim_level_up_reward(require_visible=True)
+            self.context.invalidate_camera_main("level-up-popup-interrupted-function")
+            self.friend_refresh.recovery.recover_unknown_to_main(
+                f"Lên cấp vòng {loop_ordinal}: exact-main",
+                reason="level-up-popup-claimed",
+            )
+            if not self.auto.popup.is_own_exact_main_screen():
+                raise RuntimeError(
+                    "Recovery Lên cấp đã đóng popup nhưng chưa chứng minh exact MAIN"
+                )
+        self.context.stage("auto-main-level-up-resume")
+        self.context.log(
+            "AUTO Lên cấp • Nhận PASS → exact-main PASS • "
+            f"chạy lại Function vòng {loop_ordinal}, không tăng counter • {error}"
+        )
 
     def _load_runtime_maintenance_config(self) -> dict[str, object]:
         """Read integration-only maintenance fields from this run marker."""
@@ -368,7 +428,16 @@ class AutoMainWorkflow:
                 "vì sale an toàn đã hoàn tất ngay trước restart"
             )
         else:
-            self._sale_once(ordinal=1)
+            while True:
+                try:
+                    self._sale_once(ordinal=1)
+                    break
+                except LevelUpPopupDetected as exc:
+                    self._recover_level_up_popup(loop_ordinal=1, error=exc)
+                    self.context.log(
+                        "AUTO Lên cấp xuất hiện trong sale đầu • "
+                        "exact-main PASS • chạy lại sale đầu trước Function"
+                    )
         loops_since_sale = 0
 
         while True:
@@ -386,6 +455,12 @@ class AutoMainWorkflow:
                 self.context.ensure_running()
             except AutomationStopped:
                 raise
+            except LevelUpPopupDetected as exc:
+                self._recover_level_up_popup(
+                    loop_ordinal=next_loop,
+                    error=exc,
+                )
+                continue
             except FunctionRestartRequested as exc:
                 self.context.stage("auto-main-function-restart-requested")
                 self.context.action("Khởi động lại Function sau lỗi tìm VP sản xuất")
@@ -413,12 +488,19 @@ class AutoMainWorkflow:
             )
 
             sale_completed_at_boundary = False
-            if loops_since_sale >= self.sale_every_loops:
-                self._sale_once(ordinal=self.sale_calls + 1)
-                loops_since_sale = 0
-                sale_completed_at_boundary = True
+            try:
+                if loops_since_sale >= self.sale_every_loops:
+                    self._sale_once(ordinal=self.sale_calls + 1)
+                    loops_since_sale = 0
+                    sale_completed_at_boundary = True
 
-            self._friend_refresh_if_due()
+                self._friend_refresh_if_due()
+            except LevelUpPopupDetected as exc:
+                self._recover_level_up_popup(
+                    loop_ordinal=self.function_loops + 1,
+                    error=exc,
+                )
+                continue
 
             if (
                 self.max_function_loops is not None
@@ -436,4 +518,11 @@ class AutoMainWorkflow:
                     elapsed_seconds=round(time.monotonic() - started, 3),
                 )
 
-            self._wait_before_next_function_loop()
+            try:
+                self._wait_before_next_function_loop()
+            except LevelUpPopupDetected as exc:
+                self._recover_level_up_popup(
+                    loop_ordinal=self.function_loops + 1,
+                    error=exc,
+                )
+                continue

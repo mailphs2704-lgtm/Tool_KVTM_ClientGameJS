@@ -136,17 +136,60 @@ class PopupActions:
     def is_main_screen(self) -> bool:
         return self.is_own_main_screen()
 
+    def claim_level_up_reward(self, *, require_visible: bool = True) -> bool:
+        """Claim a proven level-up popup at its dedicated reward button."""
+        level_up = self.vision.find(
+            "lv_up",
+            threshold=0.69,
+            zone=(330, 315, 340, 125),
+            scales=(0.92, 0.96, 1.00, 1.04, 1.08),
+        )
+        if level_up is None:
+            if require_visible:
+                raise ScreenTimeout(
+                    "Recovery Lên cấp đã được kích hoạt nhưng popup không còn "
+                    "đủ bằng chứng để click Nhận"
+                )
+            return False
+
+        # Operator evidence 1000x1000: button Nhận spans roughly x429..571,
+        # y665..711. Use its stable center, never the title match center.
+        claim_point = (500, 688)
+        self.vision.driver.click(*claim_point)
+        self.context.log(
+            "AUTO Lên cấp • click Nhận đúng nút quà • "
+            f"point={claim_point} • score={level_up.score:.3f}"
+        )
+
+        def popup_closed() -> bool:
+            frame = self.vision.frame()
+            return self.vision.find(
+                "lv_up",
+                threshold=0.69,
+                zone=(330, 315, 340, 125),
+                scales=(0.92, 0.96, 1.00, 1.04, 1.08),
+                frame=frame,
+                trace=False,
+            ) is None
+
+        self.waiter.until(
+            popup_closed,
+            timeout=6.0,
+            interval=0.30,
+            description="popup Lên cấp biến mất sau click Nhận",
+        )
+        self.context.log("AUTO Lên cấp • popup đã đóng PASS")
+        return True
+
     def dismiss_one(self) -> bool:
         """Close one known modal using AUTO PRO guards plus verified geometry."""
-        if self._dismiss_unknown_center_modal():
+        # Startup popup sweep also uses the exact claim path. During AUTO Main,
+        # the cooperative guard raises a typed restart signal before generic
+        # dismissal can continue the interrupted Function.
+        if self.claim_level_up_reward(require_visible=False):
             return True
 
-        level_up = self.vision.find("lv_up", threshold=0.69, click=True)
-        if level_up is not None:
-            self.context.log(
-                f"Đóng popup Lên cấp (score={level_up.score:.3f})"
-            )
-            self.waiter.sleep(0.55)
+        if self._dismiss_unknown_center_modal():
             return True
 
         generic_x = self.vision.find(
