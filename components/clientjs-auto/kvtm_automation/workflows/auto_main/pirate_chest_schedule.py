@@ -12,6 +12,7 @@ from ...recovery import RecoveryManager
 from ..auto_vp_sale import AutoVpSaleWorkflow
 from ..feed_mill import FeedMillWorkflow
 from ..pirate_chest import PirateChestWorkflow
+from ..warehouse_upgrade import WarehouseUpgradeWorkflow
 from .boundary_delay import AutoMainResult, AutoMainWorkflow as _BoundaryAutoMainWorkflow
 from .friend_refresh import FriendRefreshWorkflow
 
@@ -44,6 +45,14 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         self.pirate_chest_calls = 0
         self.feed_mill_enabled = self._load_feed_mill_enabled()
         self.feed_mill_calls = 0
+        warehouse = self._load_warehouse_upgrade_settings()
+        self.warehouse_upgrade_enabled = bool(warehouse["enabled"])
+        self.warehouse_upgrade_mode = str(warehouse["mode"])
+        self.warehouse_upgrade_interval_seconds = float(warehouse["interval_seconds"])
+        self.warehouse_upgrade_calls = 0
+        self._warehouse_upgrade_first_sale_pending = self.warehouse_upgrade_enabled
+        self._warehouse_upgrade_next_due_at = 0.0
+        self._warehouse_upgrade_retry_after_sale = False
         # Every AUTO start gets one immediate feed-mill run at the first safe
         # boundary: Function PASS -> first successful VP sale -> Sx cám. The
         # 35-minute deadline begins only after that first run succeeds.
@@ -85,6 +94,13 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             + " • lần đầu=ngay sau Function + sale VP đầu tiên"
             + " • chỉ PASS mới bắt đầu đếm 35 phút"
         )
+        self.context.log(
+            "AUTO tùy chọn • Nâng kho="
+            + ("BẬT" if self.warehouse_upgrade_enabled else "TẮT")
+            + f" • mode={self.warehouse_upgrade_mode}"
+            + f" • chu kỳ={self.warehouse_upgrade_interval_seconds / 3600.0:g} giờ"
+            + " • lần đầu=sau sale VP đầu tiên"
+        )
 
     def _load_pirate_chest_enabled(self) -> bool:
         marker = self.context.work_dir / "auto-main-config.json"
@@ -114,6 +130,76 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return False
         return bool(raw.get("feed_mill_enabled", False)) if isinstance(raw, dict) else False
+
+    def _load_warehouse_upgrade_settings(self) -> dict[str, object]:
+        marker = self.context.work_dir / "auto-main-config.json"
+        try:
+            raw = json.loads(marker.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
+        mode = str(raw.get("warehouse_upgrade_mode", "warehouse_1"))
+        if mode not in WarehouseUpgradeWorkflow.MODES:
+            mode = "warehouse_1"
+        try:
+            hours = int(raw.get("warehouse_upgrade_interval_hours", 2) or 2)
+        except (TypeError, ValueError):
+            hours = 2
+        hours = max(1, min(168, hours))
+        return {
+            "enabled": bool(raw.get("warehouse_upgrade_enabled", False)),
+            "mode": mode,
+            "interval_seconds": float(hours * 3600),
+        }
+
+    def _warehouse_upgrade_due_after_sale(self) -> bool:
+        if not self.warehouse_upgrade_enabled or self.function_loops <= 0:
+            return False
+        return bool(
+            self._warehouse_upgrade_first_sale_pending
+            or self._warehouse_upgrade_retry_after_sale
+            or time.monotonic() >= self._warehouse_upgrade_next_due_at
+        )
+
+    def _run_warehouse_upgrade(self, *, sale_ordinal: int) -> None:
+        self._mark_boundary_activity_started()
+        ordinal = self.warehouse_upgrade_calls + 1
+        self.context.stage(f"auto-main-warehouse-upgrade-{ordinal}-start")
+        try:
+            self._prove_exact_main_boundary(reason="warehouse-upgrade-before-run")
+            result = WarehouseUpgradeWorkflow(
+                self.auto, mode=self.warehouse_upgrade_mode,
+            ).run()
+        except AutomationStopped:
+            raise
+        except Exception as exc:
+            self._warehouse_upgrade_retry_after_sale = True
+            record_auto_error(
+                self.context,
+                exc,
+                traceback_text=traceback.format_exc(),
+                phase="nâng kho",
+                recovery_state="recover exact-main → retry sau sale VP kế tiếp",
+            )
+            self.context.action("Lỗi Nâng kho, chuyển trạng thái xử lí")
+            self._pirate_chest_boundary_recovery.recover_unknown_to_main(
+                "Nâng kho recovery",
+                reason=f"warehouse-upgrade-error:{type(exc).__name__}",
+            )
+            self._pirate_chest_boundary_recovery.ensure_main("Nâng kho recovery")
+            return
+        self.warehouse_upgrade_calls += 1
+        self._warehouse_upgrade_first_sale_pending = False
+        self._warehouse_upgrade_retry_after_sale = False
+        self._warehouse_upgrade_next_due_at = (
+            time.monotonic() + self.warehouse_upgrade_interval_seconds
+        )
+        sold = sum(int(value) for value in result.sold_batches.values())
+        self.context.action(
+            f"Nâng kho hoàn tất • mode={result.mode} • đã bán {sold} lượt x10"
+        )
+        self.context.stage(f"auto-main-warehouse-upgrade-{ordinal}-finished")
 
     def _feed_mill_due_after_sale(self) -> bool:
         if not self.feed_mill_enabled or self.function_loops <= 0:
@@ -375,6 +461,9 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
 
         if self._feed_mill_due_after_sale():
             self._run_feed_mill(sale_ordinal=ordinal)
+
+        if self._warehouse_upgrade_due_after_sale():
+            self._run_warehouse_upgrade(sale_ordinal=ordinal)
 
     def _pirate_chest_checkpoint(self, *, reason: str) -> None:
         if not self._pirate_chest_due():

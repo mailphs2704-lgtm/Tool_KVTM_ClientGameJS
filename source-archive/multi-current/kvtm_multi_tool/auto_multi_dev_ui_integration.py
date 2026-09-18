@@ -520,6 +520,16 @@ def install_auto_multi_dev_ui_integration(app_class, core) -> None:
             feed_button.pack(side="left")
             self.auto_multi_dev_quick_feed_button = feed_button
 
+        warehouse_button = core.ttk.Button(
+            quick,
+            text="Nâng kho",
+            width=14,
+            style="Action.TButton",
+            command=self._open_warehouse_upgrade_panel,
+        )
+        warehouse_button.pack(side="left", padx=(8, 0))
+        self.auto_multi_dev_quick_warehouse_button = warehouse_button
+
         for child in tuple(clean_actions.winfo_children()):
             try:
                 child.pack_forget()

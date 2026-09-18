@@ -172,6 +172,9 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         "sale_every_loops": 1,
         "function_loop_delay_seconds": 0.0,
         "friend_refresh_enabled": False,
+        "warehouse_upgrade_enabled": False,
+        "warehouse_upgrade_mode": "warehouse_1",
+        "warehouse_upgrade_interval_hours": 2,
     }
     if effective_mode != "main":
         return default
@@ -190,6 +193,13 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
     sale_every = int(raw.get("sale_every_loops", 1) or 1)
     loop_delay = float(raw.get("function_loop_delay_seconds", 0.0) or 0.0)
     friend_refresh_enabled = bool(raw.get("friend_refresh_enabled", False))
+    warehouse_enabled = bool(raw.get("warehouse_upgrade_enabled", False))
+    warehouse_mode = str(raw.get("warehouse_upgrade_mode", "warehouse_1"))
+    if warehouse_mode not in {"warehouse_1", "warehouse_2", "both", "max"}:
+        raise ValueError("AUTO Main warehouse_upgrade_mode không hợp lệ")
+    warehouse_hours = int(raw.get("warehouse_upgrade_interval_hours", 2) or 2)
+    if not 1 <= warehouse_hours <= 168:
+        raise ValueError("AUTO Main warehouse_upgrade_interval_hours phải trong 1..168")
     if not function_id:
         raise ValueError("AUTO Main config thiếu function_id")
     if not 1 <= sale_every <= 999:
@@ -202,6 +212,9 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         "sale_every_loops": sale_every,
         "function_loop_delay_seconds": loop_delay,
         "friend_refresh_enabled": friend_refresh_enabled,
+        "warehouse_upgrade_enabled": warehouse_enabled,
+        "warehouse_upgrade_mode": warehouse_mode,
+        "warehouse_upgrade_interval_hours": warehouse_hours,
     }
 
 

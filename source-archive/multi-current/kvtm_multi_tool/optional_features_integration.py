@@ -19,16 +19,31 @@ _OPTIONAL_FEATURES_KEY = "auto_multi_dev_optional_features"
 _DEFAULT_OPTIONAL_FEATURES = {
     "pirate_chest_enabled": False,
     "feed_mill_enabled": False,
+    "warehouse_upgrade_enabled": False,
+    "warehouse_upgrade_mode": "warehouse_1",
+    "warehouse_upgrade_interval_hours": 2,
 }
 
 
-def _normalize_optional_features(raw) -> dict[str, bool]:
+def _normalize_optional_features(raw) -> dict[str, object]:
     current = raw if isinstance(raw, dict) else {}
+    mode = str(current.get("warehouse_upgrade_mode", "warehouse_1"))
+    if mode not in {"warehouse_1", "warehouse_2", "both", "max"}:
+        mode = "warehouse_1"
+    try:
+        interval = int(current.get("warehouse_upgrade_interval_hours", 2) or 2)
+    except (TypeError, ValueError):
+        interval = 2
     return {
         "pirate_chest_enabled": bool(
             current.get("pirate_chest_enabled", False)
         ),
         "feed_mill_enabled": bool(current.get("feed_mill_enabled", False)),
+        "warehouse_upgrade_enabled": bool(
+            current.get("warehouse_upgrade_enabled", False)
+        ),
+        "warehouse_upgrade_mode": mode,
+        "warehouse_upgrade_interval_hours": max(1, min(168, interval)),
     }
 
 
@@ -63,7 +78,7 @@ def install_optional_features_integration(app_class, core) -> None:
                 result.append(profile_id)
         return result
 
-    def _optional_profile_settings(self, profile_id: str) -> dict[str, bool]:
+    def _optional_profile_settings(self, profile_id: str) -> dict[str, object]:
         profile_id = str(profile_id or "")
         store = self.settings.setdefault(_OPTIONAL_FEATURES_KEY, {})
         if not isinstance(store, dict):
@@ -81,12 +96,12 @@ def install_optional_features_integration(app_class, core) -> None:
             return
         chest_enabled = bool(self.auto_multi_dev_pirate_chest_enabled.get())
         feed_enabled = bool(self.auto_multi_dev_feed_mill_enabled.get())
-        saved = {
-            "pirate_chest_enabled": chest_enabled,
-            "feed_mill_enabled": feed_enabled,
-        }
         for profile_id in profile_ids:
-            # Preserve the verifier's explicit per-profile assignment contract.
+            # Only update the inline toggles. Preserve every account's own
+            # warehouse mode and interval.
+            saved = dict(self._optional_profile_settings(profile_id))
+            saved["pirate_chest_enabled"] = chest_enabled
+            saved["feed_mill_enabled"] = feed_enabled
             self.settings.setdefault(_OPTIONAL_FEATURES_KEY, {})[profile_id] = saved
         core.save_settings(self.settings)
         self.note.set(
@@ -128,6 +143,7 @@ def install_optional_features_integration(app_class, core) -> None:
             for name in (
                 "auto_multi_dev_pirate_chest_button",
                 "auto_multi_dev_feed_mill_button",
+                "auto_multi_dev_quick_warehouse_button",
             ):
                 button = getattr(self, name, None)
                 if button is not None:
@@ -137,6 +153,79 @@ def install_optional_features_integration(app_class, core) -> None:
                     )
         finally:
             self._optional_features_refreshing = False
+
+    def _open_warehouse_upgrade_panel(self) -> None:
+        profile_ids = self._optional_target_profile_ids()
+        if not profile_ids:
+            core.messagebox.showinfo(core.APP_NAME, "Hãy chọn ít nhất một tài khoản.")
+            return
+        saved = self._optional_profile_settings(profile_ids[0])
+        window = core.tk.Toplevel(self)
+        window.title("Nâng kho")
+        window.resizable(False, False)
+        body = core.ttk.Frame(window, padding=14)
+        body.pack(fill="both", expand=True)
+        enabled = core.tk.BooleanVar(
+            value=bool(saved.get("warehouse_upgrade_enabled", False))
+        )
+        mode = core.tk.StringVar(
+            value=str(saved.get("warehouse_upgrade_mode", "warehouse_1"))
+        )
+        interval = core.tk.IntVar(
+            value=int(saved.get("warehouse_upgrade_interval_hours", 2))
+        )
+        core.ttk.Checkbutton(
+            body, text="Bật tự động Nâng kho", variable=enabled,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        core.ttk.Label(body, text="Chế độ:").grid(row=1, column=0, sticky="w")
+        choices = (
+            ("Nâng kho 1", "warehouse_1"),
+            ("Nâng kho 2", "warehouse_2"),
+            ("Nâng cả 2", "both"),
+            ("Max kho", "max"),
+        )
+        choice_box = core.ttk.Frame(body)
+        choice_box.grid(row=1, column=1, sticky="w")
+        for row, (label, value) in enumerate(choices):
+            core.ttk.Radiobutton(
+                choice_box, text=label, value=value, variable=mode,
+            ).grid(row=row, column=0, sticky="w")
+        core.ttk.Label(body, text="Kiểm tra lại (giờ):").grid(
+            row=2, column=0, sticky="w", pady=(10, 0)
+        )
+        core.ttk.Spinbox(
+            body, from_=1, to=168, width=7, textvariable=interval,
+        ).grid(row=2, column=1, sticky="w", pady=(10, 0))
+
+        def save_and_close() -> None:
+            try:
+                hours = int(interval.get())
+            except (TypeError, ValueError, core.tk.TclError):
+                hours = 0
+            if not 1 <= hours <= 168:
+                core.messagebox.showerror(
+                    core.APP_NAME, "Thời gian kiểm tra phải trong khoảng 1..168 giờ."
+                )
+                return
+            value = {
+                "warehouse_upgrade_enabled": bool(enabled.get()),
+                "warehouse_upgrade_mode": str(mode.get()),
+                "warehouse_upgrade_interval_hours": hours,
+            }
+            for profile_id in profile_ids:
+                current = self._optional_profile_settings(profile_id)
+                current.update(value)
+                self.settings.setdefault(_OPTIONAL_FEATURES_KEY, {})[profile_id] = current
+            core.save_settings(self.settings)
+            self.note.set(
+                f"AUTO MULTI DEV • Nâng kho={'BẬT' if enabled.get() else 'TẮT'} • "
+                f"mode={mode.get()} • {hours} giờ • áp dụng {len(profile_ids)} tài khoản"
+            )
+            window.destroy()
+
+        core.ttk.Button(body, text="Lưu", command=save_and_close).grid(
+            row=3, column=0, columnspan=2, pady=(14, 0)
+        )
 
     def _install_optional_features_in_control_slot(self) -> None:
         function_button = getattr(self, "auto_multi_dev_function_button", None)
@@ -245,18 +334,27 @@ def install_optional_features_integration(app_class, core) -> None:
         if isinstance(snapshot, dict):
             chest_enabled = bool(snapshot.get("pirate_chest_enabled", False))
             feed_enabled = bool(snapshot.get("feed_mill_enabled", False))
+            warehouse_enabled = bool(snapshot.get("warehouse_upgrade_enabled", False))
+            warehouse_mode = str(snapshot.get("warehouse_upgrade_mode", "warehouse_1"))
+            warehouse_hours = int(snapshot.get("warehouse_upgrade_interval_hours", 2))
             pending = getattr(self, "_auto_main_pending_config", None)
             if isinstance(pending, dict):
                 config = pending.get(profile_id)
                 if isinstance(config, dict):
                     config["pirate_chest_enabled"] = chest_enabled
                     config["feed_mill_enabled"] = feed_enabled
+                    config["warehouse_upgrade_enabled"] = warehouse_enabled
+                    config["warehouse_upgrade_mode"] = warehouse_mode
+                    config["warehouse_upgrade_interval_hours"] = warehouse_hours
             active = getattr(self, "_auto_main_active_config", None)
             if isinstance(active, dict):
                 config = active.get(profile_id)
                 if isinstance(config, dict):
                     config["pirate_chest_enabled"] = chest_enabled
                     config["feed_mill_enabled"] = feed_enabled
+                    config["warehouse_upgrade_enabled"] = warehouse_enabled
+                    config["warehouse_upgrade_mode"] = warehouse_mode
+                    config["warehouse_upgrade_interval_hours"] = warehouse_hours
         return original_run_clean_main_thread(self, *args, **kwargs)
 
     app_class._build_auto_panel = build_auto_panel
@@ -270,6 +368,7 @@ def install_optional_features_integration(app_class, core) -> None:
     app_class._install_optional_features_in_control_slot = (
         _install_optional_features_in_control_slot
     )
+    app_class._open_warehouse_upgrade_panel = _open_warehouse_upgrade_panel
     app_class._kvtm_optional_features_installed = True
     print(
         "[KVTM DEV] Optional Features READY • Function selector=PRESERVED • "

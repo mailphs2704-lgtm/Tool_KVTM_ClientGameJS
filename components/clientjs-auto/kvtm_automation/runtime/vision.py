@@ -278,6 +278,87 @@ class VisionEngine:
             self.driver.click(*best.center)
         return best
 
+    def find_all(
+        self,
+        name: str,
+        *,
+        threshold: float = 0.80,
+        zone: tuple[int, int, int, int] | None = None,
+        scales: Iterable[float] = (1.0,),
+        frame=None,
+        maximum: int = 20,
+    ) -> tuple[Match, ...]:
+        """Return non-overlapping matches from one frame for compact OCR/tasks."""
+        import cv2
+
+        source = self.frame() if frame is None else frame
+        if source.ndim == 3 and source.shape[2] == 4:
+            source = cv2.cvtColor(source, cv2.COLOR_BGRA2BGR)
+        height, width = source.shape[:2]
+        if zone is None:
+            x0, y0, roi_w, roi_h = 0, 0, width, height
+        else:
+            x0, y0, roi_w, roi_h = self.logical_zone_to_frame(zone, source)
+        roi = source[y0:y0 + roi_h, x0:x0 + roi_w]
+        if roi.size == 0:
+            return ()
+        frame_sx, frame_sy = self.frame_scales(source)
+        candidates: list[tuple[float, tuple[int, int, int, int], Path, float]] = []
+        for path in self.assets.candidates(name):
+            template = self._template(path)
+            if template is None:
+                continue
+            for scale_value in scales:
+                scale = float(scale_value)
+                tw = max(2, int(round(template.shape[1] * frame_sx * scale)))
+                th = max(2, int(round(template.shape[0] * frame_sy * scale)))
+                if tw > roi.shape[1] or th > roi.shape[0]:
+                    continue
+                resized = cv2.resize(
+                    template,
+                    (tw, th),
+                    interpolation=cv2.INTER_AREA if scale <= 1.0 else cv2.INTER_LINEAR,
+                )
+                scores = cv2.matchTemplate(roi, resized, cv2.TM_CCOEFF_NORMED)
+                ys, xs = (scores >= float(threshold)).nonzero()
+                for yy, xx in zip(ys.tolist(), xs.tolist()):
+                    candidates.append(
+                        (float(scores[yy, xx]), (x0 + xx, y0 + yy, tw, th), path, scale)
+                    )
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        selected: list[tuple[float, tuple[int, int, int, int], Path, float]] = []
+        for candidate in candidates:
+            _score, (left, top, box_w, box_h), _path, _scale = candidate
+            center = (left + box_w / 2.0, top + box_h / 2.0)
+            overlaps = False
+            for _prior_score, (pl, pt, pw, ph), _prior_path, _prior_scale in selected:
+                prior_center = (pl + pw / 2.0, pt + ph / 2.0)
+                if (
+                    abs(center[0] - prior_center[0]) <= max(box_w, pw) * 0.55
+                    and abs(center[1] - prior_center[1]) <= max(box_h, ph) * 0.55
+                ):
+                    overlaps = True
+                    break
+            if overlaps:
+                continue
+            selected.append(candidate)
+            if len(selected) >= max(1, int(maximum)):
+                break
+        results: list[Match] = []
+        for score, frame_box, path, scale in selected:
+            left, top, box_w, box_h = frame_box
+            logical_box = self.frame_box_to_logical(frame_box, source)
+            logical_center = self.frame_point_to_logical(
+                (left + box_w // 2, top + box_h // 2), source
+            )
+            results.append(
+                Match(
+                    name=str(name), score=score, center=logical_center,
+                    box=logical_box, template=path, scale=scale,
+                )
+            )
+        return tuple(results)
+
     def find_any(
         self,
         names: Iterable[str],
