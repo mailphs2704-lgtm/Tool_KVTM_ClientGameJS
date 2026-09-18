@@ -29,6 +29,18 @@ BUILDER_INTEGRATION = MULTI_TOOL / "auto_builder_integration.py"
 PROFILE_SETTINGS = MULTI_TOOL / "auto_main_profile_settings.py"
 POPUP = CLEAN / "actions/popup.py"
 PRODUCTION_PANEL = CLEAN / "actions/production_panel.py"
+PRODUCTION_RECIPE_FLOORS = {
+    CLEAN / "recipes/dried_apple.py": (("Táo sấy", 1),),
+    CLEAN / "recipes/apple_juice.py": (("Nước táo", 2),),
+    CLEAN / "recipes/yellow_fabric.py": (("Vải vàng", 3),),
+    CLEAN / "recipes/rose_oil.py": (("Tinh dầu hoa hồng", 5),),
+    CLEAN / "recipes/dried_tea_step_one.py": (("Trà sấy", 1),),
+    CLEAN / "recipes/dried_tea_step_two.py": (("Nước táo", 2),),
+    CLEAN / "recipes/dried_tea_step_three.py": (("Vải vàng", 3),),
+    CLEAN / "recipes/dried_tea_step_four.py": (("Tinh dầu hoa hồng", 5),),
+    CLEAN / "recipes/dried_tea_step_five.py": (("Trà đá", 6),),
+    CLEAN / "recipes/dried_tea_step_six.py": (("Nước hoa hồng", 8),),
+}
 
 
 def read(path: Path) -> str:
@@ -64,6 +76,30 @@ def forbid_top_level_import_from(text: str, module_name: str, message: str) -> N
     for node in tree.body:
         if isinstance(node, ast.ImportFrom) and node.module == module_name:
             raise AssertionError(message)
+
+
+def production_calls(path: Path) -> tuple[tuple[str, int], ...]:
+    tree = ast.parse(read(path), filename=str(path))
+    calls: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "run_production":
+            continue
+        keywords = {item.arg: item.value for item in node.keywords if item.arg}
+        label_node = keywords.get("label")
+        floor_node = keywords.get("floor")
+        if not (
+            isinstance(label_node, ast.Constant)
+            and isinstance(label_node.value, str)
+            and isinstance(floor_node, ast.Constant)
+            and isinstance(floor_node.value, int)
+        ):
+            raise AssertionError(
+                f"Production call must declare literal label+floor: {path}"
+            )
+        calls.append((label_node.value, floor_node.value))
+    return tuple(calls)
 
 
 def main() -> int:
@@ -175,6 +211,13 @@ def main() -> int:
             f'"{label}": {floor}',
             f"Canonical production floor missing: {label} -> {floor}",
         )
+    for recipe_path, expected_calls in PRODUCTION_RECIPE_FLOORS.items():
+        actual_calls = production_calls(recipe_path)
+        if actual_calls != expected_calls:
+            raise AssertionError(
+                f"Production floor call mismatch in {recipe_path}: "
+                f"expected={expected_calls!r}, actual={actual_calls!r}"
+            )
     require(production, "if int(floor) != work_floor:", "Production floor contract is not enforced")
     require(production, "isinstance(exc, ProductSearchExhausted)", "Bounded product-search recovery missing")
     require(production, "escape_three_then_stay(", "Product-search recovery does not send ESC x3")
