@@ -103,10 +103,9 @@ class RoseOilRecipe:
 
     def _main_to_floor_5(self, label: str) -> None:
         self.context.log(
-            f"AUTO TDHH recovery route • {label} • MAIN → goUp(1) → goUp(4) → tầng 5"
+            f"AUTO TDHH recovery route • {label} • dùng bảng MAIN → tầng 5"
         )
-        self.auto.farm_routes.main_to_floor_1()
-        self.auto.farm_routes.floor_1_to_floor_5()
+        self.auto.farm_routes.main_to_floor(5)
 
     def _floor_5_to_main(self, label: str) -> None:
         self.context.log(

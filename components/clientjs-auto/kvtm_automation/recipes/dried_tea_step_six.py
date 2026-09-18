@@ -37,14 +37,9 @@ class DriedTeaStepSixRecipe:
 
     def _main_to_floor_8(self, label: str) -> None:
         self.context.log(
-            f"AUTO Step 6 recovery • {label} • MAIN → tầng 1 → tầng 6 → goUpClick(2) tầng 8"
+            f"AUTO Step 6 recovery • {label} • dùng bảng MAIN → tầng 8"
         )
-        self.auto.farm_routes.main_to_floor_1()
-        self.auto.farm_routes.floor_1_to_floor_6()
-        self.auto.floors.go_up_click(
-            2,
-            label="Function 3 Step 6 recovery • tầng 6 → tầng 8 • click chậu đầu hàng 4",
-        )
+        self.auto.farm_routes.main_to_floor(8)
 
     def _floor_8_to_main(self, label: str) -> None:
         self.context.log(

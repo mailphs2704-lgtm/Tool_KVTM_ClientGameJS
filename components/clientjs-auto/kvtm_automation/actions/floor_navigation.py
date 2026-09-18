@@ -36,7 +36,8 @@ class FloorNavigationActions:
 
     Important: the integer in ``go_up(mode)`` is an AUTO action *mode*, not a
     request to repeat ``goUp(1)`` N times. The operator has explicitly defined
-    modes 1, 2 and 4 as three different input primitives.
+    swipe modes 1 and 4 as two different input primitives. Click-based
+    movement is deliberately exposed only through ``go_up_click(1..3)``.
     """
 
     GO_UP_ONE_SWIPE = (514, 214, 514, 314)
@@ -138,8 +139,8 @@ class FloorNavigationActions:
     def go_up(self, mode: int, *, label: str | None = None) -> FloorMoveResult:
         """Execute one standardized swipe-based goUp mode.
 
-        ``goUp(3)`` is intentionally unsupported until the operator defines its
-        exact primitive. Never synthesize it from other modes.
+        Only ``goUp(1)`` and ``goUp(4)`` exist. Never synthesize swipe modes 2
+        or 3; those distances belong to ``goUpClick``.
         """
         selected = int(mode)
         action_label = str(label or f"goUp({selected})")

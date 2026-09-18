@@ -55,6 +55,7 @@ def main() -> int:
     require(action, "GO_DOWN_FOUR_SWIPE = (387, 918, 387, 69)",
             "goDown(4) geometry changed")
     require(action, "def go_up(self, mode: int", "Semantic go_up dispatcher missing")
+    forbid(action, "elif selected == 2:", "goUp(2) must not be defined as a swipe mode")
     require(action, "elif selected == 4:", "goUp(4) semantic branch missing")
     require(action, "elif selected == 3:", "goUp(3) explicit unsupported branch missing")
     require(action, "goUp(3) chưa được operator định nghĩa", "goUp(3) fail-close marker missing")
@@ -95,12 +96,23 @@ def main() -> int:
     require(farm_routes, "class FarmBoundaryRouteActions(FarmRouteActions):", "Boundary farm route composer missing")
     require(farm_routes, "self.go_up_click(", "Farm route does not consume goUpClick")
     require(farm_routes, "def main_to_floor_3(self)", "MAIN to floor 3 route missing")
-    require(farm_routes, 'first = self.go_up(1, label="main-goUp(1)-to-floor1")',
+    require(farm_routes, "def main_to_floor(self, target_floor: int)",
+            "Shared MAIN recovery route dispatcher missing")
+    require(farm_routes, 'results = [self.go_up(1, label="main-goUp(1)-to-floor1")]',
             "Recovery routes do not start with MAIN goUp(1) swipe")
-    require(farm_routes, '1, label="floor1-goUpClick(1)-to-floor2"',
-            "MAIN to floor 2 does not use goUpClick(1)")
-    require(farm_routes, '2, label="floor1-goUpClick(2)-to-floor3"',
-            "MAIN to floor 3 does not use goUpClick(2)")
+    for token in (
+        "1: (),",
+        "2: (1,)",
+        "3: (2,)",
+        "4: (3,)",
+        "5: (3, 1)",
+        "6: (3, 2)",
+        "7: (3, 3)",
+        "8: (3, 3, 1)",
+        "9: (3, 3, 2)",
+        "10: (3, 3, 3)",
+    ):
+        require(farm_routes, token, f"MAIN recovery click route missing: {token}")
     require(automation, "FloorNavigationActions(", "Floor navigation is not wired to resident automation")
     require(automation, "self.farm_routes = FarmRouteActions(", "Canonical farm route facade missing")
     require(actions_init, "FloorNavigationActions", "Floor navigation export missing")

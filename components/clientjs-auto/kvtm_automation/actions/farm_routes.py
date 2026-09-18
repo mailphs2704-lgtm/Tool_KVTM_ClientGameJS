@@ -35,6 +35,18 @@ class FarmRouteActions(FloorNavigationActions):
     UP_FOUR = FloorNavigationActions.GO_UP_FOUR_SWIPE
     DOWN_FOUR = FloorNavigationActions.GO_DOWN_FOUR_SWIPE
     MIN_CHANGE = FloorNavigationActions.MIN_FRAME_CHANGE
+    MAIN_TO_FLOOR_CLICK_ROUTE = {
+        1: (),
+        2: (1,),
+        3: (2,),
+        4: (3,),
+        5: (3, 1),
+        6: (3, 2),
+        7: (3, 3),
+        8: (3, 3, 1),
+        9: (3, 3, 2),
+        10: (3, 3, 3),
+    }
 
     @staticmethod
     def _scores(*results) -> tuple[float, ...]:
@@ -116,31 +128,45 @@ class FarmRouteActions(FloorNavigationActions):
         )
 
     def main_to_floor_2(self) -> NavigationEvidence:
-        first = self.go_up(1, label="main-goUp(1)-to-floor1")
-        second = self.go_up_click(
-            1, label="floor1-goUpClick(1)-to-floor2"
-        )
-        self.context.log(
-            "AUTO điều hướng • MAIN → tầng 2 • goUp(1) swipe → "
-            "goUpClick(1) PASS"
-        )
-        return NavigationEvidence(
-            "main-to-floor2",
-            self._scores(first, second),
-        )
+        return self.main_to_floor(2)
 
     def main_to_floor_3(self) -> NavigationEvidence:
-        first = self.go_up(1, label="main-goUp(1)-to-floor1")
-        second = self.go_up_click(
-            2, label="floor1-goUpClick(2)-to-floor3"
+        return self.main_to_floor(3)
+
+    def main_to_floor(self, target_floor: int) -> NavigationEvidence:
+        floor = int(target_floor)
+        click_route = self.MAIN_TO_FLOOR_CLICK_ROUTE.get(floor)
+        if click_route is None:
+            raise ValueError("Recovery MAIN hiện chỉ có route tầng 1..10")
+
+        results = [self.go_up(1, label="main-goUp(1)-to-floor1")]
+        current_floor = 1
+        for ordinal, click_floors in enumerate(click_route, start=1):
+            next_floor = current_floor + int(click_floors)
+            results.append(
+                self.go_up_click(
+                    click_floors,
+                    label=(
+                        f"recovery-main-floor{floor}-click-{ordinal}-"
+                        f"goUpClick({click_floors})-to-floor{next_floor}"
+                    ),
+                )
+            )
+            current_floor = next_floor
+
+        if current_floor != floor:
+            raise RuntimeError(
+                f"Route MAIN → tầng {floor} sai tổng bước: kết thúc tầng {current_floor}"
+            )
+        route_text = " → ".join(
+            ("goUp(1) swipe", *(f"goUpClick({step})" for step in click_route))
         )
         self.context.log(
-            "AUTO điều hướng • MAIN → tầng 3 • goUp(1) swipe → "
-            "goUpClick(2) PASS"
+            f"AUTO recovery route • MAIN → tầng {floor} • {route_text} PASS"
         )
         return NavigationEvidence(
-            "main-to-floor3",
-            self._scores(first, second),
+            f"main-to-floor{floor}",
+            self._scores(*results),
         )
 
 

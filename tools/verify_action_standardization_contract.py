@@ -160,6 +160,7 @@ def main() -> int:
         "def floor_1_to_floor_6(self)",
         "def main_to_floor_2(self)",
         "def main_to_floor_3(self)",
+        "def main_to_floor(self, target_floor: int)",
         "def floor_1_to_floor_3(self)",
         "def floor_3_to_main_via_down_floor(self)",
         "def go_down_one_toward_main(self, label: str)",

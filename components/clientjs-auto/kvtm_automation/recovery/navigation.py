@@ -150,6 +150,8 @@ class NavigationRecovery:
             self.auto.farm_routes.main_to_floor_2()
         elif floor == 3:
             self.auto.farm_routes.main_to_floor_3()
+        elif 4 <= floor <= 10:
+            self.auto.farm_routes.main_to_floor(floor)
         else:
             raise ValueError(
                 f"Chưa có route main → tầng {floor}; Recipe phải register route đã xác minh"
