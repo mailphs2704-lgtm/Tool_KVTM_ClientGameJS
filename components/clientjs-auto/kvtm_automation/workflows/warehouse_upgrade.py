@@ -149,7 +149,10 @@ class WarehouseUpgradeWorkflow:
 
     def _read_quantity(self, frame, center: tuple[int, int]) -> int | None:
         """Read xNNN below one matched icon with AUTO-PRO digit templates."""
-        logical = (center[0] - 31, center[1] + 15, 67, 34)
+        # The quantity label is right-biased below the icon. The old 67px crop
+        # clipped its final glyph in live 1000x1000 captures (142->14,
+        # 138->13, 28->2), which inverted the balancing decision.
+        logical = (center[0] - 42, center[1] + 12, 100, 42)
         candidates: list[tuple[float, int, int, int]] = []
         for digit in range(10):
             for suffix in ("", "_2", "_3"):
@@ -255,7 +258,7 @@ class WarehouseUpgradeWorkflow:
         self.auto.inventory.wait_storage_picker_ready(timeout=3.0)
         self.auto.inventory.select_storage_after_picker_ready(3)
         self.auto.vision.driver.click(*self.UPGRADE_CATEGORY_POINT)
-        self.auto.wait.sleep(0.30)
+        self.auto.wait.sleep(0.50)
 
     def _sell_one_batch(self, item_id: str) -> bool:
         self._open_material_picker()
@@ -268,10 +271,17 @@ class WarehouseUpgradeWorkflow:
             self.auto.selling.close_inventory_read_only()
             return False
         self.auto.vision.driver.click(*match.center)
-        self.auto.wait.sleep(0.30)
-        if not self.auto.selling.is_sale_dialog_ready():
+        self.auto.wait.sleep(0.50)
+        try:
+            self.auto.selling.wait_sale_dialog_ready(
+                timeout=4.0,
+                description=f"dialog bán {self.LABELS[item_id]}",
+            )
+        except ScreenTimeout as exc:
             self.auto.selling._cancel_dialog()
-            raise TransactionError(f"{self.LABELS[item_id]} không mở được dialog bán")
+            raise TransactionError(
+                f"{self.LABELS[item_id]} không mở được dialog bán"
+            ) from exc
         selected_passes = 0
         for attempt in range(1, 4):
             selected = self.auto.vision.find(
