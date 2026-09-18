@@ -93,8 +93,10 @@ def main() -> int:
 
     require(enter_game, "GameSessionWorkflow(self.auto).run", "Builder startup module does not delegate GameSessionWorkflow")
     require(sale_module, "AutoVpSaleWorkflow(", "Builder sale module does not delegate AutoVpSaleWorkflow")
-    require(function_module, "FunctionOneWorkflow(self.auto).run()", "Builder Function 1 adapter missing")
-    require(function_module, "FunctionTwoWorkflow(self.auto).run()", "Builder Function 2 adapter missing")
+    require(function_module, "workflow = FunctionOneWorkflow(self.auto)", "Builder Function 1 cached adapter missing")
+    require(function_module, "workflow = FunctionTwoWorkflow(self.auto)", "Builder Function 2 cached adapter missing")
+    require(function_module, "result = self._workflow(spec.runner_key).run()", "Builder Function adapter does not reuse in-flight workflow")
+    require(function_module, "workflow.recovery.commit_cycle()", "Builder Function adapter cannot commit completed cycle")
     forbid(function_module, "AutoVpSaleWorkflow(", "Builder FunctionModule hides a Sale workflow")
     forbid(function_module, "self.sale", "Builder FunctionModule hides Sale state/calls")
     require(repair_module, "self.auto.machine_repair.test_from_open_production_panel()", "Builder repair module does not delegate repair Action")
