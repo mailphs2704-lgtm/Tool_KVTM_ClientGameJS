@@ -12,8 +12,10 @@ from ..runtime.wait import Waiter
 __all__ = ["FloorMoveResult", "FloorNavigationActions"]
 FILE_FUNCTIONS = (
     "Cung cấp bộ Action chuyển tầng dùng chung cho toàn AUTO",
-    "goUp(1) = một swipe ngắn lên một tầng",
-    "goUp(2) = click chậu đầu tầng 4 để nhảy camera theo mode 2",
+    "goUp(mode) = primitive di chuyển bằng swipe để log/recovery nhận diện",
+    "goUpClick(1) = click chậu đầu hàng 3 để di chuyển một tầng",
+    "goUpClick(2) = click chậu đầu hàng 4 để di chuyển hai tầng",
+    "goUpClick(3) = click điểm trên cùng để di chuyển ba tầng",
     "goUp(4) = một swipe dài bốn tầng theo AUTO PRO",
     "goUp(3) chưa có contract và phải fail-close, không tự suy đoán",
     "Giữ goDown(1)/goDown(4) hiện có cho các route đã live-verified",
@@ -39,7 +41,10 @@ class FloorNavigationActions:
 
     GO_UP_ONE_SWIPE = (514, 214, 514, 314)
     GO_DOWN_ONE_SWIPE = (514, 314, 514, 214)
-    GO_UP_TWO_POT_POINT = (257, 191)
+    GO_UP_CLICK_ONE_POINT = (398, 488)
+    GO_UP_CLICK_TWO_POINT = (398, 267)
+    GO_UP_CLICK_THREE_POINT = (398, 59)
+    GO_UP_TWO_POT_POINT = GO_UP_CLICK_TWO_POINT
     GO_UP_FOUR_SWIPE = (387, 69, 387, 918)
     GO_DOWN_FOUR_SWIPE = (387, 918, 387, 69)
     CLOSE_SIDE_POINT = (975, 316)
@@ -131,7 +136,7 @@ class FloorNavigationActions:
         return self._verify_change(before, label=label)
 
     def go_up(self, mode: int, *, label: str | None = None) -> FloorMoveResult:
-        """Execute one standardized goUp mode.
+        """Execute one standardized swipe-based goUp mode.
 
         ``goUp(3)`` is intentionally unsupported until the operator defines its
         exact primitive. Never synthesize it from other modes.
@@ -141,11 +146,6 @@ class FloorNavigationActions:
         if selected == 1:
             change = self._swipe_primitive(
                 self.GO_UP_ONE_SWIPE,
-                label=action_label,
-            )
-        elif selected == 2:
-            change = self._click_primitive(
-                self.GO_UP_TWO_POT_POINT,
                 label=action_label,
             )
         elif selected == 4:
@@ -158,7 +158,10 @@ class FloorNavigationActions:
                 "goUp(3) chưa được operator định nghĩa; không được tự ghép/suy đoán"
             )
         else:
-            raise ValueError("goUp chỉ nhận mode đã chốt: 1, 2 hoặc 4")
+            raise ValueError(
+                "goUp là di chuyển swipe và hiện chỉ nhận mode 1 hoặc 4; "
+                "di chuyển click phải dùng goUpClick(1..3)"
+            )
 
         self.context.log(
             f"AUTO điều hướng • {action_label} PASS • frame_change={change:.2f}"
@@ -167,6 +170,35 @@ class FloorNavigationActions:
             direction=f"GO_UP_{selected}",
             requested_steps=selected,
             completed_steps=1,
+            frame_change_scores=(change,),
+        )
+
+    def go_up_click(
+        self,
+        floors: int,
+        *,
+        label: str | None = None,
+    ) -> FloorMoveResult:
+        """Move upward by clicking an operator-confirmed pot/scene anchor."""
+        selected = int(floors)
+        points = {
+            1: self.GO_UP_CLICK_ONE_POINT,
+            2: self.GO_UP_CLICK_TWO_POINT,
+            3: self.GO_UP_CLICK_THREE_POINT,
+        }
+        point = points.get(selected)
+        if point is None:
+            raise ValueError("goUpClick chỉ nhận số tầng đã chốt: 1, 2 hoặc 3")
+        action_label = str(label or f"goUpClick({selected})")
+        change = self._click_primitive(point, label=action_label)
+        self.context.log(
+            f"AUTO điều hướng click • {action_label} PASS • "
+            f"point={point} • frame_change={change:.2f}"
+        )
+        return FloorMoveResult(
+            direction=f"GO_UP_CLICK_{selected}",
+            requested_steps=selected,
+            completed_steps=selected,
             frame_change_scores=(change,),
         )
 

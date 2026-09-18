@@ -70,7 +70,7 @@ class YellowFabricRecipe:
         )
         self.context.ensure_running()
 
-        # From the known floor1 anchor, the operator-defined goUp(2) action clicks
+        # From the known floor1 anchor, goUpClick(2) clicks
         # the first pot of floor4 and lands at candidate floor3.
         self.recovery.from_floor_to_floor(1, 3, "Vải vàng recipe")
         self.context.stage("auto-recipe-yellow-fabric-production")
@@ -87,7 +87,7 @@ class YellowFabricRecipe:
         self.context.stage("auto-recipe-yellow-fabric-pass")
         self.context.log(
             "AUTO recipe Vải vàng • PASS • goUp(1) + trồng 27 Bông + "
-            "goUp(2) + SX 9/9 + Sửa máy"
+            "goUpClick(2) + SX 9/9 + Sửa máy"
         )
         return YellowFabricRecipeResult(
             cotton_planted=int(cotton),

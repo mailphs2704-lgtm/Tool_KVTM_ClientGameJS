@@ -116,15 +116,30 @@ class FarmRouteActions(FloorNavigationActions):
         )
 
     def main_to_floor_2(self) -> NavigationEvidence:
-        # goUp(2) is the floor-4-pot anchor jump. MAIN → floor2 is explicitly
-        # two goUp(1) Actions and must not be collapsed into goUp(2).
         first = self.go_up(1, label="main-goUp(1)-to-floor1")
-        second = self.go_up(1, label="floor1-goUp(1)-to-floor2")
+        second = self.go_up_click(
+            1, label="floor1-goUpClick(1)-to-floor2"
+        )
         self.context.log(
-            "AUTO điều hướng • MAIN → tầng 2 • goUp(1) + goUp(1) PASS"
+            "AUTO điều hướng • MAIN → tầng 2 • goUp(1) swipe → "
+            "goUpClick(1) PASS"
         )
         return NavigationEvidence(
             "main-to-floor2",
+            self._scores(first, second),
+        )
+
+    def main_to_floor_3(self) -> NavigationEvidence:
+        first = self.go_up(1, label="main-goUp(1)-to-floor1")
+        second = self.go_up_click(
+            2, label="floor1-goUpClick(2)-to-floor3"
+        )
+        self.context.log(
+            "AUTO điều hướng • MAIN → tầng 3 • goUp(1) swipe → "
+            "goUpClick(2) PASS"
+        )
+        return NavigationEvidence(
+            "main-to-floor3",
             self._scores(first, second),
         )
 
@@ -140,11 +155,11 @@ class FarmBoundaryRouteActions(FarmRouteActions):
     RECOVERY_DOWN_CHAIN_LIMIT = 10
 
     def _go_up_two(self, label: str) -> float:
-        result = self.go_up(2, label=label)
+        result = self.go_up_click(2, label=label)
         change = float(result.frame_change_scores[0])
         self.context.log(
-            "AUTO điều hướng • tầng 1 → tầng 3 • goUp(2) shared Action PASS • "
-            f"point={self.GO_UP_TWO_POT_POINT} • frame_change={change:.2f}"
+            "AUTO điều hướng • tầng 1 → tầng 3 • goUpClick(2) PASS • "
+            f"point={self.GO_UP_CLICK_TWO_POINT} • frame_change={change:.2f}"
         )
         return change
 
@@ -334,9 +349,9 @@ class FarmBoundaryRouteActions(FarmRouteActions):
 
     def floor_1_to_floor_3(self) -> NavigationEvidence:
         changes = (
-            self._go_up_two("floor1-goUp(2)-floor4-pot-to-floor3"),
+            self._go_up_two("floor1-goUpClick(2)-floor4-pot-to-floor3"),
         )
         self.context.log(
-            "AUTO điều hướng • tầng 1 → tầng 3 • goUp(2) shared Action PASS"
+            "AUTO điều hướng • tầng 1 → tầng 3 • goUpClick(2) shared Action PASS"
         )
         return NavigationEvidence("floor1-to-floor3-goUp2", changes)

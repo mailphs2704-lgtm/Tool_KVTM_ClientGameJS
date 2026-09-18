@@ -37,11 +37,11 @@ class DriedTeaStepSixRecipe:
 
     def _main_to_floor_8(self, label: str) -> None:
         self.context.log(
-            f"AUTO Step 6 recovery • {label} • MAIN → tầng 1 → tầng 6 → goUp(2) tầng 8"
+            f"AUTO Step 6 recovery • {label} • MAIN → tầng 1 → tầng 6 → goUpClick(2) tầng 8"
         )
         self.auto.farm_routes.main_to_floor_1()
         self.auto.farm_routes.floor_1_to_floor_6()
-        self.auto.floors.go_up(
+        self.auto.floors.go_up_click(
             2,
             label="Function 3 Step 6 recovery • tầng 6 → tầng 8 • click chậu đầu hàng 4",
         )
@@ -58,7 +58,7 @@ class DriedTeaStepSixRecipe:
         self.context.stage("auto-function-3-step-6-start")
         self.context.log(
             "AUTO Function 3 • Step 6 START • tầng 1 → Hồng 30 → "
-            "goUp(4)+goUp(1) tầng 6 → Hồng 6 → goUp(2) click chậu đầu hàng 4 "
+            "goUp(4)+goUp(1) tầng 6 → Hồng 6 → goUpClick(2) chậu đầu hàng 4 "
             "lên tầng 8 → Nước hoa hồng 9/9 → Sửa máy → "
             "goDown(1) → chờ 1s → XUỐNG exact MAIN → Function 3 DONE"
         )
@@ -103,7 +103,7 @@ class DriedTeaStepSixRecipe:
         self.context.stage("auto-function-3-step-6-rose-floor6-6-pass")
         self.context.action("Gieo thành công 36 hồng")
 
-        self.auto.floors.go_up(
+        self.auto.floors.go_up_click(
             2,
             label=(
                 "Function 3 Step 6 • tầng 6 → tầng 8 • "

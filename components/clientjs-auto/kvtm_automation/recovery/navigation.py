@@ -149,8 +149,7 @@ class NavigationRecovery:
         elif floor == 2:
             self.auto.farm_routes.main_to_floor_2()
         elif floor == 3:
-            self.auto.farm_routes.main_to_floor_1()
-            self.auto.farm_boundary_routes.floor_1_to_floor_3()
+            self.auto.farm_routes.main_to_floor_3()
         else:
             raise ValueError(
                 f"Chưa có route main → tầng {floor}; Recipe phải register route đã xác minh"

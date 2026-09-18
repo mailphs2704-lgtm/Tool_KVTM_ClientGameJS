@@ -39,11 +39,15 @@ def main() -> int:
     planting = read_python(PLANTING)
     planting_workflow = read_python(PLANTING_WORKFLOW)
 
-    # goUp integer is a semantic mode, not N repeated pulses.
+    # Swipe and click movements have separate names/contracts.
     require(action, "GO_UP_ONE_SWIPE = (514, 214, 514, 314)",
             "goUp(1) geometry changed")
-    require(action, "GO_UP_TWO_POT_POINT = (257, 191)",
-            "goUp(2) floor-4 pot anchor changed")
+    require(action, "GO_UP_CLICK_ONE_POINT = (398, 488)",
+            "goUpClick(1) point changed")
+    require(action, "GO_UP_CLICK_TWO_POINT = (398, 267)",
+            "goUpClick(2) point changed")
+    require(action, "GO_UP_CLICK_THREE_POINT = (398, 59)",
+            "goUpClick(3) point changed")
     require(action, "GO_UP_FOUR_SWIPE = (387, 69, 387, 918)",
             "goUp(4) AUTO PRO geometry changed")
     require(action, "GO_DOWN_ONE_SWIPE = (514, 314, 514, 214)",
@@ -51,12 +55,14 @@ def main() -> int:
     require(action, "GO_DOWN_FOUR_SWIPE = (387, 918, 387, 69)",
             "goDown(4) geometry changed")
     require(action, "def go_up(self, mode: int", "Semantic go_up dispatcher missing")
-    require(action, "elif selected == 2:", "goUp(2) semantic branch missing")
-    require(action, "self.GO_UP_TWO_POT_POINT", "goUp(2) does not use pot anchor")
     require(action, "elif selected == 4:", "goUp(4) semantic branch missing")
     require(action, "elif selected == 3:", "goUp(3) explicit unsupported branch missing")
     require(action, "goUp(3) chưa được operator định nghĩa", "goUp(3) fail-close marker missing")
     forbid(action, "for _ in range(selected)", "goUp(mode) regressed to repeated primitive pulses")
+    require(action, "def go_up_click(", "goUpClick dispatcher missing")
+    require(action, "1: self.GO_UP_CLICK_ONE_POINT", "goUpClick(1) mapping missing")
+    require(action, "2: self.GO_UP_CLICK_TWO_POINT", "goUpClick(2) mapping missing")
+    require(action, "3: self.GO_UP_CLICK_THREE_POINT", "goUpClick(3) mapping missing")
 
     # Every primitive invalidates old camera proof and verifies a fresh frame.
     require(action, "def _prepare_camera_input", "Camera-input preparation missing")
@@ -87,7 +93,14 @@ def main() -> int:
     # hidden-navigation legacy 27 wrappers.
     require(farm_routes, "class FarmRouteActions(FloorNavigationActions):", "Canonical farm route composer missing")
     require(farm_routes, "class FarmBoundaryRouteActions(FarmRouteActions):", "Boundary farm route composer missing")
-    require(farm_routes, "self.go_up(2", "Farm route does not consume semantic goUp(2)")
+    require(farm_routes, "self.go_up_click(", "Farm route does not consume goUpClick")
+    require(farm_routes, "def main_to_floor_3(self)", "MAIN to floor 3 route missing")
+    require(farm_routes, 'first = self.go_up(1, label="main-goUp(1)-to-floor1")',
+            "Recovery routes do not start with MAIN goUp(1) swipe")
+    require(farm_routes, '1, label="floor1-goUpClick(1)-to-floor2"',
+            "MAIN to floor 2 does not use goUpClick(1)")
+    require(farm_routes, '2, label="floor1-goUpClick(2)-to-floor3"',
+            "MAIN to floor 3 does not use goUpClick(2)")
     require(automation, "FloorNavigationActions(", "Floor navigation is not wired to resident automation")
     require(automation, "self.farm_routes = FarmRouteActions(", "Canonical farm route facade missing")
     require(actions_init, "FloorNavigationActions", "Floor navigation export missing")
@@ -106,7 +119,7 @@ def main() -> int:
            "Live planting workflow regressed to legacy hidden-navigation wrapper")
 
     print("AUTO MULTI DEV FLOOR NAVIGATION STATIC CONTRACT VERIFIED")
-    print("goUp_modes=1-swipe|2-pot-anchor|4-long-swipe|3-unsupported")
+    print("goUp=swipe-only;goUpClick=1|2|3-operator-points")
     print("camera_proof=invalidate-before-input+fresh-frame-postcheck")
     print("compat_move=explicit-one-floor-sequence")
     print("target6=goUp1+goUp4+goUp1")
