@@ -67,6 +67,7 @@ class WarehouseUpgradeWorkflow:
     WAREHOUSE_ENTRY_POINT = (775, 810)
     STORAGE_3_POINT = (454, 515)
     UPGRADE_CATEGORY_POINT = (248, 712)
+    UPGRADE_CATEGORY_SELECTED_ZONE = (170, 680, 150, 58)
     INVENTORY_ZONE = (14, 345, 397, 379)
     LIST_SWIPE = (212, 630, 212, 558)
     MAX_SCAN_VIEWS = 6
@@ -140,9 +141,30 @@ class WarehouseUpgradeWorkflow:
         self.auto.vision.driver.click(*self.STORAGE_3_POINT)
         self.auto.wait.sleep(0.50)
 
-        self.context.stage("auto-warehouse-upgrade-select-upgrade-category")
-        self.auto.vision.driver.click(*self.UPGRADE_CATEGORY_POINT)
-        self.auto.wait.sleep(0.50)
+        self.context.stage("auto-warehouse-upgrade-prove-upgrade-category")
+        selected = self.auto.vision.find(
+            "check_vp_nang_kho",
+            threshold=0.80,
+            zone=self.UPGRADE_CATEGORY_SELECTED_ZONE,
+            click=False,
+        )
+        if selected is None:
+            self.context.log(
+                "AUTO Nâng kho • tab nguyên liệu chưa được chọn • click lại đúng 1 lần"
+            )
+            self.auto.vision.driver.click(*self.UPGRADE_CATEGORY_POINT)
+            self.auto.wait.sleep(0.50)
+            selected = self.auto.vision.find(
+                "check_vp_nang_kho",
+                threshold=0.80,
+                zone=self.UPGRADE_CATEGORY_SELECTED_ZONE,
+                click=False,
+            )
+        if selected is None:
+            raise ScreenTimeout(
+                "Không xác nhận được tab nguyên liệu nâng kho đang được chọn"
+            )
+        self.context.log("AUTO Nâng kho • tab nguyên liệu nền vàng VERIFIED")
         if self.auto.vision.find("kho_vat_dung", threshold=0.68) is None:
             raise ScreenTimeout("Không chứng minh được Kho vật dụng sau khi chọn tab nâng cấp")
         return arrow is not None
@@ -257,7 +279,9 @@ class WarehouseUpgradeWorkflow:
         self.auto.vision.driver.click(*empty.center)
         self.auto.inventory.wait_storage_picker_ready(timeout=3.0)
         self.auto.inventory.select_storage_after_picker_ready(3)
-        self.auto.vision.driver.click(*self.UPGRADE_CATEGORY_POINT)
+        # The game preserves the yellow upgrade-material category selected by
+        # the inventory scan. Re-clicking its arrow here toggles/disrupts the
+        # picker and made a recognized material ignore the subsequent click.
         self.auto.wait.sleep(0.50)
 
     def _sell_one_batch(self, item_id: str) -> bool:

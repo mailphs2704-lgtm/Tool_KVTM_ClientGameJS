@@ -33,7 +33,7 @@ def main() -> int:
     ui = read(UI)
     for name in (
         "go", "gach", "son_do", "dinh", "son_vang", "da",
-        "nang_kho", "xoa_vp_kc",
+        "nang_kho", "check_vp_nang_kho", "xoa_vp_kc",
     ):
         path = CLEAN / "assets/items" / f"{name}.png"
         if not path.is_file() or path.stat().st_size <= 0:
@@ -54,7 +54,9 @@ def main() -> int:
     require(workflow, 'self.auto.vision.driver.press("back")', "Single ESC/back exit missing")
     require(workflow, 'self.auto.vision.driver.click(*self.STORAGE_3_POINT)', "Required item-warehouse click missing")
     require(workflow, 'auto-warehouse-upgrade-select-item-warehouse', "Item-warehouse stage missing")
-    require(workflow, 'auto-warehouse-upgrade-select-upgrade-category', "Upgrade-category stage missing")
+    require(workflow, 'auto-warehouse-upgrade-prove-upgrade-category', "Upgrade-category proof stage missing")
+    require(workflow, '"check_vp_nang_kho"', "Selected upgrade-category template missing")
+    require(workflow, "tab nguyên liệu nền vàng VERIFIED", "Selected upgrade-category proof missing")
     require(workflow, "self._delete_one_listing_for_slot()", "Diamond slot recovery missing")
     require(workflow, "quantity_passes >= 2", "Existing two-pass x10 proof missing")
     require(workflow, "center[0] - 42, center[1] + 12, 100, 42", "Quantity crop must retain final digit")
