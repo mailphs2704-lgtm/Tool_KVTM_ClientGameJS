@@ -93,29 +93,60 @@ class FunctionOneWorkflow:
             "tùy chọn scheduler đã được xử lý ở safe boundary"
         )
 
-        dried_recipe = self.recipes.dried_apple.run_from_session(count=9)
+        dried_already_done = self.recovery.cycle.has("function-1-dried-apple")
+        dried_recipe = self.recovery.cycle.run_once(
+            "function-1-dried-apple",
+            label="Function 1 • Táo sấy",
+            runner=lambda: self.recipes.dried_apple.run_from_session(count=9),
+            on_replay=self.auto.farm_routes.main_to_floor_1,
+        )
         self.context.ensure_running()
         self.context.stage("auto-function-1-progress-1-of-3")
-        self.context.action("Sản xuất 9 táo sấy")
+        if not dried_already_done:
+            self.context.action("Sản xuất 9 táo sấy")
         self.context.log(
             "AUTO chức năng 1 • tiến độ 1/3 • DriedAppleRecipe PASS"
         )
 
-        self.auto.apple_supply.wait_until_floor_1_ripe()
-        five_floors = self.auto.apple_supply.harvest_and_replant_five_floors()
+        def replenish_five_floors() -> int:
+            self.auto.apple_supply.wait_until_floor_1_ripe()
+            return int(self.auto.apple_supply.harvest_and_replant_five_floors())
+
+        apple_five_already_done = self.recovery.cycle.has(
+            "function-1-apple-floor-1-to-5"
+        )
+        five_floors = self.recovery.cycle.run_once(
+            "function-1-apple-floor-1-to-5",
+            label="Function 1 • Táo tầng 1-5",
+            runner=replenish_five_floors,
+        )
         self.context.stage("auto-apple-five-floors-replanted")
 
         self.auto.farm_routes.floor_1_to_floor_6()
-        floor_6 = self.auto.apple_supply.harvest_and_replant_floor_6_row()
+        apple_six_already_done = self.recovery.cycle.has(
+            "function-1-apple-floor-6"
+        )
+        floor_6 = self.recovery.cycle.run_once(
+            "function-1-apple-floor-6",
+            label="Function 1 • Táo tầng 6",
+            runner=self.auto.apple_supply.harvest_and_replant_floor_6_row,
+        )
         self.context.stage("auto-apple-floor-6-replanted")
-        self.context.action("Gieo thành công 36 táo")
+        if not (apple_five_already_done and apple_six_already_done):
+            self.context.action("Gieo thành công 36 táo")
 
         self.auto.farm_routes.floor_6_to_floor_2()
-        juice_recipe = self.recipes.apple_juice.run_from_candidate_floor_2(count=9)
+        juice_already_done = self.recovery.cycle.has("function-1-apple-juice")
+        juice_recipe = self.recovery.cycle.run_once(
+            "function-1-apple-juice",
+            label="Function 1 • Nước táo",
+            runner=lambda: self.recipes.apple_juice.run_from_candidate_floor_2(count=9),
+        )
         juice = juice_recipe.production
         self.context.ensure_running()
         self.context.stage("auto-function-1-progress-2-of-3")
-        self.context.action("Sản xuất 9 nước táo")
+        if not juice_already_done:
+            self.context.action("Sản xuất 9 nước táo")
         if juice_recipe.candidate_verified:
             route_note = "direct candidate nuoc_tao PASS"
         elif juice_recipe.fallback_used:
@@ -127,13 +158,24 @@ class FunctionOneWorkflow:
             f"{route_note}"
         )
 
-        fabric_recipe = self.recipes.yellow_fabric.run_after_floor_2(count=9)
+        fabric_already_done = self.recovery.cycle.has(
+            "function-1-yellow-fabric"
+        )
+        fabric_recipe = self.recovery.cycle.run_once(
+            "function-1-yellow-fabric",
+            label="Function 1 • Vải vàng",
+            runner=lambda: self.recipes.yellow_fabric.run_after_floor_2(count=9),
+            on_replay=lambda: self.recovery.from_floor_to_floor(
+                2, 3, "Function 1 replay Vải vàng đã PASS"
+            ),
+        )
         cotton = fabric_recipe.cotton_planted
         fabric = fabric_recipe.production
         self.context.ensure_running()
         self.context.stage("auto-function-1-progress-3-of-3")
-        self.context.action("Gieo thành công 27 bông")
-        self.context.action("Sản xuất 9 vải vàng")
+        if not fabric_already_done:
+            self.context.action("Gieo thành công 27 bông")
+            self.context.action("Sản xuất 9 vải vàng")
         self.context.log(
             "AUTO chức năng 1 • PASS 3/3 • Recipe chain hoàn tất: "
             "Táo sấy + Nước táo + 27 Bông + Vải vàng"

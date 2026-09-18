@@ -51,7 +51,14 @@ class DriedTeaStepOneRecipe:
             )
 
         self.auto.farm_routes.main_to_floor_1()
-        five_floors = self.auto.apple_supply.harvest_or_replant_five_floors()
+        five_already_done = self.recovery.cycle.has(
+            "function-3-step-1-apple-floor-1-to-5"
+        )
+        five_floors = self.recovery.cycle.run_once(
+            "function-3-step-1-apple-floor-1-to-5",
+            label="Function 3 Step 1 • Táo tầng 1-5",
+            runner=self.auto.apple_supply.harvest_or_replant_five_floors,
+        )
         if int(five_floors) != 30:
             raise ScreenTimeout(
                 f"Function 3 Step 1 chưa gieo đủ Táo tầng 1-5: {five_floors}/30"
@@ -59,13 +66,21 @@ class DriedTeaStepOneRecipe:
         self.context.stage("auto-function-3-step-1-apple-floor-1-to-5-pass")
 
         self.auto.farm_routes.floor_1_to_floor_6()
-        floor_6 = self.auto.apple_supply.harvest_and_replant_floor_6_row()
+        six_already_done = self.recovery.cycle.has(
+            "function-3-step-1-apple-floor-6"
+        )
+        floor_6 = self.recovery.cycle.run_once(
+            "function-3-step-1-apple-floor-6",
+            label="Function 3 Step 1 • Táo tầng 6",
+            runner=self.auto.apple_supply.harvest_and_replant_floor_6_row,
+        )
         if int(floor_6) != 6:
             raise ScreenTimeout(
                 f"Function 3 Step 1 chưa gieo đủ Táo tầng 6: {floor_6}/6"
             )
         self.context.stage("auto-function-3-step-1-apple-floor-6-pass")
-        self.context.action("Gieo thành công 36 táo")
+        if not (five_already_done and six_already_done):
+            self.context.action("Gieo thành công 36 táo")
 
         self.auto.farm_boundary_routes.known_upper_floor_to_main_via_down_floor(
             "Function 3 Step 1 • tầng 6 về MAIN"

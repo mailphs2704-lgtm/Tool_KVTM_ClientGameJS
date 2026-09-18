@@ -94,10 +94,14 @@ def main() -> int:
     require(modules, "class FunctionModule", "Callable built-in Function module missing")
     require(modules, "from ..auto_function_three import FunctionThreeWorkflow",
             "Function-3 complete workflow import missing from FunctionModule")
-    require(modules, 'elif spec.runner_key == "function_3":',
-            "Function-3 runner branch missing from FunctionModule")
-    require(modules, "FunctionThreeWorkflow(self.auto).run()",
-            "Function-3 FunctionModule does not call complete workflow")
+    require(modules, 'elif runner_key == "function_3":',
+            "Function-3 cached runner branch missing from FunctionModule")
+    require(modules, "workflow = FunctionThreeWorkflow(self.auto)",
+            "Function-3 FunctionModule does not retain complete workflow")
+    require(modules, "result = self._workflow(spec.runner_key).run()",
+            "FunctionModule does not reuse the in-flight workflow on recovery")
+    require(modules, "workflow.recovery.commit_cycle()",
+            "FunctionModule cannot release cycle locks after completion gate")
 
     require(function_three, "TOTAL_DEFINED_STEPS = 6",
             "Function-3 complete step count is not six")

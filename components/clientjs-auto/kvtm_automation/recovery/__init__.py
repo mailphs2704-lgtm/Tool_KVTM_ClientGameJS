@@ -10,6 +10,7 @@ from .module_execution import (
     ModuleRecoveryExecutor,
 )
 from .navigation import NavigationRecovery, RouteHandler
+from .cycle_checkpoint import CycleCheckpoint
 
 __all__ = [
     "RecoveryEvent",
@@ -22,4 +23,5 @@ __all__ = [
     "ModuleCheckpoint",
     "ModuleErrorHandler",
     "ModuleRecoveryExecutor",
+    "CycleCheckpoint",
 ]

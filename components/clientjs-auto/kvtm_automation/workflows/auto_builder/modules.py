@@ -81,20 +81,36 @@ class FunctionModule:
 
     def __init__(self, automation: KVAutomation) -> None:
         self.auto = automation
+        self._workflows: dict[str, Any] = {}
+
+    def _workflow(self, runner_key: str):
+        workflow = self._workflows.get(runner_key)
+        if workflow is not None:
+            return workflow
+        if runner_key == "function_1":
+            workflow = FunctionOneWorkflow(self.auto)
+        elif runner_key == "function_2":
+            workflow = FunctionTwoWorkflow(self.auto)
+        elif runner_key == "function_3":
+            workflow = FunctionThreeWorkflow(self.auto)
+        else:
+            raise ValueError(f"Thiếu runner cho {runner_key}")
+        self._workflows[runner_key] = workflow
+        return workflow
 
     def run(self, *, function_id: str) -> dict[str, Any]:
         spec = get_function_spec(function_id)
         self.auto.context.stage(f"builder-function-{spec.function_id}-start")
-        if spec.runner_key == "function_1":
-            result = FunctionOneWorkflow(self.auto).run()
-        elif spec.runner_key == "function_2":
-            result = FunctionTwoWorkflow(self.auto).run()
-        elif spec.runner_key == "function_3":
-            result = FunctionThreeWorkflow(self.auto).run()
-        else:
-            raise ValueError(f"Thiếu runner cho {spec.function_id}")
+        result = self._workflow(spec.runner_key).run()
         self.auto.context.stage(f"builder-function-{spec.function_id}-finished")
         return _payload(result)
+
+    def commit_cycle(self, *, function_id: str) -> None:
+        spec = get_function_spec(function_id)
+        workflow = self._workflows.get(spec.runner_key)
+        if workflow is None:
+            raise RuntimeError(f"Chưa có Function đang chờ commit: {function_id}")
+        workflow.recovery.commit_cycle()
 
 
 class MachineRepairTestModule:

@@ -397,12 +397,51 @@ class FunctionThreeWorkflow:
 
     def run_steps_1_2_3_4_5_and_6(self) -> FunctionThreeStepsOneTwoThreeFourFiveSixResult:
         started = time.monotonic()
-        step_one = self.step_one.run_from_main()
-        step_two = self.step_two.run_from_floor_1()
-        step_three = self.step_three.run_from_floor_2()
-        step_four = self.step_four.run_from_floor_1()
-        step_five = self.step_five.run_from_floor_1()
-        step_six = self.step_six.run_from_floor_1()
+        step_one = self.recovery.cycle.run_once(
+            "function-3-step-1",
+            label="Function 3 • Step 1",
+            runner=self.step_one.run_from_main,
+            on_replay=self.auto.farm_routes.main_to_floor_1,
+        )
+        step_two = self.recovery.cycle.run_once(
+            "function-3-step-2",
+            label="Function 3 • Step 2",
+            runner=self.step_two.run_from_floor_1,
+            on_replay=lambda: self.auto.floors.go_up(
+                1, label="Function 3 replay Step 2 • tầng 1 → tầng 2"
+            ),
+        )
+
+        def replay_step_three() -> None:
+            self.recovery.to_main_from_floor(
+                2, "Function 3 replay Step 3 đã PASS"
+            )
+            self.auto.farm_routes.main_to_floor_1()
+
+        step_three = self.recovery.cycle.run_once(
+            "function-3-step-3",
+            label="Function 3 • Step 3",
+            runner=self.step_three.run_from_floor_2,
+            on_replay=replay_step_three,
+        )
+        step_four = self.recovery.cycle.run_once(
+            "function-3-step-4",
+            label="Function 3 • Step 4",
+            runner=self.step_four.run_from_floor_1,
+        )
+        step_five = self.recovery.cycle.run_once(
+            "function-3-step-5",
+            label="Function 3 • Step 5",
+            runner=self.step_five.run_from_floor_1,
+        )
+        step_six = self.recovery.cycle.run_once(
+            "function-3-step-6",
+            label="Function 3 • Step 6",
+            runner=self.step_six.run_from_floor_1,
+            on_replay=lambda: self.recovery.to_main_from_floor(
+                1, "Function 3 replay Step 6 đã PASS"
+            ),
+        )
         return FunctionThreeStepsOneTwoThreeFourFiveSixResult(
             profile_id=self.context.profile_id,
             apples_floor_1_to_5=int(step_one.replanted_five_floors),

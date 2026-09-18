@@ -80,6 +80,7 @@ def install_function_loop_delay(runner_class) -> None:
                 f"AUTO Builder • {function_id} • vòng {loop_index}/{loops} START"
             )
             self.function.run(function_id=function_id)
+            self.function.commit_cycle(function_id=function_id)
             self.function_loops[function_id] = self.function_loops.get(function_id, 0) + 1
             boundary_started_at = time.monotonic()
             if bool(step.get("sale_after_each_loop", False)):

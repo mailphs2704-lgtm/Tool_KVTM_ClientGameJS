@@ -63,7 +63,11 @@ class YellowFabricRecipe:
         # Recipe owns the business route. CottonPlantingActions is current-view
         # only and never hides a goUp inside the planting gesture.
         self.auto.floors.go_up(1, label="yellow-fabric-main-to-floor1")
-        cotton = self.auto.cotton_planting.plant_27_cotton()
+        cotton = self.recovery.cycle.run_once(
+            "yellow-fabric-material-cotton-27",
+            label="Bông 27 chậu cho Vải vàng",
+            runner=self.auto.cotton_planting.plant_27_cotton,
+        )
         self.context.ensure_running()
 
         # From the known floor1 anchor, the operator-defined goUp(2) action clicks

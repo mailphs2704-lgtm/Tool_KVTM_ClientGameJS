@@ -53,11 +53,15 @@ class DriedTeaStepTwoRecipe:
             1,
             label="Function 3 Step 2 • tầng 1 → tầng 2",
         )
-        segment = self.auto.planting.harvest_and_replant_current_view(
-            seed_template=self.auto.planting.TEA_TEMPLATE,
-            item_label="Trà",
-            count=24,
-            segment_label="Function 3 Step 2 • Trà 4 tầng",
+        segment = self.recovery.cycle.run_once(
+            "function-3-step-2-tea-24",
+            label="Function 3 Step 2 • Trà 24",
+            runner=lambda: self.auto.planting.harvest_and_replant_current_view(
+                seed_template=self.auto.planting.TEA_TEMPLATE,
+                item_label="Trà",
+                count=24,
+                segment_label="Function 3 Step 2 • Trà 4 tầng",
+            ),
         )
         if int(segment.planted_count) != 24:
             raise ScreenTimeout(

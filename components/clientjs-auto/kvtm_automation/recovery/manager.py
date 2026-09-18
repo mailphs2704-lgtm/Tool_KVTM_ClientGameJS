@@ -7,6 +7,7 @@ from .events import RecoveryEvent, RecoveryEventKind
 from .module_execution import ModuleErrorHandler, ModuleRecoveryExecutor
 from .navigation import NavigationRecovery, RouteHandler
 from .production import ProductionRecovery
+from .cycle_checkpoint import CycleCheckpoint
 
 if TYPE_CHECKING:
     from ..automation import KVAutomation
@@ -56,7 +57,15 @@ class RecoveryManager:
             from_main_routes=from_main_routes,
             between_floor_routes=between_floor_routes,
         )
+        self.cycle = CycleCheckpoint(
+            self.context,
+            function_id=self.function_id,
+        )
         self._production: ProductionRecovery | None = None
+
+    def commit_cycle(self) -> None:
+        """Release side-effect locks only after the caller completion gate."""
+        self.cycle.commit_cycle()
 
     @property
     def production(self) -> ProductionRecovery:

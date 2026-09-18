@@ -453,6 +453,7 @@ class AutoMainWorkflow:
                 payload = self.function.run(function_id=self.spec.function_id)
                 self._validate_function_result(payload)
                 self.context.ensure_running()
+                self.function.commit_cycle(function_id=self.spec.function_id)
             except AutomationStopped:
                 raise
             except LevelUpPopupDetected as exc:

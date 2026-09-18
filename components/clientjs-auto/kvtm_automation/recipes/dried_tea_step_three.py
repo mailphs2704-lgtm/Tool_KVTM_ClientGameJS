@@ -44,12 +44,16 @@ class DriedTeaStepThreeRecipe:
             "Vải vàng 9/9 → Sửa máy → goDown(1)+XUỐNG MAIN → goUp(1) tầng 1"
         )
 
-        tea_row = self.auto.planting.harvest_and_replant_current_view(
-            seed_template=self.auto.planting.TEA_TEMPLATE,
-            item_label="Trà",
-            count=6,
-            plant_count=3,
-            segment_label="Function 3 Step 3 • hàng dưới tầng 2 • thu 6 / gieo 3 Trà",
+        tea_row = self.recovery.cycle.run_once(
+            "function-3-step-3-tea-bottom-row",
+            label="Function 3 Step 3 • Trà hàng dưới tầng 2",
+            runner=lambda: self.auto.planting.harvest_and_replant_current_view(
+                seed_template=self.auto.planting.TEA_TEMPLATE,
+                item_label="Trà",
+                count=6,
+                plant_count=3,
+                segment_label="Function 3 Step 3 • hàng dưới tầng 2 • thu 6 / gieo 3 Trà",
+            ),
         )
         if int(tea_row.planted_count) != 3:
             raise ScreenTimeout(
@@ -63,7 +67,11 @@ class DriedTeaStepThreeRecipe:
             1,
             label="Function 3 Step 3 • tầng 2 → tầng 3",
         )
-        cotton = self.auto.cotton_planting.plant_27_cotton()
+        cotton = self.recovery.cycle.run_once(
+            "function-3-step-3-cotton-27",
+            label="Function 3 Step 3 • Bông 27",
+            runner=lambda: self.auto.cotton_planting.plant_27_cotton(),
+        )
         if int(cotton) != 27:
             raise ScreenTimeout(
                 f"Function 3 Step 3 chưa gieo đủ Bông: {cotton}/27"

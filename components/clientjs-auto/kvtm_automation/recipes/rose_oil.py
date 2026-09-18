@@ -125,18 +125,26 @@ class RoseOilRecipe:
 
         self.context.stage("auto-recipe-rose-oil-rose-start")
         nav.main_to_floor_1()
-        rose_first = planting.harvest_and_replant_current_view(
-            seed_template=planting.ROSE_TEMPLATE,
-            item_label="Hoa hồng",
-            count=self.ROSE_FIRST_SEGMENT,
-            segment_label="Hồng 30 chậu đầu",
+        rose_first = self.recovery.cycle.run_once(
+            "rose-oil-material-rose-floor-1",
+            label="Function 2 • Hồng 30 tầng 1",
+            runner=lambda: planting.harvest_and_replant_current_view(
+                seed_template=planting.ROSE_TEMPLATE,
+                item_label="Hoa hồng",
+                count=self.ROSE_FIRST_SEGMENT,
+                segment_label="Hồng 30 chậu đầu",
+            ),
         )
         nav.floor_1_to_floor_6()
-        rose_final = planting.harvest_and_replant_current_view(
-            seed_template=planting.ROSE_TEMPLATE,
-            item_label="Hoa hồng",
-            count=self.ROSE_FINAL_SEGMENT,
-            segment_label="Hồng 5 chậu tầng 6",
+        rose_final = self.recovery.cycle.run_once(
+            "rose-oil-material-rose-floor-6",
+            label="Function 2 • Hồng 5 tầng 6",
+            runner=lambda: planting.harvest_and_replant_current_view(
+                seed_template=planting.ROSE_TEMPLATE,
+                item_label="Hoa hồng",
+                count=self.ROSE_FINAL_SEGMENT,
+                segment_label="Hồng 5 chậu tầng 6",
+            ),
         )
 
         roses_planted = int(rose_first.planted_count + rose_final.planted_count)
@@ -159,11 +167,15 @@ class RoseOilRecipe:
 
         self.context.stage("auto-recipe-rose-oil-snow-start")
         nav.main_to_floor_1()
-        snow = planting.harvest_and_replant_current_view(
-            seed_template=planting.SNOW_TEMPLATE,
-            item_label="Cây tuyết",
-            count=self.SNOW_REQUIRED,
-            segment_label="Tuyết 28 chậu",
+        snow = self.recovery.cycle.run_once(
+            "rose-oil-material-snow-floor-1",
+            label="Function 2 • Tuyết 28 tầng 1",
+            runner=lambda: planting.harvest_and_replant_current_view(
+                seed_template=planting.SNOW_TEMPLATE,
+                item_label="Cây tuyết",
+                count=self.SNOW_REQUIRED,
+                segment_label="Tuyết 28 chậu",
+            ),
         )
         if int(snow.planted_count) != self.SNOW_REQUIRED:
             raise RuntimeError(

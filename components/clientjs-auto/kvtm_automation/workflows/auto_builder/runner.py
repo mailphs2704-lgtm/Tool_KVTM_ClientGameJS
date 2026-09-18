@@ -303,6 +303,7 @@ class AutoBuilderRunner:
                     f"AUTO Builder • {function_id} • vòng {loop_index}/{loops} START"
                 )
                 self.function.run(function_id=function_id)
+                self.function.commit_cycle(function_id=function_id)
                 self.function_loops[function_id] = self.function_loops.get(function_id, 0) + 1
                 if bool(step.get("sale_after_each_loop", False)):
                     self.context.log(

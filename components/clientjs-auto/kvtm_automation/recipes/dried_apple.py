@@ -65,10 +65,14 @@ class DriedAppleRecipe:
             )
 
         self.auto.floors.go_up(1, label="dried-apple-main-to-floor1")
-        planted = self.auto.planting.plant_current_view(
-            seed_template=self.auto.planting.APPLE_TEMPLATE,
-            item_label="Táo",
-            count=self.PLANT_COUNT,
+        planted = self.recovery.cycle.run_once(
+            "dried-apple-material-27",
+            label="Táo 27 chậu cho Táo sấy",
+            runner=lambda: self.auto.planting.plant_current_view(
+                seed_template=self.auto.planting.APPLE_TEMPLATE,
+                item_label="Táo",
+                count=self.PLANT_COUNT,
+            ),
         )
         self.context.ensure_running()
         self.context.stage("auto-recipe-dried-apple-planted")
