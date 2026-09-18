@@ -146,8 +146,10 @@ def main() -> int:
     # Catalog/dispatcher/sale/scheduler remain Function-bound.
     require(catalog, '"function_2": FunctionSpec(', "Function 2 catalog entry missing")
     require(catalog, 'sale_item_ids=("tao_say", "vai_vang", "tinh_dau_hh")', "Function 2 sale ownership changed")
-    require(modules, 'elif spec.runner_key == "function_2":', "Function 2 dispatcher branch missing")
-    require(modules, "FunctionTwoWorkflow(self.auto).run()", "Function 2 dispatcher target missing")
+    require(modules, 'elif runner_key == "function_2":', "Function 2 cached dispatcher branch missing")
+    require(modules, "workflow = FunctionTwoWorkflow(self.auto)", "Function 2 cached dispatcher target missing")
+    require(modules, "result = self._workflow(spec.runner_key).run()", "Function dispatcher does not reuse in-flight workflow")
+    require(modules, "workflow.recovery.commit_cycle()", "Function dispatcher cannot commit completed cycle")
     require(sale_workflow, "def _require_function_resolution(self) -> None:", "Function 2 sale resolution gate missing")
     require(sale_workflow, "if native != (1000, 1000):", "Function 2 sale native-1000 check missing")
     require(sale_workflow, "VpSaleTransactionActions(", "Sale workflow does not use neutral VP transaction facade")
