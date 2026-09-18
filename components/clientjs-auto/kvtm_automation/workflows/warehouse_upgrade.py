@@ -129,13 +129,20 @@ class WarehouseUpgradeWorkflow:
         arrow = self.auto.vision.find(
             "nang_kho", threshold=0.78, click=False,
         )
+        self.context.stage("auto-warehouse-upgrade-open-warehouse")
         self.auto.vision.driver.click(*self.WAREHOUSE_ENTRY_POINT)
-        self.auto.wait.sleep(0.60)
-        if self.auto.vision.find("kho_vat_dung", threshold=0.72) is None:
-            self.auto.vision.driver.click(*self.STORAGE_3_POINT)
-            self.auto.wait.sleep(0.35)
+        self.auto.wait.sleep(0.50)
+
+        # ``kho_vat_dung`` is already visible as a side-tab template as soon as
+        # the generic warehouse panel opens. It must never be used as a reason
+        # to skip this required selection click.
+        self.context.stage("auto-warehouse-upgrade-select-item-warehouse")
+        self.auto.vision.driver.click(*self.STORAGE_3_POINT)
+        self.auto.wait.sleep(0.50)
+
+        self.context.stage("auto-warehouse-upgrade-select-upgrade-category")
         self.auto.vision.driver.click(*self.UPGRADE_CATEGORY_POINT)
-        self.auto.wait.sleep(0.40)
+        self.auto.wait.sleep(0.50)
         if self.auto.vision.find("kho_vat_dung", threshold=0.68) is None:
             raise ScreenTimeout("Không chứng minh được Kho vật dụng sau khi chọn tab nâng cấp")
         return arrow is not None
