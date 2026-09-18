@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 
 __all__ = ["install_optional_features_integration"]
 
@@ -223,8 +225,66 @@ def install_optional_features_integration(app_class, core) -> None:
             )
             window.destroy()
 
+        def test_from_main() -> None:
+            if len(profile_ids) != 1:
+                core.messagebox.showinfo(
+                    core.APP_NAME,
+                    "Test Nâng kho chỉ chạy một tài khoản mỗi lần.",
+                )
+                return
+            selected_mode = str(mode.get())
+            if selected_mode not in {"warehouse_1", "warehouse_2", "both", "max"}:
+                core.messagebox.showerror(core.APP_NAME, "Chế độ Nâng kho không hợp lệ.")
+                return
+            if not core.messagebox.askyesno(
+                core.APP_NAME,
+                "Chạy test Nâng kho từ Main đến khi bán xong và trở lại Main?\n\n"
+                "Nếu View 1 không có ô trống, quy trình có thể dùng 1 kim cương "
+                "để xóa một VP đang treo.",
+            ):
+                return
+            profile_id = profile_ids[0]
+            if (
+                self._clean_main_alive(profile_id)
+                or self._probe_thread_alive(profile_id)
+                or self._worker_alive(self._auto_workers.get(profile_id))
+                or self._worker_alive(self._clear_stall_workers.get(profile_id))
+            ):
+                core.messagebox.showinfo(
+                    core.APP_NAME,
+                    "Tài khoản đang có AUTO/Dọn quầy/Probe hoạt động. Hãy dừng trước khi test Nâng kho.",
+                )
+                return
+            pending = getattr(self, "_warehouse_upgrade_test_pending", None)
+            if not isinstance(pending, dict):
+                pending = {}
+                self._warehouse_upgrade_test_pending = pending
+            pending[profile_id] = {
+                "version": 1,
+                "warehouse_upgrade_enabled": True,
+                "warehouse_upgrade_mode": selected_mode,
+                "warehouse_upgrade_interval_hours": 2,
+                "warehouse_test_only": True,
+            }
+            self.note.set(
+                f"AUTO MULTI DEV • chuẩn bị Test Nâng kho • mode={selected_mode}"
+            )
+            window.destroy()
+            self._start_clean_auto_session()
+
+            def discard_unstarted_test() -> None:
+                if not self._clean_main_alive(profile_id):
+                    pending.pop(profile_id, None)
+
+            self.after(5000, discard_unstarted_test)
+
         core.ttk.Button(body, text="Lưu", command=save_and_close).grid(
-            row=3, column=0, columnspan=2, pady=(14, 0)
+            row=3, column=0, pady=(14, 0), padx=(0, 6)
+        )
+        core.ttk.Button(
+            body, text="Test từ Main", command=test_from_main,
+        ).grid(
+            row=3, column=1, pady=(14, 0), padx=(6, 0)
         )
 
     def _install_optional_features_in_control_slot(self) -> None:
@@ -306,6 +366,7 @@ def install_optional_features_integration(app_class, core) -> None:
         original_build_auto_panel(self)
         self._optional_features_refreshing = False
         self._optional_features_run_snapshot: dict[str, dict[str, bool]] = {}
+        self._warehouse_upgrade_test_pending: dict[str, dict[str, object]] = {}
         self._install_optional_features_in_control_slot()
         self.after_idle(self._refresh_optional_features)
 
@@ -329,6 +390,14 @@ def install_optional_features_integration(app_class, core) -> None:
 
     def run_clean_main_thread(self, *args, **kwargs) -> None:
         profile_id = str(args[0] if args else kwargs.get("profile_id") or "")
+        work_dir = Path(args[3] if len(args) > 3 else kwargs["work_dir"])
+        test_config = self._warehouse_upgrade_test_pending.pop(profile_id, None)
+        if isinstance(test_config, dict):
+            work_dir.mkdir(parents=True, exist_ok=True)
+            (work_dir / "warehouse-test-config.json").write_text(
+                json.dumps(test_config, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
         snapshots = getattr(self, "_optional_features_run_snapshot", {})
         snapshot = snapshots.pop(profile_id, None) if isinstance(snapshots, dict) else None
         if isinstance(snapshot, dict):

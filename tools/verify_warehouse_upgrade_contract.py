@@ -59,8 +59,12 @@ def main() -> int:
 
     require(optional, '"warehouse_upgrade_interval_hours": 2', "Default 2h missing")
     require(optional, 'window.title("Nâng kho")', "Nâng kho panel title missing")
+    require(optional, 'text="Test từ Main"', "Warehouse one-shot test button missing")
+    require(optional, 'warehouse-test-config.json', "Warehouse test marker missing")
     require(ui, 'text="Nâng kho"', "Quick Nâng kho button missing")
     require(worker, '"warehouse_upgrade_mode": "warehouse_1"', "Worker config missing")
+    require(worker, 'outcome="warehouse_upgrade_test_finished"', "Warehouse test outcome missing")
+    require(worker, "Test Nâng kho đã bán xong nhưng chưa chứng minh exact MAIN", "Test exact-main return proof missing")
     require(schedule, "WarehouseUpgradeWorkflow(", "Safe-boundary scheduler missing")
     require(schedule, "_warehouse_upgrade_due_after_sale", "Post-sale due gate missing")
 
