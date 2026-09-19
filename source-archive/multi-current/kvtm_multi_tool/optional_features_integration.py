@@ -21,6 +21,7 @@ _DEFAULT_OPTIONAL_FEATURES = {
     "warehouse_upgrade_enabled": False,
     "warehouse_upgrade_mode": "warehouse_1",
     "warehouse_upgrade_interval_hours": 2,
+    "warehouse_upgrade_allow_diamond_slot_delete": False,
 }
 
 
@@ -43,6 +44,9 @@ def _normalize_optional_features(raw) -> dict[str, object]:
         ),
         "warehouse_upgrade_mode": mode,
         "warehouse_upgrade_interval_hours": max(1, min(168, interval)),
+        "warehouse_upgrade_allow_diamond_slot_delete": bool(
+            current.get("warehouse_upgrade_allow_diamond_slot_delete", False)
+        ),
     }
 
 
@@ -208,6 +212,11 @@ def install_optional_features_integration(app_class, core) -> None:
         interval = core.tk.IntVar(
             value=int(saved.get("warehouse_upgrade_interval_hours", 2))
         )
+        allow_diamond_slot_delete = core.tk.BooleanVar(
+            value=bool(
+                saved.get("warehouse_upgrade_allow_diamond_slot_delete", False)
+            )
+        )
 
         core.ttk.Checkbutton(
             body,
@@ -259,6 +268,22 @@ def install_optional_features_integration(app_class, core) -> None:
             justify="left",
         ).grid(row=6, column=0, sticky="w", pady=(12, 0))
 
+        core.ttk.Checkbutton(
+            body,
+            text="Cho phép dùng 1 KC xóa VP khi quầy không có ô trống",
+            variable=allow_diamond_slot_delete,
+        ).grid(row=7, column=0, sticky="w", pady=(12, 0))
+        core.ttk.Label(
+            body,
+            text=(
+                "Không bật: chỉ dùng ô trống có sẵn; nếu quầy đầy, AUTO thoát "
+                "Nâng kho và bắt đầu lại Function."
+            ),
+            style="AutoValue.TLabel",
+            justify="left",
+            wraplength=520,
+        ).grid(row=8, column=0, sticky="w", pady=(4, 0))
+
         def close_panel() -> None:
             try:
                 window.grab_release()
@@ -284,6 +309,9 @@ def install_optional_features_integration(app_class, core) -> None:
                 "warehouse_upgrade_enabled": bool(enabled.get()),
                 "warehouse_upgrade_mode": selected_mode,
                 "warehouse_upgrade_interval_hours": hours,
+                "warehouse_upgrade_allow_diamond_slot_delete": bool(
+                    allow_diamond_slot_delete.get()
+                ),
             }
             for profile_id in profile_ids:
                 current = self._optional_profile_settings(profile_id)
@@ -298,7 +326,7 @@ def install_optional_features_integration(app_class, core) -> None:
             close_panel()
 
         actions = core.ttk.Frame(body, style="Detail.TFrame")
-        actions.grid(row=7, column=0, sticky="e", pady=(16, 0))
+        actions.grid(row=9, column=0, sticky="e", pady=(16, 0))
         core.ttk.Button(
             actions, text="Hủy", command=close_panel,
         ).pack(side="left", padx=(0, 8))
@@ -420,6 +448,9 @@ def install_optional_features_integration(app_class, core) -> None:
             warehouse_enabled = bool(snapshot.get("warehouse_upgrade_enabled", False))
             warehouse_mode = str(snapshot.get("warehouse_upgrade_mode", "warehouse_1"))
             warehouse_hours = int(snapshot.get("warehouse_upgrade_interval_hours", 2))
+            warehouse_allow_diamond = bool(
+                snapshot.get("warehouse_upgrade_allow_diamond_slot_delete", False)
+            )
             pending = getattr(self, "_auto_main_pending_config", None)
             if isinstance(pending, dict):
                 config = pending.get(profile_id)
@@ -429,6 +460,9 @@ def install_optional_features_integration(app_class, core) -> None:
                     config["warehouse_upgrade_enabled"] = warehouse_enabled
                     config["warehouse_upgrade_mode"] = warehouse_mode
                     config["warehouse_upgrade_interval_hours"] = warehouse_hours
+                    config["warehouse_upgrade_allow_diamond_slot_delete"] = (
+                        warehouse_allow_diamond
+                    )
             active = getattr(self, "_auto_main_active_config", None)
             if isinstance(active, dict):
                 config = active.get(profile_id)
@@ -438,6 +472,9 @@ def install_optional_features_integration(app_class, core) -> None:
                     config["warehouse_upgrade_enabled"] = warehouse_enabled
                     config["warehouse_upgrade_mode"] = warehouse_mode
                     config["warehouse_upgrade_interval_hours"] = warehouse_hours
+                    config["warehouse_upgrade_allow_diamond_slot_delete"] = (
+                        warehouse_allow_diamond
+                    )
         return original_run_clean_main_thread(self, *args, **kwargs)
 
     app_class._build_auto_panel = build_auto_panel

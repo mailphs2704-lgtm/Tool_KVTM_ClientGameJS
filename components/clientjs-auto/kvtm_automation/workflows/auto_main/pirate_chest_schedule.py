@@ -48,6 +48,9 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         warehouse = self._load_warehouse_upgrade_settings()
         self.warehouse_upgrade_enabled = bool(warehouse["enabled"])
         self.warehouse_upgrade_mode = str(warehouse["mode"])
+        self.warehouse_upgrade_allow_diamond_slot_delete = bool(
+            warehouse["allow_diamond_slot_delete"]
+        )
         self.warehouse_upgrade_interval_seconds = float(warehouse["interval_seconds"])
         self.warehouse_upgrade_calls = 0
         self._warehouse_upgrade_first_sale_pending = self.warehouse_upgrade_enabled
@@ -99,6 +102,12 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
             + ("BẬT" if self.warehouse_upgrade_enabled else "TẮT")
             + f" • mode={self.warehouse_upgrade_mode}"
             + f" • chu kỳ={self.warehouse_upgrade_interval_seconds / 3600.0:g} giờ"
+            + " • xóa VP bằng KC="
+            + (
+                "CHO PHÉP"
+                if self.warehouse_upgrade_allow_diamond_slot_delete
+                else "KHÔNG"
+            )
             + " • lần đầu=sau sale VP đầu tiên"
         )
 
@@ -150,6 +159,9 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         return {
             "enabled": bool(raw.get("warehouse_upgrade_enabled", False)),
             "mode": mode,
+            "allow_diamond_slot_delete": bool(
+                raw.get("warehouse_upgrade_allow_diamond_slot_delete", False)
+            ),
             "interval_seconds": float(hours * 3600),
         }
 
@@ -169,7 +181,11 @@ class AutoMainWorkflow(_BoundaryAutoMainWorkflow):
         try:
             self._prove_exact_main_boundary(reason="warehouse-upgrade-before-run")
             result = WarehouseUpgradeWorkflow(
-                self.auto, mode=self.warehouse_upgrade_mode,
+                self.auto,
+                mode=self.warehouse_upgrade_mode,
+                allow_diamond_slot_delete=(
+                    self.warehouse_upgrade_allow_diamond_slot_delete
+                ),
             ).run()
         except AutomationStopped:
             raise

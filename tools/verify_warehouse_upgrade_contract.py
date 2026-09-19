@@ -57,7 +57,9 @@ def main() -> int:
     require(workflow, 'auto-warehouse-upgrade-prove-upgrade-category', "Upgrade-category proof stage missing")
     require(workflow, '"check_vp_nang_kho"', "Selected upgrade-category template missing")
     require(workflow, "tab nguyên liệu nền vàng VERIFIED", "Selected upgrade-category proof missing")
+    require(workflow, "if not self.allow_diamond_slot_delete:", "Diamond consent gate missing")
     require(workflow, "self._delete_one_listing_for_slot()", "Diamond slot recovery missing")
+    require(workflow, "Nâng kho bỏ qua • quầy không có ô trống • không dùng KC", "Safe no-slot skip missing")
     require(workflow, "quantity_passes >= 2", "Existing two-pass x10 proof missing")
     require(workflow, "center[0] - 42, center[1] + 12, 100, 42", "Quantity crop must retain final digit")
     require(workflow, "panel Tôm READY", "Tom material sale panel proof missing")
@@ -76,11 +78,14 @@ def main() -> int:
     require(optional, '"warehouse_upgrade_interval_hours": 2', "Default 2h missing")
     require(optional, 'window.title("Cấu hình Nâng kho")', "Official panel title missing")
     require(optional, 'text="Lưu cấu hình"', "Official save action missing")
+    require(optional, 'text="Cho phép dùng 1 KC xóa VP khi quầy không có ô trống"', "Diamond consent checkbox missing")
+    require(optional, '"warehouse_upgrade_allow_diamond_slot_delete": False', "Diamond consent must default OFF")
     require(optional, 'window.transient(self)', "Configuration dialog ownership missing")
     require(optional, 'window.grab_set()', "Configuration dialog modal behavior missing")
     require(optional, '"✓ Nâng kho" if warehouse_enabled', "Quick status indicator missing")
     require(ui, 'text="Nâng kho"', "Quick Nâng kho button missing")
     require(worker, '"warehouse_upgrade_mode": "warehouse_1"', "Worker config missing")
+    require(worker, '"warehouse_upgrade_allow_diamond_slot_delete": False', "Worker diamond consent default missing")
     require(schedule, "WarehouseUpgradeWorkflow(", "Safe-boundary scheduler missing")
     require(schedule, "_warehouse_upgrade_due_after_sale", "Post-sale due gate missing")
     combined = optional + worker + ui
@@ -110,7 +115,7 @@ def main() -> int:
     print("AUTO MULTI DEV WAREHOUSE UPGRADE CONTRACT VERIFIED")
     print("modes=warehouse1|warehouse2|both|max; interval=2h-configurable")
     print("balance=fixed-at-scan+10-tolerance; drain=until-below-x10")
-    print("sale=view1+gold+empty-or-1diamond+fresh-item-position+two-pass-x10")
+    print("sale=view1+gold+empty; 1diamond=explicit-consent-only; full-stall=safe-skip")
     return 0
 
 

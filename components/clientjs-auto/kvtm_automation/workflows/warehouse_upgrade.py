@@ -77,13 +77,16 @@ class WarehouseUpgradeWorkflow:
     DELETE_DIAMOND_ZONE = (390, 490, 220, 100)
     SELECTED_ITEM_ZONE = (680, 240, 180, 180)
 
-    def __init__(self, automation, *, mode: str) -> None:
+    def __init__(
+        self, automation, *, mode: str, allow_diamond_slot_delete: bool = False,
+    ) -> None:
         self.auto = automation
         self.context = automation.context
         selected = str(mode)
         if selected not in self.MODES:
             raise ValueError(f"Chế độ Nâng kho không hợp lệ: {selected}")
         self.mode = selected
+        self.allow_diamond_slot_delete = bool(allow_diamond_slot_delete)
         self._sale_slot_center: tuple[int, int] | None = None
 
     @staticmethod
@@ -290,6 +293,13 @@ class WarehouseUpgradeWorkflow:
 
         empty = self.auto.selling.find_empty_slot(click=False)
         if empty is None:
+            if not self.allow_diamond_slot_delete:
+                raise NoEmptyStallSlot(
+                    "Quầy không có ô trống và chưa bật xác nhận dùng KC xóa VP"
+                )
+            self.context.log(
+                "AUTO Nâng kho • quầy đầy • đã được xác nhận dùng KC tạo ô trống"
+            )
             self._delete_one_listing_for_slot()
             empty = self.auto.selling.find_empty_slot(click=False)
         if empty is None:
@@ -422,6 +432,17 @@ class WarehouseUpgradeWorkflow:
             for item_id in plan.drain_items:
                 while self._sell_one_batch(item_id):
                     sold[item_id] += 1
+        except NoEmptyStallSlot:
+            # A full stall is an expected safe skip when the operator has not
+            # explicitly authorized spending diamonds. Closing the stall in
+            # ``finally`` returns AUTO Main to its Function boundary; do not
+            # turn this into warehouse recovery/retry after the next sale.
+            self.context.action(
+                "Nâng kho bỏ qua • quầy không có ô trống • không dùng KC"
+            )
+            self.context.log(
+                "AUTO Nâng kho • NO EMPTY SLOT • thoát quầy và bắt đầu lại Function"
+            )
         finally:
             self.auto.stall.close_own_stall()
         return sold

@@ -175,6 +175,7 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         "warehouse_upgrade_enabled": False,
         "warehouse_upgrade_mode": "warehouse_1",
         "warehouse_upgrade_interval_hours": 2,
+        "warehouse_upgrade_allow_diamond_slot_delete": False,
     }
     if effective_mode != "main":
         return default
@@ -215,6 +216,9 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         "warehouse_upgrade_enabled": warehouse_enabled,
         "warehouse_upgrade_mode": warehouse_mode,
         "warehouse_upgrade_interval_hours": warehouse_hours,
+        "warehouse_upgrade_allow_diamond_slot_delete": bool(
+            raw.get("warehouse_upgrade_allow_diamond_slot_delete", False)
+        ),
     }
 
 
