@@ -182,26 +182,38 @@ def install_optional_features_integration(app_class, core) -> None:
         window = core.tk.Toplevel(self)
         window.title("Cấu hình Nâng kho")
         window.transient(self)
-        window.resizable(False, False)
+        try:
+            window.grab_set()
+        except Exception:
+            pass
 
-        body = core.ttk.Frame(window, style="Detail.TFrame", padding=16)
-        body.pack(fill="both", expand=True)
-        body.columnconfigure(0, weight=1)
-
+        # Keep this optional-feature dialog visually identical to the main
+        # AUTO MULTI DEV configuration window: same header/body split, theme
+        # styles, LabelFrame sections, spacing and action-button ordering.
+        header = core.ttk.Frame(
+            window, padding=(16, 13, 16, 8), style="Detail.TFrame"
+        )
+        header.pack(fill="x")
         core.ttk.Label(
-            body, text="CẤU HÌNH NÂNG KHO", style="AutoKey.TLabel",
-        ).grid(row=0, column=0, sticky="w")
+            header,
+            text="CẤU HÌNH NÂNG KHO",
+            style="Section.TLabel",
+        ).pack(anchor="w")
         core.ttk.Label(
-            body,
+            header,
             text=(
                 f"Áp dụng cho {len(profile_ids)} tài khoản đã chọn • "
                 "chạy sau lượt bán VP"
             ),
             style="AutoValue.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 10))
-        core.ttk.Separator(body, orient="horizontal").grid(
-            row=2, column=0, sticky="ew", pady=(0, 12)
+            anchor="w",
+            justify="left",
+        ).pack(anchor="w", pady=(4, 0))
+
+        body = core.ttk.Frame(
+            window, padding=(16, 4, 16, 12), style="Detail.TFrame"
         )
+        body.pack(fill="both", expand=True)
 
         enabled = core.tk.BooleanVar(
             value=bool(saved.get("warehouse_upgrade_enabled", False))
@@ -218,16 +230,29 @@ def install_optional_features_integration(app_class, core) -> None:
             )
         )
 
-        core.ttk.Checkbutton(
+        behavior_box = core.ttk.LabelFrame(
             body,
+            text="HOẠT ĐỘNG",
+            padding=(12, 10),
+            style="Auto.TLabelframe",
+        )
+        behavior_box.pack(fill="x")
+
+        core.ttk.Checkbutton(
+            behavior_box,
             text="Bật tự động nâng và cân bằng kho",
             variable=enabled,
-        ).grid(row=3, column=0, sticky="w", pady=(0, 12))
+        ).pack(anchor="w")
 
         mode_box = core.ttk.LabelFrame(
-            body, text=" Chế độ xử lý ", padding=(12, 8),
+            body,
+            text="CHẾ ĐỘ XỬ LÝ",
+            padding=(12, 10),
+            style="Auto.TLabelframe",
         )
-        mode_box.grid(row=4, column=0, sticky="ew")
+        mode_box.pack(fill="x", pady=(12, 0))
+        mode_box.columnconfigure(0, weight=1)
+        mode_box.columnconfigure(1, weight=1)
         choices = (
             ("Nâng kho 1", "warehouse_1"),
             ("Nâng kho 2", "warehouse_2"),
@@ -241,24 +266,30 @@ def install_optional_features_integration(app_class, core) -> None:
                 row=index // 2,
                 column=index % 2,
                 sticky="w",
-                padx=(0 if index % 2 == 0 else 18, 8),
-                pady=3,
+                padx=(0 if index % 2 == 0 else 24, 8),
+                pady=6,
             )
 
-        schedule_box = core.ttk.Frame(body, style="Detail.TFrame")
-        schedule_box.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        schedule_box = core.ttk.LabelFrame(
+            body,
+            text="LỊCH CHẠY",
+            padding=(12, 10),
+            style="Auto.TLabelframe",
+        )
+        schedule_box.pack(fill="x", pady=(12, 0))
+        schedule_box.columnconfigure(1, weight=1)
         core.ttk.Label(
-            schedule_box, text="Chu kỳ kiểm tra:", style="AutoKey.TLabel",
-        ).pack(side="left")
+            schedule_box, text="Chu kỳ kiểm tra", style="AutoValue.TLabel",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8), pady=6)
         core.ttk.Spinbox(
-            schedule_box, from_=1, to=168, width=7, textvariable=interval,
-        ).pack(side="left", padx=(10, 6))
+            schedule_box, from_=1, to=168, width=14, textvariable=interval,
+        ).grid(row=0, column=1, sticky="w", pady=6)
         core.ttk.Label(
             schedule_box, text="giờ", style="AutoValue.TLabel",
-        ).pack(side="left")
+        ).grid(row=0, column=2, sticky="w", padx=(6, 0), pady=6)
 
         core.ttk.Label(
-            body,
+            schedule_box,
             text=(
                 "Kho 1: giữ/cân bằng Gỗ, Gạch, Sơn đỏ.  "
                 "Kho 2: giữ/cân bằng Đinh, Sơn vàng, Đá.\n"
@@ -266,15 +297,23 @@ def install_optional_features_integration(app_class, core) -> None:
             ),
             style="AutoValue.TLabel",
             justify="left",
-        ).grid(row=6, column=0, sticky="w", pady=(12, 0))
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+
+        diamond_box = core.ttk.LabelFrame(
+            body,
+            text="Ô TRỐNG QUẦY BÁN",
+            padding=(12, 10),
+            style="Auto.TLabelframe",
+        )
+        diamond_box.pack(fill="x", pady=(12, 0))
 
         core.ttk.Checkbutton(
-            body,
+            diamond_box,
             text="Cho phép dùng 1 KC xóa VP khi quầy không có ô trống",
             variable=allow_diamond_slot_delete,
-        ).grid(row=7, column=0, sticky="w", pady=(12, 0))
+        ).pack(anchor="w")
         core.ttk.Label(
-            body,
+            diamond_box,
             text=(
                 "Không bật: chỉ dùng ô trống có sẵn; nếu quầy đầy, AUTO thoát "
                 "Nâng kho và bắt đầu lại Function."
@@ -282,7 +321,7 @@ def install_optional_features_integration(app_class, core) -> None:
             style="AutoValue.TLabel",
             justify="left",
             wraplength=520,
-        ).grid(row=8, column=0, sticky="w", pady=(4, 0))
+        ).pack(anchor="w", pady=(4, 0))
 
         def close_panel() -> None:
             try:
@@ -325,18 +364,47 @@ def install_optional_features_integration(app_class, core) -> None:
             )
             close_panel()
 
+        def reset_defaults() -> None:
+            enabled.set(False)
+            mode.set("warehouse_1")
+            interval.set(2)
+            allow_diamond_slot_delete.set(False)
+
         actions = core.ttk.Frame(body, style="Detail.TFrame")
-        actions.grid(row=9, column=0, sticky="e", pady=(16, 0))
+        actions.pack(fill="x", pady=(14, 0))
         core.ttk.Button(
-            actions, text="Hủy", command=close_panel,
+            actions,
+            text="Lưu cấu hình",
+            style="AutoStart.TButton",
+            command=save_and_close,
         ).pack(side="left", padx=(0, 8))
         core.ttk.Button(
-            actions, text="Lưu cấu hình", command=save_and_close,
+            actions,
+            text="Mặc định",
+            style="Action.TButton",
+            command=reset_defaults,
+        ).pack(side="left", padx=(0, 8))
+        core.ttk.Button(
+            actions,
+            text="Đóng",
+            style="Action.TButton",
+            command=close_panel,
         ).pack(side="left")
 
         window.protocol("WM_DELETE_WINDOW", close_panel)
-        window.grab_set()
         window.focus_set()
+        placer = getattr(self, "_place_auto_child_window", None)
+        if callable(placer):
+            placer(
+                window,
+                preferred_width=700,
+                preferred_height=600,
+                min_width=590,
+                min_height=500,
+            )
+        else:
+            window.geometry("700x600")
+            window.minsize(590, 500)
 
     def _install_optional_features_in_control_slot(self) -> None:
         function_button = getattr(self, "auto_multi_dev_function_button", None)
