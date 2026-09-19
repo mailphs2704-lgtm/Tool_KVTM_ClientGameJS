@@ -74,15 +74,24 @@ def main() -> int:
     require(workflow, "Không quét đủ 6 nguyên liệu", "Six-material fail-close missing")
 
     require(optional, '"warehouse_upgrade_interval_hours": 2', "Default 2h missing")
-    require(optional, 'window.title("Nâng kho")', "Nâng kho panel title missing")
-    require(optional, 'text="Test từ Main"', "Warehouse one-shot test button missing")
-    require(optional, 'warehouse-test-config.json', "Warehouse test marker missing")
+    require(optional, 'window.title("Cấu hình Nâng kho")', "Official panel title missing")
+    require(optional, 'text="Lưu cấu hình"', "Official save action missing")
+    require(optional, 'window.transient(self)', "Configuration dialog ownership missing")
+    require(optional, 'window.grab_set()', "Configuration dialog modal behavior missing")
+    require(optional, '"✓ Nâng kho" if warehouse_enabled', "Quick status indicator missing")
     require(ui, 'text="Nâng kho"', "Quick Nâng kho button missing")
     require(worker, '"warehouse_upgrade_mode": "warehouse_1"', "Worker config missing")
-    require(worker, 'outcome="warehouse_upgrade_test_finished"', "Warehouse test outcome missing")
-    require(worker, "Test Nâng kho đã bán xong nhưng chưa chứng minh exact MAIN", "Test exact-main return proof missing")
     require(schedule, "WarehouseUpgradeWorkflow(", "Safe-boundary scheduler missing")
     require(schedule, "_warehouse_upgrade_due_after_sale", "Post-sale due gate missing")
+    combined = optional + worker + ui
+    for forbidden in (
+        'Test từ Main',
+        'warehouse-test-config.json',
+        'warehouse_test_only',
+        'warehouse_upgrade_test_finished',
+    ):
+        if forbidden in combined:
+            raise AssertionError(f"Warehouse test-only path still present: {forbidden}")
 
     sys.path.insert(0, str(CLEAN))
     from kvtm_automation.workflows.warehouse_upgrade import WarehouseUpgradeWorkflow
