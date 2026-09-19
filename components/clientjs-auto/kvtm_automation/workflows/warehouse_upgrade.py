@@ -296,16 +296,9 @@ class WarehouseUpgradeWorkflow:
             return False
         self.auto.vision.driver.click(*match.center)
         self.auto.wait.sleep(0.50)
-        try:
-            self.auto.selling.wait_sale_dialog_ready(
-                timeout=4.0,
-                description=f"dialog bán {self.LABELS[item_id]}",
-            )
-        except ScreenTimeout as exc:
-            self.auto.selling._cancel_dialog()
-            raise TransactionError(
-                f"{self.LABELS[item_id]} không mở được dialog bán"
-            ) from exc
+        # Upgrade materials do not use the ordinary orange ``Đặt bán`` dialog.
+        # Selecting one opens the right-hand Tôm panel; item identity + x10 are
+        # the only safe proofs before clicking the blue ``Bán cho Tôm`` button.
         selected_passes = 0
         for attempt in range(1, 4):
             selected = self.auto.vision.find(
@@ -318,7 +311,7 @@ class WarehouseUpgradeWorkflow:
             if attempt < 3:
                 self.auto.wait.sleep(0.20)
         if selected_passes < 2:
-            self.auto.selling._cancel_dialog()
+            self.auto.selling.close_inventory_read_only(timeout=3.0)
             raise TransactionError(f"Dialog chưa chứng minh đúng {self.LABELS[item_id]}")
         native = self.auto.selling.native_size()
         if native == (500, 500):
@@ -346,18 +339,39 @@ class WarehouseUpgradeWorkflow:
             if attempt < 3:
                 self.auto.wait.sleep(0.20)
         if not fast_ready and quantity_passes < 2:
-            self.auto.selling._cancel_dialog()
             self.auto.selling.close_inventory_read_only(timeout=3.0)
             return False
-        self.auto.vision.driver.click(*self.auto.selling.PLACE_BUTTON)
-        self.auto.wait.settle(0.25)
-        self.auto.vision.find("dong_y", threshold=0.74, zone=self.auto.selling.CONFIRM_ZONE, click=True)
-        self.auto.selling.wait_own_stall_ready(
-            timeout=5.0, required_passes=1,
-            description="quầy sau bán nguyên liệu nâng kho",
-        )
         self.context.log(
-            f"AUTO Nâng kho • đã bán {self.LABELS[item_id]} x10 • "
+            f"AUTO Nâng kho • panel Tôm READY • {self.LABELS[item_id]} x10 • "
+            f"quantity_score={best_quantity:.3f}"
+        )
+        # The same logical point as PLACE_BUTTON lands on the live blue
+        # ``Bán cho Tôm`` button for this picker layout.
+        self.auto.vision.driver.click(*self.auto.selling.PLACE_BUTTON)
+        self.auto.wait.settle(0.35)
+        try:
+            confirm = self.auto.wait.until(
+                lambda: self.auto.vision.find(
+                    "dong_y",
+                    threshold=0.74,
+                    zone=self.auto.selling.CONFIRM_ZONE,
+                    click=False,
+                ),
+                timeout=4.0,
+                interval=0.20,
+                description=f"xác nhận Tôm mua {self.LABELS[item_id]} x10",
+            )
+        except ScreenTimeout as exc:
+            self.auto.selling.close_inventory_read_only(timeout=3.0)
+            raise TransactionError(
+                f"Không mở được xác nhận Bán cho Tôm: {self.LABELS[item_id]}"
+            ) from exc
+        self.auto.vision.driver.click(*confirm.center)
+        self.auto.wait.settle(0.50)
+        self.auto.inventory.wait_storage_picker_ready(timeout=4.0)
+        self.auto.selling.close_inventory_read_only(timeout=4.0)
+        self.context.log(
+            f"AUTO Nâng kho • Tôm đã mua {self.LABELS[item_id]} x10 • "
             f"quantity_score={best_quantity:.3f}"
         )
         return True

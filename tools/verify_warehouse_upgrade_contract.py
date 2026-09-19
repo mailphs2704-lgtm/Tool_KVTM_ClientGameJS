@@ -60,7 +60,11 @@ def main() -> int:
     require(workflow, "self._delete_one_listing_for_slot()", "Diamond slot recovery missing")
     require(workflow, "quantity_passes >= 2", "Existing two-pass x10 proof missing")
     require(workflow, "center[0] - 42, center[1] + 12, 100, 42", "Quantity crop must retain final digit")
-    require(workflow, "wait_sale_dialog_ready(", "Sale dialog bounded animation wait missing")
+    require(workflow, "panel Tôm READY", "Tom material sale panel proof missing")
+    require(workflow, "xác nhận Tôm mua", "Tom confirmation wait missing")
+    require(workflow, "Tôm đã mua", "Tom confirmed-sale accounting missing")
+    if "wait_sale_dialog_ready(" in workflow:
+        raise AssertionError("Warehouse material sale must not wait for ordinary dat_ban dialog")
     require(workflow, "if item_id in found:", "Post-swipe de-duplication missing")
     require(workflow, "Không quét đủ 6 nguyên liệu", "Six-material fail-close missing")
 
