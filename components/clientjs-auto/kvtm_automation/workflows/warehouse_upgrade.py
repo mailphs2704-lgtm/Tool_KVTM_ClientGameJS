@@ -84,6 +84,7 @@ class WarehouseUpgradeWorkflow:
         if selected not in self.MODES:
             raise ValueError(f"Chế độ Nâng kho không hợp lệ: {selected}")
         self.mode = selected
+        self._sale_slot_center: tuple[int, int] | None = None
 
     @staticmethod
     def build_plan(mode: str, quantities: dict[str, int]) -> WarehouseSalePlan:
@@ -270,19 +271,41 @@ class WarehouseUpgradeWorkflow:
         self.context.log("AUTO Nâng kho • đã dùng 1 KC tạo một ô trống tại View 1")
 
     def _open_material_picker(self) -> None:
+        if self._sale_slot_center is not None:
+            # Tôm returns directly to the same still-open stall after every
+            # confirmed batch. Reuse the first proven empty slot; do not rescan
+            # all eight slots or all storage tabs on every x10 transaction.
+            self.auto.selling.wait_own_stall_ready(
+                timeout=3.0,
+                required_passes=1,
+                description="quầy trước khi tái dùng ô trống",
+            )
+            self.auto.vision.driver.click(*self._sale_slot_center)
+            self.auto.wait.sleep(0.35)
+            self.context.detail(
+                "AUTO Nâng kho • FAST REUSE ô trống • "
+                f"point={self._sale_slot_center} • bỏ quét lại quầy/kho"
+            )
+            return
+
         empty = self.auto.selling.find_empty_slot(click=False)
         if empty is None:
             self._delete_one_listing_for_slot()
             empty = self.auto.selling.find_empty_slot(click=False)
         if empty is None:
             raise NoEmptyStallSlot("Không tạo được ô trống cho bán nguyên liệu nâng kho")
-        self.auto.vision.driver.click(*empty.center)
+        self._sale_slot_center = tuple(map(int, empty.center))
+        self.auto.vision.driver.click(*self._sale_slot_center)
         self.auto.inventory.wait_storage_picker_ready(timeout=3.0)
         self.auto.inventory.select_storage_after_picker_ready(3)
         # The game preserves the yellow upgrade-material category selected by
         # the inventory scan. Re-clicking its arrow here toggles/disrupts the
         # picker and made a recognized material ignore the subsequent click.
         self.auto.wait.sleep(0.50)
+        self.context.log(
+            "AUTO Nâng kho • khóa ô trống dùng suốt lượt bán • "
+            f"point={self._sale_slot_center}"
+        )
 
     def _sell_one_batch(self, item_id: str) -> bool:
         self._open_material_picker()
