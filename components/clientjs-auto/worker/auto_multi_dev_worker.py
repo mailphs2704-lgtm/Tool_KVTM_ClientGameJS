@@ -175,16 +175,10 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         "warehouse_upgrade_enabled": False,
         "warehouse_upgrade_mode": "warehouse_1",
         "warehouse_upgrade_interval_hours": 2,
-        "warehouse_test_only": False,
     }
     if effective_mode != "main":
         return default
-    test_marker = Path(args.work_dir).resolve() / "warehouse-test-config.json"
-    marker = (
-        test_marker
-        if test_marker.is_file()
-        else Path(args.work_dir).resolve() / "auto-main-config.json"
-    )
+    marker = Path(args.work_dir).resolve() / "auto-main-config.json"
     if not marker.is_file():
         return default
     try:
@@ -204,7 +198,6 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
     if warehouse_mode not in {"warehouse_1", "warehouse_2", "both", "max"}:
         raise ValueError("AUTO Main warehouse_upgrade_mode không hợp lệ")
     warehouse_hours = int(raw.get("warehouse_upgrade_interval_hours", 2) or 2)
-    warehouse_test_only = bool(raw.get("warehouse_test_only", test_marker.is_file()))
     if not 1 <= warehouse_hours <= 168:
         raise ValueError("AUTO Main warehouse_upgrade_interval_hours phải trong 1..168")
     if not function_id:
@@ -222,7 +215,6 @@ def _load_auto_main_config(args, effective_mode: str) -> dict:
         "warehouse_upgrade_enabled": warehouse_enabled,
         "warehouse_upgrade_mode": warehouse_mode,
         "warehouse_upgrade_interval_hours": warehouse_hours,
-        "warehouse_test_only": warehouse_test_only,
     }
 
 
@@ -452,35 +444,6 @@ def main() -> int:
             log(
                 "PASS | lifecycle camera READY • bàn giao trực tiếp cho AUTO Main"
             )
-            if bool(auto_main_config.get("warehouse_test_only", False)):
-                from kvtm_automation.workflows.warehouse_upgrade import (
-                    WarehouseUpgradeWorkflow,
-                )
-
-                warehouse_mode = str(auto_main_config["warehouse_upgrade_mode"])
-                log(
-                    "AUTO Nâng kho TEST • exact MAIN READY • "
-                    f"mode={warehouse_mode} • chạy một lượt độc lập"
-                )
-                test_result = WarehouseUpgradeWorkflow(
-                    automation, mode=warehouse_mode,
-                ).run()
-                if not automation.popup.is_own_exact_main_screen():
-                    automation.ensure_main_screen(timeout=15.0)
-                if not automation.popup.is_own_exact_main_screen():
-                    raise RuntimeError(
-                        "Test Nâng kho đã bán xong nhưng chưa chứng minh exact MAIN"
-                    )
-                emit(
-                    "worker_finished", workflow=WORKFLOW_NAME,
-                    profile_id=args.profile_id,
-                    outcome="warehouse_upgrade_test_finished",
-                    mode=test_result.mode,
-                    sold_batches=test_result.sold_batches,
-                    quantities=test_result.quantities,
-                    upgrade_arrow_seen=test_result.upgrade_arrow_seen,
-                )
-                return 0
             result = AutoMainWorkflow(
                 automation,
                 function_id=function_id,
