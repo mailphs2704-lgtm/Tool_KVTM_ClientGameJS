@@ -368,11 +368,17 @@ class WarehouseUpgradeWorkflow:
             ) from exc
         self.auto.vision.driver.click(*confirm.center)
         self.auto.wait.settle(0.50)
-        self.auto.inventory.wait_storage_picker_ready(timeout=4.0)
-        self.auto.selling.close_inventory_read_only(timeout=4.0)
+        # Live game closes the inventory automatically after Tôm confirms and
+        # returns directly to the still-open own stall. Prove that boundary;
+        # the next batch will find and click the same empty slot again.
+        self.auto.selling.wait_own_stall_ready(
+            timeout=5.0,
+            required_passes=1,
+            description="quầy sau khi Tôm mua nguyên liệu",
+        )
         self.context.log(
             f"AUTO Nâng kho • Tôm đã mua {self.LABELS[item_id]} x10 • "
-            f"quantity_score={best_quantity:.3f}"
+            f"quantity_score={best_quantity:.3f} • quầy READY • tái dùng ô trống"
         )
         return True
 

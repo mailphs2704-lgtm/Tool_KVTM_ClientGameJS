@@ -63,6 +63,8 @@ def main() -> int:
     require(workflow, "panel Tôm READY", "Tom material sale panel proof missing")
     require(workflow, "xác nhận Tôm mua", "Tom confirmation wait missing")
     require(workflow, "Tôm đã mua", "Tom confirmed-sale accounting missing")
+    require(workflow, "quầy sau khi Tôm mua nguyên liệu", "Post-Tom own-stall proof missing")
+    require(workflow, "tái dùng ô trống", "Empty-slot reuse contract missing")
     if "wait_sale_dialog_ready(" in workflow:
         raise AssertionError("Warehouse material sale must not wait for ordinary dat_ban dialog")
     require(workflow, "if item_id in found:", "Post-swipe de-duplication missing")
