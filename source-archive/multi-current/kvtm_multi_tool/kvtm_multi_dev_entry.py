@@ -539,17 +539,6 @@ class MultiDevApp(production.MultiApp):
                 f"Trà sấy={dried_teas}/9 • đứng tại tầng {end_floor}"
             )
             return
-        if outcome == "warehouse_upgrade_test_finished":
-            sold = payload.get("sold_batches", {})
-            total = sum(int(value or 0) for value in sold.values()) if isinstance(sold, dict) else 0
-            mode = str(payload.get("mode") or "")
-            self.auto_multi_dev_status.set(
-                f"PASS • Test Nâng kho {mode} • đã bán {total} lượt x10 • exact MAIN"
-            )
-            self.note.set(
-                f"Test Nâng kho hoàn tất • mode={mode} • bán={total} lượt x10 • đã về Main"
-            )
-            return
         if outcome == "auto_main_ready":
             sold = int(payload.get("sold_listings", 0) or 0)
             gold = int(payload.get("collected_gold_slots", 0) or 0)
