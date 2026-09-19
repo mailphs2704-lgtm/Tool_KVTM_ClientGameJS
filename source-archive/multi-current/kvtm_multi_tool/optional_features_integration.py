@@ -412,7 +412,6 @@ def install_optional_features_integration(app_class, core) -> None:
 
     def run_clean_main_thread(self, *args, **kwargs) -> None:
         profile_id = str(args[0] if args else kwargs.get("profile_id") or "")
-        work_dir = Path(args[3] if len(args) > 3 else kwargs["work_dir"])
         snapshots = getattr(self, "_optional_features_run_snapshot", {})
         snapshot = snapshots.pop(profile_id, None) if isinstance(snapshots, dict) else None
         if isinstance(snapshot, dict):
