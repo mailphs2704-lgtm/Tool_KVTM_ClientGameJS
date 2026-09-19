@@ -347,7 +347,7 @@ def main() -> int:
             "Builder must reuse proven worker lifecycle")
     require(integration, "original_start_clean_session(self)",
             "Configured AUTO Main must still reuse Multi DEV ownership/busy gates")
-    require(integration, '("function_3", "9 Nước hoa hồng - 9 Trà đá - 9 Vải vàng")',
+    require(integration, '("function_3", "03. 9 Nước hoa hồng - 9 Trà đá - 9 Vải vàng")',
             "Function-3 is missing from visible AUTO Main Function selector")
     require(host, "install_auto_builder_integration(", "Multi DEV host does not install Builder")
 

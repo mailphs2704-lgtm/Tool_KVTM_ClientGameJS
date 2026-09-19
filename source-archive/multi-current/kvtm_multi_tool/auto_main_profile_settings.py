@@ -30,6 +30,7 @@ _RENDER_FPS_CAPABILITY = "FPS_LIMIT1"
 _RENDER_FPS_REASSERT_SECONDS = 300.0
 _RENDER_FPS_SUCCESS_LOG_SECONDS = 30.0
 _DEFAULT_PROFILE_SETTINGS = {
+    "function_id": "function_1",
     "sale_every_loops": 1,
     "function_loop_delay_seconds": 0.0,
     "friend_refresh_enabled": False,
@@ -38,6 +39,12 @@ _DEFAULT_PROFILE_SETTINGS = {
 
 def _normalize_profile_settings(raw) -> dict:
     current = raw if isinstance(raw, dict) else {}
+    function_id = str(current.get("function_id", "function_1"))
+    valid_function_ids = {
+        item[0] for item in builder_integration._AUTO_MAIN_FUNCTION_OPTIONS
+    }
+    if function_id not in valid_function_ids:
+        function_id = "function_1"
     try:
         sale_every = int(current.get("sale_every_loops", 1))
     except (TypeError, ValueError):
@@ -53,6 +60,7 @@ def _normalize_profile_settings(raw) -> dict:
         loop_delay = 0.0
 
     return {
+        "function_id": function_id,
         "sale_every_loops": sale_every,
         "function_loop_delay_seconds": loop_delay,
         "friend_refresh_enabled": bool(
@@ -190,6 +198,9 @@ def install_auto_main_profile_settings(app_class, core) -> None:
             self.auto_multi_dev_friend_refresh_button.configure(state=state)
 
             if not profile_id or profile is None:
+                self._select_auto_multi_dev_function(
+                    _DEFAULT_PROFILE_SETTINGS["function_id"]
+                )
                 self.auto_multi_dev_sale_every_loops.set(
                     _DEFAULT_PROFILE_SETTINGS["sale_every_loops"]
                 )
@@ -202,6 +213,36 @@ def install_auto_main_profile_settings(app_class, core) -> None:
                 return
 
             saved = self._auto_multi_dev_profile_settings(profile_id)
+            function_id = str(saved["function_id"])
+            # A running account is authoritative. Its frozen Function must be
+            # shown when the operator selects that account, even if another
+            # account was selected in the menu moments earlier.
+            running = False
+            thread = getattr(self, "_clean_main_threads", {}).get(profile_id)
+            worker = getattr(self, "_clean_main_workers", {}).get(profile_id)
+            try:
+                running = bool(thread is not None and thread.is_alive())
+            except Exception:
+                running = False
+            if not running:
+                try:
+                    running = bool(worker is not None and worker.poll() is None)
+                except Exception:
+                    running = False
+            if running:
+                active = getattr(self, "_auto_main_active_config", {}).get(
+                    profile_id, {}
+                )
+                active_id = str(
+                    active.get("function_id", "")
+                    if isinstance(active, dict) else ""
+                )
+                if active_id in {
+                    item[0]
+                    for item in builder_integration._AUTO_MAIN_FUNCTION_OPTIONS
+                }:
+                    function_id = active_id
+            self._select_auto_multi_dev_function(function_id)
             self.auto_multi_dev_sale_every_loops.set(saved["sale_every_loops"])
             self.auto_multi_dev_function_loop_delay.set(
                 saved["function_loop_delay_seconds"]
@@ -245,7 +286,15 @@ def install_auto_main_profile_settings(app_class, core) -> None:
         friend_refresh_enabled = bool(
             self.auto_multi_dev_friend_refresh_enabled.get()
         )
+        function_id = str(
+            getattr(self, "_auto_multi_dev_selected_function_id", "function_1")
+        )
+        if function_id not in {
+            item[0] for item in builder_integration._AUTO_MAIN_FUNCTION_OPTIONS
+        }:
+            function_id = str(previous["function_id"])
         saved = {
+            "function_id": function_id,
             "sale_every_loops": sale_every,
             "function_loop_delay_seconds": loop_delay,
             "friend_refresh_enabled": friend_refresh_enabled,
@@ -266,7 +315,9 @@ def install_auto_main_profile_settings(app_class, core) -> None:
         core.save_settings(self.settings)
         self.note.set(
             "AUTO MULTI DEV • đã lưu riêng cho "
-            f"{profile.get('name') or profile_id} • bán/{sale_every} vòng • "
+            f"{profile.get('name') or profile_id} • "
+            f"{dict(builder_integration._AUTO_MAIN_FUNCTION_OPTIONS)[function_id]} • "
+            f"bán/{sale_every} vòng • "
             f"chờ {loop_delay:g}s • qua bạn #1/3 vòng="
             f"{'BẬT' if friend_refresh_enabled else 'TẮT'}"
         )
@@ -582,6 +633,10 @@ def install_auto_main_profile_settings(app_class, core) -> None:
         per_profile = {}
         for profile_id in selected:
             saved = self._auto_multi_dev_profile_settings(profile_id)
+            saved["function_id"] = function_id
+            self.settings.setdefault(_PROFILE_SETTINGS_KEY, {})[
+                profile_id
+            ] = dict(saved)
             config = {
                 "version": 1,
                 "function_id": function_id,
@@ -600,6 +655,7 @@ def install_auto_main_profile_settings(app_class, core) -> None:
             self._auto_main_pending_config[profile_id] = dict(config)
             self._auto_main_active_config[profile_id] = dict(config)
             self._auto_main_restart_pending.discard(profile_id)
+        core.save_settings(self.settings)
 
         if len(selected) == 1:
             current = per_profile[selected[0]]

@@ -24,6 +24,8 @@ CATALOG = CLEAN / "workflows/auto_builder/catalog.py"
 CORE_GUI = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi.py"
 INTEGRATION = ROOT / "source-archive/multi-current/kvtm_multi_tool/auto_builder_integration.py"
 DEV_ENTRY = ROOT / "source-archive/multi-current/kvtm_multi_tool/kvtm_multi_dev_entry.py"
+PROFILE_SETTINGS = ROOT / "source-archive/multi-current/kvtm_multi_tool/auto_main_profile_settings.py"
+UI_REFINEMENT = ROOT / "source-archive/multi-current/kvtm_multi_tool/auto_multi_dev_ui_refinement.py"
 
 
 def read(path: Path) -> str:
@@ -60,6 +62,8 @@ def main() -> int:
     gui = read(CORE_GUI)
     integration = read(INTEGRATION)
     entry = read(DEV_ENTRY)
+    profile_settings = read(PROFILE_SETTINGS)
+    refinement = read(UI_REFINEMENT)
 
     # Neutral transaction facade owns one listing; view/scheduler semantics stay
     # outside it. Historical AutoMainSellingActions remains implementation/base.
@@ -162,6 +166,25 @@ def main() -> int:
     require(gui, 'text="▶ Bắt đầu AUTO MULTI DEV"', "AUTO start button missing")
     require(integration, '_AUTO_MAIN_FUNCTION_OPTIONS = (', "Function menu source missing")
     require(integration, 'start_button.configure(command=self._start_configured_auto_main)', "AUTO Start is not bound to configured Function")
+    for ordinal in ("01.", "02.", "03."):
+        require(integration, ordinal, f"Function menu is missing visible ID {ordinal}")
+    require(profile_settings, '"function_id": "function_1"', "Per-profile Function default missing")
+    require(profile_settings, 'active.get("function_id", "")', "Running account Function is not authoritative")
+    require(profile_settings, 'self._select_auto_multi_dev_function(function_id)', "Account selection does not refresh Function menu")
+    require(profile_settings, 'saved["function_id"] = function_id', "Multi-account start does not persist each account Function")
+    require(refinement, 'button.configure(text="Auto")', "AUTO MULTI DEV tab was not renamed Auto")
+    for hidden_key in (
+        '"auto_builder"', '"delete_items"', '"upgrade_storage"',
+        '"deliver_sheep"', '"produce_gems"', '"clear_stall"',
+    ):
+        require(refinement, hidden_key, f"Legacy tab is not hidden: {hidden_key}")
+    require(refinement, 'function_button.configure(width=24, anchor="w")', "Function menu was not reduced to half width")
+    require(refinement, 'stop_button.pack_forget()', "Separate Stop button remains visible")
+    require(refinement, 'text="■ Dừng" if running else "▶ Bắt đầu"', "Start/Stop toggle label missing")
+    require(refinement, 'command=self._toggle_auto_multi_dev_selected', "Start/Stop toggle command missing")
+    require(refinement, 'state="disabled" if running or not selected else "normal"', "Running account Function menu is not locked")
+    require(refinement, 'app_class._poll_clear_stall_schedule = _detached_clear_stall_poll', "Integrated clear-stall scheduler is still active")
+    require(refinement, 'app_class._poll_clear_stall_workers = _detached_clear_stall_poll', "Integrated clear-stall worker polling is still active")
     require(entry, 'worker_root / "auto_multi_dev_worker.py"', "Worker launch wiring missing")
     require(entry, 'text="▶ Test Function 3 - Step 1"',
             "Function 3 Step 1 test button missing")

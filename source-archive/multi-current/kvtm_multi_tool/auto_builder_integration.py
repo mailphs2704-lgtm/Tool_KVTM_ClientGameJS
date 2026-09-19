@@ -23,9 +23,9 @@ FILE_FUNCTIONS = (
 )
 
 _AUTO_MAIN_FUNCTION_OPTIONS = (
-    ("function_1", "9 Táo sấy - 9 Vải vàng"),
-    ("function_2", "9 Táo sấy - 9 Vải vàng - 7 Tinh dầu hoa hồng"),
-    ("function_3", "9 Nước hoa hồng - 9 Trà đá - 9 Vải vàng"),
+    ("function_1", "01. 9 Táo sấy - 9 Vải vàng"),
+    ("function_2", "02. 9 Táo sấy - 9 Vải vàng - 7 Tinh dầu hoa hồng"),
+    ("function_3", "03. 9 Nước hoa hồng - 9 Trà đá - 9 Vải vàng"),
 )
 _FRIEND_REFRESH_SETTING_KEY = "auto_multi_dev_friend_refresh_enabled"
 _CLIENT_RESTART_INTERVAL_SECONDS = 0.0
@@ -72,6 +72,11 @@ def install_auto_builder_integration(app_class, core) -> None:
             return
         self._auto_multi_dev_selected_function_id = function_id
         self.auto_multi_dev_function_label.set(options[function_id])
+        saver = getattr(self, "_save_auto_multi_dev_profile_settings", None)
+        if callable(saver) and not getattr(
+            self, "_auto_multi_dev_profile_refreshing", False
+        ):
+            saver()
 
     def _load_friend_refresh_setting(self) -> bool:
         """Read the DEV-only toggle while preserving the base settings schema."""

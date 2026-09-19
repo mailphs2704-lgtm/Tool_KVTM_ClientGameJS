@@ -4,7 +4,10 @@ from __future__ import annotations
 __all__ = ["install_auto_multi_dev_ui_refinement"]
 
 FILE_FUNCTIONS = (
-    "Nới rộng ô Chức năng và bỏ cột Tài khoản áp dụng khỏi AUTO MULTI DEV",
+    "Thu gọn ô Chức năng và bỏ cột Tài khoản áp dụng khỏi AUTO MULTI DEV",
+    "Ẩn các tab legacy đã tách khỏi Multi và đổi nhãn AUTO MULTI DEV thành Auto",
+    "Ngắt scheduler/worker Dọn quầy tích hợp; tool Dọn quầy độc lập không bị tác động",
+    "Gộp Bắt đầu/Dừng thành một nút theo trạng thái tài khoản đang chọn",
     "Khóa trạng thái operator chỉ còn Đang chạy hoặc Đã dừng",
     "Mở Cấu hình gọn bên trong cửa sổ Multi rồi vẫn cho phép kéo tự do",
     "Giữ Vòng lặp/Thời gian chờ trong Cấu hình bằng Entry nhập trực tiếp",
@@ -21,6 +24,69 @@ def install_auto_multi_dev_ui_refinement(app_class, core) -> None:
     original_start_clean = app_class._start_clean_auto_session
     original_stop_clean = app_class._stop_clean_auto_session
     original_finish_clean = app_class._finish_clean_main
+    original_refresh_profile_settings = (
+        app_class._refresh_auto_multi_dev_profile_settings
+    )
+
+    def _selected_auto_multi_dev_running(self) -> bool:
+        selected = list(map(str, self.selected_ids()))
+        if not selected:
+            return False
+        for profile_id in selected:
+            thread = getattr(self, "_clean_main_threads", {}).get(profile_id)
+            worker = getattr(self, "_clean_main_workers", {}).get(profile_id)
+            try:
+                if thread is not None and thread.is_alive():
+                    return True
+            except Exception:
+                pass
+            try:
+                if worker is not None and worker.poll() is None:
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _sync_auto_multi_dev_start_stop_button(self) -> None:
+        button = getattr(self, "auto_multi_dev_start_button", None)
+        if button is None:
+            return
+        selected = list(map(str, self.selected_ids()))
+        running = self._selected_auto_multi_dev_running()
+        function_button = getattr(self, "auto_multi_dev_function_button", None)
+        if function_button is not None:
+            try:
+                function_button.configure(
+                    state="disabled" if running or not selected else "normal",
+                    cursor="arrow" if running or not selected else "hand2",
+                )
+            except Exception:
+                pass
+        try:
+            button.configure(
+                text="■ Dừng" if running else "▶ Bắt đầu",
+                style="AutoStop.TButton" if running else "AutoStart.TButton",
+                state="normal" if selected else "disabled",
+                cursor="hand2" if selected else "arrow",
+                command=self._toggle_auto_multi_dev_selected,
+            )
+        except Exception:
+            pass
+
+    def _toggle_auto_multi_dev_selected(self) -> None:
+        if self._selected_auto_multi_dev_running():
+            self._stop_clean_auto_session()
+        else:
+            self._start_configured_auto_main()
+        for delay in (0, 100, 500, 1200):
+            try:
+                self.after(delay, self._sync_auto_multi_dev_start_stop_button)
+            except Exception:
+                break
+
+    def _detached_clear_stall_poll(self) -> None:
+        """Multi DEV no longer owns Dọn quầy scheduling or worker polling."""
+        return
 
     def _place_auto_child_window(
         self,
@@ -88,6 +154,33 @@ def install_auto_multi_dev_ui_refinement(app_class, core) -> None:
     def _apply_refined_auto_multi_dev_layout(self) -> None:
         original_apply_layout(self)
 
+        # These legacy controls remain instantiated for compatibility with old
+        # settings/contracts, but are no longer operator surfaces in Multi DEV.
+        # The standalone Dọn quầy tool owns its own UI/runtime directory.
+        hidden_tabs = {
+            "auto_builder",
+            "delete_items",
+            "upgrade_storage",
+            "deliver_sheep",
+            "produce_gems",
+            "clear_stall",
+            "clear_stall_designer",
+        }
+        tab_buttons = getattr(self, "auto_tab_buttons", {})
+        for key in hidden_tabs:
+            button = tab_buttons.get(key)
+            if button is not None:
+                try:
+                    button.pack_forget()
+                except Exception:
+                    pass
+        auto_tab_button = tab_buttons.get("multi_dev")
+        if auto_tab_button is not None:
+            try:
+                auto_tab_button.configure(text="Auto")
+            except Exception:
+                pass
+
         function_button = getattr(self, "auto_multi_dev_function_button", None)
         if function_button is None:
             return
@@ -131,7 +224,7 @@ def install_auto_multi_dev_ui_refinement(app_class, core) -> None:
 
         for column in range(5):
             controls.columnconfigure(column, weight=0)
-        controls.columnconfigure(0, weight=5, minsize=470)
+        controls.columnconfigure(0, weight=3, minsize=235)
         controls.columnconfigure(1, weight=2, minsize=150)
         function_box.grid_configure(
             row=0,
@@ -141,9 +234,22 @@ def install_auto_multi_dev_ui_refinement(app_class, core) -> None:
             padx=(0, 18),
         )
         try:
-            function_button.configure(width=48, anchor="w")
+            function_button.configure(width=24, anchor="w")
         except Exception:
             pass
+
+        stop_button = getattr(self, "auto_multi_dev_stop_button", None)
+        if stop_button is not None:
+            try:
+                stop_button.pack_forget()
+            except Exception:
+                pass
+        start_button = getattr(self, "auto_multi_dev_start_button", None)
+        if start_button is not None:
+            try:
+                start_button.configure(width=28)
+            except Exception:
+                pass
 
         self.auto_multi_dev_operator_status = core.tk.StringVar(
             value=(
@@ -166,6 +272,7 @@ def install_auto_multi_dev_ui_refinement(app_class, core) -> None:
             anchor="w",
         ).pack(fill="x", pady=(8, 0))
         self.auto_multi_dev_operator_status_box = status_box
+        self._sync_auto_multi_dev_start_stop_button()
 
     def _open_refined_auto_multi_dev_config(self) -> None:
         dialog = core.tk.Toplevel(self)
@@ -389,6 +496,7 @@ def install_auto_multi_dev_ui_refinement(app_class, core) -> None:
         for delay in (0, 100, 500):
             try:
                 self.after(delay, self._sync_auto_multi_dev_operator_status)
+                self.after(delay, self._sync_auto_multi_dev_start_stop_button)
             except Exception:
                 break
         return result
@@ -398,6 +506,7 @@ def install_auto_multi_dev_ui_refinement(app_class, core) -> None:
         for delay in (0, 150, 500, 1200):
             try:
                 self.after(delay, self._sync_auto_multi_dev_operator_status)
+                self.after(delay, self._sync_auto_multi_dev_start_stop_button)
             except Exception:
                 break
         return result
@@ -407,24 +516,41 @@ def install_auto_multi_dev_ui_refinement(app_class, core) -> None:
         for delay in (0, 150, 500):
             try:
                 self.after(delay, self._sync_auto_multi_dev_operator_status)
+                self.after(delay, self._sync_auto_multi_dev_start_stop_button)
             except Exception:
                 break
         return result
+
+    def _refresh_profile_settings_with_operator_controls(self) -> None:
+        original_refresh_profile_settings(self)
+        self._sync_auto_multi_dev_start_stop_button()
 
     app_class._place_auto_child_window = _place_auto_child_window
     app_class._auto_multi_dev_has_running_worker = _auto_multi_dev_has_running_worker
     app_class._set_auto_multi_dev_operator_status = _set_auto_multi_dev_operator_status
     app_class._sync_auto_multi_dev_operator_status = _sync_auto_multi_dev_operator_status
+    app_class._selected_auto_multi_dev_running = _selected_auto_multi_dev_running
+    app_class._sync_auto_multi_dev_start_stop_button = (
+        _sync_auto_multi_dev_start_stop_button
+    )
+    app_class._toggle_auto_multi_dev_selected = _toggle_auto_multi_dev_selected
+    app_class._poll_clear_stall_schedule = _detached_clear_stall_poll
+    app_class._poll_clear_stall_workers = _detached_clear_stall_poll
     app_class._apply_compact_auto_multi_dev_layout = _apply_refined_auto_multi_dev_layout
     app_class._open_auto_multi_dev_config = _open_refined_auto_multi_dev_config
     app_class._start_clean_auto_session = _start_clean_with_operator_status
     app_class._stop_clean_auto_session = _stop_clean_with_operator_status
     app_class._finish_clean_main = _finish_clean_with_operator_status
+    app_class._refresh_auto_multi_dev_profile_settings = (
+        _refresh_profile_settings_with_operator_controls
+    )
     app_class._kvtm_auto_multi_dev_ui_refinement_installed = True
 
     print(
         "[KVTM DEV] AUTO MULTI DEV UI refinement READY • "
-        "Function=wide • account-column=removed • status=running/stopped only • "
+        "Function=compact+per-profile • account-column=removed • "
+        "start-stop=single-toggle • legacy-tabs=hidden • "
+        "status=running/stopped only • "
         "config initial-placement=inside-Multi",
         flush=True,
     )

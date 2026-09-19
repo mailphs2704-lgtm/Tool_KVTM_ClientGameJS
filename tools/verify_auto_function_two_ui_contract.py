@@ -28,8 +28,8 @@ def main() -> int:
     integration = read(INTEGRATION)
     catalog = read(CATALOG)
 
-    function_1 = '("function_1", "9 Táo sấy - 9 Vải vàng")'
-    function_2_ui = '("function_2", "9 Táo sấy - 9 Vải vàng - 7 Tinh dầu hoa hồng")'
+    function_1 = '("function_1", "01. 9 Táo sấy - 9 Vải vàng")'
+    function_2_ui = '("function_2", "02. 9 Táo sấy - 9 Vải vàng - 7 Tinh dầu hoa hồng")'
     function_2_catalog = 'label="9 Táo sấy - 9 Vải vàng - 7 tinh dầu hoa hồng"'
 
     require(integration, "_AUTO_MAIN_FUNCTION_OPTIONS = (", "AUTO Main Function dropdown missing")
